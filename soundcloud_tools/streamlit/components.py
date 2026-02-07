@@ -20,17 +20,17 @@ from soundcloud_tools.utils.string import (
 ARTWORK_WIDTH = 100
 
 
-def build_component_columns(n_buttons: int, left: float = 0.15, mid: float | tuple[float] = 0.5):
+def build_component_columns(n_buttons: int, left: float = 0.15, mid: float | tuple[float, ...] = 0.5):
     match mid:
         case float():
-            mid = [mid]
+            mid_list = [mid]
         case tuple():
-            mid = list(mid)
+            mid_list = list(mid)
 
-    cols = st.columns([left] + mid + [(1 - left - sum(mid)) / n_buttons] * n_buttons)
+    cols = st.columns([left] + mid_list + [(1 - left - sum(mid_list)) / n_buttons] * n_buttons)
     caption_col = cols[0]
-    field_cols = cols[1] if len(mid) == 1 else cols[1 : 1 + len(mid)]
-    buttons = cols[1 + len(mid) :]
+    field_cols = cols[1] if len(mid_list) == 1 else cols[1 : 1 + len(mid_list)]
+    buttons = cols[1 + len(mid_list) :]
     return caption_col, field_cols, iter(buttons)
 
 
@@ -136,7 +136,7 @@ def artist_editor(track_info: TrackInfo, sc_track_info: TrackInfo | None) -> str
 
 
 def artwork_editor(track_info: TrackInfo, sc_track_info: TrackInfo | None, has_artwork: bool = False):
-    caption_col, field_cols, buttons = build_component_columns(6, mid=[0.06, 0.44])
+    caption_col, field_cols, buttons = build_component_columns(6, mid=(0.06, 0.44))
     help_str = ""
     if has_artwork:
         help_str += "Track already has artwork, no need to copy. "
@@ -194,7 +194,7 @@ def render_predictor(predictor: Predictor, filename: str, autopredict: bool = Fa
 def genre_editor(track_info: TrackInfo, sc_track_info: TrackInfo | None, filename: str) -> str:
     genres = [("Trance", ""), ("Hardtrance", ""), ("House", "")]
     caption_col, field_cols, buttons = build_component_columns(
-        6, mid=[0.5 / (len(genres) + 1) for _ in range(len(genres) + 1)]
+        6, mid=tuple(0.5 / (len(genres) + 1) for _ in range(len(genres) + 1))
     )
     with caption_col:
         caption = ""
@@ -352,12 +352,12 @@ def remix_editor(track_info: TrackInfo, sc_track_info: TrackInfo | None) -> Remi
 
 
 def comment_editor(track_info: TrackInfo, sc_track_info: TrackInfo | None) -> Comment | None:
-    caption_col, field_cols, buttons = build_component_columns(6, mid=[0.25, 0.25])
+    caption_col, field_cols, buttons = build_component_columns(6, mid=(0.25, 0.25))
     sst.setdefault("ti_comment", track_info.comment.to_str() if track_info and track_info.comment else "")
     comment = sst.get("ti_comment")
     sst.setdefault("ti_comment_on_sc", True)
     on_soundcloud = field_cols[0].checkbox("On Soundcloud", key="ti_comment_on_sc")
-    
+
     old_comment = track_info.comment.to_str() if track_info and track_info.comment else ""
     caption_col.write(f"__Comment__ {changed_string(old_comment, comment)}")
 

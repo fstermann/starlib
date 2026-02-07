@@ -34,6 +34,10 @@ def remove_remix(title: str):
     return re.sub(r"\(.*edit|mix|bootleg|rework|flip.*\)", "", title, flags=re.IGNORECASE).strip()
 
 
+def remove_original_mix(title: str):
+    return re.sub(r"\(.*original mix.*\)", "", title, flags=re.IGNORECASE).strip()
+
+
 def remove_premiere(title: str):
     return re.sub(r"(premiere|premear):?", "", title, flags=re.IGNORECASE).strip()
 
@@ -56,7 +60,7 @@ def is_remix(title: str) -> bool:
 
 def get_mix_name(title: str) -> str | None:
     if match := re.search(r"\((.*)\)", title):
-        return match.group(1).replace(get_mix_arist(title), "").strip()
+        return match.group(1).replace(get_mix_arist(title) or "", "").strip()
     return None
 
 

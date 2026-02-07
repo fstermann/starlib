@@ -2,7 +2,7 @@ import asyncio
 import logging
 from copy import copy
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import streamlit as st
 from mutagen.id3 import APIC, ID3FileType
@@ -29,6 +29,7 @@ from soundcloud_tools.utils.string import (
     clean_title,
     remove_double_spaces,
     remove_free_dl,
+    remove_original_mix,
     remove_remix,
     replace_underscores,
     titelize,
@@ -204,20 +205,27 @@ def render_auto_checkboxes(handler: TrackHandler, sc_track_info: TrackInfo | Non
         on_click=lambda: setattr(sst, "new_track_name", handler.rename(handler.track_info.filename)),
     )
 
+    config_popover = cols[4].popover(":material/motion_photos_auto:", use_container_width=True)
+
+    with config_popover:
+        st.selectbox(
+            "Convert to", ["aiff", "mp3"], key="convert_format", help="Convert to mp3 or aiff format on export"
+        )
+
     cols[5].button(
         ":material/done_all:",
         help=(
             f"Track has {len(handler.covers)} covers, "
             f"Metadata {'' if handler.track_info.complete else 'not '}complete.\n"
-            "Export to 320kb/s mp3 file."
+            f"Export to {sst.convert_format}."
         ),
         disabled=any((sst.finalize_disabled, len(handler.covers) != 1, not handler.track_info.complete)),
         use_container_width=True,
         on_click=finalize,
-        args=(handler,),
+        args=(handler, sst.convert_format),
         type="primary",
     )
-    with cols[4].popover(":material/motion_photos_auto:", use_container_width=True):
+    with config_popover:
         st.caption("Auto-Actions")
         if st.checkbox(
             ":material/add_photo_alternate: Artwork",
@@ -254,16 +262,35 @@ def render_auto_checkboxes(handler: TrackHandler, sc_track_info: TrackInfo | Non
         ):
             apply_to_sst(titelize, "ti_title")()
             apply_to_sst(titelize, "ti_artist")()
+        if st.checkbox(
+            ":material/remove_circle: Remove 'Original Mix'",
+            value=True,
+            key="auto_remove_original_mix",
+            help="Automatically remove 'Original Mix' from title",
+        ):
+            apply_to_sst(remove_original_mix, "ti_title")()
 
 
-def finalize(handler: TrackHandler):
+def finalize(handler: TrackHandler, convert_format: Literal["mp3", "aiff"]):
     with st.spinner("Finalizing"):
-        if handler.file.suffix == ".mp3":
+        if handler.file.suffix == f".{convert_format}":
             handler.move_to_cleaned()
         else:
-            handler.convert_to_mp3()
-            handler.add_mp3_info()
-            handler.archive()
+            match convert_format:
+                case "mp3":
+                    if not handler.convert_to_mp3():
+                        st.warning("Could not convert to mp3")
+                        handler.move_to_cleaned()
+                    else:
+                        handler.add_mp3_info()
+                        handler.archive()
+                case "aiff":
+                    if not handler.convert_to_aiff():
+                        st.warning("Could not convert to aiff")
+                        handler.move_to_cleaned()
+                    else:
+                        handler.add_aiff_info()
+                        handler.archive()
     reset_track_info_sst()
 
 

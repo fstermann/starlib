@@ -1,10 +1,12 @@
 import logging
 import re
 import subprocess
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Self
 
+import mutagen
 import requests
 from mutagen.aiff import AIFF
 from mutagen.easyid3 import EasyID3
@@ -137,7 +139,7 @@ class TrackInfo(BaseModel):
         return self._join_artists(self.artist)
 
     @staticmethod
-    def _get_artist_sorter(title: str, type: Literal["artist", "original_artist", "remixer"]) -> int:
+    def _get_artist_sorter(title: str, type: Literal["artist", "original_artist", "remixer"]) -> Callable[[str], int]:
         def is_in(artist: str, text: str | None):
             return int(re.search(re.escape(artist.strip()), text or "", flags=re.IGNORECASE) is not None)
 
@@ -168,13 +170,16 @@ class TrackInfo(BaseModel):
 
     @classmethod
     def from_sc_track(cls, track: Track) -> Self:
-        artist_options = {
-            track.publisher_metadata and track.publisher_metadata.artist,
-            track.user.username,
-            get_first_artist(track.title),
-            get_mix_arist(track.title),
+        artist_options: set[str] = {
+            a
+            for a in (
+                track.publisher_metadata and track.publisher_metadata.artist,
+                track.user.username,
+                get_first_artist(track.title),
+                get_mix_arist(track.title),
+            )
+            if a
         }
-        artist_options = {a for a in artist_options if a}
 
         most_likely_artists = cls.sort_artists(artist_options, track.title, "artist")
         most_likely_original_artists = cls.sort_artists(artist_options, track.title, "original_artist")
@@ -237,6 +242,16 @@ class TrackHandler(BaseModel):
     @property
     def mp3_file(self):
         return self.cleaned_folder / (self.file.stem + ".mp3")
+
+    @property
+    def aiff_file(self):
+        return self.cleaned_folder / (self.file.stem + ".aiff")
+
+    @property
+    def is_lossless(self) -> bool:
+        """Check if the file is in a lossless format."""
+        lossless_extensions = {".aif", ".aiff", ".wav", ".flac", ".alac"}
+        return self.file.suffix.lower() in lossless_extensions
 
     @property
     def track(self):
@@ -307,6 +322,82 @@ class TrackHandler(BaseModel):
         subprocess.run(command, check=True)
         return self.mp3_file
 
+    def convert_to_aiff(self):
+        """
+        Convert lossless audio file to AIFF format.
+        Preserves the original bit depth (16-bit, 24-bit, 32-bit, etc.).
+
+        Returns
+        -------
+        Path
+            Path to the converted AIFF file
+
+        Raises
+        ------
+        ValueError
+            If the source file is not lossless (e.g., MP3)
+        """
+        if not self.is_lossless:
+            logger.warning(
+                f"Cannot convert {self.file.suffix} to AIFF: source file is not lossless. "
+                f"Lossless formats: .aif, .aiff, .wav, .flac, .alac"
+            )
+            return None
+
+        if not self.cleaned_folder.exists():
+            self.cleaned_folder.mkdir(parents=True)
+
+        # Detect bit depth using ffprobe
+        probe_command = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=bits_per_raw_sample,sample_fmt",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            self.file,
+        ]
+        result = subprocess.run(probe_command, capture_output=True, text=True, check=True)
+        output_lines = result.stdout.strip().split("\n")
+
+        # Parse bit depth - ffprobe returns bits_per_raw_sample first, then sample_fmt
+        bit_depth = None
+        sample_fmt = None
+
+        for line in output_lines:
+            if line and line.isdigit():
+                bit_depth = int(line)
+            elif line:
+                sample_fmt = line
+
+        # Determine appropriate PCM codec based on bit depth
+        # Default to 16-bit if we can't determine
+        if bit_depth == 24 or (sample_fmt and "s32" in sample_fmt):
+            codec = "pcm_s24be"  # 24-bit PCM big-endian
+        elif bit_depth == 32 or (sample_fmt and ("s32" in sample_fmt or "f32" in sample_fmt)):
+            codec = "pcm_s32be"  # 32-bit PCM big-endian
+        else:
+            codec = "pcm_s16be"  # 16-bit PCM big-endian (default/most common)
+
+        logger.info(
+            f"Converting {self.file.name} to AIFF with codec {codec} (detected: {bit_depth}-bit, format: {sample_fmt})"
+        )
+
+        command = [
+            "ffmpeg",
+            "-i",
+            self.file,
+            "-c:a",
+            codec,
+            "-y",
+            self.aiff_file,
+        ]
+        subprocess.run(command, check=True)
+        return self.aiff_file
+
     def move_to_cleaned(self):
         if not self.cleaned_folder.exists():
             self.cleaned_folder.mkdir(parents=True)
@@ -363,6 +454,15 @@ class TrackHandler(BaseModel):
         track = ID3(str(self.mp3_file))
         self._add_info(track, info=self.track_info, artwork=self.get_single_cover())
         track.save()
+
+    def add_aiff_info(self):
+        try:
+            track = EasyID3(str(self.aiff_file))
+        except mutagen.id3.ID3NoHeaderError:
+            track = mutagen.File(str(self.aiff_file), easy=True)
+            track.add_tags()
+        self._add_info(track.tags, info=self.track_info, artwork=self.get_single_cover())
+        track.save(str(self.aiff_file))
 
     def archive(self):
         if not self.archive_folder.exists():

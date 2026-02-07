@@ -100,7 +100,7 @@ def wrap_and_reset_state(func: Callable):
 def display_collection_tracks(collection: list[StreamItem] | list[Track] | list[Repost], caption: str):
     data = pd.DataFrame(
         [
-            getattr(item, "track", item).model_dump() | {"liked_at": getattr(item, "created_at", None)}
+            getattr(item, "track", item).model_dump() | {"liked_at": getattr(item, "created_at", None)}  # type: ignore
             for item in collection
         ]
     )
