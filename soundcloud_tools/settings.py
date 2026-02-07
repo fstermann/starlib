@@ -17,6 +17,9 @@ class Settings(BaseSettings):
 
     root_music_folder: str = "~/Music/tracks"
 
+    weekly_archive_artists: str = ""
+    """Weekly archive artist filtering (comma-separated permalinks)"""
+
     version: str = "1.0"
 
 

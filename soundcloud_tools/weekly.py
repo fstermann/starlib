@@ -12,6 +12,7 @@ from soundcloud_tools.models.playlist import PlaylistCreate
 from soundcloud_tools.models.request import PlaylistCreateRequest
 from soundcloud_tools.models.stream import Stream, StreamItem, StreamItemType
 from soundcloud_tools.models.track import Track
+from soundcloud_tools.settings import get_settings
 from soundcloud_tools.utils import (
     Weekday,
     get_scheduled_time,
@@ -25,6 +26,50 @@ logger = logging.getLogger(__name__)
 
 
 Items = StreamItemType | Literal["comment"]
+
+
+def get_configured_artist_usernames() -> set[str]:
+    """
+    Get the set of configured artist permalinks from settings.
+
+    Returns
+    -------
+    set[str]
+        Set of lowercase artist permalinks
+    """
+    settings = get_settings()
+    if not settings.weekly_archive_artists:
+        return set()
+
+    permalinks = [p.strip().lower() for p in settings.weekly_archive_artists.split(",") if p.strip()]
+    return set(permalinks)
+
+
+def filter_by_configured_artists(items: list[Track]) -> list[Track]:
+    """
+    Filter stream items or comments by configured artist permalinks.
+
+    Parameters
+    ----------
+    items : list[Track]
+        Items to filter
+
+    Returns
+    -------
+    list[Track]
+        Filtered items from configured artists only
+    """
+    configured_artists = get_configured_artist_usernames()
+
+    if not configured_artists:
+        logger.info("No artist filter configured, returning all items")
+        return items
+
+    filtered = [item for item in items if item.user.permalink.lower() in configured_artists]
+    logger.info(
+        f"Filtered from {len(items)} to {len(filtered)} items based on {len(configured_artists)} configured artists"
+    )
+    return filtered
 
 
 async def get_collections(
@@ -92,7 +137,7 @@ async def get_reposts(
 async def get_comments(
     client: Client, user_id: int, start: datetime, end: datetime, exclude_own: bool = True
 ) -> list[Comment]:
-    all_comments: list[StreamItem] = []
+    all_comments: list[Comment] = []
     followings = await client.get_user_followings_ids(user_id=user_id)
     for user_id in followings.collection:
         limit = 200
@@ -158,6 +203,7 @@ async def get_tracks_ids_in_timespan(
     if "comment" in types:
         collections = await get_comments(client, user_id, start=start, end=end, exclude_own=True)
         tracks += get_tracks_from_collections(collections, types=types)
+    tracks = filter_by_configured_artists(tracks)
     logger.info(f"Found {len(tracks)} tracks")
     return tracks
 

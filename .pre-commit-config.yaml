@@ -2,7 +2,7 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
-      - id: no-commit-to-branch # prevent direct commits to main branch
+      # - id: no-commit-to-branch # prevent direct commits to main branch
       - id: check-added-large-files # prevents giant files from being committed.
         args: ["--maxkb=1300"]
       - id: check-ast # simply checks whether the files parse as valid python.

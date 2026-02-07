@@ -4,7 +4,8 @@ import logging
 import re
 import urllib.parse as urlparse
 import warnings
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import requests
 from pydantic import BaseModel, Field, TypeAdapter
@@ -91,7 +92,7 @@ class Client:
         }
         self.params = {
             "client_id": get_settings().client_id,
-            "app_version": "1739181955",
+            "app_version": "1767966453",
             "app_locale": "en",
         }
         self.proxies = {"https://": "https://" + get_settings().proxy} if get_settings().proxy else {}
