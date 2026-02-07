@@ -1,8 +1,8 @@
 import re
 from collections import Counter
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
-from typing import Callable
 
 import streamlit as st
 from pydantic import ValidationError
@@ -101,6 +101,7 @@ def render_filters(path) -> list[int] | None:
     artists = Counter([a for t in track_infos for a in t.artist])
     versions = Counter([t.comment and t.comment.version for t in track_infos])
     keys = Counter([t.key for t in track_infos])
+    bpms = Counter([t.bpm for t in track_infos if t.bpm])
 
     # Filter components
     search = st.text_input("Search")
@@ -129,6 +130,33 @@ def render_filters(path) -> list[int] | None:
         format_func=lambda x: f"{x} ({keys[x]})",
         on_change=reset_track_info_sst,
     )
+
+    # BPM filter
+    col1, col2 = st.columns(2)
+    with col1:
+        filtered_bpms = st.multiselect(
+            "BPM",
+            sorted(bpms.keys()) if bpms else [],
+            format_func=lambda x: f"{x} BPM ({bpms[x]})",
+            on_change=reset_track_info_sst,
+        )
+
+    with col2:
+        # BPM range filter
+        if bpms:
+            min_bpm = min(bpms.keys())
+            max_bpm = max(bpms.keys())
+            bpm_range = st.slider(
+                "BPM Range",
+                min_value=min_bpm,
+                max_value=max_bpm,
+                value=(min_bpm, max_bpm),
+                step=1,
+                format="%d BPM",
+                on_change=reset_track_info_sst,
+            )
+        else:
+            bpm_range = None
 
     # Harmonic keys
     c1, c2 = st.columns(2)
@@ -180,6 +208,9 @@ def render_filters(path) -> list[int] | None:
                 (t.comment and t.comment.version) in filtered_versions if filtered_versions else True,
                 t.key in filtered_keys if filtered_keys else True,
                 start_date <= t.release_date <= end_date,
+                # BPM filters
+                (t.bpm in filtered_bpms if filtered_bpms else True),
+                (bpm_range[0] <= t.bpm <= bpm_range[1] if bpm_range and t.bpm else True),
             ),
         )
     ]
