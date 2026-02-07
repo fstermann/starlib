@@ -18,6 +18,7 @@ def main():
             st.Page("tools/meta_editor.py", title="Meta Editor", icon=":material/edit:"),
             st.Page("tools/like_explorer.py", title="Like Explorer", icon=":material/favorite:"),
             st.Page("tools/key_shifter.py", title="Key Shifter", icon=":material/database:"),
+            st.Page("tools/artist_manager.py", title="Artist Manager", icon=":material/group:"),
         ]
     )
     pg.run()
