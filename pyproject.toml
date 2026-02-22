@@ -19,6 +19,9 @@ streamlit = "^1.50.0"
 yt-dlp = "^2025.10.22"
 shazamio = "^0.8.1"
 audioop-lts = "^0.2.2"
+fastapi = "^0.115.0"
+uvicorn = {extras = ["standard"], version = "^0.32.0"}
+python-multipart = "^0.0.22"
 
 [tool.poetry.group.editor]
 optional = true
