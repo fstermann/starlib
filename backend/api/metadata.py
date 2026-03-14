@@ -23,7 +23,6 @@ from backend.api.deps import (
 )
 from backend.core.services import collection, metadata, soundcloud
 from backend.schemas.metadata import (
-    ArtworkResponse,
     AutoActionRequest,
     AutoActionResponse,
     CollectionStatsResponse,
@@ -32,7 +31,6 @@ from backend.schemas.metadata import (
     FinalizeRequest,
     FinalizeResponse,
     FolderListResponse,
-    MoveFilesRequest,
     OperationResponse,
     SoundCloudSearchRequest,
     SoundCloudSearchResponse,
@@ -153,8 +151,8 @@ def get_file_info(
         track_info = metadata.get_track_info(resolved_path, root_folder)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to read track metadata: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to read track metadata: {e!s}"
+        ) from e
 
     # Check file readiness
     readiness = metadata.check_file_readiness(resolved_path, root_folder)
@@ -213,8 +211,8 @@ def update_file_info(
         current_info = metadata.get_track_info(resolved_path, root_folder)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to read current metadata: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to read current metadata: {e!s}"
+        ) from e
 
     # Build modified track info
     modified_info = metadata.build_modified_track_info(
@@ -234,8 +232,8 @@ def update_file_info(
         metadata.save_track_metadata(resolved_path, root_folder, modified_info)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to save metadata: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to save metadata: {e!s}"
+        ) from e
 
     return OperationResponse(
         success=True,
@@ -271,12 +269,11 @@ def check_file_readiness(
     resolved_path = validate_file_path(file_path, root_folder)
 
     try:
-        track_info = metadata.get_track_info(resolved_path, root_folder)
         readiness = metadata.check_file_readiness(resolved_path, root_folder)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to check readiness: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to check readiness: {e!s}"
+        ) from e
 
     return FileReadinessResponse(
         file_path=str(resolved_path),
@@ -318,25 +315,22 @@ def finalize_file(
 
     # Check readiness
     try:
-        track_info = metadata.get_track_info(resolved_path, root_folder)
         readiness = metadata.check_file_readiness(resolved_path, root_folder)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to check readiness: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to check readiness: {e!s}"
+        ) from e
 
     if not readiness["is_ready"]:
+        missing_fields = readiness["missing_fields"]
+        if isinstance(missing_fields, list):
+            missing_str = ", ".join(missing_fields)
+        else:
+            missing_str = str(missing_fields)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File not ready for finalization. Missing: {', '.join(readiness['missing_fields'])}",
+            detail=f"File not ready for finalization. Missing: {missing_str}",
         )
-
-    # Get collection folder
-    folder_handler = FolderHandler(folder=root_folder)
-    if request.collection_folder:
-        collection_folder = Path(request.collection_folder)
-    else:
-        collection_folder = folder_handler.get_collection_folder()
 
     # Finalize track
     try:
@@ -346,7 +340,10 @@ def finalize_file(
             target_format=request.target_format,
         )
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Finalization failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Finalization failed: {e!s}",
+        ) from e
 
     return FinalizeResponse(
         success=result["success"],
@@ -386,8 +383,8 @@ def delete_file(
         metadata.delete_track_file(resolved_path, root_folder)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete file: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete file: {e!s}"
+        ) from e
 
     return OperationResponse(
         success=True,
@@ -432,8 +429,8 @@ async def search_soundcloud(
         tracks = tracks[: request.limit]
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"SoundCloud search failed: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"SoundCloud search failed: {e!s}"
+        ) from e
 
     # Convert to response format
     track_responses = [
@@ -496,24 +493,27 @@ async def get_soundcloud_track(
     try:
         track = await soundcloud.get_track_by_url(url, sc_client)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch track: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch track: {e!s}"
+        ) from e
+
+    if not track:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Track not found at the provided URL")
 
     return SoundCloudTrackResponse(
-        id=track["id"],
-        title=track["title"],
-        artist=track["artist"],
-        permalink_url=track["permalink_url"],
-        artwork_url=track.get("artwork_url"),
-        duration_ms=track.get("duration_ms"),
-        genre=track.get("genre"),
-        release_date=track.get("release_date"),
-        label=track.get("label"),
-        isrc=track.get("isrc"),
-        bpm=track.get("bpm"),
+        id=track.id,
+        title=track.title,
+        artist=track.artist,
+        permalink_url=track.permalink_url,
+        artwork_url=track.artwork_url,
+        duration_ms=track.duration_s * 1000 if track.duration_s else None,
+        genre=track.genre,
+        release_date=track.release_date,
+        label=track.label,
+        isrc=track.isrc,
+        bpm=track.bpm,
     )
 
 
@@ -550,19 +550,28 @@ async def apply_soundcloud_metadata(
     # Get SoundCloud track
     try:
         sc_track = await soundcloud.get_track_by_id(request.soundcloud_id, sc_client)
+        if not sc_track:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Track not found on SoundCloud",
+            )
         track_info = soundcloud.convert_sc_track_to_track_info(sc_track)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch SoundCloud track: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch SoundCloud track: {e!s}",
+        ) from e
 
     # Save metadata
     try:
         metadata.save_track_metadata(resolved_path, root_folder, track_info)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to save metadata: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save metadata: {e!s}",
+        ) from e
 
     return OperationResponse(
         success=True,
@@ -604,8 +613,9 @@ def get_file_artwork(
         artwork_path = metadata.extract_artwork(resolved_path, root_folder)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to extract artwork: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to extract artwork: {e!s}",
+        ) from e
 
     if not artwork_path or not artwork_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No artwork found for this file")
@@ -651,8 +661,13 @@ async def update_file_artwork(
         artwork_data = await file.read()
         if not artwork_data:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No image data received")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to read uploaded file: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to read uploaded file: {e!s}",
+        ) from e
 
     # Embed artwork
     try:
@@ -662,8 +677,9 @@ async def update_file_artwork(
         handler.add_cover(artwork_data)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to embed artwork: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to embed artwork: {e!s}",
+        ) from e
 
     return OperationResponse(
         success=True,
@@ -702,8 +718,9 @@ def delete_file_artwork(
         metadata.remove_artwork(resolved_path, root_folder)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to remove artwork: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to remove artwork: {e!s}",
+        ) from e
 
     return OperationResponse(
         success=True,
@@ -743,8 +760,9 @@ def get_collection_stats(
         stats = collection.get_collection_metadata_stats(collection_folder)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to get collection stats: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get collection stats: {e!s}",
+        ) from e
 
     return CollectionStatsResponse(
         total_tracks=stats["total_tracks"],

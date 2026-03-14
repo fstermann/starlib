@@ -1,6 +1,7 @@
 .venv
 .env
 .cache
+.oauth_cache.json
 *.py[co]
 ca.crt
 
@@ -8,3 +9,5 @@ ca.crt
 *.pb
 *.onnx
 .vscode
+.agents
+skills-lock.json
