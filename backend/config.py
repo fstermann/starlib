@@ -42,7 +42,7 @@ class BackendSettings(BaseSettings):
     }
 
 
-@lru_cache()
+@lru_cache
 def get_backend_settings() -> BackendSettings:
     """Get cached backend settings."""
     return BackendSettings()

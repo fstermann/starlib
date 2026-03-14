@@ -105,7 +105,7 @@ def get_folder_path(root_folder: Path, mode: str) -> tuple[Path, str | None]:
     folder = root_folder / mode if mode else root_folder
 
     try:
-        handler = FolderHandler(folder=folder)
+        FolderHandler(folder=folder)
         return folder, None
     except ValidationError as e:
         return folder, f"Invalid folder: {e}"
@@ -212,7 +212,7 @@ def load_all_track_infos(folder: Path):
     return [handler.track_info for handler in TrackHandler.load_all(folder)]
 
 
-def filter_tracks_by_metadata(
+def filter_tracks_by_metadata(  # noqa: C901
     folder: Path,
     genres: list[str] | None = None,
     artists: list[str] | None = None,

@@ -4,11 +4,19 @@ FastAPI application - Main entry point.
 Configures FastAPI app with CORS, routes, and middleware.
 """
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.auth import router as auth_router
 from backend.api.metadata import router as metadata_router
 from backend.config import get_backend_settings
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s: %(name)s: %(message)s",
+)
 
 
 def create_app() -> FastAPI:
@@ -38,6 +46,7 @@ def create_app() -> FastAPI:
     )
 
     # Register routers
+    app.include_router(auth_router)
     app.include_router(metadata_router)
 
     return app

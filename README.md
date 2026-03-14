@@ -2,6 +2,28 @@
 
 This repository provides a collection of tools to interact with the SoundCloud API.
 
+## 🏗️ Architecture
+
+- **Backend API** (`backend/`) - FastAPI server with OAuth 2.1, metadata management, file handling
+- **Frontend** (`frontend/`) - Next.js/React application with modern UI components
+- **Legacy Tools** (`soundcloud_tools/`) - Original Python CLI tools (being migrated to backend/frontend)
+
+### Quick Start
+
+**Backend:**
+```bash
+poetry run python -m backend.main
+# → http://localhost:8000
+```
+
+**Frontend:**
+```bash
+cd frontend && npm run dev
+# → http://localhost:3000
+```
+
+See [Backend README](backend/README.md) for detailed setup.
+
 ---
 
 This includes a __workflow__ to collect all __liked, posted and reposted tracks__ and playlists of a users __favorited artists__ for the past week.
@@ -56,8 +78,43 @@ Similarly, if you want to use the GitHub workflow, you have to add the environme
 
 
 <details>
-<summary>How to get the environment variables</summary>
+<summary>Authentication Setup (OAuth 2.1 - RECOMMENDED)</summary>
 
+**New in 2026**: Automatic OAuth 2.1 authentication with token refresh!
+
+### Quick Setup (5 minutes)
+
+1. **Register your app** at [SoundCloud Developer Portal](https://soundcloud.com/you/apps)
+2. **Get your credentials**: Copy `CLIENT_ID` and `CLIENT_SECRET` from your app settings
+3. **Add to `.env`**:
+   ```env
+   CLIENT_ID=your_client_id_here
+   CLIENT_SECRET=your_client_secret_here
+   USER_ID=your_soundcloud_user_id
+   ```
+
+That's it! The application will:
+- ✅ Automatically obtain OAuth tokens
+- ✅ Refresh tokens before expiry
+- ✅ Cache tokens locally (`.oauth_cache.json`)
+- ✅ No manual token extraction needed
+
+### Migration from Manual Tokens
+
+If you previously used manual `OAUTH_TOKEN` extraction, you can now switch to automatic OAuth:
+
+1. Follow the Quick Setup above
+2. Comment out or remove old `OAUTH_TOKEN` and `DATADOME_CLIENTID` variables
+3. The app will automatically switch to OAuth 2.1 flow
+
+**Legacy method** (manual token extraction) is still supported but deprecated.
+
+</details>
+
+<details>
+<summary>Legacy Authentication (Manual Token Extraction - DEPRECATED)</summary>
+
+**⚠️ This method is deprecated. Use OAuth 2.1 setup above instead.**
 
 To get the first three variables, visit your SoundCloud profile, open up the developer tools menu, reload the page and search for `tracks?representation` in the network tab. The `USER_ID` and `CLIENT_ID` can be found in the request url, and the `OAUTH_TOKEN` in the request headers.
 

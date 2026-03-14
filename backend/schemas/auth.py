@@ -1,0 +1,36 @@
+"""OAuth and authentication schemas."""
+
+from pydantic import BaseModel
+
+
+class CallbackRequest(BaseModel):
+    """OAuth callback payload from frontend."""
+
+    code: str
+    state: str | None = None
+    code_verifier: str
+
+
+class AuthorizeResponse(BaseModel):
+    """Authorization URL response."""
+
+    authorization_url: str
+    state: str
+    code_verifier: str
+
+
+class UserInfo(BaseModel):
+    """Minimal SoundCloud user info."""
+
+    id: int
+    username: str
+    permalink: str
+    avatar_url: str | None = None
+
+
+class CallbackResponse(BaseModel):
+    """OAuth callback response with tokens and user info."""
+
+    access_token: str
+    refresh_token: str | None
+    user: UserInfo

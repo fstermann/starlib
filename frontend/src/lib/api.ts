@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-async function fetchApi<T>(
+export async function fetchApi<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
