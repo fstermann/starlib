@@ -187,11 +187,24 @@ class TrackInfo(BaseModel):
 
         mix_name = get_mix_name(track.title)
 
+        # Parse display_date from string to date, handle None case
+        release_date = None
+        if track.display_date:
+            try:
+                # API returns ISO 8601 format strings
+                from datetime import datetime
+
+                parsed_dt = datetime.fromisoformat(track.display_date.replace("Z", "+00:00"))
+                release_date = parsed_dt.date()
+            except (ValueError, AttributeError):
+                logger.warning(f"Could not parse display_date: {track.display_date}")
+                release_date = None
+
         return cls(
             title=track.title,
             artist=next(iter(most_likely_artists), ""),
             genre=track.genre or "",
-            release_date=track.display_date.date(),
+            release_date=release_date,
             artwork_url=track.hq_artwork_url or track.user.hq_avatar_url,
             artist_options=artist_options,
             remix=Remix(

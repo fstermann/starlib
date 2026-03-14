@@ -2,7 +2,7 @@ import asyncio
 import base64
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Callable
 
 import devtools
@@ -11,13 +11,12 @@ import streamlit as st
 from streamlit import session_state as sst
 
 from soundcloud_tools.models import User
-from soundcloud_tools.models.playlist import Playlist, PlaylistCreate, PlaylistUpdateImageRequest
+from soundcloud_tools.models.playlist import Playlist, PlaylistUpdateImageRequest
 from soundcloud_tools.models.repost import Repost
-from soundcloud_tools.models.request import PlaylistCreateRequest
 from soundcloud_tools.models.track import Track
 from soundcloud_tools.settings import get_settings
 from soundcloud_tools.streamlit.client import Client, get_client
-from soundcloud_tools.streamlit.utils import display_collection_tracks
+from soundcloud_tools.streamlit.utils import create_soundcloud_playlist, display_collection_tracks
 
 logger = logging.getLogger(__name__)
 
@@ -25,25 +24,34 @@ logger = logging.getLogger(__name__)
 @st.cache_data
 def search_users(user_query: str) -> list[User]:
     client = get_client()
-    result = asyncio.run(client.search(q=user_query))
+    result = asyncio.run(client.search_users(q=user_query))
     return [user for user in result.collection if user.kind == "user"]
 
 
 @st.cache_data(show_spinner="Fetching tracks", hash_funcs={"builtins.method": str})
 def fetch_collection_response(endpoint: Callable, limit: int = 100, **kwargs) -> list[Repost] | list[Track]:
-    offset: int | None = 0
+    offset: int | str | None = None  # Start with None, not 0
     items = []
     while True:
         try:
-            response = asyncio.run(endpoint(**kwargs, limit=limit, offset=offset))
+            # Only pass offset if it's not None
+            params = {**kwargs, "limit": limit}
+            if offset is not None:
+                params["offset"] = offset
+            response = asyncio.run(endpoint(**params))
+            if response is None:
+                logger.warning("Endpoint returned None response")
+                break
             items.extend(response.collection)
             if not response.next_href:
                 break
             offset = Client.get_next_offset(response.next_href)
-            logger.info("Using next offset", offset)
+            if offset is None:
+                break
+            logger.info(f"Using next offset: {offset}")
         except Exception as e:
-            logger.error(e)
-            raise e
+            logger.error(f"Error fetching collection: {e}")
+            break
 
     return items
 
@@ -76,34 +84,24 @@ def display_user(user: User):
     with c1:
         st.write(f"#### [{user.username}]({user.permalink_url})")
         st.caption(
-            f"{user.full_name}  \n"
-            f"Country: {user.city}, {user.country_code}  \n"
-            f"Followers: {user.followers_count}"
+            f"{user.full_name}  \nCountry: {user.city}, {user.country_code}  \nFollowers: {user.followers_count}"
         )
 
 
-def create_playlist(likes: list[Track], reposts: list[Repost], artist: str, filters: dict) -> Playlist:
-    # Keep liked/reposted order
-    items = sorted(likes + reposts, key=lambda x: x.created_at, reverse=True)
-    track_ids = []
+def create_playlist(likes: list[Track], reposts: list[Repost], artist: str, filters: dict) -> Playlist | None:
+    items = sorted(likes + reposts, key=lambda x: parse_created_at(x.created_at), reverse=True)
+    track_ids: list[int] = []
     for item in items:
-        if item.track.id not in track_ids:
-            track_ids.append(item.track.id)
+        track_id = item.id if isinstance(item, Track) else item.track.id
+        if track_id not in track_ids:
+            track_ids.append(track_id)
 
-    playlist = PlaylistCreateRequest(
-        playlist=PlaylistCreate(
-            title=f"{artist} | Likes & Reposts | {filters['start_date']} - {filters['end_date']}",
-            description=(f"Likes and reposts of {artist} from {filters['start_date']} - {filters['end_date']}"),
-            tracks=list(track_ids),
-            sharing="private",
-            tag_list="likes,reposts,soundcloud-tools",
-        )
+    return create_soundcloud_playlist(
+        title=f"{artist} | Likes & Reposts | {filters['start_date']} - {filters['end_date']}",
+        description=f"Likes and reposts of {artist} from {filters['start_date']} - {filters['end_date']}",
+        track_ids=track_ids,
+        tag_list="likes,reposts,soundcloud-tools",
     )
-    request = devtools.pformat(playlist.model_dump(exclude={"playlist": {"tracks"}}))
-    logger.info(f"Creating playlist {request} with {len(track_ids)} tracks")
-    created_playlist = asyncio.run(get_client().post_playlist(data=playlist))
-    st.toast(f"Playlist created for {artist} with {len(track_ids)} tracks.", icon="🎉")
-    return created_playlist
 
 
 def main():
@@ -111,9 +109,38 @@ def main():
     st.write(
         "Explore likes and reposts of your favorite SoundCloud artists, and create custom playlists with the tracks."
     )
+
+    # Show success message if we just completed OAuth
+    if sst.get("oauth_just_completed"):
+        st.success("✓ Authorization successful! You can now create playlists.")
+        del sst.oauth_just_completed
+
+    # Show authentication status
+    client = get_client()
+    auth_status = client.get_auth_status()
+
+    # Check if using user tokens (has refresh token) vs client credentials
+    has_write_access = bool(client._refresh_token)
+
+    if has_write_access:
+        st.success("✓ Authenticated with user account - Playlist creation enabled")
+    else:
+        with st.expander("⚠️ Read-only mode - Playlist creation disabled", expanded=False):
+            st.warning(
+                "Currently using **Client Credentials** (read-only access). "
+                "To create playlists, set up user OAuth tokens:\n\n"
+                "1. Run: `poetry run python get_user_tokens.py`\n"
+                "2. Add tokens to your `.env` file:\n"
+                "   ```\n"
+                "   SOUNDCLOUD_OAUTH_TOKEN=your_access_token\n"
+                "   SOUNDCLOUD_REFRESH_TOKEN=your_refresh_token\n"
+                "   ```\n"
+                "3. Restart the Streamlit app\n\n"
+                "See the [API Guide](https://developers.soundcloud.com/docs/api/guide#authentication) for details."
+            )
+
     st.divider()
 
-    client = get_client()
     sst.setdefault("user_likes", [])
     sst.setdefault("user_reposts", [])
     sst.setdefault("own_likes", [])
@@ -137,11 +164,13 @@ def main():
             "This may take a while."
         )
     if collect:
-        sst.user_likes = fetch_collection_response(endpoint=client.get_user_likes, user_id=user.id, limit=200)
-        sst.user_reposts = fetch_collection_response(endpoint=client.get_user_reposts, user_id=user.id, limit=200)
-        sst.own_likes = fetch_collection_response(
-            endpoint=client.get_user_likes, user_id=get_settings().user_id, limit=200
-        )
+        user_urn = f"soundcloud:users:{user.id}"
+        own_user_urn = f"soundcloud:users:{get_settings().user_id}"
+        sst.user_likes = fetch_collection_response(endpoint=client.get_user_likes, user_urn=user_urn, limit=200)
+        # Note: User reposts endpoint not available in public API
+        # sst.user_reposts = fetch_collection_response(endpoint=client.get_user_reposts, user_urn=user_urn, limit=200)
+        sst.user_reposts = []  # Reposts not available via public API
+        sst.own_likes = fetch_collection_response(endpoint=client.get_user_likes, user_urn=own_user_urn, limit=200)
         sst.fetched_user[user.id] = True
 
     if not sst.fetched_user.get(user.id):
@@ -161,11 +190,12 @@ def main():
     display_collection_tracks(filtered_reposts, "Reposts")
 
     if st.button(":material/add: Create Playlist"):
-        st.write(user.avatar_url)
+        # st.write(user.avatar_url)
         playlist = create_playlist(
             likes=filtered_likes, reposts=filtered_reposts, artist=user.username, filters=filters
         )
-        update_playlist_image(user=user, playlist_id=playlist.id)
+        # if playlist:
+        #     update_playlist_image(user=user, playlist_id=playlist.id)
 
 
 def update_playlist_image(user: User, playlist_id: int):
@@ -190,7 +220,8 @@ def get_filters():
     end_date = c3.date_input("End Date", value=None) or date.today()
     max_length = c4.number_input("Max Length (mins)", value=12, step=1)
     exclude_own = c5.checkbox("Exclude Own Liked Tracks", value=True)
-    own_likes = [like.track.id for like in sst.own_likes if hasattr(like, "track")] if exclude_own else []
+    # Likes endpoint returns Track objects directly now
+    own_likes = [like.id for like in sst.own_likes if isinstance(like, Track)] if exclude_own else []
     c5.write(f"Own Likes: {len(own_likes)}")
 
     filters = {
@@ -204,6 +235,28 @@ def get_filters():
     return filters
 
 
+def parse_created_at(created_at_str: str) -> datetime:
+    """Parse created_at string which can be in multiple formats"""
+    if isinstance(created_at_str, datetime):
+        return created_at_str
+
+    # Try ISO 8601 format first (e.g., '2025-09-23T10:10:32Z')
+    try:
+        return datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        pass
+
+    # Try SoundCloud format (e.g., '2025/09/23 10:10:32 +0000')
+    try:
+        return datetime.strptime(created_at_str, "%Y/%m/%d %H:%M:%S %z")
+    except (ValueError, AttributeError):
+        pass
+
+    # Fallback: return epoch if parsing fails
+    logger.warning(f"Could not parse created_at: {created_at_str}")
+    return datetime.fromtimestamp(0)
+
+
 def filter_collection(
     collection: list[Track] | list[Repost],
     start_date: date,
@@ -212,22 +265,32 @@ def filter_collection(
     own_likes: list[int],
     search: str,
 ):
-    items = [
-        item
-        for item in collection
-        if hasattr(item, "track")
-        and start_date <= item.created_at.date() <= end_date
-        and item.track.duration / 60_000 < max_length
-        and (not own_likes or (own_likes and item.track.id not in own_likes))
-        and (
-            not search
-            or (
-                search
-                and any(re.search(search, attr, flags=re.IGNORECASE) for attr in (item.track.title, item.track.artist))
+    items = []
+    for item in collection:
+        # Handle Track objects (from likes endpoint) vs Repost objects
+        if isinstance(item, Track):
+            track = item
+            # Parse created_at string to datetime
+            created_at = parse_created_at(item.created_at)
+        elif hasattr(item, "track"):
+            track = item.track
+            # For Repost objects, created_at might be datetime or string
+            created_at = parse_created_at(item.created_at)
+        else:
+            continue
+
+        # Apply filters
+        if (
+            start_date <= created_at.date() <= end_date
+            and track.duration / 60_000 < max_length
+            and (not own_likes or track.id not in own_likes)
+            and (
+                not search or any(re.search(search, attr, flags=re.IGNORECASE) for attr in (track.title, track.artist))
             )
-        )
-    ]
-    return sorted(items, key=lambda x: x.created_at, reverse=True)
+        ):
+            items.append(item)
+
+    return sorted(items, key=lambda x: x.created_at if hasattr(x, "created_at") else x.created_at, reverse=True)
 
 
 if __name__ == "__main__":

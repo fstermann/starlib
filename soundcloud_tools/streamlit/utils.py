@@ -1,14 +1,18 @@
+import asyncio
 import urllib.parse
 from collections import Counter
-from typing import Callable
+from collections.abc import Callable
 
 import pandas as pd
+import requests
 import streamlit as st
 from streamlit import session_state as sst
 from tabulate import tabulate
 
 from soundcloud_tools.models import Track
+from soundcloud_tools.models.playlist import Playlist, PlaylistCreate
 from soundcloud_tools.models.repost import Repost
+from soundcloud_tools.models.request import PlaylistCreateRequest
 from soundcloud_tools.models.stream import StreamItem
 
 
@@ -95,6 +99,46 @@ def wrap_and_reset_state(func: Callable):
         reset_track_info_sst()
 
     return wrapper
+
+
+def create_soundcloud_playlist(
+    title: str,
+    description: str,
+    track_ids: list[int],
+    tag_list: str = "",
+    sharing: str = "private",
+) -> Playlist | None:
+    """Create a SoundCloud playlist from a list of track IDs.
+
+    Requires write access (OAuth refresh token). Returns None on failure.
+    """
+    from soundcloud_tools.streamlit.client import get_client
+
+    client = get_client()
+    if not client._refresh_token:
+        st.error("⚠️ Write access required to create playlists. Set up user OAuth tokens (see Authentication page).")
+        return None
+
+    # Deduplicate while preserving order
+    seen: set[int] = set()
+    unique_ids = [tid for tid in track_ids if not (tid in seen or seen.add(tid))]
+
+    playlist_req = PlaylistCreateRequest(
+        playlist=PlaylistCreate(
+            title=title,
+            description=description,
+            tracks=unique_ids,
+            sharing=sharing,
+            tag_list=tag_list,
+        )
+    )
+    try:
+        created = asyncio.run(client.post_playlist(data=playlist_req))
+        st.toast(f"Playlist '{title}' created with {len(unique_ids)} tracks.", icon="🎉")
+        return created
+    except requests.HTTPError as e:
+        st.error(f"Failed to create playlist: {e.response.status_code} - {e.response.text}")
+        return None
 
 
 def display_collection_tracks(collection: list[StreamItem] | list[Track] | list[Repost], caption: str):

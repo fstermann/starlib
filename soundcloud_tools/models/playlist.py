@@ -10,21 +10,37 @@ from soundcloud_tools.models.user import User
 logger = logging.getLogger(__name__)
 
 
+class TrackReference(BaseModel):
+    """Track reference for playlist creation - API expects {"urn": track_id}"""
+
+    urn: str
+
+    @field_validator("urn", mode="before")
+    @classmethod
+    def validate_urn(cls, v):
+        if isinstance(v, int):
+            return f"soundcloud:tracks:{v}"
+        return v
+
+
 class PlaylistCreate(BaseModel):
     title: str
     description: str
     sharing: Literal["public", "private"] = "private"
-    tracks: list[TrackID] = []
+    tracks: list[TrackReference] = []
     tag_list: str = ""
 
     @field_validator("tracks", mode="before")
-    def validate_tracks(cls, tracks: list[TrackID]):
+    def validate_tracks(cls, tracks: list[TrackReference | int]):
+        """Convert list of IDs to list of TrackReference objects"""
         if not tracks:
             raise ValueError("At least one track is required for the playlist")
         if len(tracks) > 500:
             logger.warning("Playlist has more than 500 tracks, truncating track list")
             tracks = tracks[:500]
-        return tracks
+
+        # Convert integers to TrackReference objects
+        return [TrackReference(urn=t) for t in tracks]
 
 
 class PlaylistUpdateImageRequest(BaseModel):
@@ -36,39 +52,63 @@ class PlaylistUpdateImageResponse(BaseModel):
 
 
 class Playlist(BaseModel):
-    artwork_url: str | None
-    created_at: datetime
-    description: str | None = None
-    duration: int
-    embeddable_by: str | None = None
-    genre: str | None = None
-    id: int
+    """SoundCloud Playlist Object from official API"""
+
+    # Required fields
+    title: str
+    urn: str
     kind: Literal["playlist"]
-    label_name: str | None = None
-    last_modified: datetime
-    license: str | None = None
-    likes_count: int | None = None
-    managed_by_feeds: bool
     permalink: str
     permalink_url: str
-    public: bool
+    uri: str
+    user: User
+    created_at: str  # API returns string
+
+    # Common fields
+    artwork_url: str | None = None
+    description: str | None = None
+    duration: int | None = None
+    downloadable: bool | None = None
+    embeddable_by: str | None = None
+    ean: str | None = None  # European Article Number
+    genre: str | None = None
+    label_id: int | None = None  # Label user identifier
+    label_name: str | None = None
+    last_modified: str | None = None  # API returns string
+    license: str | None = None
+    likes_count: int | None = None
+    playlist_type: str | None = None
     purchase_title: str | None = None
     purchase_url: str | None = None
-    release_date: str | None
-    reposts_count: int | None = None
-    secret_token: str | None
-    sharing: str
+    release: str | None = None
+    release_day: int | None = None
+    release_month: int | None = None
+    release_year: int | None = None
+    sharing: str | None = None  # "private" or "public"
+    streamable: bool | None = None
     tag_list: str | None = None
-    title: str
-    uri: str
-    user_id: int
-    set_type: str
-    is_album: bool
-    published_at: str | None
-    display_date: datetime
-    user: User
-    tracks: list[Track | TrackSlim] = []
-    track_count: int
+    track_count: int | None = None
+    tracks: list[Track] = []  # List of tracks
+    type: str | None = None  # Playlist type
+    user_urn: str | None = None  # User identifier
+
+    # Additional URIs and fields
+    label: User | None = None  # Can be null or User object
+    tracks_uri: str | None = None  # Tracks URI
+    tags: str | None = None  # Can be null
+
+    # Extended fields (not in minimal schema but exist in full responses)
+    id: int | None = None
+    public: bool | None = None
+    release_date: str | None = None
+    reposts_count: int | None = None
+    secret_token: str | None = None
+    set_type: str | None = None
+    is_album: bool | None = None
+    published_at: str | None = None
+    display_date: str | None = None
+    user_id: int | None = None
+    managed_by_feeds: bool | None = None
 
     @property
     def hq_artwork_url(self) -> str | None:
@@ -138,3 +178,11 @@ class UserPlaylists(BaseModel):
     collection: list[PlaylistItem]
     next_href: str | None
     query_urn: str | None
+
+
+class Playlists(BaseModel):
+    """Collection of playlists from official API (search results, user playlists, etc.)"""
+
+    collection: list[Playlist]
+    next_href: str | None = None
+    query_urn: str | None = None

@@ -11,7 +11,7 @@ from soundcloud_tools.models.comment import Comment
 from soundcloud_tools.models.playlist import PlaylistCreate
 from soundcloud_tools.models.request import PlaylistCreateRequest
 from soundcloud_tools.models.stream import Stream, StreamItem, StreamItemType
-from soundcloud_tools.models.track import Track
+from soundcloud_tools.models.track import Track, Tracks
 from soundcloud_tools.settings import get_settings
 from soundcloud_tools.utils import (
     Weekday,
@@ -97,10 +97,10 @@ async def get_all_user_likes(client: Client, user_id: int) -> list[Track]:
     offset: str | None = None
     all_tracks = []
     while True:
-        response: Stream = await client.get_user_likes(user_id=user_id, limit=limit, offset=offset)
-        tracks = [like.track for like in response.collection if hasattr(like, "track")]
+        response: Tracks = await client.get_user_likes(user_id=user_id, limit=limit, offset=offset)
+        tracks = response.collection  # API returns Tracks collection directly
         all_tracks += tracks
-        logger.info(f"Found {len(tracks)} valid likes ({offset = }, total = {len(all_tracks)})")
+        logger.info(f"Found {len(tracks)} liked tracks ({offset = }, total = {len(all_tracks)})")
         if not tracks:
             break
         offset = client.get_next_offset(response.next_href)

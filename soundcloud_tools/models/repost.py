@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -11,8 +10,8 @@ from soundcloud_tools.models.user import User
 
 class BaseRepost(BaseModel):
     uuid: UUID
-    created_at: datetime
-    caption: str | None
+    created_at: str  # API returns string
+    caption: str | None = None
     user: User
 
 
