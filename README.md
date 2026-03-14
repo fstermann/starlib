@@ -12,7 +12,7 @@ This repository provides a collection of tools to interact with the SoundCloud A
 
 **Backend:**
 ```bash
-poetry run python -m backend.main
+uv run python -m backend.main
 # → http://localhost:8000
 ```
 
@@ -37,8 +37,8 @@ Another tool is the __MetaEditor__, which allows you to edit the metadata of you
 ## Installation
 
 ```bash
-pip install poetry
-poetry install --with editor
+pip install uv
+uv sync --group editor
 ```
 
 If `ffmpeg` is not installed on your system, you can install it via Homebrew by running:
@@ -132,7 +132,7 @@ The following section describes the tools provided in this repository.
 An interface for the tools can be started by running the following command:
 
 ```bash
-poetry run streamlit run soundcloud_tools/streamlit/app.py   
+uv run streamlit run soundcloud_tools/streamlit/app.py   
 ```
 
 ### MetaEditor
