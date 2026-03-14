@@ -1,6 +1,6 @@
 import logging
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 import devtools
@@ -215,8 +215,8 @@ def filter_tracks_for_duration(tracks: list[Track], max_duration: int) -> list[T
 
 
 def filter_tracks_for_date(tracks: list[Track], start: datetime | None, end: datetime | None) -> list[Track]:
-    start = start or datetime.min.replace(tzinfo=timezone.utc)
-    end = end or datetime.max.replace(tzinfo=timezone.utc)
+    start = start or datetime.min.replace(tzinfo=UTC)
+    end = end or datetime.max.replace(tzinfo=UTC)
     ftracks = [track for track in tracks if start < track.created_at < end]
     logger.info(f"Filtered to {len(ftracks)} tracks with date between {start} and {end}")
     return ftracks

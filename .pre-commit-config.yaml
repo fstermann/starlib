@@ -1,12 +1,11 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       # - id: no-commit-to-branch # prevent direct commits to main branch
       - id: check-added-large-files # prevents giant files from being committed.
         args: ["--maxkb=1300"]
       - id: check-ast # simply checks whether the files parse as valid python.
-      - id: check-byte-order-marker # forbids files which have a utf-8 byte-order marker.
       - id: check-builtin-literals # requires literal syntax when initializing empty or zero python builtin types.
       - id: check-case-conflict # checks for files that would conflict in case-insensitive filesystems.
       - id: check-docstring-first # checks a common error of defining a docstring after code.
@@ -30,14 +29,14 @@ repos:
         exclude_types:
           - plain-text
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.7.0
+    rev: v0.15.6
     hooks:
       - id: ruff
         args:
           - --fix
       - id: ruff-format
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.12.1
+    rev: v1.19.1
     hooks:
       - id: mypy
         args:
@@ -45,7 +44,7 @@ repos:
           - "--install-types"
           - "--non-interactive"
   - repo: https://github.com/jsh9/pydoclint
-    rev: 0.5.9
+    rev: 0.8.3
     hooks:
       - id: pydoclint
         args:

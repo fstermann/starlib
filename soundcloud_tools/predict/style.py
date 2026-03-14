@@ -34,7 +34,7 @@ def load_model():
 
 def get_classes_from_predictions(predictions) -> list[tuple[str, float]]:
     averaged = np.mean(predictions, axis=0)
-    out = list(zip(DISCOGS_GENRES, averaged))
+    out = list(zip(DISCOGS_GENRES, averaged, strict=False))
     out.sort(key=lambda x: x[1], reverse=True)
     return out
 

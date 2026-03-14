@@ -1,6 +1,6 @@
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 from pydantic import BaseModel, field_validator
 
