@@ -30,7 +30,7 @@ USER_ID=your_soundcloud_user_id
 
 ```bash
 # From project root
-poetry run python -m backend.main
+uv run python -m backend.main
 ```
 
 The API will be available at `http://localhost:8000`
@@ -83,10 +83,10 @@ backend/
 
 ```bash
 # Test OAuth authentication
-poetry run python test_oauth.py
+uv run python test_oauth.py
 
 # Run backend
-poetry run python -m backend.main
+uv run python -m backend.main
 ```
 
 ## Configuration
