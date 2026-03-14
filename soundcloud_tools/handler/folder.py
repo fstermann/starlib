@@ -32,6 +32,18 @@ class FolderHandler(BaseModel):
     def has_audio_files(self) -> bool:
         return self.folder.is_dir() and any(self.collect_audio_files())
 
+    def get_prepare_folder(self) -> Path:
+        """Get the prepare subfolder."""
+        return self.folder / "prepare"
+
+    def get_collection_folder(self) -> Path:
+        """Get the collection subfolder."""
+        return self.folder / "collection"
+
+    def get_cleaned_folder(self) -> Path:
+        """Get the cleaned subfolder."""
+        return self.folder / "cleaned"
+
     @staticmethod
     def last_modified(path: Path) -> datetime:
         return datetime.fromtimestamp(path.lstat().st_atime)
