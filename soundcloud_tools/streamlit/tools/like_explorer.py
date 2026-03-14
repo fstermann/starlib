@@ -31,7 +31,7 @@ def search_users(user_query: str) -> list[User]:
 
 @st.cache_data(show_spinner="Fetching tracks", hash_funcs={"builtins.method": str})
 def fetch_collection_response(endpoint: Callable, limit: int = 100, **kwargs) -> list[Repost] | list[Track]:
-    offset: int | None = 0
+    offset: int | str | None = 0
     items = []
     while True:
         try:
@@ -76,9 +76,7 @@ def display_user(user: User):
     with c1:
         st.write(f"#### [{user.username}]({user.permalink_url})")
         st.caption(
-            f"{user.full_name}  \n"
-            f"Country: {user.city}, {user.country_code}  \n"
-            f"Followers: {user.followers_count}"
+            f"{user.full_name}  \nCountry: {user.city}, {user.country_code}  \nFollowers: {user.followers_count}"
         )
 
 

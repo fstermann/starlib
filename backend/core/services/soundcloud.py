@@ -6,12 +6,10 @@ No UI framework dependencies.
 """
 
 import logging
-from typing import AsyncIterator
 
 from soundcloud_tools.client import Client
 from soundcloud_tools.handler.track import TrackInfo
 from soundcloud_tools.models import Track
-from soundcloud_tools.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +31,7 @@ async def search_tracks(query: str, client: Client | None = None) -> list[Track]
         List of matching tracks
     """
     if client is None:
-        settings = get_settings()
-        client = Client(token=settings.soundcloud_token)
+        client = Client()
 
     result = await client.search(q=query)
 
@@ -63,8 +60,7 @@ async def get_track_by_url(url: str, client: Client | None = None) -> Track | No
         Track object or None if not found
     """
     if client is None:
-        settings = get_settings()
-        client = Client(token=settings.soundcloud_token)
+        client = Client()
 
     # Extract track ID from URL
     track_id = await client.get_track_id(url=url)
@@ -93,8 +89,7 @@ async def get_track_by_id(track_id: int, client: Client | None = None) -> Track 
         Track object or None if not found
     """
     if client is None:
-        settings = get_settings()
-        client = Client(token=settings.soundcloud_token)
+        client = Client()
 
     track = await client.get_track(track_id=track_id)
     return track

@@ -8,7 +8,6 @@ from pathlib import Path
 
 from fastapi import HTTPException, status
 
-from backend.config import get_backend_settings
 from soundcloud_tools.client import Client
 from soundcloud_tools.settings import get_settings
 
@@ -73,8 +72,11 @@ def validate_file_path(file_path: str, root_folder: Path) -> Path:
     # Security check: must be within root folder
     try:
         path.relative_to(root_folder)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="File path is outside allowed directory")
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="File path is outside allowed directory",
+        ) from e
 
     # Check existence
     if not path.exists():

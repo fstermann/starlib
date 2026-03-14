@@ -14,6 +14,7 @@ from starlette.routing import compile_path
 from soundcloud_tools import models as scm
 from soundcloud_tools.models.playlist import PlaylistUpdateImageRequest, PlaylistUpdateImageResponse, UserPlaylists
 from soundcloud_tools.models.request import PlaylistCreateRequest
+from soundcloud_tools.oauth import OAuthManager
 from soundcloud_tools.settings import get_settings
 from soundcloud_tools.utils import chunk_list, generate_random_user_agent, get_default_kwargs
 
@@ -85,25 +86,87 @@ def route(method: str, path: str, response_model: BaseModel | None = None):
 class Client:
     def __init__(self, base_url: str = get_settings().base_url):
         self.base_url = base_url
-        self.headers = {
-            "Authorization": f"OAuth {get_settings().oauth_token}",
+        self.settings = get_settings()
+
+        # Initialize OAuth manager if credentials are available
+        self.oauth_manager: OAuthManager | None = None
+        if self.settings.has_oauth_credentials():
+            logger.info("Initializing OAuth manager with Client Credentials flow")
+            self.oauth_manager = OAuthManager(
+                client_id=self.settings.client_id,
+                client_secret=self.settings.client_secret,
+            )
+        elif self.settings.has_manual_token():
+            logger.warning(
+                "Using manual OAuth token (deprecated). Configure CLIENT_SECRET in .env for automatic token management."
+            )
+        else:
+            logger.error(
+                "No authentication credentials found. "
+                "Either set OAUTH_TOKEN (manual) or CLIENT_ID + CLIENT_SECRET (automatic) in .env"
+            )
+
+        # Base headers (Authorization will be added per-request)
+        self.base_headers = {
             "User-Agent": generate_random_user_agent(),
-            "x-datadome-clientid": get_settings().datadome_clientid,
+            "x-datadome-clientid": self.settings.datadome_clientid,
         }
+
         self.params = {
-            "client_id": get_settings().client_id,
+            "client_id": self.settings.client_id,
             "app_version": "1767966453",
             "app_locale": "en",
         }
-        self.proxies = {"https://": "https://" + get_settings().proxy} if get_settings().proxy else {}
+        self.proxies = {"https://": "https://" + self.settings.proxy} if self.settings.proxy else {}
+
+    def _get_auth_header(self) -> str:
+        """Get current valid authorization header value.
+
+        Returns
+        -------
+        str
+            Authorization header value (e.g., "OAuth token123")
+
+        Raises
+        ------
+        ValueError
+            If no valid token is available
+        requests.HTTPError
+            If OAuth token refresh fails
+        """
+        if self.oauth_manager:
+            # Get fresh token from OAuth manager (auto-refreshes if needed)
+            try:
+                access_token = self.oauth_manager.get_access_token()
+                return f"OAuth {access_token}"
+            except requests.HTTPError as e:
+                logger.error(f"Failed to obtain OAuth token: {e}")
+                # Fall back to manual token if available
+                if self.settings.has_manual_token():
+                    logger.warning("Falling back to manual OAuth token")
+                    return f"OAuth {self.settings.oauth_token}"
+                raise
+        elif self.settings.has_manual_token():
+            return f"OAuth {self.settings.oauth_token}"
+        else:
+            raise ValueError("No authentication credentials available")
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Get request headers with current authorization."""
+        return {
+            **self.base_headers,
+            "Authorization": self._get_auth_header(),
+        }
 
     def json_dump(self, data: Any):
         return data if not isinstance(data, BaseModel) else data.model_dump(mode="json")
 
     async def make_request(self, method: str, url: str, **kwargs):
-        kwargs["params"] = kwargs.get("params", {}) | self.params
+        # Build headers with fresh auth token
         kwargs["headers"] = kwargs.get("headers", {}) | self.headers
-        if get_settings().proxy:
+        kwargs["params"] = kwargs.get("params", {}) | self.params
+        if self.settings.proxy:
             kwargs.setdefault("proxies", self.proxies)
         kwargs.setdefault("verify", False)
         logger.info(f"Making request {method} {url}")
