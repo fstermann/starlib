@@ -10,8 +10,10 @@ from soundcloud_tools.models.track import Track
 from soundcloud_tools.models.user import User
 
 __all__ = [
-    "ArtistShortcuts",
     "ArtistShortcutStories",
+    "ArtistShortcuts",
+    "Comments",
+    "Followings",
     "Likes",
     "Playlist",
     "Reposts",
@@ -19,6 +21,4 @@ __all__ = [
     "Stream",
     "Track",
     "User",
-    "Comments",
-    "Followings",
 ]

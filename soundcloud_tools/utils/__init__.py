@@ -1,5 +1,5 @@
 import inspect
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import IntEnum
 from math import ceil
 from pathlib import Path
@@ -21,7 +21,7 @@ class Weekday(IntEnum):
 
 
 def get_scheduled_time(day: Weekday = Weekday.SUNDAY, weeks: int = 0):
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     days_until = (day - now.weekday()) % 7
     last_day = now + timedelta(days=days_until, weeks=weeks)
     return last_day.replace(hour=8, minute=0, second=0, microsecond=0)
@@ -32,7 +32,7 @@ def get_week_of_month(date: datetime) -> int:
     first_day = date.replace(day=1)
     dom = date.day
     adjusted_dom = dom + first_day.weekday()
-    return int(ceil(adjusted_dom / 7.0))
+    return ceil(adjusted_dom / 7.0)
 
 
 def get_default_kwargs(func):
@@ -70,12 +70,12 @@ def chunk_list(list_: list, n: int):
 
 def sort_tracks_by_playcount(tracks: list[Track]) -> list[Track]:
     """Sorts tracks by playcount in descending order."""
-    return sorted(set(tracks), key=lambda x: (x.playback_count or 0), reverse=True)
+    return sorted(set(tracks), key=lambda x: x.playback_count or 0, reverse=True)
 
 
 def sort_tracks_by_follower_count(tracks: list[Track]) -> list[Track]:
     """Sorts tracks by the follower count of the user who posted them in descending order."""
-    return sorted(set(tracks), key=lambda x: (x.user.followers_count or 0), reverse=True)
+    return sorted(set(tracks), key=lambda x: x.user.followers_count or 0, reverse=True)
 
 
 def get_unique_track_ids(tracks: list[Track]) -> list[int]:

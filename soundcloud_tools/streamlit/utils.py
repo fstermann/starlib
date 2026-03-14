@@ -1,6 +1,6 @@
 import urllib.parse
 from collections import Counter
-from typing import Callable
+from collections.abc import Callable
 
 import pandas as pd
 import streamlit as st

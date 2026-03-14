@@ -7,7 +7,7 @@ __all__ = [
     "AuthorizeResponse",
     "CallbackRequest",
     "CallbackResponse",
-    "UserInfo",
     "FileInfoResponse",
     "TrackInfoResponse",
+    "UserInfo",
 ]

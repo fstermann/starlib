@@ -2,8 +2,8 @@ import asyncio
 import base64
 import logging
 import re
+from collections.abc import Callable
 from datetime import date
-from typing import Callable
 
 import devtools
 import requests
