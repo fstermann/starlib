@@ -91,7 +91,7 @@ def main():
         ```bash
         # macOS
         brew install yt-dlp
-        
+
         # Linux/Windows with pip
         pip install yt-dlp
         ```

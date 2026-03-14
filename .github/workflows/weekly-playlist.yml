@@ -1,58 +1,58 @@
 name: Weekly Playlist Creator
 
 on:
-  schedule:
-    # Run every Monday at 9:00 AM UTC
-    - cron: '0 9 * * 1'
-  workflow_dispatch:  # Allow manual trigger
+    schedule:
+        # Run every Monday at 9:00 AM UTC
+        - cron: "0 9 * * 1"
+    workflow_dispatch: # Allow manual trigger
 
 jobs:
-  create-playlist:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: latest
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-      
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-      
-      - name: Install dependencies
-        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root
-      
-      - name: Create weekly playlist
-        env:
-          SOUNDCLOUD_CLIENT_ID: ${{ secrets.SOUNDCLOUD_CLIENT_ID }}
-          SOUNDCLOUD_CLIENT_SECRET: ${{ secrets.SOUNDCLOUD_CLIENT_SECRET }}
-          SOUNDCLOUD_OAUTH_TOKEN: ${{ secrets.SOUNDCLOUD_ACCESS_TOKEN }}
-          SOUNDCLOUD_REFRESH_TOKEN: ${{ secrets.SOUNDCLOUD_REFRESH_TOKEN }}
-          SOUNDCLOUD_USER_ID: ${{ secrets.SOUNDCLOUD_USER_ID }}
-        run: |
-          poetry run python -m soundcloud_tools.weekly
-      
-      - name: Update tokens in secrets (if refreshed)
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.PAT_FOR_SECRETS }}
-          script: |
-            // If tokens were refreshed during the run, update the secrets
-            // This requires a Personal Access Token (PAT) with repo scope
-            console.log('Check if tokens need updating...')
+    create-playlist:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.13"
+
+            - name: Install Poetry
+              uses: snok/install-poetry@v1
+              with:
+                  version: latest
+                  virtualenvs-create: true
+                  virtualenvs-in-project: true
+
+            - name: Load cached venv
+              id: cached-poetry-dependencies
+              uses: actions/cache@v4
+              with:
+                  path: .venv
+                  key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+            - name: Install dependencies
+              if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+              run: poetry install --no-interaction --no-root
+
+            - name: Create weekly playlist
+              env:
+                  SOUNDCLOUD_CLIENT_ID: ${{ secrets.SOUNDCLOUD_CLIENT_ID }}
+                  SOUNDCLOUD_CLIENT_SECRET: ${{ secrets.SOUNDCLOUD_CLIENT_SECRET }}
+                  SOUNDCLOUD_OAUTH_TOKEN: ${{ secrets.SOUNDCLOUD_ACCESS_TOKEN }}
+                  SOUNDCLOUD_REFRESH_TOKEN: ${{ secrets.SOUNDCLOUD_REFRESH_TOKEN }}
+                  SOUNDCLOUD_USER_ID: ${{ secrets.SOUNDCLOUD_USER_ID }}
+              run: |
+                  poetry run python -m soundcloud_tools.weekly
+
+            - name: Update tokens in secrets (if refreshed)
+              if: always()
+              uses: actions/github-script@v7
+              with:
+                  github-token: ${{ secrets.PAT_FOR_SECRETS }}
+                  script: |
+                      // If tokens were refreshed during the run, update the secrets
+                      // This requires a Personal Access Token (PAT) with repo scope
+                      console.log('Check if tokens need updating...')

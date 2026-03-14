@@ -14,9 +14,7 @@ TOKEN_FILE = Path(os.environ.get("SOUNDCLOUD_TOKEN_FILE", str(Path.home() / ".so
 
 def write_tokens(access_token: str, refresh_token: str) -> None:
     """Persist OAuth tokens to the token file."""
-    TOKEN_FILE.write_text(
-        json.dumps({"access_token": access_token, "refresh_token": refresh_token})
-    )
+    TOKEN_FILE.write_text(json.dumps({"access_token": access_token, "refresh_token": refresh_token}))
 
 
 def read_tokens() -> dict | None:

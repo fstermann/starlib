@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class WebProfile(BaseModel):
     """User's external link profile from official API"""
+
     created_at: str  # Timestamp of when the link was added
     urn: str  # ID
     kind: Literal["web-profile"]
