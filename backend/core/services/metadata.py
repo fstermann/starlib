@@ -128,9 +128,7 @@ def build_modified_track_info(
     # Handle comment - parse from string to Comment object if provided
     final_comment = None
     if comment is not None:
-        # Try to parse comment string to extract structured data
-        # For now, just store as-is in Comment object
-        final_comment = CommentModel(version=comment)
+        final_comment = CommentModel.from_str(comment)
     else:
         final_comment = original_info.comment
 

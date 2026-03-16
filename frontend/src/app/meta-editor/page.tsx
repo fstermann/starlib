@@ -2,14 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { api, type FileInfo, type TrackInfo } from '@/lib/api';
-import { cleanTitle, cleanArtist, titelize, removeOriginalMix, removeParenthesis } from '@/lib/string-utils';
+import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix } from '@/lib/string-utils';
 import * as soundcloud from '@/lib/soundcloud';
 import type { SCTrack } from '@/lib/soundcloud';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -38,6 +37,67 @@ import {
   ArrowUp,
   XCircle,
 } from 'lucide-react';
+
+/** Parse the backend's semicolon-delimited comment string into structured fields. */
+function parseComment(raw: string | undefined): { soundcloud_id: string; soundcloud_permalink: string } {
+  const result: Record<string, string> = {};
+  if (raw) {
+    for (const pair of raw.split(/;\s*\n?/)) {
+      const idx = pair.indexOf('=');
+      if (idx > 0) {
+        const k = pair.slice(0, idx).trim();
+        const v = pair.slice(idx + 1).trim()
+          .replace(/\\;/g, ';')
+          .replace(/\\=/g, '=')
+          .replace(/\\\\/g, '\\');
+        result[k] = v;
+      }
+    }
+  }
+  return {
+    soundcloud_id: result['soundcloud_id'] ?? '',
+    soundcloud_permalink: result['soundcloud_permalink'] ?? '',
+  };
+}
+
+/** Serialize structured comment fields back to the backend's format. */
+function serializeComment(scId: string, scPermalink: string): string {
+  const escape = (v: string) => v.replace(/\\/g, '\\\\').replace(/=/g, '\\=').replace(/;/g, '\\;');
+  const parts = ['version=1.0'];
+  if (scId) parts.push(`soundcloud_id=${escape(scId)}`);
+  if (scPermalink) parts.push(`soundcloud_permalink=${escape(scPermalink)}`);
+  return parts.join('; \n');
+}
+
+/** Strip query string and fragment from a URL. */
+function stripQueryParams(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return url;
+  }
+}
+/**
+ * Extract a YYYY-MM-DD date string from a SoundCloud track.
+ * Tries release_year/month/day first, then falls back to created_at.
+ */
+function scReleaseDate(track: SCTrack): string | undefined {
+  if (track.release_year && track.release_year > 0) {
+    const m = track.release_month && track.release_month > 0 ? track.release_month : 1;
+    const d = track.release_day && track.release_day > 0 ? track.release_day : 1;
+    return `${track.release_year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  if (track.created_at) {
+    // SC format: "2012/07/08 18:29:40 +0000" or ISO "2012-07-08T18:29:40Z"
+    const normalized = track.created_at.replace(/\//g, '-').replace(' ', 'T').replace(' +0000', 'Z');
+    const date = new Date(normalized);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().slice(0, 10);
+    }
+  }
+  return undefined;
+}
 
 export default function MetaEditorPage() {
   const [folderMode, setFolderMode] = useState<string>('prepare');
@@ -73,9 +133,11 @@ export default function MetaEditorPage() {
     bpm: '',
     key: '',
     genre: '',
-    comment: '',
     release_date: '',
   });
+
+  // Structured comment state (SC ID + permalink)
+  const [commentData, setCommentData] = useState({ soundcloud_id: '', soundcloud_permalink: '' });
 
   // Auto-action settings
   const [autoActions, setAutoActions] = useState({
@@ -106,20 +168,41 @@ export default function MetaEditorPage() {
     return () => clearTimeout(timeoutId);
   }, [scQuery, scSearchEnabled]);
 
+  // Auto-fill empty form fields when a SoundCloud track is selected
+  useEffect(() => {
+    if (!selectedScTrack || !autoActions.autoCopyMetadata) return;
+
+    const releaseDate = scReleaseDate(selectedScTrack);
+
+    setFormData(prev => ({
+      ...prev,
+      title: prev.title || selectedScTrack.title || '',
+      artist: prev.artist || selectedScTrack.user?.username || '',
+      genre: prev.genre || selectedScTrack.genre || '',
+      release_date: prev.release_date || releaseDate || '',
+    }));
+
+    setCommentData(prev => ({
+      soundcloud_id: prev.soundcloud_id || String(selectedScTrack.urn?.split(':').pop() ?? ''),
+      soundcloud_permalink: prev.soundcloud_permalink || stripQueryParams(selectedScTrack.permalink_url || '') || '',
+    }));
+  }, [selectedScTrack, autoActions.autoCopyMetadata]);
+
   // Update form when track info loads
   useEffect(() => {
     if (trackInfo) {
+      const parsed = parseFilename(trackInfo.file_name);
       setFormData({
-        title: trackInfo.title || '',
-        artist: trackInfo.artist || '',
+        title: trackInfo.title || parsed.title || '',
+        artist: trackInfo.artist || parsed.artist || '',
         bpm: trackInfo.bpm?.toString() || '',
         key: trackInfo.key || '',
         genre: trackInfo.genre || '',
-        comment: trackInfo.comment || '',
         release_date: trackInfo.release_date || '',
       });
+      setCommentData(parseComment(trackInfo.comment));
 
-      // Set remix data
+      // Set remix data — prefer embedded remixers, then auto-detect from title
       if (trackInfo.remixers && trackInfo.remixers.length > 0) {
         setIsRemix(true);
         setRemixData({
@@ -128,7 +211,19 @@ export default function MetaEditorPage() {
           mix_name: 'Remix',
         });
       } else {
-        setIsRemix(false);
+        const titleToCheck = trackInfo.title || parsed.title || '';
+        const detected = titleToCheck ? parseRemix(titleToCheck) : null;
+        if (detected) {
+          setIsRemix(true);
+          setRemixData({
+            original_artist: trackInfo.artist || parsed.artist || '',
+            remixer: detected.remixer,
+            mix_name: detected.mixName,
+          });
+        } else {
+          setIsRemix(false);
+          setRemixData({ original_artist: '', remixer: '', mix_name: 'Remix' });
+        }
       }
 
       // Load artwork if available
@@ -242,43 +337,17 @@ export default function MetaEditorPage() {
     if (transformed !== formData.artist) setFormData({ ...formData, artist: transformed });
   };
 
-  const handleTitelize = () => {
-    const updates: Partial<typeof formData> = {};
-    if (formData.title) {
-      const t = titelize(formData.title);
-      if (t !== formData.title) updates.title = t;
-    }
-    if (formData.artist) {
-      const t = titelize(formData.artist);
-      if (t !== formData.artist) updates.artist = t;
-    }
-    if (Object.keys(updates).length > 0) setFormData({ ...formData, ...updates });
-  };
-
-  const handleRemoveOriginalMix = () => {
-    if (!formData.title) return;
-    const transformed = removeOriginalMix(formData.title);
-    if (transformed !== formData.title) setFormData({ ...formData, title: transformed });
-  };
-
   const handleRemoveParenthesis = () => {
     if (!formData.title) return;
     const transformed = removeParenthesis(formData.title);
     if (transformed !== formData.title) setFormData({ ...formData, title: transformed });
   };
 
-  const handleApplyAllAutoActions = () => {
-    handleCleanTitle();
-    handleCleanArtist();
-  };
-
   // Field-specific copy from SoundCloud
   const handleCopyFromSc = (field: keyof typeof formData) => {
     if (!selectedScTrack) return;
 
-    const releaseDate = selectedScTrack.release_year
-      ? `${selectedScTrack.release_year}-${String(selectedScTrack.release_month ?? 1).padStart(2, '0')}-${String(selectedScTrack.release_day ?? 1).padStart(2, '0')}`
-      : undefined;
+    const releaseDate = scReleaseDate(selectedScTrack);
 
     const scFieldMap: Record<string, string | undefined> = {
       title: selectedScTrack.title ?? undefined,
@@ -292,9 +361,9 @@ export default function MetaEditorPage() {
     }
   };
 
-  // Derive artist options from the selected SC track
+  // Derive artist options from the selected SC track (deduplicated)
   const scArtistOptions = selectedScTrack
-    ? [selectedScTrack.metadata_artist, selectedScTrack.user?.username].filter((x): x is string => !!x)
+    ? [...new Set([selectedScTrack.metadata_artist, selectedScTrack.user?.username].filter((x): x is string => !!x))]
     : [];
 
   // Build title from remix data
@@ -338,6 +407,10 @@ export default function MetaEditorPage() {
         }
       });
 
+      // Serialize structured comment
+      const commentStr = serializeComment(commentData.soundcloud_id, commentData.soundcloud_permalink);
+      if (commentStr) updates.comment = commentStr;
+
       // Add remix data if enabled
       if (isRemix && remixData.remixer) {
         updates.remixers = [remixData.remixer];
@@ -373,15 +446,8 @@ export default function MetaEditorPage() {
       await loadFiles();
       setSelectedFile(null);
       setTrackInfo(null);
-      setFormData({
-        title: '',
-        artist: '',
-        bpm: '',
-        key: '',
-        genre: '',
-        comment: '',
-        release_date: '',
-      });
+      setFormData({ title: '', artist: '', bpm: '', key: '', genre: '', release_date: '' });
+      setCommentData({ soundcloud_id: '', soundcloud_permalink: '' });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to finalize track');
     } finally {
@@ -401,15 +467,8 @@ export default function MetaEditorPage() {
       await loadFiles();
       setSelectedFile(null);
       setTrackInfo(null);
-      setFormData({
-        title: '',
-        artist: '',
-        bpm: '',
-        key: '',
-        genre: '',
-        comment: '',
-        release_date: '',
-      });
+      setFormData({ title: '', artist: '', bpm: '', key: '', genre: '', release_date: '' });
+      setCommentData({ soundcloud_id: '', soundcloud_permalink: '' });
       alert('File deleted successfully');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete file');
@@ -438,33 +497,22 @@ export default function MetaEditorPage() {
     setSelectedScTrack(track);
   };
 
-  const handleApplyScMetadata = async (track: SCTrack) => {
-    if (!trackInfo) return;
+  const handleApplyScMetadata = (track: SCTrack) => {
+    const releaseDate = scReleaseDate(track);
+    const artist = track.user?.username;
 
-    try {
-      setLoading(true);
-      setError(null);
+    setFormData(prev => ({
+      ...prev,
+      ...(track.title ? { title: track.title } : {}),
+      ...(artist ? { artist } : {}),
+      ...(track.genre ? { genre: track.genre } : {}),
+      ...(releaseDate ? { release_date: releaseDate } : {}),
+    }));
 
-      // Map SC track fields to local metadata update shape
-      const releaseDate = track.release_year
-        ? `${track.release_year}-${String(track.release_month ?? 1).padStart(2, '0')}-${String(track.release_day ?? 1).padStart(2, '0')}`
-        : undefined;
-
-      const updates: Partial<TrackInfo> = {
-        title: track.title ?? undefined,
-        artist: track.user?.username ?? undefined,
-        genre: track.genre ?? undefined,
-        release_date: releaseDate,
-      };
-
-      await api.updateTrackInfo(trackInfo.file_path, updates);
-      await loadTrackInfo(selectedFile!);
-      alert('SoundCloud metadata applied');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to apply metadata');
-    } finally {
-      setLoading(false);
-    }
+    setCommentData({
+      soundcloud_id: String(track.urn?.split(':').pop() ?? ''),
+      soundcloud_permalink: stripQueryParams(track.permalink_url || ''),
+    });
   };
 
   return (
@@ -653,46 +701,6 @@ export default function MetaEditorPage() {
               </p>
             ) : (
               <div className="space-y-4">
-                {/* Auto-Actions Toolbar */}
-                <div className="flex flex-wrap gap-2 pb-4 border-b">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleApplyAllAutoActions}
-                    title="Clean title and artist (remove free DL, premiere, normalize separators)"
-                  >
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Clean
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleTitelize}
-                    title="Properly capitalize title and artist"
-                  >
-                    <CaseSensitive className="h-4 w-4 mr-2" />
-                    Titelize
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRemoveOriginalMix}
-                    title="Remove '(Original Mix)' from title"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Remove Original Mix
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRemoveParenthesis}
-                    title="Remove square brackets from title"
-                  >
-                    <Brackets className="h-4 w-4 mr-2" />
-                    Remove Brackets
-                  </Button>
-                </div>
-
                 <Field>
                   <div className="flex items-center justify-between mb-2">
                     <FieldLabel>Title</FieldLabel>
@@ -915,12 +923,67 @@ export default function MetaEditorPage() {
                 </Field>
 
                 <Field>
-                  <FieldLabel>Comment</FieldLabel>
-                  <Textarea
-                    value={formData.comment}
-                    onChange={(e) => handleFormChange('comment', e.target.value)}
-                    rows={3}
-                  />
+                  <div className="flex items-center justify-between mb-2">
+                    <FieldLabel>SoundCloud Track</FieldLabel>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => {
+                          if (!selectedScTrack) return;
+                          setCommentData({
+                            soundcloud_id: String(selectedScTrack.urn?.split(':').pop() ?? ''),
+                            soundcloud_permalink: stripQueryParams(selectedScTrack.permalink_url || ''),
+                          });
+                        }}
+                        disabled={!selectedScTrack}
+                        title="Copy from SoundCloud"
+                      >
+                        <Cloud className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => setCommentData({ soundcloud_id: '', soundcloud_permalink: '' })}
+                        disabled={!commentData.soundcloud_id && !commentData.soundcloud_permalink}
+                        title="Clear linked track"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {commentData.soundcloud_id && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>ID:</span>
+                        <a
+                          href={commentData.soundcloud_permalink || `https://soundcloud.com/tracks/${commentData.soundcloud_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono hover:underline"
+                        >
+                          {commentData.soundcloud_id}
+                        </a>
+                      </div>
+                    )}
+                    {commentData.soundcloud_permalink && (
+                      <div className="text-xs text-muted-foreground truncate">
+                        <a
+                          href={commentData.soundcloud_permalink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline"
+                        >
+                          {commentData.soundcloud_permalink}
+                        </a>
+                      </div>
+                    )}
+                    {!commentData.soundcloud_id && !commentData.soundcloud_permalink && (
+                      <p className="text-xs text-muted-foreground">No SoundCloud track linked</p>
+                    )}
+                  </div>
                 </Field>
 
                 {/* Remix Editor */}
