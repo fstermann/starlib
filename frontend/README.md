@@ -39,3 +39,15 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 ## Development
 
 Install shadcn skills via `npx skills add shadcn/ui`
+
+## Code Generation
+
+[src/generated/soundcloud.ts](src/generated/soundcloud.ts) is auto-generated from the [SoundCloud OpenAPI spec](https://developers.soundcloud.com/docs/api/explorer/api.json) using [openapi-typescript](https://openapi-ts.dev/).
+
+To regenerate it, run:
+
+```bash
+npm run generate
+```
+
+This fetches the latest spec directly from SoundCloud and overwrites the generated file. Do not edit the file manually.

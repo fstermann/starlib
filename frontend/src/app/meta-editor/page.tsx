@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, type FileInfo, type TrackInfo, type SoundCloudTrack } from '@/lib/api';
+import { api, type FileInfo, type TrackInfo } from '@/lib/api';
+import { cleanTitle, cleanArtist, titelize, removeOriginalMix, removeParenthesis } from '@/lib/string-utils';
+import * as soundcloud from '@/lib/soundcloud';
+import type { SCTrack } from '@/lib/soundcloud';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Field, FieldLabel } from '@/components/ui/field';
@@ -47,9 +50,9 @@ export default function MetaEditorPage() {
   // SoundCloud search
   const [scSearchEnabled, setScSearchEnabled] = useState(true);
   const [scQuery, setScQuery] = useState('');
-  const [scResults, setScResults] = useState<SoundCloudTrack[]>([]);
+  const [scResults, setScResults] = useState<SCTrack[]>([]);
   const [scSearching, setScSearching] = useState(false);
-  const [selectedScTrack, setSelectedScTrack] = useState<SoundCloudTrack | null>(null);
+  const [selectedScTrack, setSelectedScTrack] = useState<SCTrack | null>(null);
 
   // Remix state
   const [isRemix, setIsRemix] = useState(false);
@@ -227,96 +230,72 @@ export default function MetaEditorPage() {
   };
 
   // Auto-action handlers
-  const handleCleanTitle = async () => {
+  const handleCleanTitle = () => {
     if (!formData.title) return;
-    try {
-      const result = await api.cleanTitle(formData.title);
-      if (result.changed) {
-        setFormData({ ...formData, title: result.transformed });
-      }
-    } catch (err) {
-      console.error('Failed to clean title:', err);
-    }
+    const transformed = cleanTitle(formData.title);
+    if (transformed !== formData.title) setFormData({ ...formData, title: transformed });
   };
 
-  const handleCleanArtist = async () => {
+  const handleCleanArtist = () => {
     if (!formData.artist) return;
-    try {
-      const result = await api.cleanArtist(formData.artist);
-      if (result.changed) {
-        setFormData({ ...formData, artist: result.transformed });
-      }
-    } catch (err) {
-      console.error('Failed to clean artist:', err);
-    }
+    const transformed = cleanArtist(formData.artist);
+    if (transformed !== formData.artist) setFormData({ ...formData, artist: transformed });
   };
 
-  const handleTitelize = async () => {
-    try {
-      const updates: Partial<typeof formData> = {};
-
-      if (formData.title) {
-        const result = await api.titelize(formData.title);
-        if (result.changed) updates.title = result.transformed;
-      }
-
-      if (formData.artist) {
-        const result = await api.titelize(formData.artist);
-        if (result.changed) updates.artist = result.transformed;
-      }
-
-      if (Object.keys(updates).length > 0) {
-        setFormData({ ...formData, ...updates });
-      }
-    } catch (err) {
-      console.error('Failed to titelize:', err);
+  const handleTitelize = () => {
+    const updates: Partial<typeof formData> = {};
+    if (formData.title) {
+      const t = titelize(formData.title);
+      if (t !== formData.title) updates.title = t;
     }
+    if (formData.artist) {
+      const t = titelize(formData.artist);
+      if (t !== formData.artist) updates.artist = t;
+    }
+    if (Object.keys(updates).length > 0) setFormData({ ...formData, ...updates });
   };
 
-  const handleRemoveOriginalMix = async () => {
+  const handleRemoveOriginalMix = () => {
     if (!formData.title) return;
-    try {
-      const result = await api.removeOriginalMix(formData.title);
-      if (result.changed) {
-        setFormData({ ...formData, title: result.transformed });
-      }
-    } catch (err) {
-      console.error('Failed to remove original mix:', err);
-    }
+    const transformed = removeOriginalMix(formData.title);
+    if (transformed !== formData.title) setFormData({ ...formData, title: transformed });
   };
 
-  const handleRemoveParenthesis = async () => {
+  const handleRemoveParenthesis = () => {
     if (!formData.title) return;
-    try {
-      const result = await api.removeParenthesis(formData.title);
-      if (result.changed) {
-        setFormData({ ...formData, title: result.transformed });
-      }
-    } catch (err) {
-      console.error('Failed to remove parenthesis:', err);
-    }
+    const transformed = removeParenthesis(formData.title);
+    if (transformed !== formData.title) setFormData({ ...formData, title: transformed });
   };
 
-  const handleApplyAllAutoActions = async () => {
-    await handleCleanTitle();
-    await handleCleanArtist();
+  const handleApplyAllAutoActions = () => {
+    handleCleanTitle();
+    handleCleanArtist();
   };
 
   // Field-specific copy from SoundCloud
   const handleCopyFromSc = (field: keyof typeof formData) => {
     if (!selectedScTrack) return;
 
-    const scFieldMap: Record<string, any> = {
-      title: selectedScTrack.title,
-      artist: selectedScTrack.artist,
-      genre: selectedScTrack.genre,
-      release_date: selectedScTrack.release_date,
+    const releaseDate = selectedScTrack.release_year
+      ? `${selectedScTrack.release_year}-${String(selectedScTrack.release_month ?? 1).padStart(2, '0')}-${String(selectedScTrack.release_day ?? 1).padStart(2, '0')}`
+      : undefined;
+
+    const scFieldMap: Record<string, string | undefined> = {
+      title: selectedScTrack.title ?? undefined,
+      artist: selectedScTrack.user?.username ?? undefined,
+      genre: selectedScTrack.genre ?? undefined,
+      release_date: releaseDate,
     };
 
     if (field in scFieldMap) {
       setFormData({ ...formData, [field]: scFieldMap[field] || '' });
     }
   };
+
+  // Derive artist options from the selected SC track
+  const scArtistOptions = selectedScTrack
+    ? [selectedScTrack.metadata_artist, selectedScTrack.user?.username].filter((x): x is string => !!x)
+    : [];
 
   // Build title from remix data
   const handleBuildTitleFromRemix = () => {
@@ -445,10 +424,9 @@ export default function MetaEditorPage() {
     try {
       setScSearching(true);
       setError(null);
-      const result = await api.searchSoundCloud(scQuery);
-      setScResults(result.tracks);
-      // Auto-select first result
-      setSelectedScTrack(result.tracks.length > 0 ? result.tracks[0] : null);
+      const tracks = await soundcloud.searchTracks(scQuery);
+      setScResults(tracks);
+      setSelectedScTrack(tracks.length > 0 ? tracks[0] : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'SoundCloud search failed');
     } finally {
@@ -456,19 +434,30 @@ export default function MetaEditorPage() {
     }
   };
 
-  const handleScTrackSelect = (track: SoundCloudTrack) => {
+  const handleScTrackSelect = (track: SCTrack) => {
     setSelectedScTrack(track);
   };
 
-  const handleApplyScMetadata = async (track: SoundCloudTrack) => {
+  const handleApplyScMetadata = async (track: SCTrack) => {
     if (!trackInfo) return;
 
     try {
       setLoading(true);
       setError(null);
-      await api.applySoundCloudMetadata(trackInfo.file_path, track.id);
 
-      // Reload track info
+      // Map SC track fields to local metadata update shape
+      const releaseDate = track.release_year
+        ? `${track.release_year}-${String(track.release_month ?? 1).padStart(2, '0')}-${String(track.release_day ?? 1).padStart(2, '0')}`
+        : undefined;
+
+      const updates: Partial<TrackInfo> = {
+        title: track.title ?? undefined,
+        artist: track.user?.username ?? undefined,
+        genre: track.genre ?? undefined,
+        release_date: releaseDate,
+      };
+
+      await api.updateTrackInfo(trackInfo.file_path, updates);
       await loadTrackInfo(selectedFile!);
       alert('SoundCloud metadata applied');
     } catch (err) {
@@ -733,8 +722,8 @@ export default function MetaEditorPage() {
                         className="h-6 w-6"
                         onClick={async () => {
                           if (!formData.title) return;
-                          const result = await api.titelize(formData.title);
-                          if (result.changed) setFormData({ ...formData, title: result.transformed });
+                          const transformed = titelize(formData.title);
+                          if (transformed !== formData.title) setFormData({ ...formData, title: transformed });
                         }}
                         title="Titelize"
                       >
@@ -805,8 +794,8 @@ export default function MetaEditorPage() {
                         className="h-6 w-6"
                         onClick={async () => {
                           if (!formData.artist) return;
-                          const result = await api.titelize(formData.artist);
-                          if (result.changed) setFormData({ ...formData, artist: result.transformed });
+                          const transformed = titelize(formData.artist);
+                          if (transformed !== formData.artist) setFormData({ ...formData, artist: transformed });
                         }}
                         title="Titelize"
                       >
@@ -818,7 +807,7 @@ export default function MetaEditorPage() {
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6"
-                            disabled={!selectedScTrack || !selectedScTrack.artist_options?.length}
+                            disabled={!selectedScTrack || !scArtistOptions.length}
                             title="Artist options"
                           >
                             <Users className="h-3 w-3" />
@@ -826,7 +815,7 @@ export default function MetaEditorPage() {
                         </PopoverTrigger>
                         <PopoverContent className="w-48 p-2">
                           <div className="space-y-1">
-                            {selectedScTrack?.artist_options?.map((artist) => (
+                            {scArtistOptions.map((artist) => (
                               <Button
                                 key={artist}
                                 variant="ghost"
@@ -887,8 +876,8 @@ export default function MetaEditorPage() {
                         className="h-6 w-6"
                         onClick={async () => {
                           if (!formData.genre) return;
-                          const result = await api.titelize(formData.genre);
-                          if (result.changed) setFormData({ ...formData, genre: result.transformed });
+                          const transformed = titelize(formData.genre);
+                          if (transformed !== formData.genre) setFormData({ ...formData, genre: transformed });
                         }}
                         title="Titelize"
                       >
@@ -959,8 +948,8 @@ export default function MetaEditorPage() {
                               className="h-6 w-6"
                               onClick={async () => {
                                 if (!remixData.original_artist) return;
-                                const result = await api.cleanArtist(remixData.original_artist);
-                                if (result.changed) setRemixData({ ...remixData, original_artist: result.transformed });
+                                const transformed = cleanArtist(remixData.original_artist);
+                                if (transformed !== remixData.original_artist) setRemixData({ ...remixData, original_artist: transformed });
                               }}
                               title="Clean artist"
                             >
@@ -972,8 +961,8 @@ export default function MetaEditorPage() {
                               className="h-6 w-6"
                               onClick={async () => {
                                 if (!remixData.original_artist) return;
-                                const result = await api.titelize(remixData.original_artist);
-                                if (result.changed) setRemixData({ ...remixData, original_artist: result.transformed });
+                                const transformed = titelize(remixData.original_artist);
+                                if (transformed !== remixData.original_artist) setRemixData({ ...remixData, original_artist: transformed });
                               }}
                               title="Titelize"
                             >
@@ -985,7 +974,7 @@ export default function MetaEditorPage() {
                                   variant="ghost"
                                   size="icon"
                                   className="h-6 w-6"
-                                  disabled={!selectedScTrack || !selectedScTrack.artist_options?.length}
+                                  disabled={!selectedScTrack || !scArtistOptions.length}
                                   title="Artist options"
                                 >
                                   <Users className="h-3 w-3" />
@@ -993,7 +982,7 @@ export default function MetaEditorPage() {
                               </PopoverTrigger>
                               <PopoverContent className="w-48 p-2">
                                 <div className="space-y-1">
-                                  {selectedScTrack?.artist_options?.map((artist) => (
+                                  {scArtistOptions.map((artist) => (
                                     <Button
                                       key={artist}
                                       variant="ghost"
@@ -1026,8 +1015,8 @@ export default function MetaEditorPage() {
                               className="h-6 w-6"
                               onClick={async () => {
                                 if (!remixData.remixer) return;
-                                const result = await api.cleanArtist(remixData.remixer);
-                                if (result.changed) setRemixData({ ...remixData, remixer: result.transformed });
+                                const transformed = cleanArtist(remixData.remixer);
+                                if (transformed !== remixData.remixer) setRemixData({ ...remixData, remixer: transformed });
                               }}
                               title="Clean artist"
                             >
@@ -1039,8 +1028,8 @@ export default function MetaEditorPage() {
                               className="h-6 w-6"
                               onClick={async () => {
                                 if (!remixData.remixer) return;
-                                const result = await api.titelize(remixData.remixer);
-                                if (result.changed) setRemixData({ ...remixData, remixer: result.transformed });
+                                const transformed = titelize(remixData.remixer);
+                                if (transformed !== remixData.remixer) setRemixData({ ...remixData, remixer: transformed });
                               }}
                               title="Titelize"
                             >
@@ -1052,7 +1041,7 @@ export default function MetaEditorPage() {
                                   variant="ghost"
                                   size="icon"
                                   className="h-6 w-6"
-                                  disabled={!selectedScTrack || !selectedScTrack.artist_options?.length}
+                                  disabled={!selectedScTrack || !scArtistOptions.length}
                                   title="Artist options"
                                 >
                                   <Users className="h-3 w-3" />
@@ -1060,7 +1049,7 @@ export default function MetaEditorPage() {
                               </PopoverTrigger>
                               <PopoverContent className="w-48 p-2">
                                 <div className="space-y-1">
-                                  {selectedScTrack?.artist_options?.map((artist) => (
+                                  {scArtistOptions.map((artist) => (
                                     <Button
                                       key={artist}
                                       variant="ghost"
@@ -1093,8 +1082,8 @@ export default function MetaEditorPage() {
                               className="h-6 w-6"
                               onClick={async () => {
                                 if (!remixData.mix_name) return;
-                                const result = await api.titelize(remixData.mix_name);
-                                if (result.changed) setRemixData({ ...remixData, mix_name: result.transformed });
+                                const transformed = titelize(remixData.mix_name);
+                                if (transformed !== remixData.mix_name) setRemixData({ ...remixData, mix_name: transformed });
                               }}
                               title="Titelize"
                             >
@@ -1250,7 +1239,7 @@ export default function MetaEditorPage() {
                       scrolling="no"
                       frameBorder="no"
                       allow="autoplay"
-                      src={`https://w.soundcloud.com/player/?url=https://api.soundcloud.com/tracks/${selectedScTrack.id}&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true`}
+                      src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(selectedScTrack.permalink_url ?? '')}&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true`}
                       className="rounded"
                     />
                     <div className="flex gap-2">
@@ -1276,14 +1265,14 @@ export default function MetaEditorPage() {
                 <div className="space-y-2 max-h-[500px] overflow-y-auto">
                   {scResults.map((track) => (
                     <button
-                      key={track.id}
+                      key={track.urn}
                       onClick={() => handleScTrackSelect(track)}
                       className={`w-full text-left p-3 rounded border hover:bg-accent transition-colors ${
-                        selectedScTrack?.id === track.id ? 'bg-accent border-primary' : ''
+                        selectedScTrack?.urn === track.urn ? 'bg-accent border-primary' : ''
                       }`}
                     >
                       <div className="text-sm font-medium truncate">{track.title}</div>
-                      <div className="text-xs text-muted-foreground truncate">{track.artist}</div>
+                      <div className="text-xs text-muted-foreground truncate">{track.user?.username}</div>
                       {track.genre && (
                         <div className="text-xs text-muted-foreground">{track.genre}</div>
                       )}

@@ -4,7 +4,6 @@ Meta Editor API routes.
 FastAPI endpoints for metadata editing operations:
 - File listing and folder operations
 - Track metadata read/update
-- SoundCloud search and track fetching
 - File finalization (conversion and moving)
 - Artwork management
 """
@@ -12,19 +11,16 @@ FastAPI endpoints for metadata editing operations:
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from backend.api.deps import (
     get_root_folder,
-    get_soundcloud_client,
     validate_file_path,
     validate_folder_mode,
 )
-from backend.core.services import collection, metadata, soundcloud
+from backend.core.services import collection, metadata
 from backend.schemas.metadata import (
-    AutoActionRequest,
-    AutoActionResponse,
     CollectionStatsResponse,
     FileInfoResponse,
     FileReadinessResponse,
@@ -32,14 +28,9 @@ from backend.schemas.metadata import (
     FinalizeResponse,
     FolderListResponse,
     OperationResponse,
-    SoundCloudSearchRequest,
-    SoundCloudSearchResponse,
-    SoundCloudTrackResponse,
-    TrackInfoRequest,
     TrackInfoResponse,
     TrackInfoUpdateRequest,
 )
-from soundcloud_tools.client import Client
 from soundcloud_tools.handler.folder import FolderHandler
 
 router = APIRouter(prefix="/api/metadata", tags=["metadata"])
@@ -392,193 +383,6 @@ def delete_file(
     )
 
 
-# ==================== SoundCloud Operations ====================
-
-
-@router.post("/soundcloud/search", response_model=SoundCloudSearchResponse)
-async def search_soundcloud(
-    request: SoundCloudSearchRequest,
-    sc_client: Annotated[Client, Depends(get_soundcloud_client)],
-) -> SoundCloudSearchResponse:
-    """
-    Search for tracks on SoundCloud.
-
-    Parameters
-    ----------
-    request : SoundCloudSearchRequest
-        Search parameters (query, limit, filters)
-    sc_client : Client
-        SoundCloud API client (injected)
-
-    Returns
-    -------
-    SoundCloudSearchResponse
-        List of matching tracks
-
-    Raises
-    ------
-    HTTPException
-        If search fails
-    """
-    try:
-        tracks = await soundcloud.search_tracks(
-            query=request.query,
-            client=sc_client,
-        )
-        # Limit results
-        tracks = tracks[: request.limit]
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"SoundCloud search failed: {e!s}"
-        ) from e
-
-    # Convert to response format
-    track_responses = [
-        SoundCloudTrackResponse(
-            id=t.id,
-            title=t.title,
-            artist=t.artist,
-            permalink_url=t.permalink_url,
-            artwork_url=t.artwork_url,
-            duration_ms=t.duration_s * 1000 if t.duration_s else None,
-            genre=t.genre,
-            release_date=t.release_date,
-            artist_options=[
-                a
-                for a in (
-                    t.publisher_metadata and t.publisher_metadata.artist,
-                    t.user.username,
-                )
-                if a
-            ],
-            # label=t.label,
-            # isrc=t.isrc,
-            # bpm=t.bpm,
-        )
-        for t in tracks
-    ]
-
-    return SoundCloudSearchResponse(
-        query=request.query,
-        total_results=len(track_responses),
-        tracks=track_responses,
-    )
-
-
-@router.get("/soundcloud/track", response_model=SoundCloudTrackResponse)
-async def get_soundcloud_track(
-    url: Annotated[str, Query(description="SoundCloud track URL")],
-    sc_client: Annotated[Client, Depends(get_soundcloud_client)],
-) -> SoundCloudTrackResponse:
-    """
-    Get track info from SoundCloud URL.
-
-    Parameters
-    ----------
-    url : str
-        Full SoundCloud track URL
-    sc_client : Client
-        SoundCloud API client (injected)
-
-    Returns
-    -------
-    SoundCloudTrackResponse
-        Track information
-
-    Raises
-    ------
-    HTTPException
-        If URL is invalid or track not found
-    """
-    try:
-        track = await soundcloud.get_track_by_url(url, sc_client)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to fetch track: {e!s}"
-        ) from e
-
-    if not track:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Track not found at the provided URL")
-
-    return SoundCloudTrackResponse(
-        id=track.id,
-        title=track.title,
-        artist=track.artist,
-        permalink_url=track.permalink_url,
-        artwork_url=track.artwork_url,
-        duration_ms=track.duration_s * 1000 if track.duration_s else None,
-        genre=track.genre,
-        release_date=track.release_date,
-        label=track.label,
-        isrc=track.isrc,
-        bpm=track.bpm,
-    )
-
-
-@router.post("/soundcloud/apply", response_model=OperationResponse)
-async def apply_soundcloud_metadata(
-    request: TrackInfoRequest,
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-    sc_client: Annotated[Client, Depends(get_soundcloud_client)],
-) -> OperationResponse:
-    """
-    Apply metadata from SoundCloud track to local file.
-
-    Parameters
-    ----------
-    request : TrackInfoRequest
-        File path and SoundCloud track ID
-    root_folder : Path
-        Root music folder (injected)
-    sc_client : Client
-        SoundCloud API client (injected)
-
-    Returns
-    -------
-    OperationResponse
-        Operation result
-
-    Raises
-    ------
-    HTTPException
-        If file doesn't exist or metadata application fails
-    """
-    resolved_path = validate_file_path(request.file_path, root_folder)
-
-    # Get SoundCloud track
-    try:
-        sc_track = await soundcloud.get_track_by_id(request.soundcloud_id, sc_client)
-        if not sc_track:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Track not found on SoundCloud",
-            )
-        track_info = soundcloud.convert_sc_track_to_track_info(sc_track)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch SoundCloud track: {e!s}",
-        ) from e
-
-    # Save metadata
-    try:
-        metadata.save_track_metadata(resolved_path, root_folder, track_info)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save metadata: {e!s}",
-        ) from e
-
-    return OperationResponse(
-        success=True,
-        message=f"Applied SoundCloud metadata to {resolved_path.name}",
-    )
-
-
 # ==================== Artwork Operations ====================
 
 
@@ -771,128 +575,4 @@ def get_collection_stats(
         total_artists=stats["total_artists"],
         total_genres=stats["total_genres"],
         missing_fields=stats["missing_fields"],
-    )
-
-
-# ==================== Auto-Action Utilities ====================
-
-
-@router.post("/auto-actions/clean-title", response_model=AutoActionResponse)
-def clean_title_action(request: AutoActionRequest) -> AutoActionResponse:
-    """
-    Clean a title string by removing common noise.
-
-    Removes free download mentions, premiere labels, and normalizes spacing.
-
-    Parameters
-    ----------
-    request : AutoActionRequest
-        Text to clean
-
-    Returns
-    -------
-    AutoActionResponse
-        Original, transformed, and changed flag
-    """
-    transformed = metadata.apply_clean_title(request.text)
-    return AutoActionResponse(
-        original=request.text,
-        transformed=transformed,
-        changed=request.text != transformed,
-    )
-
-
-@router.post("/auto-actions/clean-artist", response_model=AutoActionResponse)
-def clean_artist_action(request: AutoActionRequest) -> AutoActionResponse:
-    """
-    Clean an artist string by normalizing separators.
-
-    Converts "&", "and", "x", "X" to commas and removes noise.
-
-    Parameters
-    ----------
-    request : AutoActionRequest
-        Artist text to clean
-
-    Returns
-    -------
-    AutoActionResponse
-        Original, transformed, and changed flag
-    """
-    transformed = metadata.apply_clean_artist(request.text)
-    return AutoActionResponse(
-        original=request.text,
-        transformed=transformed,
-        changed=request.text != transformed,
-    )
-
-
-@router.post("/auto-actions/titelize", response_model=AutoActionResponse)
-def titelize_action(request: AutoActionRequest) -> AutoActionResponse:
-    """
-    Properly capitalize text with special handling for music terms.
-
-    Handles DJ, contractions, and standard title casing.
-
-    Parameters
-    ----------
-    request : AutoActionRequest
-        Text to capitalize
-
-    Returns
-    -------
-    AutoActionResponse
-        Original, transformed, and changed flag
-    """
-    transformed = metadata.apply_titelize(request.text)
-    return AutoActionResponse(
-        original=request.text,
-        transformed=transformed,
-        changed=request.text != transformed,
-    )
-
-
-@router.post("/auto-actions/remove-original-mix", response_model=AutoActionResponse)
-def remove_original_mix_action(request: AutoActionRequest) -> AutoActionResponse:
-    """
-    Remove "(Original Mix)" from title.
-
-    Parameters
-    ----------
-    request : AutoActionRequest
-        Title text
-
-    Returns
-    -------
-    AutoActionResponse
-        Original, transformed, and changed flag
-    """
-    transformed = metadata.apply_remove_original_mix(request.text)
-    return AutoActionResponse(
-        original=request.text,
-        transformed=transformed,
-        changed=request.text != transformed,
-    )
-
-
-@router.post("/auto-actions/remove-parenthesis", response_model=AutoActionResponse)
-def remove_parenthesis_action(request: AutoActionRequest) -> AutoActionResponse:
-    """
-    Remove square brackets and their contents from title.
-
-    Parameters
-    ----------
-    request : AutoActionRequest
-        Title text
-
-    Returns
-    -------
-    AutoActionResponse
-        Original, transformed, and changed flag
-    """
-    transformed = metadata.apply_remove_parenthesis(request.text)
-    return AutoActionResponse(
-        original=request.text,
-        transformed=transformed,
-        changed=request.text != transformed,
     )

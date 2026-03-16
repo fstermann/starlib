@@ -24,7 +24,77 @@ cd frontend && npm run dev
 
 See [Backend README](backend/README.md) for detailed setup.
 
+## Authentication
+
+The app uses **OAuth 2.1 + PKCE** (Authorization Code Flow) to authenticate with SoundCloud. The flow is split between frontend and backend — the backend holds the `client_secret` and is the only party that ever exchanges or refreshes tokens with SoundCloud.
+
+### Login flow
+
+```
+Browser                  Frontend               Backend                  SoundCloud
+  │                          │                      │                         │
+  │  Click "Connect"         │                      │                         │
+  │─────────────────────────>│                      │                         │
+  │                          │  GET /auth/soundcloud/authorize                │
+  │                          │─────────────────────>│                         │
+  │                          │  { url, state,        │                         │
+  │                          │    code_verifier }   │                         │
+  │                          │<─────────────────────│                         │
+  │                          │  store state +        │                         │
+  │                          │  code_verifier in     │                         │
+  │                          │  sessionStorage       │                         │
+  │  redirect to SC          │                      │                         │
+  │<─────────────────────────│                      │                         │
+  │─────────────────────────────────────────────────────────────────────────>│
+  │  authorize + redirect back with ?code=…&state=… │                         │
+  │<─────────────────────────────────────────────────────────────────────────│
+  │  /auth/soundcloud/callback?code=…&state=…        │                         │
+  │─────────────────────────>│                      │                         │
+  │                          │  verify state        │                         │
+  │                          │  POST /auth/soundcloud/callback                │
+  │                          │  { code, state,       │                         │
+  │                          │    code_verifier }   │                         │
+  │                          │─────────────────────>│                         │
+  │                          │                      │  POST /oauth/token      │
+  │                          │                      │  (client_secret + PKCE) │
+  │                          │                      │────────────────────────>│
+  │                          │                      │  { access_token,        │
+  │                          │                      │    refresh_token,        │
+  │                          │                      │    expires_in }         │
+  │                          │                      │<────────────────────────│
+  │                          │  { access_token,      │                         │
+  │                          │    refresh_token,     │                         │
+  │                          │    expires_in, user } │                         │
+  │                          │<─────────────────────│                         │
+  │                          │  store tokens in      │                         │
+  │                          │  localStorage         │                         │
+```
+
+**Why the backend handles token exchange:** SoundCloud treats all clients as confidential — a `client_secret` is required for every token exchange and refresh. Keeping this in the backend ensures the secret is never exposed to the browser.
+
+### Token storage (frontend `localStorage`)
+
+| Key | Value |
+|---|---|
+| `access_token` | Bearer token for direct SoundCloud API calls |
+| `refresh_token` | Used to obtain a new access token when expired |
+| `token_expires_at` | Unix timestamp (ms) when the access token expires |
+| `sc_user` | Cached `{ id, username, permalink, avatar_url }` |
+
+### Token refresh
+
+`ensureValidToken()` in `frontend/src/lib/auth.ts` is called before every SoundCloud API request. If the token is within 60 seconds of expiring (or already expired), it calls `POST /auth/soundcloud/refresh` on the backend, which in turn calls SoundCloud's `/oauth/token` with `grant_type=refresh_token` + `client_secret`.
+
+### Backend endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/auth/soundcloud/authorize` | Generate PKCE params + SC authorization URL |
+| `POST` | `/auth/soundcloud/callback` | Exchange authorization code for tokens |
+| `POST` | `/auth/soundcloud/refresh` | Refresh an expired access token |
+
 ---
+
 
 This includes a __workflow__ to collect all __liked, posted and reposted tracks__ and playlists of a users __favorited artists__ for the past week.
 

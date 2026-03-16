@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { fetchApi } from "@/lib/api";
+import { storeTokens } from "@/lib/auth";
 
 interface UserInfo {
   id: number;
@@ -15,6 +16,7 @@ interface UserInfo {
 interface CallbackResponse {
   access_token: string;
   refresh_token: string | null;
+  expires_in: number | null;
   user: UserInfo;
 }
 
@@ -59,7 +61,7 @@ function CallbackHandler() {
       body: JSON.stringify({ code, state, code_verifier: codeVerifier }),
     })
       .then((data) => {
-        localStorage.setItem("access_token", data.access_token);
+        storeTokens(data.access_token, data.refresh_token, data.expires_in);
         localStorage.setItem("sc_user", JSON.stringify(data.user));
         router.push("/meta-editor");
       })

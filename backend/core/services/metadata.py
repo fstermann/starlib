@@ -12,15 +12,10 @@ from typing import Literal
 
 from soundcloud_tools.handler.track import TrackHandler, TrackInfo
 from soundcloud_tools.utils.string import (
-    clean_artists,
-    clean_title,
     remove_double_spaces,
     remove_free_dl,
-    remove_original_mix,
-    remove_parenthesis,
     remove_remix,
     replace_underscores,
-    titelize,
 )
 
 logger = logging.getLogger(__name__)
@@ -545,99 +540,3 @@ def remove_artwork(file_path: Path, root_folder: Path) -> None:
         Root folder for the music library
     """
     remove_all_artwork_from_track(file_path, root_folder)
-
-
-# ============================================================================
-# Auto-Action Utilities
-# ============================================================================
-
-
-def apply_clean_title(title: str) -> str:
-    """
-    Clean a title string by removing common noise.
-
-    Removes: free download mentions, premiere labels, double spaces.
-
-    Parameters
-    ----------
-    title : str
-        Original title string
-
-    Returns
-    -------
-    str
-        Cleaned title
-    """
-    return clean_title(title)
-
-
-def apply_clean_artist(artist: str) -> str:
-    """
-    Clean an artist string by normalizing separators and removing noise.
-
-    Converts "&", "and", "x", "X" to commas, removes free DL and premiere mentions.
-
-    Parameters
-    ----------
-    artist : str
-        Original artist string
-
-    Returns
-    -------
-    str
-        Cleaned artist string with normalized separators
-    """
-    return clean_artists(artist)
-
-
-def apply_titelize(text: str) -> str:
-    """
-    Properly capitalize text with special handling for music industry terms.
-
-    Handles: DJ, contractions ('s, 're, 't).
-
-    Parameters
-    ----------
-    text : str
-        Original text
-
-    Returns
-    -------
-    str
-        Capitalized text
-    """
-    return titelize(text)
-
-
-def apply_remove_original_mix(title: str) -> str:
-    """
-    Remove "(Original Mix)" mentions from title.
-
-    Parameters
-    ----------
-    title : str
-        Title that may contain "(Original Mix)"
-
-    Returns
-    -------
-    str
-        Title with "(Original Mix)" removed
-    """
-    return remove_original_mix(title)
-
-
-def apply_remove_parenthesis(title: str) -> str:
-    """
-    Remove square brackets and their contents from title.
-
-    Parameters
-    ----------
-    title : str
-        Title that may contain [bracketed content]
-
-    Returns
-    -------
-    str
-        Title with brackets removed
-    """
-    return remove_parenthesis(title)
