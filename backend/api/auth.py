@@ -9,7 +9,14 @@ from urllib.parse import urlencode
 import requests
 from fastapi import APIRouter, HTTPException, status
 
-from backend.schemas.auth import AuthorizeResponse, CallbackRequest, CallbackResponse, UserInfo
+from backend.schemas.auth import (
+    AuthorizeResponse,
+    CallbackRequest,
+    CallbackResponse,
+    RefreshRequest,
+    RefreshResponse,
+    UserInfo,
+)
 from soundcloud_tools.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -128,10 +135,66 @@ def handle_callback(body: CallbackRequest) -> CallbackResponse:
     return CallbackResponse(
         access_token=token_data["access_token"],
         refresh_token=token_data.get("refresh_token"),
+        expires_in=token_data.get("expires_in"),
         user=UserInfo(
             id=user_data["id"],
             username=user_data["username"],
             permalink=user_data["permalink"],
             avatar_url=user_data.get("avatar_url"),
         ),
+    )
+
+
+@router.post("/refresh", response_model=RefreshResponse)
+def refresh_token(body: RefreshRequest) -> RefreshResponse:
+    """Exchange a refresh token for a new access token.
+
+    Parameters
+    ----------
+    body : RefreshRequest
+        The refresh token.
+
+    Returns
+    -------
+    RefreshResponse
+        New access token and refresh token.
+
+    Raises
+    ------
+    HTTPException
+        If the refresh token is invalid or expired.
+    """
+    settings = get_settings()
+
+    token_resp = requests.post(
+        "https://secure.soundcloud.com/oauth/token",
+        headers={
+            "accept": "application/json; charset=utf-8",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data={
+            "grant_type": "refresh_token",
+            "client_id": settings.client_id,
+            "client_secret": settings.client_secret,
+            "refresh_token": body.refresh_token,
+        },
+        timeout=10,
+    )
+
+    if not token_resp.ok:
+        logger.error(
+            "SoundCloud token refresh failed: status=%s body=%s",
+            token_resp.status_code,
+            token_resp.text,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"SoundCloud token refresh failed: {token_resp.text}",
+        )
+
+    token_data = token_resp.json()
+    return RefreshResponse(
+        access_token=token_data["access_token"],
+        refresh_token=token_data.get("refresh_token"),
+        expires_in=token_data.get("expires_in"),
     )

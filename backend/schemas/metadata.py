@@ -27,13 +27,6 @@ class TrackInfoUpdateRequest(BaseModel):
     remixers: list[str] | None = None
 
 
-class TrackInfoRequest(BaseModel):
-    """Request to apply metadata from SoundCloud."""
-
-    file_path: str
-    soundcloud_id: int
-
-
 class RemixInfo(BaseModel):
     """Remix information."""
 
@@ -56,19 +49,6 @@ class FinalizeRequest(BaseModel):
     target_format: Literal["mp3", "aiff"] = Field(default="mp3", description="Target audio format")
     quality: int = Field(default=320, description="Quality for MP3 (kbps)")
     collection_folder: str | None = Field(None, description="Target collection folder (optional)")
-
-
-class SoundCloudSearchRequest(BaseModel):
-    """Request to search SoundCloud."""
-
-    query: str = Field(..., min_length=1, description="Search query")
-    limit: int = Field(default=20, ge=1, le=50, description="Maximum results")
-
-
-class SoundCloudUrlRequest(BaseModel):
-    """Request to fetch track by URL."""
-
-    url: str = Field(..., description="SoundCloud track URL")
 
 
 class CollectionFilterRequest(BaseModel):
@@ -158,31 +138,6 @@ class OperationResponse(BaseModel):
     message: str
 
 
-class SoundCloudTrackResponse(BaseModel):
-    """Response containing SoundCloud track metadata."""
-
-    id: int
-    title: str
-    artist: str
-    permalink_url: str
-    artwork_url: str | None = None
-    duration_ms: int | None = None
-    genre: str | None = None
-    release_date: date | None = None
-    label: str | None = None
-    isrc: str | None = None
-    bpm: int | None = None
-    artist_options: list[str] = Field(default_factory=list)
-
-
-class SoundCloudSearchResponse(BaseModel):
-    """Response containing SoundCloud search results."""
-
-    query: str
-    total_results: int
-    tracks: list[SoundCloudTrackResponse]
-
-
 class CollectionStatsResponse(BaseModel):
     """Response containing collection statistics."""
 
@@ -208,17 +163,3 @@ class RenameResponse(BaseModel):
     old_path: str
     new_path: str
     message: str
-
-
-class AutoActionRequest(BaseModel):
-    """Request to apply an auto-action transformation to text."""
-
-    text: str = Field(..., description="Text to transform")
-
-
-class AutoActionResponse(BaseModel):
-    """Response from auto-action transformation."""
-
-    original: str = Field(..., description="Original text")
-    transformed: str = Field(..., description="Transformed text")
-    changed: bool = Field(..., description="Whether the text was changed")

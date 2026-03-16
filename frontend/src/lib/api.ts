@@ -75,27 +75,6 @@ export interface FolderList {
   files: FileInfo[];
 }
 
-export interface SoundCloudTrack {
-  id: number;
-  title: string;
-  artist: string;
-  permalink_url: string;
-  artwork_url?: string;
-  duration_ms?: number;
-  genre?: string;
-  release_date?: string;
-  label?: string;
-  isrc?: string;
-  bpm?: number;
-  artist_options?: string[];
-}
-
-export interface SearchResults {
-  query: string;
-  total_results: number;
-  tracks: SoundCloudTrack[];
-}
-
 // ==================== API Methods ====================
 
 export const api = {
@@ -144,34 +123,6 @@ export const api = {
     });
   },
 
-  // SoundCloud operations
-  async searchSoundCloud(
-    query: string,
-    limit = 20
-  ): Promise<SearchResults> {
-    return fetchApi('/api/metadata/soundcloud/search', {
-      method: 'POST',
-      body: JSON.stringify({ query, limit }),
-    });
-  },
-
-  async getSoundCloudTrack(url: string): Promise<SoundCloudTrack> {
-    return fetchApi(`/api/metadata/soundcloud/track?url=${encodeURIComponent(url)}`);
-  },
-
-  async applySoundCloudMetadata(
-    filePath: string,
-    soundcloudId: number
-  ): Promise<{ success: boolean; message: string }> {
-    return fetchApi('/api/metadata/soundcloud/apply', {
-      method: 'POST',
-      body: JSON.stringify({
-        file_path: filePath,
-        soundcloud_id: soundcloudId,
-      }),
-    });
-  },
-
   // Artwork operations
   async getArtwork(filePath: string): Promise<Blob> {
     const encoded = encodeURIComponent(filePath);
@@ -215,41 +166,5 @@ export const api = {
   // Health check
   async healthCheck(): Promise<{ status: string }> {
     return fetchApi('/health');
-  },
-
-  // Auto-actions
-  async cleanTitle(text: string): Promise<{ original: string; transformed: string; changed: boolean }> {
-    return fetchApi('/api/metadata/auto-actions/clean-title', {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    });
-  },
-
-  async cleanArtist(text: string): Promise<{ original: string; transformed: string; changed: boolean }> {
-    return fetchApi('/api/metadata/auto-actions/clean-artist', {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    });
-  },
-
-  async titelize(text: string): Promise<{ original: string; transformed: string; changed: boolean }> {
-    return fetchApi('/api/metadata/auto-actions/titelize', {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    });
-  },
-
-  async removeOriginalMix(text: string): Promise<{ original: string; transformed: string; changed: boolean }> {
-    return fetchApi('/api/metadata/auto-actions/remove-original-mix', {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    });
-  },
-
-  async removeParenthesis(text: string): Promise<{ original: string; transformed: string; changed: boolean }> {
-    return fetchApi('/api/metadata/auto-actions/remove-parenthesis', {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    });
   },
 };

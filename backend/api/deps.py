@@ -8,20 +8,7 @@ from pathlib import Path
 
 from fastapi import HTTPException, status
 
-from soundcloud_tools.client import Client
 from soundcloud_tools.settings import get_settings
-
-
-def get_soundcloud_client() -> Client:
-    """
-    Get configured SoundCloud API client.
-
-    Returns
-    -------
-    Client
-        Configured client with authentication token
-    """
-    return Client()
 
 
 def get_root_folder() -> Path:

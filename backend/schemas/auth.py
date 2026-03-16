@@ -33,4 +33,19 @@ class CallbackResponse(BaseModel):
 
     access_token: str
     refresh_token: str | None
+    expires_in: int | None = None
     user: UserInfo
+
+
+class RefreshRequest(BaseModel):
+    """Token refresh request."""
+
+    refresh_token: str
+
+
+class RefreshResponse(BaseModel):
+    """Token refresh response."""
+
+    access_token: str
+    refresh_token: str | None
+    expires_in: int | None = None
