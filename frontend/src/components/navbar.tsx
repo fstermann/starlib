@@ -36,24 +36,24 @@ export function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-black/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-black/80">
-      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center gap-8">
+    <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-xl shrink-0">
+      <div className="px-5 h-12 flex items-center gap-6">
         <Link
           href="/"
-          className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 hover:opacity-80 transition-opacity shrink-0"
+          className="font-bold text-sm tracking-tight text-primary hover:opacity-75 transition-opacity shrink-0"
         >
           SoundCloud Tools
         </Link>
 
-        <nav className="flex items-center gap-1 flex-1">
+        <nav className="flex items-center gap-0.5 flex-1">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
+              className={`px-3 py-1 rounded text-xs font-medium tracking-wide uppercase transition-colors ${
                 pathname.startsWith(link.href)
-                  ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium"
-                  : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  ? "text-primary bg-primary/10"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {link.label}
@@ -61,23 +61,24 @@ export function Navbar() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {user ? (
             <>
-              <span className="text-sm text-zinc-500 dark:text-zinc-400 hidden sm:block">
+              <span className="text-xs text-muted-foreground hidden sm:block font-mono">
                 {user.username}
               </span>
-              <Button variant="outline" size="sm" onClick={handleDisconnect}>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleDisconnect}>
                 Disconnect
               </Button>
             </>
           ) : (
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="h-7 text-xs">
               <Link href="/auth/login">Connect SoundCloud</Link>
             </Button>
           )}
         </div>
       </div>
+      <div className="h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
     </header>
   );
 }

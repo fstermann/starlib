@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api, type FileInfo, type TrackInfo } from '@/lib/api';
 import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix } from '@/lib/string-utils';
 import * as soundcloud from '@/lib/soundcloud';
 import type { SCTrack } from '@/lib/soundcloud';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { format, parse, isValid } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Sparkles,
@@ -36,6 +37,11 @@ import {
   Eraser,
   ArrowUp,
   XCircle,
+  ChevronDown,
+  ChevronUp,
+  Play,
+  Pause,
+  CalendarIcon,
 } from 'lucide-react';
 
 /** Parse the backend's semicolon-delimited comment string into structured fields. */
@@ -99,6 +105,14 @@ function scReleaseDate(track: SCTrack): string | undefined {
   return undefined;
 }
 
+/** Format seconds as mm:ss. */
+function formatTime(seconds: number): string {
+  if (!isFinite(seconds) || seconds < 0) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 export default function MetaEditorPage() {
   const [folderMode, setFolderMode] = useState<string>('prepare');
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -108,7 +122,6 @@ export default function MetaEditorPage() {
   const [error, setError] = useState<string | null>(null);
 
   // SoundCloud search
-  const [scSearchEnabled, setScSearchEnabled] = useState(true);
   const [scQuery, setScQuery] = useState('');
   const [scResults, setScResults] = useState<SCTrack[]>([]);
   const [scSearching, setScSearching] = useState(false);
@@ -125,9 +138,21 @@ export default function MetaEditorPage() {
   // Artwork state
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
   const [artworkUploading, setArtworkUploading] = useState(false);
+  // Pending SC artwork URL — shown in preview but not yet saved to file
+  const [pendingScArtworkUrl, setPendingScArtworkUrl] = useState<string | null>(null);
 
   // Metadata form state
   const [formData, setFormData] = useState({
+    title: '',
+    artist: '',
+    bpm: '',
+    key: '',
+    genre: '',
+    release_date: '',
+  });
+
+  // Original values for change detection
+  const [originalFormData, setOriginalFormData] = useState({
     title: '',
     artist: '',
     bpm: '',
@@ -148,6 +173,23 @@ export default function MetaEditorPage() {
     autoRemoveOriginalMix: true,
   });
 
+  // UI state
+  const [scPanelOpen, setScPanelOpen] = useState(true);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  // Audio player state
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioTime, setAudioTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+
+  // Reset audio player when selected file changes
+  useEffect(() => {
+    setAudioPlaying(false);
+    setAudioTime(0);
+    setAudioDuration(0);
+  }, [selectedFile?.file_path]);
+
   // Load files when folder mode changes
   useEffect(() => {
     loadFiles();
@@ -155,7 +197,7 @@ export default function MetaEditorPage() {
 
   // Auto-search when query changes
   useEffect(() => {
-    if (!scQuery.trim() || !scSearchEnabled) {
+    if (!scQuery.trim() || !scPanelOpen) {
       setScResults([]);
       setSelectedScTrack(null);
       return;
@@ -166,7 +208,7 @@ export default function MetaEditorPage() {
     }, 500); // Debounce by 500ms
 
     return () => clearTimeout(timeoutId);
-  }, [scQuery, scSearchEnabled]);
+  }, [scQuery, scPanelOpen]);
 
   // Auto-fill empty form fields when a SoundCloud track is selected
   useEffect(() => {
@@ -188,18 +230,32 @@ export default function MetaEditorPage() {
     }));
   }, [selectedScTrack, autoActions.autoCopyMetadata]);
 
+  // Show SC artwork in preview when no existing artwork
+  useEffect(() => {
+    if (!selectedScTrack || !autoActions.autoCopyArtwork || !trackInfo || trackInfo.has_artwork) return;
+
+    const scArtworkUrl = selectedScTrack.artwork_url;
+    if (!scArtworkUrl) return;
+
+    const hqUrl = scArtworkUrl.replace('-large', '-t500x500');
+    setArtworkUrl(hqUrl);
+    setPendingScArtworkUrl(hqUrl);
+  }, [selectedScTrack, autoActions.autoCopyArtwork, trackInfo?.has_artwork]);
+
   // Update form when track info loads
   useEffect(() => {
     if (trackInfo) {
       const parsed = parseFilename(trackInfo.file_name);
-      setFormData({
+      const newFormData = {
         title: trackInfo.title || parsed.title || '',
         artist: trackInfo.artist || parsed.artist || '',
         bpm: trackInfo.bpm?.toString() || '',
         key: trackInfo.key || '',
         genre: trackInfo.genre || '',
         release_date: trackInfo.release_date || '',
-      });
+      };
+      setFormData(newFormData);
+      setOriginalFormData(newFormData);
       setCommentData(parseComment(trackInfo.comment));
 
       // Set remix data — prefer embedded remixers, then auto-detect from title
@@ -228,6 +284,7 @@ export default function MetaEditorPage() {
 
       // Load artwork if available
       if (trackInfo.has_artwork) {
+        setPendingScArtworkUrl(null);
         loadArtwork(trackInfo.file_path);
       } else {
         setArtworkUrl(null);
@@ -304,6 +361,13 @@ export default function MetaEditorPage() {
 
   const handleRemoveArtwork = async () => {
     if (!trackInfo || !confirm('Remove artwork from this file?')) return;
+
+    // If artwork is only pending (not saved), just clear it locally
+    if (pendingScArtworkUrl) {
+      setArtworkUrl(null);
+      setPendingScArtworkUrl(null);
+      return;
+    }
 
     try {
       setLoading(true);
@@ -385,6 +449,8 @@ export default function MetaEditorPage() {
     }
   };
 
+  const isChanged = (field: keyof typeof formData) => formData[field] !== originalFormData[field];
+
   const handleFormChange = (field: string, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -419,6 +485,20 @@ export default function MetaEditorPage() {
       }
 
       await api.updateTrackInfo(trackInfo.file_path, updates);
+
+      // Upload pending SC artwork if any
+      if (pendingScArtworkUrl) {
+        try {
+          const response = await fetch(pendingScArtworkUrl);
+          if (response.ok) {
+            const blob = await response.blob();
+            const artFile = new File([blob], 'artwork.jpg', { type: blob.type || 'image/jpeg' });
+            await api.uploadArtwork(trackInfo.file_path, artFile);
+          }
+        } catch (err) {
+          console.error('Failed to upload pending artwork:', err);
+        }
+      }
 
       // Reload track info
       await loadTrackInfo(selectedFile!);
@@ -513,654 +593,413 @@ export default function MetaEditorPage() {
       soundcloud_id: String(track.urn?.split(':').pop() ?? ''),
       soundcloud_permalink: stripQueryParams(track.permalink_url || ''),
     });
+
+    // Show SC artwork in preview if no existing artwork
+    if (trackInfo && !trackInfo.has_artwork && track.artwork_url) {
+      const hqUrl = track.artwork_url.replace('-large', '-t500x500');
+      setArtworkUrl(hqUrl);
+      setPendingScArtworkUrl(hqUrl);
+    }
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Meta Editor</h1>
-        {trackInfo && (
-          <div className="flex gap-2">
-            <Button
-              onClick={handleSave}
-              disabled={loading}
-              variant="default"
-            >
-              Save
-            </Button>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="icon">
-                  <Settings2 className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64" align="end">
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-medium text-sm mb-3">Auto-Actions</h4>
-                    <div className="space-y-3">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="auto-artwork"
-                          checked={autoActions.autoCopyArtwork}
-                          onCheckedChange={(checked) =>
-                            setAutoActions({ ...autoActions, autoCopyArtwork: checked as boolean })
-                          }
-                        />
-                        <label
-                          htmlFor="auto-artwork"
-                          className="text-sm cursor-pointer flex items-center gap-1.5"
-                        >
-                          <Image className="h-3.5 w-3.5" />
-                          Artwork
-                        </label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="auto-metadata"
-                          checked={autoActions.autoCopyMetadata}
-                          onCheckedChange={(checked) =>
-                            setAutoActions({ ...autoActions, autoCopyMetadata: checked as boolean })
-                          }
-                        />
-                        <label
-                          htmlFor="auto-metadata"
-                          className="text-sm cursor-pointer flex items-center gap-1.5"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          Metadata
-                        </label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="auto-clean"
-                          checked={autoActions.autoClean}
-                          onCheckedChange={(checked) =>
-                            setAutoActions({ ...autoActions, autoClean: checked as boolean })
-                          }
-                        />
-                        <label
-                          htmlFor="auto-clean"
-                          className="text-sm cursor-pointer flex items-center gap-1.5"
-                        >
-                          <Eraser className="h-3.5 w-3.5" />
-                          Clean
-                        </label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="auto-titelize"
-                          checked={autoActions.autoTitelize}
-                          onCheckedChange={(checked) =>
-                            setAutoActions({ ...autoActions, autoTitelize: checked as boolean })
-                          }
-                        />
-                        <label
-                          htmlFor="auto-titelize"
-                          className="text-sm cursor-pointer flex items-center gap-1.5"
-                        >
-                          <ArrowUp className="h-3.5 w-3.5" />
-                          Titelize
-                        </label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="auto-remove-mix"
-                          checked={autoActions.autoRemoveOriginalMix}
-                          onCheckedChange={(checked) =>
-                            setAutoActions({ ...autoActions, autoRemoveOriginalMix: checked as boolean })
-                          }
-                        />
-                        <label
-                          htmlFor="auto-remove-mix"
-                          className="text-sm cursor-pointer flex items-center gap-1.5"
-                        >
-                          <XCircle className="h-3.5 w-3.5" />
-                          Remove "Original Mix"
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
-            <Button
-              onClick={handleFinalize}
-              disabled={!trackInfo.is_ready || loading}
-              variant="default"
-            >
-              Finalize
-            </Button>
-            <Button
-              onClick={handleDelete}
-              disabled={loading}
-              variant="destructive"
-            >
-              Delete
-            </Button>
-          </div>
-        )}
-      </div>
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      {/* Hidden audio element */}
+      {selectedFile && (
+        <audio
+          ref={audioRef}
+          key={selectedFile.file_path}
+          src={api.getAudioUrl(selectedFile.file_path)}
+          onTimeUpdate={() => setAudioTime(audioRef.current?.currentTime ?? 0)}
+          onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration ?? 0)}
+          onEnded={() => setAudioPlaying(false)}
+        />
+      )}
+
+      {/* Audio player strip */}
+      {selectedFile && (
+        <div className="flex items-center gap-3 px-4 h-11 border-b border-border/50 bg-card/80 shrink-0">
+          <button
+            onClick={() => {
+              if (!audioRef.current) return;
+              if (audioPlaying) {
+                audioRef.current.pause();
+                setAudioPlaying(false);
+              } else {
+                audioRef.current.play();
+                setAudioPlaying(true);
+              }
+            }}
+            className="size-7 rounded-full bg-primary/10 hover:bg-primary/20 text-primary flex items-center justify-center shrink-0 transition-colors"
+          >
+            {audioPlaying ? <Pause className="size-3" /> : <Play className="size-3 ml-0.5" />}
+          </button>
+          <span className="text-xs text-muted-foreground font-mono truncate min-w-0 flex-1">{selectedFile.file_name}</span>
+          <input
+            type="range"
+            min={0}
+            max={audioDuration || 1}
+            step={0.1}
+            value={audioTime}
+            onChange={(e) => {
+              const t = parseFloat(e.target.value);
+              setAudioTime(t);
+              if (audioRef.current) audioRef.current.currentTime = t;
+            }}
+            className="w-36 accent-primary shrink-0"
+          />
+          <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-20 text-right">
+            {formatTime(audioTime)} / {formatTime(audioDuration)}
+          </span>
+        </div>
+      )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
+        <div className="mx-4 mt-2 shrink-0 bg-destructive/10 border border-destructive/20 text-destructive text-xs px-3 py-2 rounded-lg">
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* File List */}
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle>Files</CardTitle>
-            <Field>
-              <FieldLabel>Folder</FieldLabel>
-              <Select value={folderMode} onValueChange={setFolderMode}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="prepare">Prepare</SelectItem>
-                  <SelectItem value="collection">Collection</SelectItem>
-                  <SelectItem value="cleaned">Cleaned</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </CardHeader>
-          <CardContent>
-            {loading && !trackInfo && <p className="text-sm text-muted-foreground">Loading...</p>}
-            <div className="space-y-2 max-h-[600px] overflow-y-auto">
-              {files.map((file) => (
+      {/* Main content */}
+      <div className="flex flex-1 min-h-0">
+        {/* Center area */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          {/* Folder mode tabs + SC panel toggle */}
+          <div className="flex items-center justify-between px-4 border-b border-border/50 shrink-0 h-9">
+            <div className="flex items-center gap-0.5">
+              {(['prepare', 'collection', 'cleaned'] as const).map((mode) => (
                 <button
-                  key={file.file_path}
-                  onClick={() => loadTrackInfo(file)}
-                  className={`w-full text-left px-3 py-2 rounded hover:bg-accent transition-colors ${selectedFile?.file_path === file.file_path ? 'bg-accent' : ''
-                    }`}
+                  key={mode}
+                  onClick={() => setFolderMode(mode)}
+                  className={`px-3 py-1.5 rounded text-[10px] font-medium tracking-widest uppercase transition-colors ${
+                    folderMode === mode
+                      ? 'text-primary bg-primary/10'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
                 >
-                  <div className="text-sm font-medium truncate">{file.file_name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {(file.file_size / 1024 / 1024).toFixed(1)} MB
-                  </div>
+                  {mode}
                 </button>
               ))}
             </div>
-          </CardContent>
-        </Card>
+            <button
+              onClick={() => setScPanelOpen(!scPanelOpen)}
+              title={scPanelOpen ? 'Hide SoundCloud panel' : 'Show SoundCloud panel'}
+              className={`cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 ${scPanelOpen ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              <img src="/soundcloud-dark.png" alt="SoundCloud" className="size-6 dark:hidden" />
+              <img src="/soundcloud-light.png" alt="SoundCloud" className="size-6 hidden dark:block" />
+            </button>
+          </div>
 
-        {/* Metadata Editor */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>
-              {trackInfo ? trackInfo.file_name : 'Select a file'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!trackInfo ? (
-              <p className="text-muted-foreground">
-                Select a file from the list to edit its metadata
-              </p>
-            ) : (
-              <div className="space-y-4">
-                <Field>
-                  <div className="flex items-center justify-between mb-2">
-                    <FieldLabel>Title</FieldLabel>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => handleCopyFromSc('title')}
-                        disabled={!selectedScTrack}
-                        title="Copy from SoundCloud"
-                      >
-                        <Cloud className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={handleCleanTitle}
-                        title="Clean title"
-                      >
-                        <Sparkles className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={async () => {
-                          if (!formData.title) return;
-                          const transformed = titelize(formData.title);
-                          if (transformed !== formData.title) setFormData({ ...formData, title: transformed });
-                        }}
-                        title="Titelize"
-                      >
-                        <CaseSensitive className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={handleBuildTitleFromRemix}
-                        disabled={!isRemix}
-                        title="Build from remix data"
-                      >
-                        <Wand2 className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={handleRemoveParenthesis}
-                        title="Remove brackets"
-                      >
-                        <Brackets className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={handleIsolateTitle}
-                        title="Isolate title"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+          {/* Selected track editor row */}
+          {trackInfo && (
+            <div className="px-3 py-2.5 border-b border-border/50 bg-card/40 shrink-0">
+              <div className="flex items-end gap-2">
+                {/* Artwork thumbnail */}
+                <div
+                  className={`group relative size-12 shrink-0 rounded-lg overflow-hidden border cursor-pointer ${pendingScArtworkUrl ? 'border-amber-400/70' : 'border-border/50'}`}
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = handleArtworkUpload as any;
+                    input.click();
+                  }}
+                >
+                  {artworkUrl ? (
+                    <>
+                      <img src={artworkUrl} alt="Artwork" className="size-full object-cover" />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Image className="size-3 text-white" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="size-full bg-accent/50 flex flex-col items-center justify-center gap-0.5 hover:bg-accent transition-colors">
+                      <Image className="size-3 text-muted-foreground" />
+                      <span className="text-[8px] text-muted-foreground">N/A</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Title */}
+                <div className="group flex-[3] min-w-0 flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between h-4">
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Title</span>
+                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('title')} disabled={!selectedScTrack} title="Copy from SoundCloud"><Cloud /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleCleanTitle} title="Clean"><Sparkles /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.title) return; const t = titelize(formData.title); if (t !== formData.title) setFormData({...formData, title: t}); }} title="Titelize"><CaseSensitive /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleBuildTitleFromRemix} disabled={!isRemix} title="Build from remix"><Wand2 /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleRemoveParenthesis} title="Remove brackets"><Brackets /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleIsolateTitle} title="Isolate"><Trash2 /></Button>
                     </div>
                   </div>
-                  <Input
-                    value={formData.title}
-                    onChange={(e) => handleFormChange('title', e.target.value)}
-                  />
-                </Field>
+                  <Input value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} className={`h-8 text-xs font-medium${isChanged('title') ? ' border-amber-400/70' : ''}`} placeholder="Title" />
+                </div>
 
-                <Field>
-                  <div className="flex items-center justify-between mb-2">
-                    <FieldLabel>Artist</FieldLabel>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => handleCopyFromSc('artist')}
-                        disabled={!selectedScTrack}
-                        title="Copy from SoundCloud"
-                      >
-                        <Cloud className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={handleCleanArtist}
-                        title="Clean artist"
-                      >
-                        <Sparkles className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={async () => {
-                          if (!formData.artist) return;
-                          const transformed = titelize(formData.artist);
-                          if (transformed !== formData.artist) setFormData({ ...formData, artist: transformed });
-                        }}
-                        title="Titelize"
-                      >
-                        <CaseSensitive className="h-3 w-3" />
-                      </Button>
+                {/* Artist */}
+                <div className="group flex-[2] min-w-0 flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between h-4">
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Artist</span>
+                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('artist')} disabled={!selectedScTrack} title="Copy from SoundCloud"><Cloud /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleCleanArtist} title="Clean"><Sparkles /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.artist) return; const t = titelize(formData.artist); if (t !== formData.artist) setFormData({...formData, artist: t}); }} title="Titelize"><CaseSensitive /></Button>
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            disabled={!selectedScTrack || !scArtistOptions.length}
-                            title="Artist options"
-                          >
-                            <Users className="h-3 w-3" />
-                          </Button>
+                          <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length} title="Artist options"><Users /></Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-48 p-2">
                           <div className="space-y-1">
                             {scArtistOptions.map((artist) => (
-                              <Button
-                                key={artist}
-                                variant="ghost"
-                                size="sm"
-                                className="w-full justify-start"
-                                onClick={() => setFormData({ ...formData, artist })}
-                              >
-                                {artist}
-                              </Button>
+                              <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setFormData({ ...formData, artist })}>{artist}</Button>
                             ))}
                           </div>
                         </PopoverContent>
                       </Popover>
                     </div>
                   </div>
-                  <Input
-                    value={formData.artist}
-                    onChange={(e) => handleFormChange('artist', e.target.value)}
-                  />
-                </Field>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <Field>
-                    <FieldLabel>BPM</FieldLabel>
-                    <Input
-                      type="number"
-                      value={formData.bpm}
-                      onChange={(e) => handleFormChange('bpm', e.target.value)}
-                    />
-                  </Field>
-
-                  <Field>
-                    <FieldLabel>Key</FieldLabel>
-                    <Input
-                      value={formData.key}
-                      onChange={(e) => handleFormChange('key', e.target.value)}
-                    />
-                  </Field>
+                  <Input value={formData.artist} onChange={(e) => handleFormChange('artist', e.target.value)} className={`h-8 text-xs${isChanged('artist') ? ' border-amber-400/70' : ''}`} placeholder="Artist" />
                 </div>
 
-                <Field>
-                  <div className="flex items-center justify-between mb-2">
-                    <FieldLabel>Genre</FieldLabel>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => handleCopyFromSc('genre')}
-                        disabled={!selectedScTrack}
-                        title="Copy from SoundCloud"
-                      >
-                        <Cloud className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={async () => {
-                          if (!formData.genre) return;
-                          const transformed = titelize(formData.genre);
-                          if (transformed !== formData.genre) setFormData({ ...formData, genre: transformed });
-                        }}
-                        title="Titelize"
-                      >
-                        <CaseSensitive className="h-3 w-3" />
-                      </Button>
+                {/* Genre */}
+                <div className="group flex-[1.2] min-w-0 flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between h-4">
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Genre</span>
+                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('genre')} disabled={!selectedScTrack} title="Copy from SC"><Cloud /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.genre) return; const t = titelize(formData.genre); if (t !== formData.genre) setFormData({...formData, genre: t}); }} title="Titelize"><CaseSensitive /></Button>
                     </div>
                   </div>
-                  <Input
-                    value={formData.genre}
-                    onChange={(e) => handleFormChange('genre', e.target.value)}
+                  <Input value={formData.genre} onChange={(e) => handleFormChange('genre', e.target.value)} className={`h-8 text-xs${isChanged('genre') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+                </div>
+
+                {/* Release */}
+                <div className="group w-32 shrink-0 flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between h-4">
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Release</span>
+                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('release_date')} disabled={!selectedScTrack} title="Copy from SC"><Cloud /></Button>
+                    </div>
+                  </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`h-8 w-full justify-start text-left font-normal text-sm px-2.5 dark:bg-input/30${isChanged('release_date') ? ' border-amber-400/70 dark:border-amber-400/70' : ' dark:border-input'}${!formData.release_date ? ' text-muted-foreground' : ''}`}
+                      >
+                        <CalendarIcon className="mr-1 shrink-0" />
+                        {formData.release_date
+                          ? format(parse(formData.release_date, 'yyyy-MM-dd', new Date()), 'dd.MM.yyyy')
+                          : <span>Pick date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <Calendar
+                        mode="single"
+                        selected={formData.release_date && isValid(parse(formData.release_date, 'yyyy-MM-dd', new Date())) ? parse(formData.release_date, 'yyyy-MM-dd', new Date()) : undefined}
+                        onSelect={(date) => handleFormChange('release_date', date ? format(date, 'yyyy-MM-dd') : '')}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-1 shrink-0 pb-0.5">
+                  <div
+                    className={`size-2 rounded-full shrink-0 ${trackInfo.is_ready ? 'bg-chart-1' : 'bg-chart-2'}`}
+                    title={trackInfo.is_ready ? 'Ready' : trackInfo.missing_fields.join(', ')}
                   />
-                </Field>
-
-                <Field>
-                  <div className="flex items-center justify-between mb-2">
-                    <FieldLabel>Release Date</FieldLabel>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => handleCopyFromSc('release_date')}
-                        disabled={!selectedScTrack}
-                        title="Copy from SoundCloud"
-                      >
-                        <Cloud className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                  <Input
-                    type="date"
-                    value={formData.release_date}
-                    onChange={(e) => handleFormChange('release_date', e.target.value)}
-                  />
-                </Field>
-
-                <Field>
-                  <div className="flex items-center justify-between mb-2">
-                    <FieldLabel>SoundCloud Track</FieldLabel>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => {
-                          if (!selectedScTrack) return;
-                          setCommentData({
-                            soundcloud_id: String(selectedScTrack.urn?.split(':').pop() ?? ''),
-                            soundcloud_permalink: stripQueryParams(selectedScTrack.permalink_url || ''),
-                          });
-                        }}
-                        disabled={!selectedScTrack}
-                        title="Copy from SoundCloud"
-                      >
-                        <Cloud className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => setCommentData({ soundcloud_id: '', soundcloud_permalink: '' })}
-                        disabled={!commentData.soundcloud_id && !commentData.soundcloud_permalink}
-                        title="Clear linked track"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {commentData.soundcloud_id && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>ID:</span>
-                        <a
-                          href={commentData.soundcloud_permalink || `https://soundcloud.com/tracks/${commentData.soundcloud_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-mono hover:underline"
-                        >
-                          {commentData.soundcloud_id}
-                        </a>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon-xs" className="text-muted-foreground"><Settings2 /></Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-52" align="end">
+                      <div className="space-y-3">
+                        <h4 className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Auto-Actions</h4>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Checkbox id="auto-artwork" checked={autoActions.autoCopyArtwork} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyArtwork: v as boolean })} />
+                            <label htmlFor="auto-artwork" className="text-xs cursor-pointer flex items-center gap-1.5"><Image className="size-3 text-muted-foreground" />Artwork</label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox id="auto-metadata" checked={autoActions.autoCopyMetadata} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyMetadata: v as boolean })} />
+                            <label htmlFor="auto-metadata" className="text-xs cursor-pointer flex items-center gap-1.5"><Download className="size-3 text-muted-foreground" />Metadata</label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox id="auto-clean" checked={autoActions.autoClean} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoClean: v as boolean })} />
+                            <label htmlFor="auto-clean" className="text-xs cursor-pointer flex items-center gap-1.5"><Eraser className="size-3 text-muted-foreground" />Clean</label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox id="auto-titelize" checked={autoActions.autoTitelize} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoTitelize: v as boolean })} />
+                            <label htmlFor="auto-titelize" className="text-xs cursor-pointer flex items-center gap-1.5"><ArrowUp className="size-3 text-muted-foreground" />Titelize</label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox id="auto-remove-mix" checked={autoActions.autoRemoveOriginalMix} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoRemoveOriginalMix: v as boolean })} />
+                            <label htmlFor="auto-remove-mix" className="text-xs cursor-pointer flex items-center gap-1.5"><XCircle className="size-3 text-muted-foreground" />Remove &quot;Original Mix&quot;</label>
+                          </div>
+                        </div>
                       </div>
-                    )}
-                    {commentData.soundcloud_permalink && (
-                      <div className="text-xs text-muted-foreground truncate">
-                        <a
-                          href={commentData.soundcloud_permalink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:underline"
-                        >
-                          {commentData.soundcloud_permalink}
-                        </a>
-                      </div>
-                    )}
-                    {!commentData.soundcloud_id && !commentData.soundcloud_permalink && (
-                      <p className="text-xs text-muted-foreground">No SoundCloud track linked</p>
-                    )}
-                  </div>
-                </Field>
+                    </PopoverContent>
+                  </Popover>
+                  <Button onClick={handleSave} disabled={loading} size="sm" className="h-7 text-xs px-2.5">Save</Button>
+                  <Button onClick={handleFinalize} disabled={!trackInfo.is_ready || loading} variant="secondary" size="sm" className="h-7 text-xs px-2.5">Finalize</Button>
+                  <Button onClick={handleDelete} disabled={loading} variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive"><Trash2 /></Button>
+                  <Button variant="ghost" size="icon-xs" onClick={() => setDetailOpen(!detailOpen)} className="text-muted-foreground ml-0.5">
+                    {detailOpen ? <ChevronUp /> : <ChevronDown />}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
-                {/* Remix Editor */}
-                <div className="pt-4 space-y-3 border-t">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="is-remix"
-                      checked={isRemix}
-                      onCheckedChange={(checked) => setIsRemix(checked as boolean)}
-                    />
-                    <label htmlFor="is-remix" className="text-sm font-medium cursor-pointer">
-                      This is a Remix
-                    </label>
-                  </div>
+          {/* Detail section (collapsible) */}
+          {trackInfo && detailOpen && (
+            <div className="px-4 py-3 border-b border-border/50 space-y-3 bg-accent/20 shrink-0">
+              {/* SC link */}
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-accent/40 border border-border/40">
+                <Cloud className="size-3.5 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  {commentData.soundcloud_id ? (
+                    <a
+                      href={commentData.soundcloud_permalink || `https://soundcloud.com/tracks/${commentData.soundcloud_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-muted-foreground hover:text-foreground truncate block font-mono transition-colors"
+                    >
+                      {commentData.soundcloud_permalink || `ID: ${commentData.soundcloud_id}`}
+                    </a>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">No SoundCloud track linked</span>
+                  )}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => {
+                      if (!selectedScTrack) return;
+                      setCommentData({
+                        soundcloud_id: String(selectedScTrack.urn?.split(':').pop() ?? ''),
+                        soundcloud_permalink: stripQueryParams(selectedScTrack.permalink_url || ''),
+                      });
+                    }}
+                    disabled={!selectedScTrack}
+                    title="Link selected SC track"
+                  >
+                    <Download />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => setCommentData({ soundcloud_id: '', soundcloud_permalink: '' })}
+                    disabled={!commentData.soundcloud_id && !commentData.soundcloud_permalink}
+                    title="Clear link"
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              </div>
 
-                  {isRemix && (
-                    <div className="space-y-3 pl-6">
-                      <Field>
-                        <div className="flex items-center justify-between mb-2">
-                          <FieldLabel>Original Artist</FieldLabel>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={async () => {
-                                if (!remixData.original_artist) return;
-                                const transformed = cleanArtist(remixData.original_artist);
-                                if (transformed !== remixData.original_artist) setRemixData({ ...remixData, original_artist: transformed });
-                              }}
-                              title="Clean artist"
-                            >
-                              <Sparkles className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={async () => {
-                                if (!remixData.original_artist) return;
-                                const transformed = titelize(remixData.original_artist);
-                                if (transformed !== remixData.original_artist) setRemixData({ ...remixData, original_artist: transformed });
-                              }}
-                              title="Titelize"
-                            >
-                              <CaseSensitive className="h-3 w-3" />
-                            </Button>
+              {/* Artwork management */}
+              {artworkUrl && (
+                <div className="flex items-center gap-3">
+                  <img src={artworkUrl} alt="Artwork" className="size-10 rounded-md object-cover border border-border/50" />
+                  <div className="flex gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*';
+                        input.onchange = handleArtworkUpload as any;
+                        input.click();
+                      }}
+                      disabled={artworkUploading}
+                    >
+                      {artworkUploading ? 'Uploading...' : 'Replace artwork'}
+                    </Button>
+                    <Button variant="outline" size="xs" onClick={handleRemoveArtwork} disabled={loading} className="text-destructive hover:text-destructive">
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Remix + BPM/Key */}
+              <div className="flex gap-3 items-start">
+                {/* Remix group */}
+                <div className={`flex-1 min-w-0 rounded-md border p-2.5 flex gap-3 items-start transition-colors ${
+                  isRemix ? 'border-border/50 bg-accent/20' : 'border-transparent'
+                }`}>
+                  <button
+                    onClick={() => setIsRemix(!isRemix)}
+                    className={`shrink-0 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-1 rounded transition-colors mt-4 ${
+                      isRemix
+                        ? 'bg-primary/15 text-primary border border-primary/25'
+                        : 'text-muted-foreground hover:text-foreground border border-dashed border-border/60 hover:border-border'
+                    }`}
+                  >
+                    <Wand2 className="size-2.5" />
+                    Remix
+                  </button>
+                  <div className={`flex-1 min-w-0 grid grid-cols-3 gap-3 ${!isRemix ? 'invisible pointer-events-none' : ''}`}>
+                      <div className="group flex flex-col gap-0.5">
+                        <div className="flex items-center justify-between h-4">
+                          <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Original Artist</span>
+                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.original_artist) return; const t = cleanArtist(remixData.original_artist); if (t !== remixData.original_artist) setRemixData({...remixData, original_artist: t}); }} title="Clean"><Sparkles /></Button>
+                            <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.original_artist) return; const t = titelize(remixData.original_artist); if (t !== remixData.original_artist) setRemixData({...remixData, original_artist: t}); }} title="Titelize"><CaseSensitive /></Button>
                             <Popover>
                               <PopoverTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6"
-                                  disabled={!selectedScTrack || !scArtistOptions.length}
-                                  title="Artist options"
-                                >
-                                  <Users className="h-3 w-3" />
-                                </Button>
+                                <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length}><Users /></Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-48 p-2">
                                 <div className="space-y-1">
                                   {scArtistOptions.map((artist) => (
-                                    <Button
-                                      key={artist}
-                                      variant="ghost"
-                                      size="sm"
-                                      className="w-full justify-start"
-                                      onClick={() => setRemixData({ ...remixData, original_artist: artist })}
-                                    >
-                                      {artist}
-                                    </Button>
+                                    <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setRemixData({ ...remixData, original_artist: artist })}>{artist}</Button>
                                   ))}
                                 </div>
                               </PopoverContent>
                             </Popover>
                           </div>
                         </div>
-                        <Input
-                          value={remixData.original_artist}
-                          onChange={(e) => handleRemixChange('original_artist', e.target.value)}
-                          placeholder="Original track artist"
-                        />
-                      </Field>
-
-                      <Field>
-                        <div className="flex items-center justify-between mb-2">
-                          <FieldLabel>Remixer</FieldLabel>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={async () => {
-                                if (!remixData.remixer) return;
-                                const transformed = cleanArtist(remixData.remixer);
-                                if (transformed !== remixData.remixer) setRemixData({ ...remixData, remixer: transformed });
-                              }}
-                              title="Clean artist"
-                            >
-                              <Sparkles className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={async () => {
-                                if (!remixData.remixer) return;
-                                const transformed = titelize(remixData.remixer);
-                                if (transformed !== remixData.remixer) setRemixData({ ...remixData, remixer: transformed });
-                              }}
-                              title="Titelize"
-                            >
-                              <CaseSensitive className="h-3 w-3" />
-                            </Button>
+                        <Input value={remixData.original_artist} onChange={(e) => handleRemixChange('original_artist', e.target.value)} className="h-8 text-xs" placeholder="Original artist" />
+                      </div>
+                      <div className="group flex flex-col gap-0.5">
+                        <div className="flex items-center justify-between h-4">
+                          <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Remixer</span>
+                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.remixer) return; const t = cleanArtist(remixData.remixer); if (t !== remixData.remixer) setRemixData({...remixData, remixer: t}); }} title="Clean"><Sparkles /></Button>
+                            <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.remixer) return; const t = titelize(remixData.remixer); if (t !== remixData.remixer) setRemixData({...remixData, remixer: t}); }} title="Titelize"><CaseSensitive /></Button>
                             <Popover>
                               <PopoverTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6"
-                                  disabled={!selectedScTrack || !scArtistOptions.length}
-                                  title="Artist options"
-                                >
-                                  <Users className="h-3 w-3" />
-                                </Button>
+                                <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length}><Users /></Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-48 p-2">
                                 <div className="space-y-1">
                                   {scArtistOptions.map((artist) => (
-                                    <Button
-                                      key={artist}
-                                      variant="ghost"
-                                      size="sm"
-                                      className="w-full justify-start"
-                                      onClick={() => setRemixData({ ...remixData, remixer: artist })}
-                                    >
-                                      {artist}
-                                    </Button>
+                                    <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setRemixData({ ...remixData, remixer: artist })}>{artist}</Button>
                                   ))}
                                 </div>
                               </PopoverContent>
                             </Popover>
                           </div>
                         </div>
-                        <Input
-                          value={remixData.remixer}
-                          onChange={(e) => handleRemixChange('remixer', e.target.value)}
-                          placeholder="Who remixed it"
-                        />
-                      </Field>
-
-                      <Field>
-                        <div className="flex items-center justify-between mb-2">
-                          <FieldLabel>Mix Name</FieldLabel>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={async () => {
-                                if (!remixData.mix_name) return;
-                                const transformed = titelize(remixData.mix_name);
-                                if (transformed !== remixData.mix_name) setRemixData({ ...remixData, mix_name: transformed });
-                              }}
-                              title="Titelize"
-                            >
-                              <CaseSensitive className="h-3 w-3" />
-                            </Button>
+                        <Input value={remixData.remixer} onChange={(e) => handleRemixChange('remixer', e.target.value)} className="h-8 text-xs" placeholder="Remixer" />
+                      </div>
+                      <div className="group flex flex-col gap-0.5">
+                        <div className="flex items-center justify-between h-4">
+                          <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Mix Type</span>
+                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.mix_name) return; const t = titelize(remixData.mix_name); if (t !== remixData.mix_name) setRemixData({...remixData, mix_name: t}); }} title="Titelize"><CaseSensitive /></Button>
                           </div>
                         </div>
-                        <Select
-                          value={remixData.mix_name}
-                          onValueChange={(value) => handleRemixChange('mix_name', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
+                        <Select value={remixData.mix_name} onValueChange={(value) => handleRemixChange('mix_name', value)}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="Remix">Remix</SelectItem>
                             <SelectItem value="VIP Mix">VIP Mix</SelectItem>
@@ -1170,186 +1009,129 @@ export default function MetaEditorPage() {
                             <SelectItem value="Dub Mix">Dub Mix</SelectItem>
                           </SelectContent>
                         </Select>
-                      </Field>
-                    </div>
-                  )}
-                </div>
-
-                {/* Artwork Management */}
-                <div className="pt-4 space-y-3 border-t">
-                  <div className="text-sm font-medium">Artwork</div>
-
-                  {artworkUrl ? (
-                    <div className="space-y-2">
-                      <div className="relative w-48 h-48 border rounded-lg overflow-hidden bg-muted">
-                        <img
-                          src={artworkUrl}
-                          alt="Track artwork"
-                          className="w-full h-full object-cover"
-                        />
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const input = document.createElement('input');
-                            input.type = 'file';
-                            input.accept = 'image/*';
-                            input.onchange = handleArtworkUpload as any;
-                            input.click();
-                          }}
-                          disabled={artworkUploading}
-                        >
-                          {artworkUploading ? 'Uploading...' : 'Replace'}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleRemoveArtwork}
-                          disabled={loading}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="w-48 h-48 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted">
-                        <p className="text-sm text-muted-foreground">No artwork</p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const input = document.createElement('input');
-                          input.type = 'file';
-                          input.accept = 'image/*';
-                          input.onchange = handleArtworkUpload as any;
-                          input.click();
-                        }}
-                        disabled={artworkUploading}
-                      >
-                        {artworkUploading ? 'Uploading...' : 'Upload Artwork'}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-4 space-y-2 border-t">
-                  <div className="text-sm font-medium">File Status</div>
-                  <div className="text-sm">
-                    <strong>Ready for finalization:</strong>{' '}
-                    <span className={trackInfo.is_ready ? 'text-green-600' : 'text-red-600'}>
-                      {trackInfo.is_ready ? 'Yes ✓' : 'No ✗'}
-                    </span>
                   </div>
-                  {trackInfo.missing_fields.length > 0 && (
-                    <div className="text-sm text-muted-foreground">
-                      <strong>Missing:</strong> {trackInfo.missing_fields.join(', ')}
-                    </div>
-                  )}
-                  {trackInfo.issues.length > 0 && (
-                    <div className="text-sm text-amber-600">
-                      <strong>Issues:</strong> {trackInfo.issues.join(', ')}
-                    </div>
-                  )}
+                </div>
+
+                {/* BPM & Key */}
+                <div className="flex gap-2 shrink-0">
+                  <div className="flex flex-col gap-0.5 w-16">
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium h-4 flex items-center">BPM</span>
+                    <Input type="number" value={formData.bpm} onChange={(e) => handleFormChange('bpm', e.target.value)} className={`h-8 text-xs${isChanged('bpm') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+                  </div>
+                  <div className="flex flex-col gap-0.5 w-16">
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium h-4 flex items-center">Key</span>
+                    <Input value={formData.key} onChange={(e) => handleFormChange('key', e.target.value)} className={`h-8 text-xs${isChanged('key') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+                  </div>
                 </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
 
-        {/* SoundCloud Search */}
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Checkbox
-                checked={scSearchEnabled}
-                onCheckedChange={(checked) => setScSearchEnabled(checked as boolean)}
-              />
-              SoundCloud
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {scSearchEnabled ? (
-              <div className="space-y-4">
-                <Field>
-                  <FieldLabel>Search</FieldLabel>
+              {/* Issues */}
+              {trackInfo.issues.length > 0 && (
+                <div className="flex items-center gap-2 text-[10px] text-chart-2 font-mono">
+                  <div className="size-1.5 rounded-full bg-chart-2 shrink-0" />
+                  {trackInfo.issues.join(' · ')}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* File list */}
+          <div className="flex-1 overflow-y-auto">
+            {loading && !trackInfo && (
+              <p className="text-xs text-muted-foreground px-4 py-3">Loading...</p>
+            )}
+            {!trackInfo && files.length === 0 && !loading && (
+              <p className="text-xs text-muted-foreground px-4 py-6 text-center">No files found</p>
+            )}
+            {files.map((file) => (
+              <button
+                key={file.file_path}
+                onClick={() => loadTrackInfo(file)}
+                className={`w-full text-left px-4 py-2.5 transition-colors relative border-b border-border/20 ${
+                  selectedFile?.file_path === file.file_path
+                    ? 'bg-primary/10 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                }`}
+              >
+                {selectedFile?.file_path === file.file_path && (
+                  <div className="absolute inset-y-0 left-0 w-0.5 bg-primary rounded-r" />
+                )}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium truncate">{file.file_name}</div>
+                    <div className="text-[10px] opacity-50 font-mono mt-0.5">
+                      {(file.file_size / 1024 / 1024).toFixed(1)} MB · {file.file_format.replace('.', '').toUpperCase()}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* SoundCloud panel */}
+        <div className={`shrink-0 flex flex-col transition-[width] duration-200 ease-in-out overflow-hidden ${scPanelOpen ? 'w-72 border-l border-border/50' : 'w-0'}`}>
+          <div className="w-72 flex flex-col flex-1 min-h-0">
+            <div className="px-4 py-2.5 border-b border-border/50 flex items-center gap-2">
+              <span className="text-[10px] font-bold tracking-widest text-primary uppercase">SoundCloud</span>
+            </div>
+            <div className="flex flex-col flex-1 min-h-0">
+                <div className="px-3 py-2.5 border-b border-border/50">
                   <div className="flex gap-2">
                     <Input
                       value={scQuery}
                       onChange={(e) => setScQuery(e.target.value)}
                       placeholder="Search tracks..."
                       onKeyDown={(e) => e.key === 'Enter' && handleScSearch()}
+                      className="text-xs h-8"
                     />
-                    <Button
-                      onClick={handleScSearch}
-                      disabled={scSearching || !scQuery.trim()}
-                      size="sm"
-                    >
+                    <Button onClick={handleScSearch} disabled={scSearching || !scQuery.trim()} size="sm" className="h-8 px-3 text-xs shrink-0">
                       {scSearching ? '...' : 'Go'}
                     </Button>
                   </div>
-                </Field>
+                </div>
 
-                {/* Selected track preview */}
                 {selectedScTrack && (
-                  <div className="space-y-3 p-3 border rounded bg-card">
+                  <div className="px-3 py-3 border-b border-border/50 space-y-2">
                     <iframe
                       width="100%"
-                      height="166"
+                      height="120"
                       scrolling="no"
                       frameBorder="no"
                       allow="autoplay"
-                      src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(selectedScTrack.permalink_url ?? '')}&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true`}
-                      className="rounded"
+                      src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(selectedScTrack.permalink_url ?? '')}&color=%23e05d38&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`}
+                      className="rounded-lg overflow-hidden"
                     />
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => handleApplyScMetadata(selectedScTrack)}
-                        disabled={!trackInfo}
-                        size="sm"
-                        className="flex-1"
-                      >
-                        Apply Metadata
-                      </Button>
-                      <Button
-                        onClick={() => setSelectedScTrack(null)}
-                        variant="outline"
-                        size="sm"
-                      >
-                        Clear
-                      </Button>
+                    <div className="flex gap-1.5">
+                      <Button onClick={() => handleApplyScMetadata(selectedScTrack)} disabled={!trackInfo} size="sm" className="flex-1 h-7 text-xs">Apply All</Button>
+                      <Button onClick={() => setSelectedScTrack(null)} variant="ghost" size="sm" className="h-7 text-xs">Clear</Button>
                     </div>
                   </div>
                 )}
 
-                <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                <div className="flex-1 overflow-y-auto">
                   {scResults.map((track) => (
                     <button
                       key={track.urn}
                       onClick={() => handleScTrackSelect(track)}
-                      className={`w-full text-left p-3 rounded border hover:bg-accent transition-colors ${
-                        selectedScTrack?.urn === track.urn ? 'bg-accent border-primary' : ''
+                      className={`w-full text-left px-4 py-2.5 transition-colors relative ${
+                        selectedScTrack?.urn === track.urn
+                          ? 'bg-primary/10 text-foreground'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                       }`}
                     >
-                      <div className="text-sm font-medium truncate">{track.title}</div>
-                      <div className="text-xs text-muted-foreground truncate">{track.user?.username}</div>
-                      {track.genre && (
-                        <div className="text-xs text-muted-foreground">{track.genre}</div>
+                      {selectedScTrack?.urn === track.urn && (
+                        <div className="absolute inset-y-0 left-0 w-0.5 bg-primary rounded-r" />
                       )}
+                      <div className="text-xs font-medium truncate">{track.title}</div>
+                      <div className="text-[10px] opacity-60 truncate">{track.user?.username}{track.genre ? ` · ${track.genre}` : ''}</div>
                     </button>
                   ))}
                 </div>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Enable SoundCloud search to find and apply track metadata
-              </p>
-            )}
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

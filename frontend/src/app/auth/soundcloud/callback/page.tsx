@@ -73,10 +73,10 @@ function CallbackHandler() {
   if (error) {
     return (
       <div className="text-center">
-        <p className="text-red-500 dark:text-red-400 mb-4 text-sm">{error}</p>
+        <p className="text-destructive mb-4 text-sm">{error}</p>
         <Link
           href="/auth/login"
-          className="text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+          className="text-sm text-muted-foreground hover:text-foreground"
         >
           Try again
         </Link>
@@ -86,8 +86,8 @@ function CallbackHandler() {
 
   return (
     <div className="text-center">
-      <div className="w-6 h-6 border-2 border-zinc-300 dark:border-zinc-600 border-t-zinc-900 dark:border-t-zinc-100 rounded-full animate-spin mx-auto mb-4" />
-      <p className="text-zinc-500 dark:text-zinc-400 text-sm">Authenticating…</p>
+      <div className="size-6 border-2 border-border border-t-foreground rounded-full animate-spin mx-auto mb-4" />
+      <p className="text-muted-foreground text-sm">Authenticating…</p>
     </div>
   );
 }
@@ -95,12 +95,12 @@ function CallbackHandler() {
 export default function CallbackPage() {
   return (
     <div className="flex justify-center py-20 px-6">
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-8">
+      <div className="bg-card border border-border rounded-xl p-8 shadow-lg shadow-primary/5">
         <Suspense
           fallback={
             <div className="text-center">
-              <div className="w-6 h-6 border-2 border-zinc-300 dark:border-zinc-600 border-t-zinc-900 dark:border-t-zinc-100 rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-zinc-500 dark:text-zinc-400 text-sm">Loading…</p>
+              <div className="size-6 border-2 border-border border-t-foreground rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-muted-foreground text-sm">Loading…</p>
             </div>
           }
         >
