@@ -6,7 +6,18 @@ import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, pa
 import * as soundcloud from '@/lib/soundcloud';
 import type { SCTrack } from '@/lib/soundcloud';
 import { format, parse, isValid } from 'date-fns';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
@@ -181,6 +192,13 @@ export default function MetaEditorPage() {
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioTime, setAudioTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; message: string; onConfirm: () => void }>({
+    open: false,
+    message: '',
+    onConfirm: () => {},
+  });
+  const showConfirm = (message: string, onConfirm: () => void) =>
+    setConfirmDialog({ open: true, message, onConfirm });
 
   // Reset audio player when selected file changes
   useEffect(() => {
@@ -361,8 +379,8 @@ export default function MetaEditorPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleRemoveArtwork = async () => {
-    if (!trackInfo || !confirm('Remove artwork from this file?')) return;
+  const handleRemoveArtwork = () => {
+    if (!trackInfo) return;
 
     // If artwork is only pending (not saved), just clear it locally
     if (pendingArtworkData) {
@@ -371,19 +389,21 @@ export default function MetaEditorPage() {
       return;
     }
 
-    try {
-      setLoading(true);
-      await api.removeArtwork(trackInfo.file_path);
-      setArtworkUrl(null);
+    showConfirm('Remove artwork from this file?', async () => {
+      try {
+        setLoading(true);
+        await api.removeArtwork(trackInfo.file_path);
+        setArtworkUrl(null);
 
-      // Reload track info
-      await loadTrackInfo(selectedFile!);
-      alert('Artwork removed successfully');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to remove artwork');
-    } finally {
-      setLoading(false);
-    }
+        // Reload track info
+        await loadTrackInfo(selectedFile!);
+        toast.success('Artwork removed successfully');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to remove artwork');
+      } finally {
+        setLoading(false);
+      }
+    });
   };
 
   const handleRemixChange = (field: string, value: string) => {
@@ -503,7 +523,7 @@ export default function MetaEditorPage() {
       };
       setSelectedFile(newFileInfo);
       await loadTrackInfo(newFileInfo);
-      alert('Metadata saved successfully');
+      toast.success('Metadata saved successfully');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save metadata');
     } finally {
@@ -520,7 +540,7 @@ export default function MetaEditorPage() {
       const result = await api.finalizeTrack(trackInfo.file_path, {
         target_format: 'aiff',
       });
-      alert(result.message);
+      toast.success(result.message);
 
       // Reload file list
       await loadFiles();
@@ -535,26 +555,28 @@ export default function MetaEditorPage() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!trackInfo || !confirm('Are you sure you want to delete this file?')) return;
+  const handleDelete = () => {
+    if (!trackInfo) return;
 
-    try {
-      setLoading(true);
-      setError(null);
-      await api.deleteFile(trackInfo.file_path);
+    showConfirm('Are you sure you want to delete this file?', async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        await api.deleteFile(trackInfo.file_path);
 
-      // Reload file list
-      await loadFiles();
-      setSelectedFile(null);
-      setTrackInfo(null);
-      setFormData({ title: '', artist: '', bpm: '', key: '', genre: '', release_date: '' });
-      setCommentData({ soundcloud_id: '', soundcloud_permalink: '' });
-      alert('File deleted successfully');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete file');
-    } finally {
-      setLoading(false);
-    }
+        // Reload file list
+        await loadFiles();
+        setSelectedFile(null);
+        setTrackInfo(null);
+        setFormData({ title: '', artist: '', bpm: '', key: '', genre: '', release_date: '' });
+        setCommentData({ soundcloud_id: '', soundcloud_permalink: '' });
+        toast.success('File deleted successfully');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete file');
+      } finally {
+        setLoading(false);
+      }
+    });
   };
 
   const handleScSearch = async () => {
@@ -1140,6 +1162,28 @@ export default function MetaEditorPage() {
           </div>
         </div>
       </div>
+      <AlertDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialog.message}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                confirmDialog.onConfirm();
+                setConfirmDialog((prev) => ({ ...prev, open: false }));
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
