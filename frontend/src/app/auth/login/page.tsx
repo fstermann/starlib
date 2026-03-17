@@ -34,11 +34,11 @@ export default function LoginPage() {
     <div className="flex justify-center py-20 px-6">
       <div className="max-w-md w-full">
 
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-8 text-center">
-          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+        <div className="bg-card border border-border rounded-xl p-8 text-center shadow-lg shadow-primary/5">
+          <h1 className="text-2xl font-semibold text-card-foreground mb-2">
             Connect SoundCloud
           </h1>
-          <p className="text-zinc-500 dark:text-zinc-400 mb-8 text-sm">
+          <p className="text-muted-foreground mb-8 text-sm">
             Authorize soundcloud-tools to access your SoundCloud account.
           </p>
 
@@ -51,7 +51,7 @@ export default function LoginPage() {
           </Button>
 
           {error && (
-            <p className="mt-4 text-sm text-red-500 dark:text-red-400">{error}</p>
+            <p className="mt-4 text-sm text-destructive">{error}</p>
           )}
         </div>
       </div>

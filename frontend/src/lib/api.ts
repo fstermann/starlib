@@ -163,6 +163,12 @@ export const api = {
     });
   },
 
+  // Audio streaming
+  getAudioUrl(filePath: string): string {
+    const encoded = encodeURIComponent(filePath);
+    return `${API_BASE_URL}/api/metadata/files/${encoded}/audio`;
+  },
+
   // Health check
   async healthCheck(): Promise<{ status: string }> {
     return fetchApi('/health');

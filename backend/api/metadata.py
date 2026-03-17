@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.api.deps import (
     get_root_folder,
@@ -475,10 +475,7 @@ async def update_file_artwork(
 
     # Embed artwork
     try:
-        from soundcloud_tools.handler.track import TrackHandler
-
-        handler = TrackHandler(root_folder=root_folder, file=resolved_path)
-        handler.add_cover(artwork_data)
+        metadata.add_artwork_to_track(resolved_path, root_folder, artwork_data)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -529,6 +526,60 @@ def delete_file_artwork(
     return OperationResponse(
         success=True,
         message=f"Artwork removed from {resolved_path.name}",
+    )
+
+
+# ==================== Audio Streaming ====================
+
+
+AUDIO_MIME_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".aiff": "audio/aiff",
+    ".aif": "audio/aiff",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+}
+
+
+@router.get("/files/{file_path:path}/audio")
+def stream_audio(
+    file_path: str,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> StreamingResponse:
+    """
+    Stream an audio file.
+
+    Args:
+        file_path: Relative or absolute path to audio file.
+        root_folder: Root music folder (injected).
+
+    Returns:
+        StreamingResponse with the audio file bytes.
+
+    Raises:
+        HTTPException: If the file doesn't exist.
+    """
+    resolved_path = validate_file_path(file_path, root_folder)
+
+    if not resolved_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
+
+    mime_type = AUDIO_MIME_TYPES.get(resolved_path.suffix.lower(), "application/octet-stream")
+
+    def iter_file():
+        with open(resolved_path, "rb") as f:
+            while chunk := f.read(65536):
+                yield chunk
+
+    return StreamingResponse(
+        iter_file(),
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{resolved_path.name}"',
+            "Content-Length": str(resolved_path.stat().st_size),
+            "Accept-Ranges": "bytes",
+        },
     )
 
 
