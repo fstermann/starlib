@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { api, type FileInfo, type TrackInfo } from '@/lib/api';
-import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix } from '@/lib/string-utils';
+import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix, removeMix } from '@/lib/string-utils';
 import * as soundcloud from '@/lib/soundcloud';
 import type { SCTrack } from '@/lib/soundcloud';
 import { format, parse, isValid } from 'date-fns';
@@ -317,11 +317,11 @@ export default function MetaEditorPage() {
 
       // Auto-populate SoundCloud search with cleaned filename
       if (trackInfo.file_name) {
-        const cleaned = trackInfo.file_name
+        const cleaned = removeMix(trackInfo.file_name
           .replace(/\.(mp3|aiff|wav)$/i, '')
           .replace(/_/g, ' ')
           .replace(/\[.*?\]/g, '')
-          .trim();
+          .trim());
         setScQuery(cleaned);
       }
     }

@@ -38,6 +38,14 @@ def remove_original_mix(title: str):
     return re.sub(r"\(.*original mix.*\)", "", title, flags=re.IGNORECASE).strip()
 
 
+def remove_mix(title: str) -> str:
+    """Remove parenthesized mix/edit type strings from a title.
+
+    Removes tokens like (Extended Mix), (Original Mix), (Radio Edit), (Club Mix), etc.
+    """
+    return re.sub(r"\([^)]*\b(?:edit|mix|bootleg|rework|flip)\b[^)]*\)", "", title, flags=re.IGNORECASE).strip()
+
+
 def remove_premiere(title: str):
     return re.sub(r"(premiere|premear):?", "", title, flags=re.IGNORECASE).strip()
 

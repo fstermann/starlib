@@ -19,6 +19,10 @@ function isRemix(title: string): boolean {
   return /\(.*edit|mix|bootleg|rework|flip.*\)/i.test(title);
 }
 
+export function removeMix(title: string): string {
+  return title.replace(/\([^)]*\b(?:edit|mix|bootleg|rework|flip)\b[^)]*\)/gi, '').replace(/\s+/g, ' ').trim();
+}
+
 export function cleanTitle(title: string): string {
   title = removeDoubleSpaces(title);
   title = removeFreeDl(title);
