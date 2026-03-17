@@ -90,8 +90,8 @@ export const api = {
 
   async updateTrackInfo(
     filePath: string,
-    updates: Partial<TrackInfo>
-  ): Promise<{ success: boolean; message: string }> {
+    updates: Partial<TrackInfo> & { artwork_data?: string }
+  ): Promise<{ success: boolean; message: string; new_file_path: string | null }> {
     const encoded = encodeURIComponent(filePath);
     return fetchApi(`/api/metadata/files/${encoded}/info`, {
       method: 'POST',
@@ -167,6 +167,13 @@ export const api = {
   getAudioUrl(filePath: string): string {
     const encoded = encodeURIComponent(filePath);
     return `${API_BASE_URL}/api/metadata/files/${encoded}/audio`;
+  },
+
+  // Image proxy (for SoundCloud CDN images — avoids browser CORS)
+  async proxyImage(url: string): Promise<Blob> {
+    const response = await fetch(`${API_BASE_URL}/api/metadata/proxy-image?url=${encodeURIComponent(url)}`);
+    if (!response.ok) throw new ApiError('Failed to proxy image', response.status);
+    return response.blob();
   },
 
   // Health check

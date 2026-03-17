@@ -137,9 +137,8 @@ export default function MetaEditorPage() {
 
   // Artwork state
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
-  const [artworkUploading, setArtworkUploading] = useState(false);
-  // Pending SC artwork URL — shown in preview but not yet saved to file
-  const [pendingScArtworkUrl, setPendingScArtworkUrl] = useState<string | null>(null);
+  // base64-encoded artwork data pending save (from SC or user upload)
+  const [pendingArtworkData, setPendingArtworkData] = useState<string | null>(null);
 
   // Metadata form state
   const [formData, setFormData] = useState({
@@ -239,7 +238,15 @@ export default function MetaEditorPage() {
 
     const hqUrl = scArtworkUrl.replace('-large', '-t500x500');
     setArtworkUrl(hqUrl);
-    setPendingScArtworkUrl(hqUrl);
+    // Fetch via backend proxy (avoids CORS) and store as base64
+    api.proxyImage(hqUrl).then((blob) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const b64 = (reader.result as string).split(',')[1];
+        setPendingArtworkData(b64);
+      };
+      reader.readAsDataURL(blob);
+    }).catch(() => {/* non-fatal */});
   }, [selectedScTrack, autoActions.autoCopyArtwork, trackInfo?.has_artwork]);
 
   // Update form when track info loads
@@ -284,7 +291,7 @@ export default function MetaEditorPage() {
 
       // Load artwork if available
       if (trackInfo.has_artwork) {
-        setPendingScArtworkUrl(null);
+        setPendingArtworkData(null);
         loadArtwork(trackInfo.file_path);
       } else {
         setArtworkUrl(null);
@@ -340,32 +347,27 @@ export default function MetaEditorPage() {
     }
   };
 
-  const handleArtworkUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!trackInfo || !event.target.files || event.target.files.length === 0) return;
-
+  const handleArtworkUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0) return;
     const file = event.target.files[0];
-
-    try {
-      setArtworkUploading(true);
-      await api.uploadArtwork(trackInfo.file_path, file);
-
-      // Reload track info to get updated has_artwork status
-      await loadTrackInfo(selectedFile!);
-      alert('Artwork uploaded successfully');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload artwork');
-    } finally {
-      setArtworkUploading(false);
-    }
+    // Show preview
+    setArtworkUrl(URL.createObjectURL(file));
+    // Read as base64 to include in the next save
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const b64 = (reader.result as string).split(',')[1];
+      setPendingArtworkData(b64);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleRemoveArtwork = async () => {
     if (!trackInfo || !confirm('Remove artwork from this file?')) return;
 
     // If artwork is only pending (not saved), just clear it locally
-    if (pendingScArtworkUrl) {
+    if (pendingArtworkData) {
       setArtworkUrl(null);
-      setPendingScArtworkUrl(null);
+      setPendingArtworkData(null);
       return;
     }
 
@@ -484,24 +486,23 @@ export default function MetaEditorPage() {
         updates.remixers = [];
       }
 
-      await api.updateTrackInfo(trackInfo.file_path, updates);
-
-      // Upload pending SC artwork if any
-      if (pendingScArtworkUrl) {
-        try {
-          const response = await fetch(pendingScArtworkUrl);
-          if (response.ok) {
-            const blob = await response.blob();
-            const artFile = new File([blob], 'artwork.jpg', { type: blob.type || 'image/jpeg' });
-            await api.uploadArtwork(trackInfo.file_path, artFile);
-          }
-        } catch (err) {
-          console.error('Failed to upload pending artwork:', err);
-        }
+      // Include pending artwork data (from SC or user upload) if any
+      if (pendingArtworkData) {
+        updates.artwork_data = pendingArtworkData;
       }
 
-      // Reload track info
-      await loadTrackInfo(selectedFile!);
+      const result = await api.updateTrackInfo(trackInfo.file_path, updates);
+
+      // Refresh file list and reload track info with (possibly renamed) path
+      const newFilePath = result.new_file_path ?? trackInfo.file_path;
+      await loadFiles();
+      const newFileInfo: FileInfo = {
+        ...selectedFile!,
+        file_path: newFilePath,
+        file_name: newFilePath.split('/').pop() ?? selectedFile!.file_name,
+      };
+      setSelectedFile(newFileInfo);
+      await loadTrackInfo(newFileInfo);
       alert('Metadata saved successfully');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save metadata');
@@ -517,8 +518,7 @@ export default function MetaEditorPage() {
       setLoading(true);
       setError(null);
       const result = await api.finalizeTrack(trackInfo.file_path, {
-        target_format: 'mp3',
-        quality: 320,
+        target_format: 'aiff',
       });
       alert(result.message);
 
@@ -598,7 +598,14 @@ export default function MetaEditorPage() {
     if (trackInfo && !trackInfo.has_artwork && track.artwork_url) {
       const hqUrl = track.artwork_url.replace('-large', '-t500x500');
       setArtworkUrl(hqUrl);
-      setPendingScArtworkUrl(hqUrl);
+      api.proxyImage(hqUrl).then((blob) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const b64 = (reader.result as string).split(',')[1];
+          setPendingArtworkData(b64);
+        };
+        reader.readAsDataURL(blob);
+      }).catch(() => {/* non-fatal */});
     }
   };
 
@@ -697,7 +704,7 @@ export default function MetaEditorPage() {
               <div className="flex items-end gap-2">
                 {/* Artwork thumbnail */}
                 <div
-                  className={`group relative size-12 shrink-0 rounded-lg overflow-hidden border cursor-pointer ${pendingScArtworkUrl ? 'border-amber-400/70' : 'border-border/50'}`}
+                  className={`group relative size-12 shrink-0 rounded-lg overflow-hidden border cursor-pointer ${pendingArtworkData ? 'border-amber-400/70' : 'border-border/50'}`}
                   onClick={() => {
                     const input = document.createElement('input');
                     input.type = 'file';
@@ -918,9 +925,9 @@ export default function MetaEditorPage() {
                         input.onchange = handleArtworkUpload as any;
                         input.click();
                       }}
-                      disabled={artworkUploading}
+                      disabled={false}
                     >
-                      {artworkUploading ? 'Uploading...' : 'Replace artwork'}
+                      Replace artwork
                     </Button>
                     <Button variant="outline" size="xs" onClick={handleRemoveArtwork} disabled={loading} className="text-destructive hover:text-destructive">
                       Remove
