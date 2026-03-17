@@ -103,6 +103,7 @@ class FileInfoResponse(BaseModel):
     file_name: str
     file_size: int
     file_format: str
+    has_artwork: bool = False
 
 
 class FolderListResponse(BaseModel):
