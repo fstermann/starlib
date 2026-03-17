@@ -65,6 +65,7 @@ export interface FileInfo {
   file_name: string;
   file_size: number;
   file_format: string;
+  has_artwork: boolean;
 }
 
 export interface FolderList {
@@ -161,6 +162,12 @@ export const api = {
     return fetchApi(`/api/metadata/files/${encoded}/artwork`, {
       method: 'DELETE',
     });
+  },
+
+  // Artwork URL (for use directly in <img> src)
+  getArtworkUrl(filePath: string): string {
+    const encoded = encodeURIComponent(filePath);
+    return `${API_BASE_URL}/api/metadata/files/${encoded}/artwork`;
   },
 
   // Audio streaming

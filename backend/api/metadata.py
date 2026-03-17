@@ -35,6 +35,7 @@ from backend.schemas.metadata import (
     TrackInfoUpdateRequest,
 )
 from soundcloud_tools.handler.folder import FolderHandler
+from soundcloud_tools.handler.track import TrackHandler
 
 router = APIRouter(prefix="/api/metadata", tags=["metadata"])
 
@@ -99,8 +100,10 @@ def list_folder_files(
             file_name=f.name,
             file_size=f.stat().st_size,
             file_format=f.suffix,
+            has_artwork=bool(TrackHandler(root_folder=root_folder, file=f).covers),
         )
         for f in files
+        if not f.suffix == ".asd"
     ]
 
     return FolderListResponse(

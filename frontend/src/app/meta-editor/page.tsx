@@ -722,7 +722,8 @@ export default function MetaEditorPage() {
 
           {/* Selected track editor row */}
           {trackInfo && (
-            <div className="px-3 py-2.5 border-b border-border/50 bg-card/40 shrink-0">
+            <div className="px-3 pt-2.5 pb-2 shrink-0">
+              <div className="rounded-xl border border-border bg-card shadow-sm p-3">
               <div className="flex items-end gap-2">
                 {/* Artwork thumbnail */}
                 <div
@@ -879,14 +880,15 @@ export default function MetaEditorPage() {
                   <Button variant="ghost" size="icon-xs" onClick={() => setDetailOpen(!detailOpen)} className="text-muted-foreground ml-0.5">
                     {detailOpen ? <ChevronUp /> : <ChevronDown />}
                   </Button>
-                </div>
+
+
               </div>
             </div>
-          )}
+
 
           {/* Detail section (collapsible) */}
-          {trackInfo && detailOpen && (
-            <div className="px-4 py-3 border-b border-border/50 space-y-3 bg-accent/20 shrink-0">
+          { detailOpen && (
+            <div className="px-4 py-3 space-y-3 shrink-0">
               {/* SC link */}
               <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-accent/40 border border-border/40">
                 <Cloud className="size-3.5 text-primary shrink-0" />
@@ -1064,6 +1066,8 @@ export default function MetaEditorPage() {
               )}
             </div>
           )}
+          </div>
+          </div>)}
 
           {/* File list */}
           <div className="flex-1 overflow-y-auto">
@@ -1087,6 +1091,15 @@ export default function MetaEditorPage() {
                   <div className="absolute inset-y-0 left-0 w-0.5 bg-primary rounded-r" />
                 )}
                 <div className="flex items-center gap-3">
+                  <div className="size-8 shrink-0 rounded overflow-hidden border border-border/30">
+                    {file.has_artwork ? (
+                      <img src={api.getArtworkUrl(file.file_path)} alt="" className="size-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="size-full bg-accent/40 flex items-center justify-center">
+                        <Image className="size-3 text-muted-foreground/40" />
+                      </div>
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium truncate">{file.file_name}</div>
                     <div className="text-[10px] opacity-50 font-mono mt-0.5">
@@ -1144,7 +1157,7 @@ export default function MetaEditorPage() {
                     <button
                       key={track.urn}
                       onClick={() => handleScTrackSelect(track)}
-                      className={`w-full text-left px-4 py-2.5 transition-colors relative ${
+                      className={`w-full text-left px-3 py-2 transition-colors relative ${
                         selectedScTrack?.urn === track.urn
                           ? 'bg-primary/10 text-foreground'
                           : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -1153,8 +1166,21 @@ export default function MetaEditorPage() {
                       {selectedScTrack?.urn === track.urn && (
                         <div className="absolute inset-y-0 left-0 w-0.5 bg-primary rounded-r" />
                       )}
-                      <div className="text-xs font-medium truncate">{track.title}</div>
-                      <div className="text-[10px] opacity-60 truncate">{track.user?.username}{track.genre ? ` · ${track.genre}` : ''}</div>
+                      <div className="flex items-center gap-2.5">
+                        <div className="size-8 shrink-0 rounded overflow-hidden border border-border/30">
+                          {track.artwork_url ? (
+                            <img src={track.artwork_url} alt="" className="size-full object-cover" loading="lazy" />
+                          ) : (
+                            <div className="size-full bg-accent/40 flex items-center justify-center">
+                              <Image className="size-3 text-muted-foreground/40" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium truncate">{track.title}</div>
+                          <div className="text-[10px] opacity-60 truncate">{track.user?.username}{track.genre ? ` · ${track.genre}` : ''}</div>
+                        </div>
+                      </div>
                     </button>
                   ))}
                 </div>
