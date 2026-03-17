@@ -25,6 +25,7 @@ class TrackInfoUpdateRequest(BaseModel):
     comment: str | None = None
     release_date: date | None = None
     remixers: list[str] | None = None
+    artwork_data: str | None = None  # base64-encoded image bytes
 
 
 class RemixInfo(BaseModel):
@@ -46,7 +47,7 @@ class CommentInfo(BaseModel):
 class FinalizeRequest(BaseModel):
     """Request to finalize a track (convert and move)."""
 
-    target_format: Literal["mp3", "aiff"] = Field(default="mp3", description="Target audio format")
+    target_format: Literal["mp3", "aiff"] = Field(default="aiff", description="Target audio format")
     quality: int = Field(default=320, description="Quality for MP3 (kbps)")
     collection_folder: str | None = Field(None, description="Target collection folder (optional)")
 
@@ -136,6 +137,7 @@ class OperationResponse(BaseModel):
 
     success: bool
     message: str
+    new_file_path: str | None = None
 
 
 class CollectionStatsResponse(BaseModel):

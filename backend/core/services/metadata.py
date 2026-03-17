@@ -442,16 +442,19 @@ def add_artwork_to_track(
 
     handler = TrackHandler(root_folder=root_folder, file=file_path)
 
-    handler.track.tags.add(
+    track = handler.track
+
+    track.tags.delall("APIC")
+    track.tags.add(
         APIC(
-            encoding=0,
+            encoding=3,
             mime="image/jpeg",
             type=3,
             desc="Cover",
             data=artwork_data,
         )
     )
-    handler.track.save()
+    track.save()
 
 
 def remove_all_artwork_from_track(

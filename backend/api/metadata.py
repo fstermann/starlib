@@ -8,10 +8,13 @@ FastAPI endpoints for metadata editing operations:
 - Artwork management
 """
 
+import base64
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.api.deps import (
@@ -220,16 +223,41 @@ def update_file_info(
 
     # Save metadata
     try:
-        metadata.save_track_metadata(resolved_path, root_folder, modified_info)
+        new_path = metadata.save_track_metadata(resolved_path, root_folder, modified_info)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to save metadata: {e!s}"
         ) from e
 
+    # Download and embed artwork from URL if provided
+    if updates.artwork_data:
+        artwork_bytes = base64.b64decode(updates.artwork_data)
+        metadata.add_artwork_to_track(new_path, root_folder, artwork_bytes)
+
     return OperationResponse(
         success=True,
-        message=f"Metadata updated for {resolved_path.name}",
+        message=f"Metadata updated for {new_path.name}",
+        new_file_path=str(new_path),
     )
+
+
+# ==================== Image Proxy ====================
+
+_ALLOWED_SC_HOSTS = {"i1.sndcdn.com", "i2.sndcdn.com", "i3.sndcdn.com", "i4.sndcdn.com"}
+
+
+@router.get("/proxy-image")
+def proxy_image(url: str) -> Response:
+    """Proxy an image from an allowed SoundCloud CDN host."""
+    parsed = urlparse(url)
+    if parsed.hostname not in _ALLOWED_SC_HOSTS or parsed.scheme != "https":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="URL not allowed")
+    try:
+        r = httpx.get(url, timeout=10, follow_redirects=True)
+        r.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Failed to fetch image: {e!s}") from e
+    return Response(content=r.content, media_type=r.headers.get("content-type", "image/jpeg"))
 
 
 @router.get("/files/{file_path:path}/readiness", response_model=FileReadinessResponse)
