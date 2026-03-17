@@ -14,6 +14,7 @@ from soundcloud_tools.handler.track import TrackHandler, TrackInfo
 from soundcloud_tools.utils.string import (
     remove_double_spaces,
     remove_free_dl,
+    remove_mix,
     remove_remix,
     replace_underscores,
 )
@@ -42,7 +43,7 @@ def prepare_search_query(filename: str) -> str:
     >>> prepare_search_query("Artist_Name_-_Track_Title_(Free_DL)_Remix")
     'Artist Name - Track Title'
     """
-    return remove_double_spaces(remove_remix(replace_underscores(remove_free_dl(filename))))
+    return remove_double_spaces(remove_mix(remove_remix(replace_underscores(remove_free_dl(filename)))))
 
 
 def build_modified_track_info(
