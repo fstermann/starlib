@@ -739,8 +739,15 @@ export default function MetaEditorPage() {
                   {artworkUrl ? (
                     <>
                       <img src={artworkUrl} alt="Artwork" className="size-full object-cover" />
-                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                         <Image className="size-3 text-white" />
+                        <button
+                          className="text-white/70 hover:text-red-400 transition-colors"
+                          onClick={(e) => { e.stopPropagation(); handleRemoveArtwork(); }}
+                          title="Remove artwork"
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
                       </div>
                     </>
                   ) : (
@@ -888,78 +895,7 @@ export default function MetaEditorPage() {
 
           {/* Detail section (collapsible) */}
           { detailOpen && (
-            <div className="px-4 py-3 space-y-3 shrink-0">
-              {/* SC link */}
-              <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-accent/40 border border-border/40">
-                <Cloud className="size-3.5 text-primary shrink-0" />
-                <div className="flex-1 min-w-0">
-                  {commentData.soundcloud_id ? (
-                    <a
-                      href={commentData.soundcloud_permalink || `https://soundcloud.com/tracks/${commentData.soundcloud_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] text-muted-foreground hover:text-foreground truncate block font-mono transition-colors"
-                    >
-                      {commentData.soundcloud_permalink || `ID: ${commentData.soundcloud_id}`}
-                    </a>
-                  ) : (
-                    <span className="text-[10px] text-muted-foreground">No SoundCloud track linked</span>
-                  )}
-                </div>
-                <div className="flex gap-1 shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => {
-                      if (!selectedScTrack) return;
-                      setCommentData({
-                        soundcloud_id: String(selectedScTrack.urn?.split(':').pop() ?? ''),
-                        soundcloud_permalink: stripQueryParams(selectedScTrack.permalink_url || ''),
-                      });
-                    }}
-                    disabled={!selectedScTrack}
-                    title="Link selected SC track"
-                  >
-                    <Download />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => setCommentData({ soundcloud_id: '', soundcloud_permalink: '' })}
-                    disabled={!commentData.soundcloud_id && !commentData.soundcloud_permalink}
-                    title="Clear link"
-                  >
-                    <Trash2 />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Artwork management */}
-              {artworkUrl && (
-                <div className="flex items-center gap-3">
-                  <img src={artworkUrl} alt="Artwork" className="size-10 rounded-md object-cover border border-border/50" />
-                  <div className="flex gap-1.5">
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      onClick={() => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = 'image/*';
-                        input.onchange = handleArtworkUpload as any;
-                        input.click();
-                      }}
-                      disabled={false}
-                    >
-                      Replace artwork
-                    </Button>
-                    <Button variant="outline" size="xs" onClick={handleRemoveArtwork} disabled={loading} className="text-destructive hover:text-destructive">
-                      Remove
-                    </Button>
-                  </div>
-                </div>
-              )}
-
+            <div className="py-3 space-y-3 shrink-0">
               {/* Remix + BPM/Key */}
               <div className="flex gap-3 items-start">
                 {/* Remix group */}
@@ -977,7 +913,7 @@ export default function MetaEditorPage() {
                     <Wand2 className="size-2.5" />
                     Remix
                   </button>
-                  <div className={`flex-1 min-w-0 grid grid-cols-3 gap-3 ${!isRemix ? 'invisible pointer-events-none' : ''}`}>
+                  <div className={`flex-1 min-w-0 grid grid-cols-3 gap-3 ${!isRemix ? 'opacity-50 pointer-events-none' : ''}`}>
                       <div className="group flex flex-col gap-0.5">
                         <div className="flex items-center justify-between h-4">
                           <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Original Artist</span>
@@ -1054,6 +990,51 @@ export default function MetaEditorPage() {
                     <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium h-4 flex items-center">Key</span>
                     <Input value={formData.key} onChange={(e) => handleFormChange('key', e.target.value)} className={`h-8 text-xs${isChanged('key') ? ' border-amber-400/70' : ''}`} placeholder="—" />
                   </div>
+                </div>
+              </div>
+
+              {/* SC link */}
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-accent/40 border border-border/40">
+                <Cloud className="size-3.5 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  {commentData.soundcloud_id ? (
+                    <a
+                      href={commentData.soundcloud_permalink || `https://soundcloud.com/tracks/${commentData.soundcloud_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-muted-foreground hover:text-foreground truncate block font-mono transition-colors"
+                    >
+                      {commentData.soundcloud_permalink || `ID: ${commentData.soundcloud_id}`}
+                    </a>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">No SoundCloud track linked</span>
+                  )}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => {
+                      if (!selectedScTrack) return;
+                      setCommentData({
+                        soundcloud_id: String(selectedScTrack.urn?.split(':').pop() ?? ''),
+                        soundcloud_permalink: stripQueryParams(selectedScTrack.permalink_url || ''),
+                      });
+                    }}
+                    disabled={!selectedScTrack}
+                    title="Link selected SC track"
+                  >
+                    <Download />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => setCommentData({ soundcloud_id: '', soundcloud_permalink: '' })}
+                    disabled={!commentData.soundcloud_id && !commentData.soundcloud_permalink}
+                    title="Clear link"
+                  >
+                    <Trash2 />
+                  </Button>
                 </div>
               </div>
 
