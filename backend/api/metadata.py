@@ -374,46 +374,6 @@ def finalize_file(
     )
 
 
-@router.delete("/files/{file_path:path}", response_model=OperationResponse)
-def delete_file(
-    file_path: str,
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> OperationResponse:
-    """
-    Delete an audio file.
-
-    Parameters
-    ----------
-    file_path : str
-        Relative or absolute path to audio file
-    root_folder : Path
-        Root music folder (injected)
-
-    Returns
-    -------
-    OperationResponse
-        Operation result
-
-    Raises
-    ------
-    HTTPException
-        If file doesn't exist or deletion fails
-    """
-    resolved_path = validate_file_path(file_path, root_folder)
-
-    try:
-        metadata.delete_track_file(resolved_path, root_folder)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete file: {e!s}"
-        ) from e
-
-    return OperationResponse(
-        success=True,
-        message=f"File deleted: {resolved_path.name}",
-    )
-
-
 # ==================== Artwork Operations ====================
 
 
@@ -557,6 +517,46 @@ def delete_file_artwork(
     return OperationResponse(
         success=True,
         message=f"Artwork removed from {resolved_path.name}",
+    )
+
+
+@router.delete("/files/{file_path:path}", response_model=OperationResponse)
+def delete_file(
+    file_path: str,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> OperationResponse:
+    """
+    Delete an audio file.
+
+    Parameters
+    ----------
+    file_path : str
+        Relative or absolute path to audio file
+    root_folder : Path
+        Root music folder (injected)
+
+    Returns
+    -------
+    OperationResponse
+        Operation result
+
+    Raises
+    ------
+    HTTPException
+        If file doesn't exist or deletion fails
+    """
+    resolved_path = validate_file_path(file_path, root_folder)
+
+    try:
+        metadata.delete_track_file(resolved_path, root_folder)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete file: {e!s}"
+        ) from e
+
+    return OperationResponse(
+        success=True,
+        message=f"File deleted: {resolved_path.name}",
     )
 
 

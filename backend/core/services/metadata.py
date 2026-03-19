@@ -473,8 +473,9 @@ def remove_all_artwork_from_track(
         Root folder for the music library
     """
     handler = TrackHandler(root_folder=root_folder, file=file_path)
-    handler.track.tags.delall("APIC")
-    handler.track.save()
+    track = handler.track
+    track.tags.delall("APIC")
+    track.save()
 
 
 def extract_artwork(file_path: Path, root_folder: Path) -> Path | None:
