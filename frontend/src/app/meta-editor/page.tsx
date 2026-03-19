@@ -582,12 +582,26 @@ export default function MetaEditorPage() {
   const handleScSearch = async () => {
     if (!scQuery.trim()) return;
 
+    const isUrl = /^https?:\/\/(www\.)?soundcloud\.com\//i.test(scQuery.trim());
+
     try {
       setScSearching(true);
       setError(null);
-      const tracks = await soundcloud.searchTracks(scQuery);
-      setScResults(tracks);
-      setSelectedScTrack(tracks.length > 0 ? tracks[0] : null);
+      if (isUrl) {
+        const result = await soundcloud.resolveUrl(scQuery.trim());
+        if (result && 'title' in result) {
+          setScResults([result as SCTrack]);
+          setSelectedScTrack(result as SCTrack);
+        } else {
+          setScResults([]);
+          setSelectedScTrack(null);
+          setError('URL did not resolve to a track');
+        }
+      } else {
+        const tracks = await soundcloud.searchTracks(scQuery);
+        setScResults(tracks);
+        setSelectedScTrack(tracks.length > 0 ? tracks[0] : null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'SoundCloud search failed');
     } finally {
