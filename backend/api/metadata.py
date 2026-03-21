@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi_pagination import Page, paginate
 
 from backend.api.deps import (
     get_root_folder,
@@ -29,7 +30,6 @@ from backend.schemas.metadata import (
     FileReadinessResponse,
     FinalizeRequest,
     FinalizeResponse,
-    FolderListResponse,
     OperationResponse,
     TrackInfoResponse,
     TrackInfoUpdateRequest,
@@ -43,13 +43,13 @@ router = APIRouter(prefix="/api/metadata", tags=["metadata"])
 # ==================== File and Folder Operations ====================
 
 
-@router.get("/folders/{mode}/files", response_model=FolderListResponse)
+@router.get("/folders/{mode}/files", response_model=Page[FileInfoResponse])
 def list_folder_files(
     mode: str,
     root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> FolderListResponse:
+) -> Page[FileInfoResponse]:
     """
-    List all audio files in a specific folder.
+    List all audio files in a specific folder (paginated).
 
     Parameters
     ----------
@@ -60,8 +60,8 @@ def list_folder_files(
 
     Returns
     -------
-    FolderListResponse
-        List of audio files with basic info
+    Page[FileInfoResponse]
+        Paginated list of audio files with basic info
 
     Raises
     ------
@@ -90,29 +90,21 @@ def list_folder_files(
             detail=errors,  # Return first error
         )
 
-    # List files
-    files = collection.list_audio_files(folder_path)
+    # List files (lightweight — no metadata reads yet)
+    files = [f for f in collection.list_audio_files(folder_path) if f.suffix != ".asd"]
 
-    # Convert to response format
-    file_infos = [
-        FileInfoResponse(
+    # Only build FileInfoResponse (including the expensive .covers check)
+    # for the items that land in the current page, not all 4000+ files.
+    def to_file_info(f: Path) -> FileInfoResponse:
+        return FileInfoResponse(
             file_path=str(f),
             file_name=f.name,
             file_size=f.stat().st_size,
             file_format=f.suffix,
             has_artwork=bool(TrackHandler(root_folder=root_folder, file=f).covers),
         )
-        for f in files
-        if not f.suffix == ".asd"
-    ]
 
-    return FolderListResponse(
-        folder_path=str(folder_path),
-        folder_mode=validated_mode,
-        total_files=len(files),
-        total_size_mb=sum(f.file_size for f in file_infos) / (1024 * 1024),
-        files=file_infos,
-    )
+    return paginate(files, transformer=lambda items: [to_file_info(f) for f in items])
 
 
 @router.get("/files/{file_path:path}/info", response_model=TrackInfoResponse)

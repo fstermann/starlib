@@ -68,20 +68,20 @@ export interface FileInfo {
   has_artwork: boolean;
 }
 
-export interface FolderList {
-  folder_path: string;
-  folder_mode: string;
-  total_files: number;
-  total_size_mb: number;
-  files: FileInfo[];
+export interface FilePage {
+  items: FileInfo[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
 }
 
 // ==================== API Methods ====================
 
 export const api = {
   // File operations
-  async listFiles(mode: string): Promise<FolderList> {
-    return fetchApi(`/api/metadata/folders/${mode}/files`);
+  async listFiles(mode: string, page = 1, size = 50): Promise<FilePage> {
+    return fetchApi(`/api/metadata/folders/${mode}/files?page=${page}&size=${size}`);
   },
 
   async getTrackInfo(filePath: string): Promise<TrackInfo> {
