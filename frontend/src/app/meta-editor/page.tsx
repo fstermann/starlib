@@ -964,7 +964,7 @@ export default function MetaEditorPage() {
                           {isChanged('title') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('title', originalFormData.title)} title="Reset"><RotateCcw /></Button>}
                         </div>
                       </div>
-                      <Input value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} className={`h-8 text-xs font-medium${isChanged('title') ? ' border-amber-400/70' : ''}`} placeholder="Title" />
+                      <Input value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} className={`h-8 text-xs${isChanged('title') ? ' border-amber-400/70' : ''}`} placeholder="Title" />
                     </div>
 
                     {/* Genre */}
