@@ -738,7 +738,7 @@ export default function MetaEditorPage() {
                 <button
                   key={mode}
                   onClick={() => setFolderMode(mode)}
-                  className={`px-3 py-1.5 rounded text-[10px] font-medium tracking-widest uppercase transition-colors ${
+                  className={`cursor-pointer px-3 py-1.5 rounded text-[10px] font-medium tracking-widest uppercase transition-colors ${
                     folderMode === mode
                       ? 'text-primary bg-primary/10'
                       : 'text-muted-foreground hover:text-foreground'
