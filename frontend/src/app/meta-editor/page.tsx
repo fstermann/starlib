@@ -370,8 +370,11 @@ export default function MetaEditorPage() {
         setArtworkUrl(null);
       }
 
-      // Auto-populate SoundCloud search with cleaned filename
-      if (trackInfo.file_name) {
+      // Auto-populate SoundCloud search: use saved permalink URL for exact match, else cleaned filename
+      if (parsedComment.soundcloud_permalink) {
+        setScQuery(parsedComment.soundcloud_permalink);
+        setScQueryPending(true);
+      } else if (trackInfo.file_name) {
         const cleaned = removeMix(trackInfo.file_name
           .replace(/\.(mp3|aiff|wav)$/i, '')
           .replace(/_/g, ' ')
