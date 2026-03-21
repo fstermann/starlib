@@ -553,28 +553,42 @@ export default function MetaEditorPage() {
     }
   };
 
-  const handleFinalize = async () => {
+  const handleFinalize = () => {
     if (!trackInfo) return;
 
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await api.finalizeTrack(trackInfo.file_path, {
-        target_format: 'aiff',
-      });
-      toast.success(result.message);
+    // Capture before navigating away
+    const filePathToFinalize = trackInfo.file_path;
+    const trackName = formData.title || selectedFile?.file_name || filePathToFinalize;
 
-      // Reload file list
-      await loadFiles();
+    // Determine next file to navigate to
+    const currentIndex = files.findIndex(f => f.file_path === selectedFile?.file_path);
+    const nextFile = currentIndex !== -1
+      ? (files[currentIndex + 1] ?? files[currentIndex - 1] ?? null)
+      : null;
+
+    // Optimistically remove from list and navigate immediately
+    setFiles(prev => prev.filter(f => f.file_path !== filePathToFinalize));
+    if (nextFile) {
+      loadTrackInfo(nextFile);
+    } else {
       setSelectedFile(null);
       setTrackInfo(null);
       setFormData({ title: '', artist: '', bpm: '', key: '', genre: '', release_date: '' });
       setCommentData({ soundcloud_id: '', soundcloud_permalink: '' });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to finalize track');
-    } finally {
-      setLoading(false);
     }
+
+    // Fire finalization in the background
+    const toastId = toast.loading(`Finalizing "${trackName}"…`);
+    api.finalizeTrack(filePathToFinalize, { target_format: 'aiff' })
+      .then((result) => {
+        toast.success(result.message, { id: toastId });
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : 'Failed to finalize track';
+        toast.error(message, { id: toastId, duration: Infinity });
+        // Re-sync so the failed track reappears in the list
+        loadFiles();
+      });
   };
 
   const handleDelete = () => {
