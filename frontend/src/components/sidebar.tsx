@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Music2, FilePen } from "lucide-react";
+import { Music2, FilePen, Moon, Sun } from "lucide-react";
 
 interface User {
   id: number;
@@ -20,6 +20,17 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [dark, setDark] = useState(true);
+
+  useEffect(() => {
+    setDark(document.documentElement.classList.contains('dark'));
+  }, []);
+
+  function toggleTheme() {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    setDark(isDark);
+  }
 
   useEffect(() => {
     try {
@@ -72,6 +83,20 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Theme toggle */}
+      <div className="px-2 pb-1 shrink-0">
+        <button
+          onClick={toggleTheme}
+          title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+        >
+          {dark ? <Sun className="size-4 shrink-0" /> : <Moon className="size-4 shrink-0" />}
+          <span className="text-xs opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
+            {dark ? 'Light mode' : 'Dark mode'}
+          </span>
+        </button>
+      </div>
 
       {/* User / disconnect */}
       <div className="border-t border-border/50 px-2 py-3 shrink-0">
