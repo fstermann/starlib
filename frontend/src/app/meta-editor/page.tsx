@@ -179,6 +179,7 @@ export default function MetaEditorPage() {
 
   // Structured comment state (SC ID + permalink)
   const [commentData, setCommentData] = useState({ soundcloud_id: '', soundcloud_permalink: '' });
+  const [scLinkEnabled, setScLinkEnabled] = useState(true);
 
   // Auto-action settings
   const [autoActions, setAutoActions] = useState({
@@ -296,7 +297,9 @@ export default function MetaEditorPage() {
       };
       setFormData(newFormData);
       setOriginalFormData(newFormData);
-      setCommentData(parseComment(trackInfo.comment));
+      const parsedComment = parseComment(trackInfo.comment);
+      setCommentData(parsedComment);
+      setScLinkEnabled(!!(parsedComment.soundcloud_id || parsedComment.soundcloud_permalink));
 
       // Set remix data — prefer embedded remixers, then auto-detect from title
       if (trackInfo.remixers && trackInfo.remixers.length > 0) {
@@ -489,7 +492,8 @@ export default function MetaEditorPage() {
 
   const isChanged = (field: keyof typeof formData) => formData[field] !== originalFormData[field];
 
-  const hasChanges = scSearching || scQueryPending || pendingArtworkData !== null ||
+  const scBusy = (scSearching || scQueryPending) && !commentData.soundcloud_id && !commentData.soundcloud_permalink;
+  const hasChanges = scBusy || pendingArtworkData !== null ||
     (Object.keys(formData) as (keyof typeof formData)[]).some(k => formData[k] !== originalFormData[k]);
 
   const formComplete =
@@ -517,8 +521,11 @@ export default function MetaEditorPage() {
         }
       });
 
-      // Serialize structured comment
-      const commentStr = serializeComment(commentData.soundcloud_id, commentData.soundcloud_permalink);
+      // Serialize structured comment (omit SC data when link is disabled)
+      const commentStr = serializeComment(
+        scLinkEnabled ? commentData.soundcloud_id : '',
+        scLinkEnabled ? commentData.soundcloud_permalink : '',
+      );
       if (commentStr) updates.comment = commentStr;
 
       // Add remix data if enabled
@@ -1033,7 +1040,7 @@ export default function MetaEditorPage() {
                     {/* Toggle button sits on the top border */}
                     <button
                       onClick={() => setIsRemix(!isRemix)}
-                      className={`absolute -top-[11px] left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
+                      className={`cursor-pointer absolute -top-[11px] left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
                         isRemix
                           ? 'bg-card border border-border/50 text-primary shadow-sm'
                           : 'bg-card border border-dashed border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
@@ -1111,47 +1118,61 @@ export default function MetaEditorPage() {
               </div>
 
               {/* SC link */}
-              <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-accent/40 border border-border/40">
-                <Cloud className="size-3.5 text-primary shrink-0" />
-                <div className="flex-1 min-w-0">
-                  {commentData.soundcloud_id ? (
-                    <a
-                      href={commentData.soundcloud_permalink || `https://soundcloud.com/tracks/${commentData.soundcloud_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] text-muted-foreground hover:text-foreground truncate block font-mono transition-colors"
+              <div className="pt-3">
+                <div className={`relative rounded-lg border transition-colors duration-200 ${scLinkEnabled ? 'border-border/50 bg-accent/40' : 'border-border/30 bg-accent/20'}`}>
+                <button
+                  onClick={() => setScLinkEnabled(!scLinkEnabled)}
+                  className={`cursor-pointer absolute -top-[11px] left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
+                    scLinkEnabled
+                      ? 'bg-card border border-border/50 text-primary shadow-sm'
+                      : 'bg-card border border-dashed border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
+                  }`}
+                >
+                  <Cloud className="size-2.5" />
+                  SoundCloud
+                </button>
+                <div className={`flex items-center gap-3 px-3 py-2 transition-opacity duration-150 ${scLinkEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                  <div className="flex-1 min-w-0">
+                    {commentData.soundcloud_id ? (
+                      <a
+                        href={commentData.soundcloud_permalink || `https://soundcloud.com/tracks/${commentData.soundcloud_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-muted-foreground hover:text-foreground truncate block font-mono transition-colors"
+                      >
+                        {commentData.soundcloud_permalink || `ID: ${commentData.soundcloud_id}`}
+                      </a>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">No SoundCloud track linked</span>
+                    )}
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => {
+                        if (!selectedScTrack) return;
+                        setCommentData({
+                          soundcloud_id: String(selectedScTrack.urn?.split(':').pop() ?? ''),
+                          soundcloud_permalink: stripQueryParams(selectedScTrack.permalink_url || ''),
+                        });
+                      }}
+                      disabled={!selectedScTrack}
+                      title="Link selected SC track"
                     >
-                      {commentData.soundcloud_permalink || `ID: ${commentData.soundcloud_id}`}
-                    </a>
-                  ) : (
-                    <span className="text-[10px] text-muted-foreground">No SoundCloud track linked</span>
-                  )}
+                      <Download />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => setCommentData({ soundcloud_id: '', soundcloud_permalink: '' })}
+                      disabled={!commentData.soundcloud_id && !commentData.soundcloud_permalink}
+                      title="Clear link"
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => {
-                      if (!selectedScTrack) return;
-                      setCommentData({
-                        soundcloud_id: String(selectedScTrack.urn?.split(':').pop() ?? ''),
-                        soundcloud_permalink: stripQueryParams(selectedScTrack.permalink_url || ''),
-                      });
-                    }}
-                    disabled={!selectedScTrack}
-                    title="Link selected SC track"
-                  >
-                    <Download />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => setCommentData({ soundcloud_id: '', soundcloud_permalink: '' })}
-                    disabled={!commentData.soundcloud_id && !commentData.soundcloud_permalink}
-                    title="Clear link"
-                  >
-                    <Trash2 />
-                  </Button>
                 </div>
               </div>
             </div>
