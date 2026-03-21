@@ -814,30 +814,6 @@ export default function MetaEditorPage() {
               ))}
             </div>
             <div className="flex items-center gap-1">
-              {trackInfo && (
-                <>
-                  {(hasChanges || folderMode !== 'prepare') ? (
-                    <>
-                      <div
-                        className={`size-2 rounded-full shrink-0 ${trackInfo.is_ready ? 'bg-chart-1' : 'bg-amber-400'}`}
-                        title={[
-                          ...(trackInfo.missing_fields.length ? [`Missing: ${trackInfo.missing_fields.join(', ')}`] : []),
-                          ...(trackInfo.issues.length ? [trackInfo.issues.join(' · ')] : []),
-                        ].join('\n') || 'Ready'}
-                      />
-                      <Button onClick={handleSave} disabled={loading} size="sm" className="h-7 text-xs px-2.5">Save</Button>
-                    </>
-                  ) : (
-                    <Button
-                      onClick={handleFinalize}
-                      disabled={!trackInfo.is_ready || !formComplete || loading}
-                      size="sm"
-                      className="h-7 text-xs px-2.5 bg-chart-1 hover:bg-chart-1/90 text-white animate-in fade-in slide-in-from-right-2 duration-200"
-                    >Finalize</Button>
-                  )}
-                  <Button onClick={handleDelete} disabled={loading} variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive mr-1 animate-in fade-in slide-in-from-right-2 duration-200"><Trash2 /></Button>
-                </>
-              )}
               <Popover>
                 <PopoverTrigger asChild>
                   <button className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 text-muted-foreground hover:text-foreground">
@@ -1189,8 +1165,8 @@ export default function MetaEditorPage() {
               </div>
 
               {/* SC link */}
-              <div className="pt-3">
-                <div className={`relative rounded-lg border transition-colors duration-200 ${scLinkEnabled ? 'border-border/50 bg-accent/40' : 'border-border/30 bg-accent/20'}`}>
+              <div className="pt-3 flex items-end gap-2">
+                <div className={`relative rounded-lg border min-w-0 flex-1 transition-colors duration-200 ${scLinkEnabled ? 'border-border/50 bg-accent/40' : 'border-border/30 bg-accent/20'}`}>
                 <button
                   onClick={() => setScLinkEnabled(!scLinkEnabled)}
                   className={`cursor-pointer absolute -top-[11px] left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
@@ -1248,7 +1224,29 @@ export default function MetaEditorPage() {
                   </div>
                   </div>
                 </div>
+                <div className="flex items-center gap-1 pb-2 pl-2 shrink-0">
+                  {(hasChanges || folderMode !== 'prepare') ? (
+                    <>
+                      <div
+                        className={`size-2 rounded-full shrink-0 ${trackInfo.is_ready ? 'bg-chart-1' : 'bg-amber-400'}`}
+                        title={[
+                          ...(trackInfo.missing_fields.length ? [`Missing: ${trackInfo.missing_fields.join(', ')}`] : []),
+                          ...(trackInfo.issues.length ? [trackInfo.issues.join(' · ')] : []),
+                        ].join('\n') || 'Ready'}
+                      />
+                      <Button onClick={handleSave} disabled={loading || !hasChanges} size="sm" className="h-7 text-xs px-2.5">Save</Button>
+                    </>
+                  ) : (
+                    <Button
+                      onClick={handleFinalize}
+                      disabled={!trackInfo.is_ready || !formComplete || loading}
+                      size="sm"
+                      className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold animate-in fade-in slide-in-from-right-2 duration-200"
+                    >Finalize</Button>
+                  )}
+                  <Button onClick={handleDelete} disabled={loading} variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive animate-in fade-in slide-in-from-right-2 duration-200"><Trash2 /></Button>
                 </div>
+              </div>
               </div>
             </div>
           </div>)}
