@@ -53,6 +53,7 @@ import {
   Pause,
   CalendarIcon,
   Search,
+  RotateCcw,
 } from 'lucide-react';
 
 /** Parse the backend's semicolon-delimited comment string into structured fields. */
@@ -187,6 +188,7 @@ export default function MetaEditorPage() {
   const [originalIsRemix, setOriginalIsRemix] = useState(false);
   const [originalRemixData, setOriginalRemixData] = useState({ original_artist: '', remixer: '', mix_name: 'Remix' });
   const [originalScLinkEnabled, setOriginalScLinkEnabled] = useState(true);
+  const [originalCommentData, setOriginalCommentData] = useState({ soundcloud_id: '', soundcloud_permalink: '' });
 
   // Auto-action settings
   const [autoActions, setAutoActions] = useState({
@@ -343,6 +345,7 @@ export default function MetaEditorPage() {
       );
       const initialScLinkEnabled = !!(parsedComment.soundcloud_id || parsedComment.soundcloud_permalink);
       setOriginalScLinkEnabled(initialScLinkEnabled);
+      setOriginalCommentData(parsedComment);
 
       // Load artwork if available
       if (trackInfo.has_artwork) {
@@ -518,7 +521,9 @@ export default function MetaEditorPage() {
     remixData.original_artist !== originalRemixData.original_artist ||
     remixData.remixer !== originalRemixData.remixer ||
     remixData.mix_name !== originalRemixData.mix_name ||
-    scLinkEnabled !== originalScLinkEnabled;
+    scLinkEnabled !== originalScLinkEnabled ||
+    commentData.soundcloud_id !== originalCommentData.soundcloud_id ||
+    commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink;
 
   const formComplete =
     !!formData.title && !!formData.artist && !!formData.genre && !!formData.release_date && !!artworkUrl;
@@ -947,6 +952,7 @@ export default function MetaEditorPage() {
                           <Button variant="ghost" size="icon-xs" onClick={handleBuildTitleFromRemix} disabled={!isRemix} title="Build from remix"><Wand2 /></Button>
                           <Button variant="ghost" size="icon-xs" onClick={handleRemoveParenthesis} title="Remove brackets"><Brackets /></Button>
                           <Button variant="ghost" size="icon-xs" onClick={handleIsolateTitle} title="Isolate"><Trash2 /></Button>
+                          {isChanged('title') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('title', originalFormData.title)} title="Reset"><RotateCcw /></Button>}
                         </div>
                       </div>
                       <Input value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} className={`h-8 text-xs font-medium${isChanged('title') ? ' border-amber-400/70' : ''}`} placeholder="Title" />
@@ -959,14 +965,20 @@ export default function MetaEditorPage() {
                         <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                           <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('genre')} disabled={!selectedScTrack} title="Copy from SC"><Cloud /></Button>
                           <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.genre) return; const t = titelize(formData.genre); if (t !== formData.genre) setFormData({...formData, genre: t}); }} title="Titelize"><CaseSensitive /></Button>
+                          {isChanged('genre') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('genre', originalFormData.genre)} title="Reset"><RotateCcw /></Button>}
                         </div>
                       </div>
                       <Input value={formData.genre} onChange={(e) => handleFormChange('genre', e.target.value)} className={`h-8 text-xs${isChanged('genre') ? ' border-amber-400/70' : ''}`} placeholder="—" />
                     </div>
 
                     {/* BPM */}
-                    <div className="flex flex-col gap-0.5 w-16 shrink-0">
-                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium h-4 flex items-center">BPM</span>
+                    <div className="group flex flex-col gap-0.5 w-16 shrink-0">
+                      <div className="flex items-center justify-between h-4">
+                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">BPM</span>
+                        <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                          {isChanged('bpm') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('bpm', originalFormData.bpm)} title="Reset"><RotateCcw /></Button>}
+                        </div>
+                      </div>
                       <Input type="number" value={formData.bpm} onChange={(e) => handleFormChange('bpm', e.target.value)} className={`h-8 text-xs${isChanged('bpm') ? ' border-amber-400/70' : ''}`} placeholder="—" />
                     </div>
                   </div>
@@ -993,6 +1005,7 @@ export default function MetaEditorPage() {
                               </div>
                             </PopoverContent>
                           </Popover>
+                          {isChanged('artist') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('artist', originalFormData.artist)} title="Reset"><RotateCcw /></Button>}
                         </div>
                       </div>
                       <Input value={formData.artist} onChange={(e) => handleFormChange('artist', e.target.value)} className={`h-8 text-xs${isChanged('artist') ? ' border-amber-400/70' : ''}`} placeholder="Artist" />
@@ -1004,6 +1017,7 @@ export default function MetaEditorPage() {
                         <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Release</span>
                         <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                           <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('release_date')} disabled={!selectedScTrack} title="Copy from SC"><Cloud /></Button>
+                          {isChanged('release_date') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('release_date', originalFormData.release_date)} title="Reset"><RotateCcw /></Button>}
                         </div>
                       </div>
                       <Popover>
@@ -1031,8 +1045,13 @@ export default function MetaEditorPage() {
                     </div>
 
                     {/* Key */}
-                    <div className="flex flex-col gap-0.5 w-16 shrink-0">
-                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium h-4 flex items-center">Key</span>
+                    <div className="group flex flex-col gap-0.5 w-16 shrink-0">
+                      <div className="flex items-center justify-between h-4">
+                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Key</span>
+                        <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                          {isChanged('key') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('key', originalFormData.key)} title="Reset"><RotateCcw /></Button>}
+                        </div>
+                      </div>
                       <Input value={formData.key} onChange={(e) => handleFormChange('key', e.target.value)} className={`h-8 text-xs${isChanged('key') ? ' border-amber-400/70' : ''}`} placeholder="—" />
                     </div>
                   </div>
@@ -1077,6 +1096,7 @@ export default function MetaEditorPage() {
                                 </div>
                               </PopoverContent>
                             </Popover>
+                            {remixData.original_artist !== originalRemixData.original_artist && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, original_artist: originalRemixData.original_artist })} title="Reset"><RotateCcw /></Button>}
                           </div>
                         </div>
                         <Input value={remixData.original_artist} onChange={(e) => handleRemixChange('original_artist', e.target.value)} className={`h-8 text-xs${remixData.original_artist !== originalRemixData.original_artist ? ' border-amber-400/70' : ''}`} placeholder="Original artist" />
@@ -1099,6 +1119,7 @@ export default function MetaEditorPage() {
                                 </div>
                               </PopoverContent>
                             </Popover>
+                            {remixData.remixer !== originalRemixData.remixer && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, remixer: originalRemixData.remixer })} title="Reset"><RotateCcw /></Button>}
                           </div>
                         </div>
                         <Input value={remixData.remixer} onChange={(e) => handleRemixChange('remixer', e.target.value)} className={`h-8 text-xs${remixData.remixer !== originalRemixData.remixer ? ' border-amber-400/70' : ''}`} placeholder="Remixer" />
@@ -1106,7 +1127,9 @@ export default function MetaEditorPage() {
                       <div className="group flex flex-col gap-0.5">
                         <div className="flex items-center justify-between h-4">
                           <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Mix Type</span>
-
+                          <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out">
+                            {remixData.mix_name !== originalRemixData.mix_name && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, mix_name: originalRemixData.mix_name })} title="Reset"><RotateCcw /></Button>}
+                          </div>
                         </div>
                         <Select value={remixData.mix_name} onValueChange={(value) => handleRemixChange('mix_name', value)}>
                           <SelectTrigger className={`h-8 text-xs${remixData.mix_name !== originalRemixData.mix_name ? ' border-amber-400/70' : ''}`}><SelectValue /></SelectTrigger>
@@ -1140,22 +1163,22 @@ export default function MetaEditorPage() {
                   <Cloud className="size-2.5" />
                   SoundCloud
                 </button>
-                <div className={`flex items-center gap-3 px-3 py-2 transition-opacity duration-150 ${scLinkEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                <div className={`group flex items-center gap-3 px-3 pt-3 pb-2 transition-opacity duration-150 ${scLinkEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                   <div className="flex-1 min-w-0">
                     {commentData.soundcloud_id ? (
                       <a
                         href={commentData.soundcloud_permalink || `https://soundcloud.com/tracks/${commentData.soundcloud_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[10px] text-muted-foreground hover:text-foreground truncate block font-mono transition-colors"
+                        className={`text-[10px] truncate block font-mono transition-colors hover:text-foreground ${commentData.soundcloud_id !== originalCommentData.soundcloud_id || commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink ? 'text-amber-400/90' : 'text-muted-foreground'}`}
                       >
                         {commentData.soundcloud_permalink || `ID: ${commentData.soundcloud_id}`}
                       </a>
                     ) : (
-                      <span className="text-[10px] text-muted-foreground">No SoundCloud track linked</span>
+                      <span className={`text-[10px] ${commentData.soundcloud_id !== originalCommentData.soundcloud_id || commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink ? 'text-amber-400/90' : 'text-muted-foreground'}`}>No SoundCloud track linked</span>
                     )}
                   </div>
-                  <div className="flex gap-1 shrink-0">
+                  <div className="flex gap-0.5 shrink-0 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out">
                     <Button
                       variant="ghost"
                       size="icon-xs"
@@ -1169,7 +1192,7 @@ export default function MetaEditorPage() {
                       disabled={!selectedScTrack}
                       title="Link selected SC track"
                     >
-                      <Download />
+                      <Cloud />
                     </Button>
                     <Button
                       variant="ghost"
@@ -1180,6 +1203,9 @@ export default function MetaEditorPage() {
                     >
                       <Trash2 />
                     </Button>
+                    {(commentData.soundcloud_id !== originalCommentData.soundcloud_id || commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink) && (
+                      <Button variant="ghost" size="icon-xs" onClick={() => setCommentData(originalCommentData)} title="Reset"><RotateCcw /></Button>
+                    )}
                   </div>
                   </div>
                 </div>
