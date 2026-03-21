@@ -838,9 +838,8 @@ export default function MetaEditorPage() {
               <div className="rounded-xl border border-border bg-card shadow-sm p-3">
               <div className="flex items-start gap-2">
                 {/* Artwork */}
-                <div className="group flex flex-col gap-0.5 shrink-0">
+                <div className="group flex flex-col gap-0.5 shrink-0 items-center">
                   <div className="flex items-center justify-between h-4">
-                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Art</span>
                     <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out">
                       <Button
                         variant="ghost"
@@ -879,7 +878,7 @@ export default function MetaEditorPage() {
                     </div>
                   </div>
                   <div
-                    className={`relative size-20 rounded-lg overflow-hidden border ${pendingArtworkData ? 'border-amber-400/70' : 'border-border/50'} ${artworkUrl ? 'cursor-zoom-in' : 'cursor-pointer'}`}
+                    className={`relative size-21.5 rounded-lg overflow-hidden border ${pendingArtworkData ? 'border-amber-400/70' : 'border-border/50'} ${artworkUrl ? 'cursor-zoom-in' : 'cursor-pointer'}`}
                     onClick={() => {
                       if (artworkUrl) {
                         setArtworkPreviewOpen(true);
