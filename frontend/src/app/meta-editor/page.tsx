@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { api, type FileInfo, type TrackInfo } from '@/lib/api';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { api, type FileInfo, type FilePage, type TrackInfo } from '@/lib/api';
 import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix, removeMix } from '@/lib/string-utils';
 import * as soundcloud from '@/lib/soundcloud';
 import type { SCTrack } from '@/lib/soundcloud';
@@ -134,6 +134,11 @@ function formatTime(seconds: number): string {
 export default function MetaEditorPage() {
   const [folderMode, setFolderMode] = useState<string>('prepare');
   const [files, setFiles] = useState<FileInfo[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalFiles, setTotalFiles] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
   const [trackInfo, setTrackInfo] = useState<TrackInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -230,7 +235,23 @@ export default function MetaEditorPage() {
     setTrackInfo(null);
     setFormData({ title: '', artist: '', bpm: '', key: '', genre: '', release_date: '' });
     setCommentData({ soundcloud_id: '', soundcloud_permalink: '' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderMode]);
+
+  // Infinite scroll: load next page when sentinel becomes visible
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMoreFiles();
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, totalPages, loadingMore, loading, folderMode]);
 
   // Auto-search when query changes
   useEffect(() => {
@@ -372,14 +393,32 @@ export default function MetaEditorPage() {
     try {
       setLoading(true);
       setError(null);
-      const result = await api.listFiles(folderMode);
-      setFiles(result.files);
+      const result = await api.listFiles(folderMode, 1);
+      setFiles(result.items);
+      setCurrentPage(result.page);
+      setTotalPages(result.pages);
+      setTotalFiles(result.total);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load files');
     } finally {
       setLoading(false);
     }
   };
+
+  const loadMoreFiles = useCallback(async () => {
+    if (loadingMore || loading || currentPage >= totalPages) return;
+    try {
+      setLoadingMore(true);
+      const nextPage = currentPage + 1;
+      const result = await api.listFiles(folderMode, nextPage);
+      setFiles(prev => [...prev, ...result.items]);
+      setCurrentPage(result.page);
+    } catch (err) {
+      console.error('Failed to load more files:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, loading, currentPage, totalPages, folderMode]);
 
   const loadTrackInfo = async (file: FileInfo) => {
     try {
@@ -1220,6 +1259,11 @@ export default function MetaEditorPage() {
             {!trackInfo && files.length === 0 && !loading && (
               <p className="text-xs text-muted-foreground px-4 py-6 text-center">No files found</p>
             )}
+            {files.length > 0 && (
+              <p className="text-[10px] text-muted-foreground/50 px-4 py-1.5 font-mono border-b border-border/20">
+                {files.length} / {totalFiles} files
+              </p>
+            )}
             {files.map((file) => (
               <button
                 key={file.file_path}
@@ -1263,6 +1307,14 @@ export default function MetaEditorPage() {
                 </div>
               </button>
             ))}
+            {/* Infinite scroll sentinel */}
+            {currentPage < totalPages && (
+              <div ref={sentinelRef} className="py-3 flex justify-center">
+                {loadingMore && (
+                  <div className="size-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                )}
+              </div>
+            )}
           </div>
         </div>
 

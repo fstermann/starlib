@@ -8,6 +8,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi_pagination import add_pagination
 
 from backend.api.auth import router as auth_router
 from backend.api.metadata import router as metadata_router
@@ -48,6 +49,8 @@ def create_app() -> FastAPI:
     # Register routers
     app.include_router(auth_router)
     app.include_router(metadata_router)
+
+    add_pagination(app)
 
     return app
 
