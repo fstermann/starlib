@@ -22,13 +22,6 @@ import {
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -54,6 +47,7 @@ import {
   CalendarIcon,
   Search,
   RotateCcw,
+  ChevronDown,
 } from 'lucide-react';
 
 /** Parse the backend's semicolon-delimited comment string into structured fields. */
@@ -1040,7 +1034,7 @@ export default function MetaEditorPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className={`h-8 w-full justify-start text-left font-normal text-sm px-2.5 dark:bg-input/30${isChanged('release_date') ? ' border-amber-400/70 dark:border-amber-400/70' : ' dark:border-input'}${!formData.release_date ? ' text-muted-foreground' : ''}`}
+                            className={`h-8 w-full justify-start text-left font-normal text-sm px-2.5 dark:bg-input/30${isChanged('release_date') ? ' border-amber-400/70 dark:border-amber-400/70' : ' dark:border-input'}${!formData.release_date ? ' text-muted-foreground' : ' text-foreground/80'}`}
                           >
                             <CalendarIcon className="mr-1 shrink-0" />
                             {formData.release_date
@@ -1143,20 +1137,22 @@ export default function MetaEditorPage() {
                         <div className="flex items-center justify-between h-4">
                           <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Mix Type</span>
                           <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out">
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="ghost" size="icon-xs" title="Predefined mix types"><ChevronDown /></Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-36 p-1" align="end">
+                                <div className="space-y-0.5">
+                                  {['Remix', 'VIP Mix', 'Extended Mix', 'Radio Edit', 'Club Mix', 'Dub Mix'].map((opt) => (
+                                    <Button key={opt} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => handleRemixChange('mix_name', opt)}>{opt}</Button>
+                                  ))}
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                             {remixData.mix_name !== originalRemixData.mix_name && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, mix_name: originalRemixData.mix_name })} title="Reset"><RotateCcw /></Button>}
                           </div>
                         </div>
-                        <Select value={remixData.mix_name} onValueChange={(value) => handleRemixChange('mix_name', value)}>
-                          <SelectTrigger className={`h-8 text-xs${remixData.mix_name !== originalRemixData.mix_name ? ' border-amber-400/70' : ''}`}><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Remix">Remix</SelectItem>
-                            <SelectItem value="VIP Mix">VIP Mix</SelectItem>
-                            <SelectItem value="Extended Mix">Extended Mix</SelectItem>
-                            <SelectItem value="Radio Edit">Radio Edit</SelectItem>
-                            <SelectItem value="Club Mix">Club Mix</SelectItem>
-                            <SelectItem value="Dub Mix">Dub Mix</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <Input value={remixData.mix_name} onChange={(e) => handleRemixChange('mix_name', e.target.value)} className={`h-8 text-xs${remixData.mix_name !== originalRemixData.mix_name ? ' border-amber-400/70' : ''}`} placeholder="Mix type" />
                       </div>
                     </div>
                   </div>
