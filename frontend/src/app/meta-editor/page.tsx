@@ -8,6 +8,7 @@ import type { SCTrack } from '@/lib/soundcloud';
 import { format, parse, isValid } from 'date-fns';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,6 +52,7 @@ import {
   Play,
   Pause,
   CalendarIcon,
+  Search,
 } from 'lucide-react';
 
 /** Parse the backend's semicolon-delimited comment string into structured fields. */
@@ -192,6 +194,7 @@ export default function MetaEditorPage() {
 
   // UI state
   const [scPanelOpen, setScPanelOpen] = useState(true);
+  const [isClosingEditor, setIsClosingEditor] = useState(false);
 
   // Audio player state
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -718,44 +721,6 @@ export default function MetaEditorPage() {
         />
       )}
 
-      {/* Audio player strip */}
-      {selectedFile && (
-        <div className="flex items-center gap-3 px-4 h-11 border-b border-border/50 bg-card/80 shrink-0">
-          <button
-            onClick={() => {
-              if (!audioRef.current) return;
-              if (audioPlaying) {
-                audioRef.current.pause();
-                setAudioPlaying(false);
-              } else {
-                audioRef.current.play();
-                setAudioPlaying(true);
-              }
-            }}
-            className="size-7 rounded-full bg-primary/10 hover:bg-primary/20 text-primary flex items-center justify-center shrink-0 transition-colors"
-          >
-            {audioPlaying ? <Pause className="size-3" /> : <Play className="size-3 ml-0.5" />}
-          </button>
-          <span className="text-xs text-muted-foreground font-mono truncate min-w-0 flex-1">{selectedFile.file_name}</span>
-          <input
-            type="range"
-            min={0}
-            max={audioDuration || 1}
-            step={0.1}
-            value={audioTime}
-            onChange={(e) => {
-              const t = parseFloat(e.target.value);
-              setAudioTime(t);
-              if (audioRef.current) audioRef.current.currentTime = t;
-            }}
-            className="w-36 accent-primary shrink-0"
-          />
-          <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-20 text-right">
-            {formatTime(audioTime)} / {formatTime(audioDuration)}
-          </span>
-        </div>
-      )}
-
       {error && (
         <div className="mx-4 mt-2 shrink-0 bg-destructive/10 border border-destructive/20 text-destructive text-xs px-3 py-2 rounded-lg">
           {error}
@@ -767,7 +732,7 @@ export default function MetaEditorPage() {
         {/* Center area */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           {/* Folder mode tabs + SC panel toggle */}
-          <div className="flex items-center justify-between px-4 border-b border-border/50 shrink-0 h-9">
+          <div className="flex items-center justify-between px-4 border-b border-border/50 shrink-0 h-11">
             <div className="flex items-center gap-0.5">
               {(['prepare', 'collection', 'cleaned'] as const).map((mode) => (
                 <button
@@ -802,10 +767,10 @@ export default function MetaEditorPage() {
                       onClick={handleFinalize}
                       disabled={!trackInfo.is_ready || !formComplete || loading}
                       size="sm"
-                      className="h-7 text-xs px-2.5 bg-chart-1 hover:bg-chart-1/90 text-white"
+                      className="h-7 text-xs px-2.5 bg-chart-1 hover:bg-chart-1/90 text-white animate-in fade-in slide-in-from-right-2 duration-200"
                     >Finalize</Button>
                   )}
-                  <Button onClick={handleDelete} disabled={loading} variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive mr-1"><Trash2 /></Button>
+                  <Button onClick={handleDelete} disabled={loading} variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive mr-1 animate-in fade-in slide-in-from-right-2 duration-200"><Trash2 /></Button>
                 </>
               )}
               <Popover>
@@ -847,15 +812,38 @@ export default function MetaEditorPage() {
                 title={scPanelOpen ? 'Hide SoundCloud panel' : 'Show SoundCloud panel'}
                 className={`cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 ${scPanelOpen ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
               >
-                <img src="/soundcloud-dark.png" alt="SoundCloud" className="size-6 dark:hidden" />
-                <img src="/soundcloud-light.png" alt="SoundCloud" className="size-6 hidden dark:block" />
+                <Cloud className="size-4" />
               </button>
             </div>
           </div>
 
           {/* Selected track editor row */}
-          {trackInfo && (
+          {selectedFile && loading && !trackInfo && (
             <div className="px-3 pt-2.5 pb-2 shrink-0">
+              <div className="rounded-xl border border-border bg-card shadow-sm p-3">
+                <div className="flex items-start gap-2">
+                  <div className="flex flex-col gap-0.5 shrink-0 items-center">
+                    <Skeleton className="size-4 w-16 mt-4" />
+                    <Skeleton className="size-21.5 rounded-lg mt-0.5" />
+                  </div>
+                  <div className="flex-1 flex flex-col gap-2 mt-4">
+                    <div className="flex gap-2">
+                      <Skeleton className="h-8 flex-[3]" />
+                      <Skeleton className="h-8 flex-[1.2]" />
+                      <Skeleton className="h-8 w-16" />
+                    </div>
+                    <div className="flex gap-2">
+                      <Skeleton className="h-8 flex-[3]" />
+                      <Skeleton className="h-8 flex-[1.2]" />
+                      <Skeleton className="h-8 w-16" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {trackInfo && (
+            <div className={`px-3 pt-2.5 pb-2 shrink-0 ${isClosingEditor ? 'animate-out fade-out slide-out-to-top-4 duration-150 ease-in' : 'animate-in fade-in slide-in-from-top-10 duration-500 ease-out'}`}>
               <div className="rounded-xl border border-border bg-card shadow-sm p-3">
               <div className="flex items-start gap-2">
                 {/* Artwork */}
@@ -1172,26 +1160,35 @@ export default function MetaEditorPage() {
                       <Trash2 />
                     </Button>
                   </div>
+                  </div>
                 </div>
                 </div>
               </div>
             </div>
-          </div>
           </div>)}
 
           {/* File list */}
           <div className="flex-1 overflow-y-auto">
-            {loading && !trackInfo && (
-              <p className="text-xs text-muted-foreground px-4 py-3">Loading...</p>
-            )}
+            {loading && !trackInfo && null}
             {!trackInfo && files.length === 0 && !loading && (
               <p className="text-xs text-muted-foreground px-4 py-6 text-center">No files found</p>
             )}
             {files.map((file) => (
               <button
                 key={file.file_path}
-                onClick={() => { if (selectedFile?.file_path !== file.file_path) loadTrackInfo(file); }}
-                className={`w-full text-left px-4 py-2.5 transition-colors relative border-b border-border/20 ${
+                onClick={() => {
+                  if (selectedFile?.file_path === file.file_path) {
+                    setSelectedFile(null);
+                    setIsClosingEditor(true);
+                    setTimeout(() => {
+                      setTrackInfo(null);
+                      setIsClosingEditor(false);
+                    }, 150);
+                  } else {
+                    loadTrackInfo(file);
+                  }
+                }}
+                className={`cursor-pointer w-full text-left px-4 py-2.5 transition-colors relative border-b border-border/20 ${
                   selectedFile?.file_path === file.file_path
                     ? 'bg-primary/10 text-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -1238,8 +1235,8 @@ export default function MetaEditorPage() {
                       onKeyDown={(e) => e.key === 'Enter' && handleScSearch()}
                       className="text-xs h-8"
                     />
-                    <Button onClick={handleScSearch} disabled={scSearching || !scQuery.trim()} size="sm" className="h-8 px-3 text-xs shrink-0">
-                      {scSearching ? '...' : 'Go'}
+                    <Button onClick={handleScSearch} disabled={scSearching || !scQuery.trim()} size="sm" className="h-8 px-2.5 shrink-0">
+                      <Search className="size-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -1267,7 +1264,7 @@ export default function MetaEditorPage() {
                     <button
                       key={track.urn}
                       onClick={() => handleScTrackSelect(track)}
-                      className={`w-full text-left px-3 py-2 transition-colors relative ${
+                      className={`cursor-pointer w-full text-left px-3 py-2 transition-colors relative ${
                         selectedScTrack?.urn === track.urn
                           ? 'bg-primary/10 text-foreground'
                           : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -1298,6 +1295,43 @@ export default function MetaEditorPage() {
           </div>
         </div>
       </div>
+      {/* Audio player strip */}
+      {selectedFile && (
+        <div className="flex items-center gap-3 px-4 h-11 border-t border-border/50 bg-card/80 shrink-0 animate-in fade-in slide-in-from-bottom-3 duration-300 ease-out">
+          <button
+            onClick={() => {
+              if (!audioRef.current) return;
+              if (audioPlaying) {
+                audioRef.current.pause();
+                setAudioPlaying(false);
+              } else {
+                audioRef.current.play();
+                setAudioPlaying(true);
+              }
+            }}
+            className="cursor-pointer size-7 rounded-full bg-primary/10 hover:bg-primary/20 text-primary flex items-center justify-center shrink-0 transition-colors"
+          >
+            {audioPlaying ? <Pause className="size-3" /> : <Play className="size-3 ml-0.5" />}
+          </button>
+          <span className="text-xs text-muted-foreground font-mono truncate min-w-0 flex-1">{selectedFile.file_name}</span>
+          <input
+            type="range"
+            min={0}
+            max={audioDuration || 1}
+            step={0.1}
+            value={audioTime}
+            onChange={(e) => {
+              const t = parseFloat(e.target.value);
+              setAudioTime(t);
+              if (audioRef.current) audioRef.current.currentTime = t;
+            }}
+            className="w-36 accent-primary shrink-0 cursor-pointer"
+          />
+          <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-20 text-right">
+            {formatTime(audioTime)} / {formatTime(audioDuration)}
+          </span>
+        </div>
+      )}
       <AlertDialog
         open={confirmDialog.open}
         onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
