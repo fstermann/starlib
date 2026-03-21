@@ -183,6 +183,11 @@ export default function MetaEditorPage() {
   const [commentData, setCommentData] = useState({ soundcloud_id: '', soundcloud_permalink: '' });
   const [scLinkEnabled, setScLinkEnabled] = useState(true);
 
+  // Original values for remix/SC-link change detection
+  const [originalIsRemix, setOriginalIsRemix] = useState(false);
+  const [originalRemixData, setOriginalRemixData] = useState({ original_artist: '', remixer: '', mix_name: 'Remix' });
+  const [originalScLinkEnabled, setOriginalScLinkEnabled] = useState(true);
+
   // Auto-action settings
   const [autoActions, setAutoActions] = useState({
     autoCopyArtwork: true,
@@ -327,6 +332,17 @@ export default function MetaEditorPage() {
           setRemixData({ original_artist: '', remixer: '', mix_name: 'Remix' });
         }
       }
+
+      // Capture original remix + SC-link state for change detection
+      const initialIsRemix = !!(trackInfo.remixers && trackInfo.remixers.length > 0) || !!(trackInfo.title && parseRemix(trackInfo.title));
+      setOriginalIsRemix(initialIsRemix);
+      setOriginalRemixData(
+        trackInfo.remixers && trackInfo.remixers.length > 0
+          ? { original_artist: trackInfo.artist || '', remixer: trackInfo.remixers[0], mix_name: 'Remix' }
+          : { original_artist: '', remixer: '', mix_name: 'Remix' }
+      );
+      const initialScLinkEnabled = !!(parsedComment.soundcloud_id || parsedComment.soundcloud_permalink);
+      setOriginalScLinkEnabled(initialScLinkEnabled);
 
       // Load artwork if available
       if (trackInfo.has_artwork) {
@@ -497,7 +513,12 @@ export default function MetaEditorPage() {
 
   const scBusy = (scSearching || scQueryPending) && !commentData.soundcloud_id && !commentData.soundcloud_permalink;
   const hasChanges = scBusy || pendingArtworkData !== null ||
-    (Object.keys(formData) as (keyof typeof formData)[]).some(k => formData[k] !== originalFormData[k]);
+    (Object.keys(formData) as (keyof typeof formData)[]).some(k => formData[k] !== originalFormData[k]) ||
+    isRemix !== originalIsRemix ||
+    remixData.original_artist !== originalRemixData.original_artist ||
+    remixData.remixer !== originalRemixData.remixer ||
+    remixData.mix_name !== originalRemixData.mix_name ||
+    scLinkEnabled !== originalScLinkEnabled;
 
   const formComplete =
     !!formData.title && !!formData.artist && !!formData.genre && !!formData.release_date && !!artworkUrl;
@@ -1030,9 +1051,9 @@ export default function MetaEditorPage() {
                       onClick={() => setIsRemix(!isRemix)}
                       className={`cursor-pointer absolute -top-[11px] left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
                         isRemix
-                          ? 'bg-card border border-border/50 text-primary shadow-sm'
-                          : 'bg-card border border-dashed border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
-                      }`}
+                          ? 'bg-card border text-primary shadow-sm'
+                          : 'bg-card border border-dashed text-muted-foreground hover:text-foreground'
+                      } ${isRemix !== originalIsRemix ? 'border-amber-400/70' : isRemix ? 'border-border/50' : 'border-border/60 hover:border-border'}`}
                     >
                       <Wand2 className="size-2.5" />
                       Remix
@@ -1058,7 +1079,7 @@ export default function MetaEditorPage() {
                             </Popover>
                           </div>
                         </div>
-                        <Input value={remixData.original_artist} onChange={(e) => handleRemixChange('original_artist', e.target.value)} className="h-8 text-xs" placeholder="Original artist" />
+                        <Input value={remixData.original_artist} onChange={(e) => handleRemixChange('original_artist', e.target.value)} className={`h-8 text-xs${remixData.original_artist !== originalRemixData.original_artist ? ' border-amber-400/70' : ''}`} placeholder="Original artist" />
                       </div>
                       <div className="group flex flex-col gap-0.5">
                         <div className="flex items-center justify-between h-4">
@@ -1080,7 +1101,7 @@ export default function MetaEditorPage() {
                             </Popover>
                           </div>
                         </div>
-                        <Input value={remixData.remixer} onChange={(e) => handleRemixChange('remixer', e.target.value)} className="h-8 text-xs" placeholder="Remixer" />
+                        <Input value={remixData.remixer} onChange={(e) => handleRemixChange('remixer', e.target.value)} className={`h-8 text-xs${remixData.remixer !== originalRemixData.remixer ? ' border-amber-400/70' : ''}`} placeholder="Remixer" />
                       </div>
                       <div className="group flex flex-col gap-0.5">
                         <div className="flex items-center justify-between h-4">
@@ -1088,7 +1109,7 @@ export default function MetaEditorPage() {
 
                         </div>
                         <Select value={remixData.mix_name} onValueChange={(value) => handleRemixChange('mix_name', value)}>
-                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className={`h-8 text-xs${remixData.mix_name !== originalRemixData.mix_name ? ' border-amber-400/70' : ''}`}><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="Remix">Remix</SelectItem>
                             <SelectItem value="VIP Mix">VIP Mix</SelectItem>
@@ -1112,9 +1133,9 @@ export default function MetaEditorPage() {
                   onClick={() => setScLinkEnabled(!scLinkEnabled)}
                   className={`cursor-pointer absolute -top-[11px] left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
                     scLinkEnabled
-                      ? 'bg-card border border-border/50 text-primary shadow-sm'
-                      : 'bg-card border border-dashed border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
-                  }`}
+                      ? 'bg-card border text-primary shadow-sm'
+                      : 'bg-card border border-dashed text-muted-foreground hover:text-foreground'
+                  } ${scLinkEnabled !== originalScLinkEnabled ? 'border-amber-400/70' : scLinkEnabled ? 'border-border/50' : 'border-border/60 hover:border-border'}`}
                 >
                   <Cloud className="size-2.5" />
                   SoundCloud
