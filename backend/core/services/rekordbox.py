@@ -88,6 +88,7 @@ def _find_anlz_path(audio_path: Path) -> Path | None:
 
 # ── ANLZ parsing ──────────────────────────────────────────────────────────────
 
+
 def _decode_pwv5_entries(raw_entries: list[int]) -> list[dict]:
     """Decode PWV5 colour-detail 16-bit entries.
 
@@ -100,12 +101,14 @@ def _decode_pwv5_entries(raw_entries: list[int]) -> list[dict]:
         g = (v >> 10) & 7
         b = (v >> 7) & 7
         h = (v >> 2) & 31
-        result.append({
-            "height": h / 31.0,
-            "r": round(r * _COLOR_SCALE),
-            "g": round(g * _COLOR_SCALE),
-            "b": round(b * _COLOR_SCALE),
-        })
+        result.append(
+            {
+                "height": h / 31.0,
+                "r": round(r * _COLOR_SCALE),
+                "g": round(g * _COLOR_SCALE),
+                "b": round(b * _COLOR_SCALE),
+            }
+        )
     return result
 
 
@@ -139,6 +142,7 @@ def _parse_beat_grid(dat_path: Path) -> list[dict]:
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 def get_waveform(audio_path: Path) -> dict:
     """Extract colour-detail waveform + beat grid for *audio_path*.
@@ -182,7 +186,9 @@ def get_waveform(audio_path: Path) -> dict:
 
     logger.debug(
         "PWV5: %d entries, PQTZ: %d beats for %s",
-        len(entries), len(beats), audio_path.name,
+        len(entries),
+        len(beats),
+        audio_path.name,
     )
     return {
         "entries": entries,
