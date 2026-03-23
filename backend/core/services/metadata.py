@@ -262,7 +262,7 @@ def finalize_track(
             handler.move_to_cleaned()
             return {
                 "success": True,
-                "message": "Conversion failed, moved original to cleaned",
+                "message": f"File is not lossless ({handler.file.suffix}), moved original to cleaned",
                 "converted": False,
                 "output_path": str(handler.file),
             }

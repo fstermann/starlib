@@ -11,7 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi_pagination import add_pagination
 
 from backend.api.auth import router as auth_router
+from backend.api.beats import router as beats_router
 from backend.api.metadata import router as metadata_router
+from backend.api.rekordbox import router as rekordbox_router
 from backend.config import get_backend_settings
 
 logging.basicConfig(
@@ -48,7 +50,9 @@ def create_app() -> FastAPI:
 
     # Register routers
     app.include_router(auth_router)
+    app.include_router(beats_router)
     app.include_router(metadata_router)
+    app.include_router(rekordbox_router)
 
     add_pagination(app)
 

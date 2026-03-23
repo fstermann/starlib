@@ -183,6 +183,24 @@ export const api = {
     return response.blob();
   },
 
+  // Beat analysis
+  async analyzeBeats(filePath: string): Promise<{ bpm: number; beats: number[]; downbeats: number[] }> {
+    return fetchApi('/api/beats/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ file_path: filePath }),
+    });
+  },
+
+  // Rekordbox ANLZ waveform
+  async getRekordboxWaveform(filePath: string): Promise<{
+    entries: { height: number; r: number; g: number; b: number }[];
+    beats: { beat: number; tempo: number; time: number }[];
+    found: boolean;
+    source: string;
+  }> {
+    return fetchApi(`/api/rekordbox/waveform?file_path=${encodeURIComponent(filePath)}`);
+  },
+
   // Health check
   async healthCheck(): Promise<{ status: string }> {
     return fetchApi('/health');

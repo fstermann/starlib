@@ -48,7 +48,19 @@ import {
   Search,
   RotateCcw,
   ChevronDown,
+  Activity,
 } from 'lucide-react';
+import { Waveform } from '@/components/waveform';
+import { DetailWaveform } from '@/components/detail-waveform';
+import { RekordboxWaveform } from '@/components/rekordbox-waveform';
+import { useAudioBuffer } from '@/hooks/use-audio-buffer';
+import { useWaveformPeaks } from '@/hooks/use-waveform-peaks';
+import { useFrequencyBands } from '@/hooks/use-frequency-bands';
+import { useBeatAnalysis } from '@/hooks/use-beat-analysis';
+import { useRekordboxWaveform } from '@/hooks/use-rekordbox-waveform';
+
+// Pre-computed heights for the waveform loading skeleton (avoids Math.random in render)
+const WAVEFORM_SKELETON = [40, 65, 80, 55, 70, 45, 90, 65, 75, 50, 85, 40, 60, 75, 50, 80, 65, 45, 70, 55, 40, 65, 80, 55, 70, 45, 90, 65, 75, 50];
 
 /** Parse the backend's semicolon-delimited comment string into structured fields. */
 function parseComment(raw: string | undefined): { soundcloud_id: string; soundcloud_permalink: string } {
@@ -201,12 +213,28 @@ export default function MetaEditorPage() {
   // UI state
   const [scPanelOpen, setScPanelOpen] = useState(true);
   const [isClosingEditor, setIsClosingEditor] = useState(false);
+  const [isClosingDetail, setIsClosingDetail] = useState(false);
 
   // Audio player state
   const audioRef = useRef<HTMLAudioElement>(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioTime, setAudioTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
+  const [waveformVariant, setWaveformVariant] = useState<'mono' | 'rgb' | 'rb'>('mono');
+  const [detailBars, setDetailBars] = useState<number>(16);
+  const [rbBars, setRbBars] = useState<number>(16);
+
+  // Waveform analysis
+  const audioUrl = selectedFile ? api.getAudioUrl(selectedFile.file_path) : null;
+  const { audioBuffer, isLoading: waveformLoading } = useAudioBuffer(audioUrl);
+  const { peaks } = useWaveformPeaks(audioBuffer, 3000);
+  const { bands, isComputing } = useFrequencyBands(audioBuffer, 3000);
+  const { beatData, isAnalysing } = useBeatAnalysis(
+    waveformVariant === 'rgb' ? (selectedFile?.file_path ?? null) : null
+  );
+  const { rbEntries, rbBeats, rbFound, isLoading: rbLoading } = useRekordboxWaveform(
+    selectedFile?.file_path ?? null
+  );
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; message: string; onConfirm: () => void }>({
     open: false,
     message: '',
@@ -1391,9 +1419,86 @@ export default function MetaEditorPage() {
           </div>
         </div>
       </div>
+      {/* Detail panel — shows either the RGB beatgrid waveform or the rekordbox waveform */}
+      {selectedFile && (waveformVariant !== 'mono' || isClosingDetail) && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateRows: isClosingDetail ? '0fr' : '1fr',
+            transition: 'grid-template-rows 300ms ease-in',
+          }}
+        >
+          <div className="overflow-hidden">
+            <div className={`px-4 pt-3 pb-3 shrink-0 bg-card/80 border-t border-border/30 ${isClosingDetail ? 'opacity-0 transition-opacity duration-300 ease-in' : 'animate-in fade-in slide-in-from-bottom-2 duration-500 ease-out'}`}>
+              {waveformVariant === 'rgb' ? (
+                beatData ? (
+                  <DetailWaveform
+                    audioBuffer={audioBuffer}
+                    rgbBands={bands ?? undefined}
+                    beatData={beatData}
+                    duration={audioDuration}
+                    audioRef={audioRef}
+                    onSeek={(t) => {
+                      setAudioTime(t);
+                      if (audioRef.current) audioRef.current.currentTime = t;
+                    }}
+                    bars={detailBars}
+                    onBarsChange={setDetailBars}
+                  />
+                ) : (
+                  <div className="w-full h-20 bg-black/60 rounded-sm flex items-center justify-center">
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      {isAnalysing ? (
+                        <>
+                          <div className="size-3 border border-current/30 border-t-current rounded-full animate-spin" />
+                          Analysing beats…
+                        </>
+                      ) : (
+                        'No beat data'
+                      )}
+                    </div>
+                  </div>
+                )
+              ) : waveformVariant === 'rb' ? (
+                rbEntries && rbEntries.length > 0 ? (
+                  <RekordboxWaveform
+                    entries={rbEntries}
+                    beats={rbBeats ?? []}
+                    duration={audioDuration}
+                    audioRef={audioRef}
+                    audioBuffer={audioBuffer}
+                    onSeek={(t) => {
+                      setAudioTime(t);
+                      if (audioRef.current) audioRef.current.currentTime = t;
+                    }}
+                    bars={rbBars}
+                    onBarsChange={setRbBars}
+                  />
+                ) : (
+                  <div className="w-full h-20 bg-black/60 rounded-sm flex items-center justify-center">
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      {rbLoading ? (
+                        <>
+                          <div className="size-3 border border-current/30 border-t-current rounded-full animate-spin" />
+                          Loading rekordbox data…
+                        </>
+                      ) : rbFound ? (
+                        'No waveform data in ANLZ file'
+                      ) : (
+                        'No rekordbox ANLZ file found (.DAT sidecar or PIONEER/USBANLZ/)'
+                      )}
+                    </div>
+                  </div>
+                )
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Audio player strip */}
       {selectedFile && (
-        <div className="flex items-center gap-3 px-4 h-11 border-t border-border/50 bg-card/80 shrink-0 animate-in fade-in slide-in-from-bottom-3 duration-300 ease-out">
+        <div className="group flex items-center gap-3 px-4 h-16 border-t border-border/50 bg-card/80 shrink-0 animate-in fade-in slide-in-from-bottom-3 duration-500 ease-out">
+          {/* Play/Pause */}
           <button
             onClick={() => {
               if (!audioRef.current) return;
@@ -1409,23 +1514,93 @@ export default function MetaEditorPage() {
           >
             {audioPlaying ? <Pause className="size-3" /> : <Play className="size-3 ml-0.5" />}
           </button>
-          <span className="text-xs text-muted-foreground font-mono truncate min-w-0 flex-1">{selectedFile.file_name}</span>
-          <input
-            type="range"
-            min={0}
-            max={audioDuration || 1}
-            step={0.1}
-            value={audioTime}
-            onChange={(e) => {
-              const t = parseFloat(e.target.value);
-              setAudioTime(t);
-              if (audioRef.current) audioRef.current.currentTime = t;
-            }}
-            className="w-36 accent-primary shrink-0 cursor-pointer"
-          />
+
+          {/* Waveform area */}
+          <div className="flex-1 h-11 min-w-0 opacity-50 group-hover:opacity-100 transition-opacity duration-200">
+            {waveformLoading ? (
+              <div className="flex items-center gap-0.5 h-full w-full">
+                {WAVEFORM_SKELETON.map((h, i) => (
+                  <div key={i} className="flex-1 bg-muted-foreground/20 rounded-sm animate-pulse" style={{ height: `${h}%` }} />
+                ))}
+              </div>
+            ) : peaks ? (
+              <Waveform
+                peaks={peaks}
+                progress={audioDuration > 0 ? audioTime / audioDuration : 0}
+                duration={audioDuration}
+                currentTime={audioTime}
+                onSeek={(t) => {
+                  setAudioTime(t);
+                  if (audioRef.current) audioRef.current.currentTime = t;
+                }}
+              />
+            ) : null}
+          </div>
+
+          {/* Time */}
           <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-20 text-right">
             {formatTime(audioTime)} / {formatTime(audioDuration)}
           </span>
+
+          {/* Mono / RGB toggle */}
+          <button
+            onClick={() => {
+              if (waveformVariant === 'rgb') {
+                setIsClosingDetail(true);
+                setTimeout(() => {
+                  setWaveformVariant('mono');
+                  setIsClosingDetail(false);
+                }, 300);
+              } else if (waveformVariant === 'rb') {
+                // switch from rekordbox to rgb without collapsing
+                setWaveformVariant('rgb');
+              } else {
+                setWaveformVariant('rgb');
+              }
+            }}
+            className={`cursor-pointer transition-colors duration-200 size-6 rounded flex items-center justify-center shrink-0 ${
+              waveformVariant === 'rgb'
+                ? 'bg-primary/20 text-primary'
+                : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+            }`}
+            title={waveformVariant === 'rgb' ? 'Close RGB waveform' : 'Show RGB waveform'}
+          >
+            {isComputing || isAnalysing ? (
+              <div className="size-2.5 border border-current/30 border-t-current rounded-full animate-spin" />
+            ) : (
+              <Activity className="size-3" />
+            )}
+          </button>
+
+          {/* Rekordbox waveform toggle */}
+          <button
+            onClick={() => {
+              if (waveformVariant === 'rb') {
+                setIsClosingDetail(true);
+                setTimeout(() => {
+                  setWaveformVariant('mono');
+                  setIsClosingDetail(false);
+                }, 300);
+              } else if (waveformVariant === 'rgb') {
+                // switch from rgb to rekordbox without collapsing
+                setWaveformVariant('rb');
+              } else {
+                setWaveformVariant('rb');
+              }
+            }}
+            className={`cursor-pointer transition-colors duration-200 h-6 px-1.5 rounded text-[9px] font-bold font-mono shrink-0 ${
+              waveformVariant === 'rb'
+                ? 'bg-primary/20 text-primary'
+                : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+            }`}
+            title={waveformVariant === 'rb' ? 'Close rekordbox waveform' : 'Show rekordbox waveform'}
+          >
+            {rbLoading ? (
+              <div className="size-2.5 border border-current/30 border-t-current rounded-full animate-spin" />
+            ) : (
+              'RB'
+            )}
+          </button>
         </div>
       )}
       <AlertDialog

@@ -38,6 +38,7 @@ editor = [
     "essentia>=2.1b6.dev1389",
     "essentia-tensorflow>=2.1b6.dev1389",
     "scipy>=1.15.0",
+    "pyrekordbox>=0.4.4",
 ]
 
 [build-system]

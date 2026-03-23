@@ -11,7 +11,7 @@ FastAPI endpoints for metadata editing operations:
 import base64
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, status
@@ -595,11 +595,13 @@ def stream_audio(
             while chunk := f.read(65536):
                 yield chunk
 
+    encoded_name = quote(resolved_path.name, safe="")
+
     return StreamingResponse(
         iter_file(),
         media_type=mime_type,
         headers={
-            "Content-Disposition": f'inline; filename="{resolved_path.name}"',
+            "Content-Disposition": f"inline; filename*=UTF-8''{encoded_name}",
             "Content-Length": str(resolved_path.stat().st_size),
             "Accept-Ranges": "bytes",
         },
