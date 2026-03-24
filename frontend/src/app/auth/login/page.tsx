@@ -39,7 +39,7 @@ export default function LoginPage() {
             Connect SoundCloud
           </h1>
           <p className="text-muted-foreground mb-8 text-sm">
-            Authorize soundcloud-tools to access your SoundCloud account.
+            Authorize Starlib to access your SoundCloud account.
           </p>
 
           <Button

@@ -1,4 +1,4 @@
-# soundcloud-tools ☁️
+# Starlib ⭐
 
 This repository provides a collection of tools to interact with the SoundCloud API.
 
