@@ -564,6 +564,9 @@ AUDIO_MIME_TYPES = {
     ".m4a": "audio/mp4",
 }
 
+# Formats that Chrome cannot decode natively — transcode to WAV via ffmpeg.
+_TRANSCODE_EXTENSIONS = {".aiff", ".aif"}
+
 
 @router.get("/files/{file_path:path}/audio")
 def stream_audio(
@@ -572,6 +575,9 @@ def stream_audio(
 ) -> StreamingResponse:
     """
     Stream an audio file.
+
+    Formats not natively supported by browsers (e.g. AIFF) are
+    transcoded to WAV on the fly via ffmpeg.
 
     Args:
         file_path: Relative or absolute path to audio file.
@@ -588,6 +594,9 @@ def stream_audio(
     if not resolved_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
 
+    if resolved_path.suffix.lower() in _TRANSCODE_EXTENSIONS:
+        return _stream_transcoded(resolved_path)
+
     mime_type = AUDIO_MIME_TYPES.get(resolved_path.suffix.lower(), "application/octet-stream")
 
     def iter_file():
@@ -603,6 +612,33 @@ def stream_audio(
             "Content-Length": str(resolved_path.stat().st_size),
             "Accept-Ranges": "bytes",
         },
+    )
+
+
+def _stream_transcoded(path: Path) -> StreamingResponse:
+    """Transcode an audio file to WAV via ffmpeg and stream it."""
+    import subprocess
+
+    proc = subprocess.Popen(
+        ["ffmpeg", "-i", str(path), "-f", "wav", "-"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+
+    def iterfile():
+        assert proc.stdout is not None
+        try:
+            while chunk := proc.stdout.read(65536):
+                yield chunk
+        finally:
+            proc.stdout.close()
+            proc.wait()
+
+    stem = path.stem
+    return StreamingResponse(
+        iterfile(),
+        media_type="audio/wav",
+        headers={"Content-Disposition": f'inline; filename="{stem}.wav"'},
     )
 
 

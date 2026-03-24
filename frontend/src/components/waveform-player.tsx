@@ -85,7 +85,7 @@ export function WaveformPlayer() {
         barWidth: 2,
         // barGap: 0.5,
         barRadius: 2,
-        normalize: false,
+        normalize: true,
         waveColor: waveGrad,
         progressColor: progressGrad,
         cursorWidth: 0,
