@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { api, type FileInfo, type FilePage, type TrackInfo } from '@/lib/api';
+import { usePlayer } from '@/lib/player-context';
 import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix, removeMix } from '@/lib/string-utils';
 import * as soundcloud from '@/lib/soundcloud';
 import type { SCTrack } from '@/lib/soundcloud';
@@ -42,8 +43,6 @@ import {
   Eraser,
   ArrowUp,
   XCircle,
-  Play,
-  Pause,
   CalendarIcon,
   Search,
   RotateCcw,
@@ -115,14 +114,6 @@ function scReleaseDate(track: SCTrack): string | undefined {
 function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** Format seconds as mm:ss. */
-function formatTime(seconds: number): string {
-  if (!isFinite(seconds) || seconds < 0) return '0:00';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 export default function MetaEditorPage() {
@@ -202,11 +193,8 @@ export default function MetaEditorPage() {
   const [scPanelOpen, setScPanelOpen] = useState(true);
   const [isClosingEditor, setIsClosingEditor] = useState(false);
 
-  // Audio player state
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [audioPlaying, setAudioPlaying] = useState(false);
-  const [audioTime, setAudioTime] = useState(0);
-  const [audioDuration, setAudioDuration] = useState(0);
+  const player = usePlayer();
+
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; message: string; onConfirm: () => void }>({
     open: false,
     message: '',
@@ -215,11 +203,14 @@ export default function MetaEditorPage() {
   const showConfirm = (message: string, onConfirm: () => void) =>
     setConfirmDialog({ open: true, message, onConfirm });
 
-  // Reset audio player when selected file changes
+  // Load track into global player when selected file changes
   useEffect(() => {
-    setAudioPlaying(false);
-    setAudioTime(0);
-    setAudioDuration(0);
+    if (!selectedFile) return;
+    player.load({
+      filePath: selectedFile.file_path,
+      fileName: selectedFile.file_name,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile?.file_path]);
 
   // Load files when folder mode changes
@@ -769,18 +760,6 @@ export default function MetaEditorPage() {
             onClick={(e) => e.stopPropagation()}
           />
         </div>
-      )}
-
-      {/* Hidden audio element */}
-      {selectedFile && (
-        <audio
-          ref={audioRef}
-          key={selectedFile.file_path}
-          src={api.getAudioUrl(selectedFile.file_path)}
-          onTimeUpdate={() => setAudioTime(audioRef.current?.currentTime ?? 0)}
-          onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration ?? 0)}
-          onEnded={() => setAudioPlaying(false)}
-        />
       )}
 
       {error && (
@@ -1391,43 +1370,6 @@ export default function MetaEditorPage() {
           </div>
         </div>
       </div>
-      {/* Audio player strip */}
-      {selectedFile && (
-        <div className="flex items-center gap-3 px-4 h-11 border-t border-border/50 bg-card/80 shrink-0 animate-in fade-in slide-in-from-bottom-3 duration-300 ease-out">
-          <button
-            onClick={() => {
-              if (!audioRef.current) return;
-              if (audioPlaying) {
-                audioRef.current.pause();
-                setAudioPlaying(false);
-              } else {
-                audioRef.current.play();
-                setAudioPlaying(true);
-              }
-            }}
-            className="cursor-pointer size-7 rounded-full bg-primary/10 hover:bg-primary/20 text-primary flex items-center justify-center shrink-0 transition-colors"
-          >
-            {audioPlaying ? <Pause className="size-3" /> : <Play className="size-3 ml-0.5" />}
-          </button>
-          <span className="text-xs text-muted-foreground font-mono truncate min-w-0 flex-1">{selectedFile.file_name}</span>
-          <input
-            type="range"
-            min={0}
-            max={audioDuration || 1}
-            step={0.1}
-            value={audioTime}
-            onChange={(e) => {
-              const t = parseFloat(e.target.value);
-              setAudioTime(t);
-              if (audioRef.current) audioRef.current.currentTime = t;
-            }}
-            className="w-36 accent-primary shrink-0 cursor-pointer"
-          />
-          <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-20 text-right">
-            {formatTime(audioTime)} / {formatTime(audioDuration)}
-          </span>
-        </div>
-      )}
       <AlertDialog
         open={confirmDialog.open}
         onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
