@@ -42,7 +42,7 @@ export function Navbar() {
           href="/"
           className="font-bold text-sm tracking-tight text-primary hover:opacity-75 transition-opacity shrink-0"
         >
-          SoundCloud Tools
+          Starlib
         </Link>
 
         <nav className="flex items-center gap-0.5 flex-1">

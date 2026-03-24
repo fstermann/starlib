@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Music, Heart, Users } from "lucide-react";
+import { FilePen, Heart, Users } from "lucide-react";
 
 const tools = [
   {
@@ -9,7 +9,7 @@ const tools = [
     description:
       "Edit ID3/AIFF metadata, BPM, key, genre, and artwork. Fetch metadata directly from SoundCloud.",
     available: true,
-    icon: Music,
+    icon: FilePen,
   },
   {
     href: "/like-explorer",
@@ -29,14 +29,29 @@ const tools = [
 
 export default function Home() {
   return (
-    <div className="max-w-4xl mx-auto px-6 py-20">
-      <div className="mb-16">
-        <h1 className="text-4xl font-bold tracking-tight mb-3">
+    <div className="max-w-4xl mx-auto px-6 py-16">
+      <div className="mb-16 flex flex-col items-center text-center">
+        <div className="size-24 rounded-3xl bg-primary shadow-xl shadow-primary/30 flex items-center justify-center mb-7">
+          <div
+            className="size-[4.5rem] bg-white"
+            style={{
+              maskImage: 'url(/starlib.svg)',
+              WebkitMaskImage: 'url(/starlib.svg)',
+              maskSize: 'contain',
+              WebkitMaskSize: 'contain',
+              maskRepeat: 'no-repeat',
+              WebkitMaskRepeat: 'no-repeat',
+              maskPosition: 'center',
+              WebkitMaskPosition: 'center',
+            }}
+          />
+        </div>
+        <h1 className="text-8xl font-bold tracking-tight mb-3">
           <span className="bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
-            SoundCloud Tools
+            Starlib
           </span>
         </h1>
-        <p className="text-muted-foreground text-lg">
+        <p className="text-muted-foreground text-lg max-w-sm">
           Music management for DJs and producers.
         </p>
       </div>
