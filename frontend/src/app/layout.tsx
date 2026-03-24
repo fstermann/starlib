@@ -3,6 +3,9 @@ import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { PlayerProvider } from "@/lib/player-context";
+import { LayoutShell } from "@/components/layout-shell";
+import { WaveformPlayer } from "@/components/waveform-player";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -36,11 +39,12 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${geistMono.variable} antialiased h-screen flex flex-row bg-background text-foreground overflow-hidden`}
       >
-        <Sidebar />
-        <main className="flex-1 min-w-0 ml-14 flex flex-col overflow-hidden">
-          {children}
-        </main>
-        <Toaster />
+        <PlayerProvider>
+          <Sidebar />
+          <LayoutShell>{children}</LayoutShell>
+          <WaveformPlayer />
+          <Toaster />
+        </PlayerProvider>
       </body>
     </html>
   );
