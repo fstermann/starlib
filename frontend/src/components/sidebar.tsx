@@ -53,9 +53,21 @@ export function Sidebar() {
       {/* Logo */}
       <div className="h-14 flex items-center px-4 shrink-0 border-b border-border/50">
         <Link href="/" className="flex items-center gap-3 min-w-0">
-          <Music2 className="size-5 text-primary shrink-0" />
+          <span
+            className="size-5 shrink-0 bg-primary"
+            style={{
+              maskImage: 'url(/starlib.svg)',
+              WebkitMaskImage: 'url(/starlib.svg)',
+              maskSize: 'contain',
+              WebkitMaskSize: 'contain',
+              maskRepeat: 'no-repeat',
+              WebkitMaskRepeat: 'no-repeat',
+              maskPosition: 'center',
+              WebkitMaskPosition: 'center',
+            }}
+          />
           <span className="text-sm font-bold tracking-tight text-primary opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
-            SoundCloud Tools
+            Starlib
           </span>
         </Link>
       </div>

@@ -1,5 +1,5 @@
 [project]
-name = "soundcloud-tools"
+name = "starlib"
 version = "0.1.0"
 description = ""
 authors = [{name = "Fabian Stermann", email = "fabian.stermann@gmail.com"}]

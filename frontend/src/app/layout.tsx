@@ -18,8 +18,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SoundCloud Tools",
+  title: "Starlib",
   description: "Music management tools for DJs and producers",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
