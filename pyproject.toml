@@ -40,6 +40,11 @@ editor = [
     "essentia-tensorflow>=2.1b6.dev1389",
     "scipy>=1.15.0",
 ]
+desktop = [
+    # PyInstaller is used to package the FastAPI backend into a self-contained binary.
+    # Run: pyinstaller desktop/sidecar.spec --distpath desktop/binaries
+    "pyinstaller>=6.0",
+]
 
 [build-system]
 requires = ["hatchling"]

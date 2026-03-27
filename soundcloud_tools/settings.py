@@ -1,10 +1,19 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# User config file written by the first-launch setup flow (desktop app)
+_USER_CONFIG_FILE = Path.home() / "Library" / "Application Support" / "starlib" / "config.env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_nested_delimiter="__", env_file=".env")
+    model_config = SettingsConfigDict(
+        env_nested_delimiter="__",
+        # Load from .env first (dev), then from the user config file (desktop app).
+        # Later files win over earlier ones.
+        env_file=(".env", str(_USER_CONFIG_FILE)),
+    )
 
     base_url: str = "https://api-v2.soundcloud.com"
 

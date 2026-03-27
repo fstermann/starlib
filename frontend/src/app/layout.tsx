@@ -3,6 +3,7 @@ import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { SetupGate } from "@/components/setup-gate";
 import { PlayerProvider } from "@/lib/player-context";
 import { LayoutShell } from "@/components/layout-shell";
 import { WaveformPlayer } from "@/components/waveform-player";
@@ -46,7 +47,11 @@ export default function RootLayout({
         <NuqsAdapter>
           <PlayerProvider>
             <Sidebar />
-            <LayoutShell>{children}</LayoutShell>
+            <LayoutShell>
+              <SetupGate>
+                {children}
+                </SetupGate>
+                </LayoutShell>
             <WaveformPlayer />
             <Toaster />
           </PlayerProvider>
