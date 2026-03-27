@@ -15,6 +15,7 @@ class FolderHandler(BaseModel):
     def check_folder(cls, v) -> Path:
         if isinstance(v, str):
             v = Path(v)
+        v = v.expanduser()
         if not v.is_dir():
             raise ValueError(f"Path {v} is not a directory")
         return v

@@ -237,6 +237,24 @@ export const api = {
     return fetchApi('/health');
   },
 
+  // Setup
+  async getSetupStatus(): Promise<{ configured: boolean }> {
+    return fetchApi('/api/setup/status');
+  },
+
+  async saveSetup(data: {
+    client_id: string;
+    client_secret: string;
+    root_music_folder: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return fetchApi('/api/setup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async initializeFolders(): Promise<{ success: boolean; message: string }> {
+    return fetchApi('/api/metadata/folders/initialize', { method: 'POST' });
   // Browse (view mode) — full metadata with filtering, sorting, pagination
   async browseFiles(mode: string, params: BrowseParams = {}, signal?: AbortSignal): Promise<BrowsePage> {
     const qs = new URLSearchParams();
