@@ -74,3 +74,6 @@ extend-select = [
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Query", "fastapi.Depends", "Query", "Depends"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
