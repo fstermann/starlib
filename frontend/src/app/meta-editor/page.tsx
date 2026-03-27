@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { api, type FileInfo, type FilePage, type TrackInfo } from '@/lib/api';
+import { api, ApiError, type FileInfo, type FilePage, type TrackInfo } from '@/lib/api';
 import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix, removeMix } from '@/lib/string-utils';
 import * as soundcloud from '@/lib/soundcloud';
 import type { SCTrack } from '@/lib/soundcloud';
@@ -396,7 +396,17 @@ export default function MetaEditorPage() {
       setTotalPages(result.pages);
       setTotalFiles(result.total);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load files');
+      if (err instanceof ApiError && err.status === 404 && err.message === 'Folder does not exist') {
+        showConfirm(
+          'One or more required folders do not exist yet. Create them now?',
+          async () => {
+            await api.initializeFolders();
+            loadFiles();
+          }
+        );
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to load files');
+      }
     } finally {
       setLoading(false);
     }

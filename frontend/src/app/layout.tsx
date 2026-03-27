@@ -3,6 +3,7 @@ import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { SetupGate } from "@/components/setup-gate";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -38,7 +39,7 @@ export default function RootLayout({
       >
         <Sidebar />
         <main className="flex-1 min-w-0 ml-14 flex flex-col overflow-hidden">
-          {children}
+          <SetupGate>{children}</SetupGate>
         </main>
         <Toaster />
       </body>

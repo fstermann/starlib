@@ -1,0 +1,14 @@
+{
+    "name": "soundcloud-tools-desktop",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "tauri": "tauri",
+        "setup:dev": "bash scripts/setup-dev-sidecar.sh",
+        "desktop:dev": "bash scripts/setup-dev-sidecar.sh && tauri dev",
+        "desktop:build": "tauri build"
+    },
+    "devDependencies": {
+        "@tauri-apps/cli": "^2"
+    }
+}

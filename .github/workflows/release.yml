@@ -1,0 +1,250 @@
+name: Release
+
+# Triggered by pushing a version tag: git tag v0.1.0 && git push origin v0.1.0
+on:
+    push:
+        tags:
+            - "v[0-9]+.[0-9]+.[0-9]+"
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: "Version tag to release (e.g. v0.1.0)"
+                required: true
+
+env:
+    # ── Python backend sidecar binary name (must match tauri.conf.json externalBin)
+    SIDECAR_NAME: sct-backend
+    # ── Node version for the frontend build
+    NODE_VERSION: "22"
+    # ── Python version for PyInstaller
+    PYTHON_VERSION: "3.13"
+
+jobs:
+    # ────────────────────────────────────────────────────────────────────────
+    # Job 1: Build the Python backend sidecar (macOS arm64 + optionally x86_64)
+    # ────────────────────────────────────────────────────────────────────────
+    build-sidecar:
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - platform: macos-latest # Apple Silicon (arm64)
+                      arch: aarch64-apple-darwin
+                    - platform: macos-13 # Intel (x86_64)
+                      arch: x86_64-apple-darwin
+                    # Uncomment to add Windows support:
+                    # - platform: windows-latest
+                    #   arch: x86_64-pc-windows-msvc
+
+        runs-on: ${{ matrix.platform }}
+        name: Sidecar (${{ matrix.arch }})
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Python ${{ env.PYTHON_VERSION }}
+              uses: actions/setup-python@v5
+              with:
+                  python-version: ${{ env.PYTHON_VERSION }}
+                  cache: "pip"
+
+            - name: Install uv
+              run: pip install uv
+
+            - name: Install Python dependencies
+              run: uv pip install --system -e "." pyinstaller
+
+            - name: Build sidecar with PyInstaller
+              run: |
+                  pyinstaller desktop/sidecar.spec --distpath desktop/src-tauri/binaries --noconfirm
+
+            # Tauri expects the sidecar binary to be named
+            # `sct-backend-<target-triple>` in the binaries/ directory.
+            - name: Rename sidecar binary for Tauri
+              shell: bash
+              run: |
+                  EXT=""
+                  if [[ "${{ matrix.arch }}" == *"windows"* ]]; then EXT=".exe"; fi
+                  mv desktop/src-tauri/binaries/${{ env.SIDECAR_NAME }}${EXT} \
+                     desktop/src-tauri/binaries/${{ env.SIDECAR_NAME }}-${{ matrix.arch }}${EXT}
+
+            - name: Upload sidecar artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: sidecar-${{ matrix.arch }}
+                  path: desktop/src-tauri/binaries/${{ env.SIDECAR_NAME }}-${{ matrix.arch }}*
+                  if-no-files-found: error
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Job 2: Build the Tauri desktop app (depends on sidecar artifacts)
+    # ────────────────────────────────────────────────────────────────────────
+    build-tauri:
+        needs: build-sidecar
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - platform: macos-latest
+                      arch: aarch64-apple-darwin
+                      tauri-target: aarch64-apple-darwin
+                    - platform: macos-13
+                      arch: x86_64-apple-darwin
+                      tauri-target: x86_64-apple-darwin
+                    # - platform: windows-latest
+                    #   arch: x86_64-pc-windows-msvc
+                    #   tauri-target: x86_64-pc-windows-msvc
+
+        runs-on: ${{ matrix.platform }}
+        name: Tauri (${{ matrix.arch }})
+
+        steps:
+            - uses: actions/checkout@v4
+
+            # ── Download pre-built sidecar binary ──────────────────────────────
+            - name: Download sidecar artifact
+              uses: actions/download-artifact@v4
+              with:
+                  name: sidecar-${{ matrix.arch }}
+                  path: desktop/src-tauri/binaries/
+
+            - name: Make sidecar executable
+              if: runner.os != 'Windows'
+              run: chmod +x desktop/src-tauri/binaries/${{ env.SIDECAR_NAME }}-${{ matrix.arch }}
+
+            # ── Rust toolchain ──────────────────────────────────────────────────
+            - name: Install Rust stable
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: ${{ matrix.tauri-target }}
+
+            - name: Rust cache
+              uses: swatinem/rust-cache@v2
+              with:
+                  workspaces: "./desktop/src-tauri -> target"
+
+            # ── Node + frontend build ───────────────────────────────────────────
+            - name: Set up Node ${{ env.NODE_VERSION }}
+              uses: actions/setup-node@v4
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: "npm"
+                  cache-dependency-path: frontend/package-lock.json
+
+            - name: Install frontend dependencies
+              working-directory: frontend
+              run: npm ci
+
+            - name: Build frontend (static export)
+              working-directory: frontend
+              env:
+                  NEXT_PUBLIC_API_URL: "http://127.0.0.1:8000"
+              run: npm run build
+
+            # ── App icons ───────────────────────────────────────────────────────
+            # If you have committed real icons, skip this step.
+            # Otherwise this generates placeholder icons via ImageMagick (pre-installed on macOS runners).
+            - name: Generate placeholder icons (if missing)
+              shell: bash
+              run: |
+                  ICONS_DIR="desktop/src-tauri/icons"
+                  if [ ! -f "$ICONS_DIR/icon.png" ]; then
+                    echo "Generating placeholder icon..."
+                    convert -size 512x512 xc:#f97316 \
+                      -fill white -font Helvetica-Bold -pointsize 120 \
+                      -gravity center -annotate 0 "SCT" \
+                      "$ICONS_DIR/icon.png"
+                    for size in 32 128; do
+                      convert "$ICONS_DIR/icon.png" -resize ${size}x${size} "$ICONS_DIR/${size}x${size}.png"
+                    done
+                    convert "$ICONS_DIR/icon.png" -resize 256x256 "$ICONS_DIR/128x128@2x.png"
+                    mkdir -p /tmp/icon.iconset
+                    for s in 16 32 64 128 256 512; do
+                      convert "$ICONS_DIR/icon.png" -resize ${s}x${s} "/tmp/icon.iconset/icon_${s}x${s}.png"
+                      convert "$ICONS_DIR/icon.png" -resize $((s*2))x$((s*2)) "/tmp/icon.iconset/icon_${s}x${s}@2x.png"
+                    done
+                    iconutil -c icns /tmp/icon.iconset -o "$ICONS_DIR/icon.icns"
+                  fi
+
+            # ── macOS code signing (optional) ───────────────────────────────────
+            # Set APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_ID,
+            # APPLE_ID_PASSWORD, APPLE_TEAM_ID as repo secrets to enable signing.
+            # Without these, the app still builds and runs (users bypass Gatekeeper
+            # via right-click → Open on first launch).
+
+            # ── Tauri build ─────────────────────────────────────────────────────
+            - name: Install Tauri CLI
+              working-directory: desktop
+              run: npm install
+
+            - name: Build Tauri app
+              working-directory: desktop
+              env:
+                  # Updater signing key — generate with: cd desktop && npx @tauri-apps/cli signer generate
+                  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+                  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+                  # macOS signing (optional)
+                  APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+                  APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+                  APPLE_ID: ${{ secrets.APPLE_ID }}
+                  APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+                  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+              run: npx @tauri-apps/cli build --target ${{ matrix.tauri-target }} --config src-tauri/tauri.conf.json
+
+            - name: Upload Tauri bundles
+              uses: actions/upload-artifact@v4
+              with:
+                  name: bundle-${{ matrix.arch }}
+                  path: |
+                      desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/dmg/*.dmg
+                      desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/macos/*.app.tar.gz
+                      desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/msi/*.msi
+                      desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/nsis/*.exe
+                  if-no-files-found: error
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Job 3: Create GitHub Release and upload all artifacts
+    # ────────────────────────────────────────────────────────────────────────
+    release:
+        needs: build-tauri
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Download all bundle artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  pattern: bundle-*
+                  path: artifacts/
+                  merge-multiple: true
+
+            - name: List artifacts
+              run: find artifacts/ -type f | sort
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  name: "SoundCloud Tools ${{ github.ref_name }}"
+                  body: |
+                      ## SoundCloud Tools ${{ github.ref_name }}
+
+                      ### Installation (macOS)
+                      1. Download the `.dmg` file for your Mac:
+                         - **Apple Silicon (M1/M2/M3):** `*-aarch64.dmg`
+                         - **Intel:** `*-x86_64.dmg`
+                      2. Open the `.dmg` and drag **SoundCloud Tools** to your Applications folder.
+                      3. On first launch, right-click → Open if macOS shows an unidentified developer warning.
+                      4. Follow the setup wizard to enter your SoundCloud API credentials.
+
+                      ### Getting SoundCloud API credentials
+                      Register a free app at https://soundcloud.com/you/apps, then copy your Client ID and Client Secret.
+                  files: |
+                      artifacts/**/*.dmg
+                      artifacts/**/*.app.tar.gz
+                      artifacts/**/*.msi
+                      artifacts/**/*.exe
+                  draft: false
+                  prerelease: ${{ contains(github.ref_name, '-') }}
+                  generate_release_notes: true

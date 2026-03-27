@@ -1,0 +1,103 @@
+"""First-launch setup endpoint.
+
+Reads and writes the user config file at the platform-appropriate path
+(~/Library/Application Support/soundcloud-tools/config.env on macOS).
+The soundcloud_tools Settings class is a pydantic-settings BaseSettings that picks up
+variables from a .env file. We point it at the user config file via _env_file.
+"""
+
+import logging
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, status
+
+from backend.schemas.setup import SetupRequest, SetupResponse, SetupStatusResponse
+from soundcloud_tools.settings import get_settings
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/setup", tags=["setup"])
+
+# Config file location: ~/Library/Application Support/soundcloud-tools/config.env
+_CONFIG_DIR = Path.home() / "Library" / "Application Support" / "soundcloud-tools"
+_CONFIG_FILE = _CONFIG_DIR / "config.env"
+
+
+def _read_config() -> dict[str, str]:
+    """Read key=value pairs from the user config file."""
+    if not _CONFIG_FILE.exists():
+        return {}
+    result: dict[str, str] = {}
+    for line in _CONFIG_FILE.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        result[key.strip()] = value.strip()
+    return result
+
+
+def _write_config(data: dict[str, str]) -> None:
+    """Write key=value pairs to the user config file."""
+    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    lines = [f"{k}={v}" for k, v in data.items()]
+    _CONFIG_FILE.write_text("\n".join(lines) + "\n")
+
+
+@router.get("/status", response_model=SetupStatusResponse)
+def get_setup_status() -> SetupStatusResponse:
+    """Return whether the app has been configured with SoundCloud credentials.
+
+    Returns
+    -------
+    SetupStatusResponse
+        configured=True when both client_id and client_secret are present.
+    """
+    cfg = _read_config()
+    configured = bool(cfg.get("CLIENT_ID") and cfg.get("CLIENT_SECRET"))
+    return SetupStatusResponse(configured=configured)
+
+
+@router.post("", response_model=SetupResponse)
+def save_setup(body: SetupRequest) -> SetupResponse:
+    """Persist SoundCloud credentials and music folder path entered during first-launch setup.
+
+    Parameters
+    ----------
+    body : SetupRequest
+        Credentials and folder path from the setup form.
+
+    Returns
+    -------
+    SetupResponse
+        Success confirmation.
+
+    Raises
+    ------
+    HTTPException
+        If saving the config file fails.
+    """
+    if not body.client_id or not body.client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="client_id and client_secret are required",
+        )
+
+    try:
+        existing = _read_config()
+        existing["CLIENT_ID"] = body.client_id
+        existing["CLIENT_SECRET"] = body.client_secret
+        existing["ROOT_MUSIC_FOLDER"] = body.root_music_folder
+        _write_config(existing)
+    except OSError as exc:
+        logger.exception("Failed to write config file: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not write config: {exc}",
+        ) from exc
+
+    # Invalidate the cached settings so the new values take effect immediately.
+    get_settings.cache_clear()
+
+    logger.info("Setup complete. Config written to %s", _CONFIG_FILE)
+    return SetupResponse(success=True, message="Configuration saved successfully.")

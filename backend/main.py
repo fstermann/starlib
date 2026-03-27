@@ -12,6 +12,7 @@ from fastapi_pagination import add_pagination
 
 from backend.api.auth import router as auth_router
 from backend.api.metadata import router as metadata_router
+from backend.api.setup import router as setup_router
 from backend.config import get_backend_settings
 
 logging.basicConfig(
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     )
 
     # Register routers
+    app.include_router(setup_router)
     app.include_router(auth_router)
     app.include_router(metadata_router)
 
@@ -80,5 +82,5 @@ if __name__ == "__main__":
         "backend.main:app",
         host=settings.host,
         port=settings.port,
-        reload=settings.reload,
+        reload=settings.reload,  # Always False in production builds
     )

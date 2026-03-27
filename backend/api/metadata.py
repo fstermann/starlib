@@ -70,6 +70,13 @@ def list_folder_files(
     """
     validated_mode = validate_folder_mode(mode)
 
+    # Check root folder exists before trying to use FolderHandler
+    if not root_folder.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Folder does not exist",
+        )
+
     # Get folder for this mode
     folder_handler = FolderHandler(folder=root_folder)
 
@@ -82,12 +89,12 @@ def list_folder_files(
     else:
         folder_path = root_folder
 
-    # Validate folder exists
+    # Validate subfolder exists
     is_valid, errors = collection.validate_folder(folder_path)
     if not is_valid:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=errors,  # Return first error
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Folder does not exist",
         )
 
     # List files (lightweight — no metadata reads yet)
@@ -105,6 +112,17 @@ def list_folder_files(
         )
 
     return paginate(files, transformer=lambda items: [to_file_info(f) for f in items])
+
+
+@router.post("/folders/initialize", response_model=OperationResponse)
+def initialize_folders(
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> OperationResponse:
+    """Create the root folder and all required subfolders."""
+    root_folder.mkdir(parents=True, exist_ok=True)
+    for subfolder in ["prepare", "collection", "cleaned", "archive"]:
+        (root_folder / subfolder).mkdir(exist_ok=True)
+    return OperationResponse(success=True, message=f"Folders created under {root_folder}")
 
 
 @router.get("/files/{file_path:path}/info", response_model=TrackInfoResponse)
