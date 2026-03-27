@@ -1,5 +1,5 @@
 [project]
-name = "soundcloud-tools"
+name = "starlib"
 version = "0.1.0"
 description = ""
 authors = [{name = "Fabian Stermann", email = "fabian.stermann@gmail.com"}]
@@ -22,6 +22,7 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "python-multipart>=0.0.22",
     "fastapi-pagination>=0.12.0",
+    "watchdog>=4.0.0",
 ]
 
 [dependency-groups]
@@ -49,6 +50,9 @@ desktop = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["backend", "soundcloud_tools"]
+
 [tool.ruff]
 line-length = 120
 
@@ -66,3 +70,6 @@ extend-select = [
     "C90", # mccabe code complexity
     "RUF", # Ruff-specific rules
 ]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Query", "fastapi.Depends", "Query", "Depends"]

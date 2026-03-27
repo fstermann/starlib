@@ -4,6 +4,10 @@ import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { SetupGate } from "@/components/setup-gate";
+import { PlayerProvider } from "@/lib/player-context";
+import { LayoutShell } from "@/components/layout-shell";
+import { WaveformPlayer } from "@/components/waveform-player";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -16,8 +20,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SoundCloud Tools",
+  title: "Starlib",
   description: "Music management tools for DJs and producers",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
@@ -37,11 +44,18 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${geistMono.variable} antialiased h-screen flex flex-row bg-background text-foreground overflow-hidden`}
       >
-        <Sidebar />
-        <main className="flex-1 min-w-0 ml-14 flex flex-col overflow-hidden">
-          <SetupGate>{children}</SetupGate>
-        </main>
-        <Toaster />
+        <NuqsAdapter>
+          <PlayerProvider>
+            <Sidebar />
+            <LayoutShell>
+              <SetupGate>
+                {children}
+                </SetupGate>
+                </LayoutShell>
+            <WaveformPlayer />
+            <Toaster />
+          </PlayerProvider>
+        </NuqsAdapter>
       </body>
     </html>
   );

@@ -141,6 +141,41 @@ class OperationResponse(BaseModel):
     new_file_path: str | None = None
 
 
+class TrackBrowseResponse(BaseModel):
+    """Lightweight response for collection browse/table view."""
+
+    file_path: str
+    file_name: str
+    title: str | None = None
+    artist: str | None = None
+    bpm: int | None = None
+    key: str | None = None
+    genre: str | None = None
+    release_date: date | None = None
+    has_artwork: bool = False
+    file_format: str
+    file_size: int
+    duration: float | None = None
+
+
+class PeaksResponse(BaseModel):
+    """Waveform amplitude peak data for visualization."""
+
+    peaks: list[float]
+
+
+class FilterValuesResponse(BaseModel):
+    """Available filter values for a folder (for filter dropdowns)."""
+
+    genres: list[str] = []
+    genre_counts: dict[str, int] = {}
+    artists: list[str] = []
+    keys: list[str] = []
+    key_counts: dict[str, int] = {}
+    bpm_min: int | None = None
+    bpm_max: int | None = None
+
+
 class CollectionStatsResponse(BaseModel):
     """Response containing collection statistics."""
 
@@ -150,6 +185,11 @@ class CollectionStatsResponse(BaseModel):
     total_artists: int
     total_genres: int
     missing_fields: dict[str, int]
+    genres: list[str] = []
+    artists: list[str] = []
+    keys: list[str] = []
+    bpm_min: int | None = None
+    bpm_max: int | None = None
 
 
 class ArtworkResponse(BaseModel):

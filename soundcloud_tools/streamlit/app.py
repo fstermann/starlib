@@ -7,8 +7,8 @@ def main():
     logging.basicConfig(level=logging.INFO)
 
     st.set_page_config(
-        page_title="SoundCloud Tools",
-        page_icon=":material/cloud:",
+        page_title="Starlib",
+        page_icon=":material/star:",
         layout="wide",
         initial_sidebar_state="expanded",
     )

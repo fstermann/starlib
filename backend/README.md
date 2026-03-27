@@ -1,6 +1,6 @@
 # Backend API
 
-FastAPI backend for SoundCloud Tools music management application.
+FastAPI backend for Starlib music management application.
 
 ## Setup
 

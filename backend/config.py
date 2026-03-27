@@ -18,9 +18,9 @@ class BackendSettings(BaseSettings):
     """Backend configuration settings."""
 
     # API Settings
-    api_title: str = "SoundCloud Tools API"
+    api_title: str = "Starlib API"
     api_version: str = "0.1.0"
-    api_description: str = "Backend API for SoundCloud Tools music management"
+    api_description: str = "Backend API for Starlib music management"
 
     # Server Settings
     host: str = "127.0.0.1"

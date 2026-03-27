@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { api, ApiError, type FileInfo, type FilePage, type TrackInfo } from '@/lib/api';
+import { useQueryState } from 'nuqs';
+import { searchParams } from '@/lib/search-params';
+import { usePlayer } from '@/lib/player-context';
 import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix, removeMix } from '@/lib/string-utils';
 import * as soundcloud from '@/lib/soundcloud';
 import type { SCTrack } from '@/lib/soundcloud';
@@ -28,6 +31,9 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { CollectionFilterBar } from '@/components/collection-filter-bar';
+import { CollectionTable } from '@/components/collection-table';
 import {
   Sparkles,
   CaseSensitive,
@@ -42,12 +48,12 @@ import {
   Eraser,
   ArrowUp,
   XCircle,
-  Play,
-  Pause,
   CalendarIcon,
   Search,
   RotateCcw,
   ChevronDown,
+  PencilLine,
+  Eye,
 } from 'lucide-react';
 
 /** Parse the backend's semicolon-delimited comment string into structured fields. */
@@ -117,22 +123,17 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Format seconds as mm:ss. */
-function formatTime(seconds: number): string {
-  if (!isFinite(seconds) || seconds < 0) return '0:00';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
 export default function MetaEditorPage() {
-  const [folderMode, setFolderMode] = useState<string>('prepare');
+  const [folderMode, setFolderMode] = useQueryState('mode', searchParams.mode);
+  const [viewMode, setViewMode] = useQueryState('view', searchParams.view);
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalFiles, setTotalFiles] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const fileListRef = useRef<HTMLDivElement>(null);
+  const editAbortRef = useRef<AbortController | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
   const [trackInfo, setTrackInfo] = useState<TrackInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -202,11 +203,8 @@ export default function MetaEditorPage() {
   const [scPanelOpen, setScPanelOpen] = useState(true);
   const [isClosingEditor, setIsClosingEditor] = useState(false);
 
-  // Audio player state
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [audioPlaying, setAudioPlaying] = useState(false);
-  const [audioTime, setAudioTime] = useState(0);
-  const [audioDuration, setAudioDuration] = useState(0);
+  const player = usePlayer();
+
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; message: string; onConfirm: () => void }>({
     open: false,
     message: '',
@@ -215,15 +213,21 @@ export default function MetaEditorPage() {
   const showConfirm = (message: string, onConfirm: () => void) =>
     setConfirmDialog({ open: true, message, onConfirm });
 
-  // Reset audio player when selected file changes
+  // Load track into global player when selected file changes
   useEffect(() => {
-    setAudioPlaying(false);
-    setAudioTime(0);
-    setAudioDuration(0);
+    if (!selectedFile) return;
+    player.load({
+      filePath: selectedFile.file_path,
+      fileName: selectedFile.file_name,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile?.file_path]);
 
   // Load files when folder mode changes
   useEffect(() => {
+    // Cancel any in-flight edit-mode request from the previous mode
+    editAbortRef.current?.abort();
+    editAbortRef.current = null;
     loadFiles();
     setSelectedFile(null);
     setTrackInfo(null);
@@ -245,7 +249,18 @@ export default function MetaEditorPage() {
     observer.observe(sentinel);
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, totalPages, loadingMore, loading, folderMode]);
+  }, [currentPage, totalPages, loadingMore, loading, folderMode, viewMode]);
+
+  // Scroll selected file into view when it changes in edit mode
+  useEffect(() => {
+    if (viewMode !== 'edit' || !selectedFile) return;
+    const timer = setTimeout(() => {
+      const el = fileListRef.current?.querySelector(`[data-file-path="${CSS.escape(selectedFile.file_path)}"]`);
+      el?.scrollIntoView({ block: 'center' });
+    }, 50);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFile?.file_path]);
 
   // Auto-search when query changes
   useEffect(() => {
@@ -365,7 +380,7 @@ export default function MetaEditorPage() {
       // Load artwork if available
       if (trackInfo.has_artwork) {
         setPendingArtworkData(null);
-        loadArtwork(trackInfo.file_path);
+        setArtworkUrl(api.getArtworkUrl(trackInfo.file_path));
       } else {
         setArtworkUrl(null);
       }
@@ -387,10 +402,13 @@ export default function MetaEditorPage() {
   }, [trackInfo]);
 
   const loadFiles = async () => {
+    editAbortRef.current?.abort();
+    const controller = new AbortController();
+    editAbortRef.current = controller;
     try {
       setLoading(true);
       setError(null);
-      const result = await api.listFiles(folderMode, 1);
+      const result = await api.listFiles(folderMode, 1, 50, controller.signal);
       setFiles(result.items);
       setCurrentPage(result.page);
       setTotalPages(result.pages);
@@ -414,13 +432,15 @@ export default function MetaEditorPage() {
 
   const loadMoreFiles = useCallback(async () => {
     if (loadingMore || loading || currentPage >= totalPages) return;
+    const controller = new AbortController();
     try {
       setLoadingMore(true);
       const nextPage = currentPage + 1;
-      const result = await api.listFiles(folderMode, nextPage);
+      const result = await api.listFiles(folderMode, nextPage, 50, controller.signal);
       setFiles(prev => [...prev, ...result.items]);
       setCurrentPage(result.page);
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       console.error('Failed to load more files:', err);
     } finally {
       setLoadingMore(false);
@@ -438,17 +458,6 @@ export default function MetaEditorPage() {
       setError(err instanceof Error ? err.message : 'Failed to load track info');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadArtwork = async (filePath: string) => {
-    try {
-      const blob = await api.getArtwork(filePath);
-      const url = URL.createObjectURL(blob);
-      setArtworkUrl(url);
-    } catch (err) {
-      console.error('Failed to load artwork:', err);
-      setArtworkUrl(null);
     }
   };
 
@@ -781,18 +790,6 @@ export default function MetaEditorPage() {
         </div>
       )}
 
-      {/* Hidden audio element */}
-      {selectedFile && (
-        <audio
-          ref={audioRef}
-          key={selectedFile.file_path}
-          src={api.getAudioUrl(selectedFile.file_path)}
-          onTimeUpdate={() => setAudioTime(audioRef.current?.currentTime ?? 0)}
-          onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration ?? 0)}
-          onEnded={() => setAudioPlaying(false)}
-        />
-      )}
-
       {error && (
         <div className="mx-4 mt-2 shrink-0 bg-destructive/10 border border-destructive/20 text-destructive text-xs px-3 py-2 rounded-lg">
           {error}
@@ -805,7 +802,54 @@ export default function MetaEditorPage() {
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           {/* Folder mode tabs + SC panel toggle */}
           <div className="flex items-center justify-between px-4 border-b border-border/50 shrink-0 h-11">
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-2">
+              {/* Edit / View toggle */}
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                value={viewMode}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  const next = v as 'edit' | 'view';
+                  setViewMode(next);
+                  if (next === 'edit' && player.currentTrack) {
+                    // Sync player's active track → edit file selection
+                    const match = files.find((f) => f.file_path === player.currentTrack!.filePath);
+                    if (match && match.file_path !== selectedFile?.file_path) {
+                      loadTrackInfo(match);
+                    } else if (!match && player.currentTrack.filePath !== selectedFile?.file_path) {
+                      // Track not in loaded pages — load directly
+                      const stub: FileInfo = {
+                        file_path: player.currentTrack.filePath,
+                        file_name: player.currentTrack.fileName,
+                        file_size: 0,
+                        file_format: '',
+                        has_artwork: false,
+                      };
+                      loadTrackInfo(stub);
+                    }
+                  } else if (next === 'view' && selectedFile) {
+                    // Sync edit selection → player (load without playing)
+                    player.load({
+                      filePath: selectedFile.file_path,
+                      fileName: selectedFile.file_name,
+                      title: trackInfo?.title,
+                      artist: trackInfo?.artist,
+                    });
+                  }
+                }}
+                className="h-7"
+              >
+                <ToggleGroupItem value="edit" className="h-7 w-7 p-0 cursor-pointer" title="Edit">
+                  <PencilLine className="size-3.5" />
+                </ToggleGroupItem>
+                <ToggleGroupItem value="view" className="h-7 w-7 p-0 cursor-pointer" title="View">
+                  <Eye className="size-3.5" />
+                </ToggleGroupItem>
+              </ToggleGroup>
+
+              <div className="w-px h-5 bg-border/50" />
+
               {(['prepare', 'collection', 'cleaned'] as const).map((mode) => (
                 <button
                   key={mode}
@@ -820,50 +864,66 @@ export default function MetaEditorPage() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-1">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 text-muted-foreground hover:text-foreground">
-                    <Settings2 className="size-3.5" />
+            <div className="flex items-center gap-2">
+
+              {viewMode === 'edit' && (
+                <>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 text-muted-foreground hover:text-foreground">
+                        <Settings2 className="size-3.5" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-52" align="end">
+                      <div className="space-y-3">
+                        <h4 className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Auto-Actions</h4>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Checkbox id="auto-artwork" checked={autoActions.autoCopyArtwork} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyArtwork: v as boolean })} />
+                            <label htmlFor="auto-artwork" className="text-xs cursor-pointer flex items-center gap-1.5"><Image className="size-3 text-muted-foreground" />Artwork</label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox id="auto-metadata" checked={autoActions.autoCopyMetadata} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyMetadata: v as boolean })} />
+                            <label htmlFor="auto-metadata" className="text-xs cursor-pointer flex items-center gap-1.5"><Download className="size-3 text-muted-foreground" />Metadata</label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox id="auto-clean" checked={autoActions.autoClean} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoClean: v as boolean })} />
+                            <label htmlFor="auto-clean" className="text-xs cursor-pointer flex items-center gap-1.5"><Eraser className="size-3 text-muted-foreground" />Clean</label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox id="auto-titelize" checked={autoActions.autoTitelize} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoTitelize: v as boolean })} />
+                            <label htmlFor="auto-titelize" className="text-xs cursor-pointer flex items-center gap-1.5"><ArrowUp className="size-3 text-muted-foreground" />Titelize</label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Checkbox id="auto-remove-mix" checked={autoActions.autoRemoveOriginalMix} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoRemoveOriginalMix: v as boolean })} />
+                            <label htmlFor="auto-remove-mix" className="text-xs cursor-pointer flex items-center gap-1.5"><XCircle className="size-3 text-muted-foreground" />Remove &quot;Original Mix&quot;</label>
+                          </div>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  <button
+                    onClick={() => setScPanelOpen(!scPanelOpen)}
+                    title={scPanelOpen ? 'Hide SoundCloud panel' : 'Show SoundCloud panel'}
+                    className={`cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 ${scPanelOpen ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    <Cloud className="size-4" />
                   </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-52" align="end">
-                  <div className="space-y-3">
-                    <h4 className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Auto-Actions</h4>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Checkbox id="auto-artwork" checked={autoActions.autoCopyArtwork} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyArtwork: v as boolean })} />
-                        <label htmlFor="auto-artwork" className="text-xs cursor-pointer flex items-center gap-1.5"><Image className="size-3 text-muted-foreground" />Artwork</label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Checkbox id="auto-metadata" checked={autoActions.autoCopyMetadata} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyMetadata: v as boolean })} />
-                        <label htmlFor="auto-metadata" className="text-xs cursor-pointer flex items-center gap-1.5"><Download className="size-3 text-muted-foreground" />Metadata</label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Checkbox id="auto-clean" checked={autoActions.autoClean} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoClean: v as boolean })} />
-                        <label htmlFor="auto-clean" className="text-xs cursor-pointer flex items-center gap-1.5"><Eraser className="size-3 text-muted-foreground" />Clean</label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Checkbox id="auto-titelize" checked={autoActions.autoTitelize} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoTitelize: v as boolean })} />
-                        <label htmlFor="auto-titelize" className="text-xs cursor-pointer flex items-center gap-1.5"><ArrowUp className="size-3 text-muted-foreground" />Titelize</label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Checkbox id="auto-remove-mix" checked={autoActions.autoRemoveOriginalMix} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoRemoveOriginalMix: v as boolean })} />
-                        <label htmlFor="auto-remove-mix" className="text-xs cursor-pointer flex items-center gap-1.5"><XCircle className="size-3 text-muted-foreground" />Remove &quot;Original Mix&quot;</label>
-                      </div>
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <button
-                onClick={() => setScPanelOpen(!scPanelOpen)}
-                title={scPanelOpen ? 'Hide SoundCloud panel' : 'Show SoundCloud panel'}
-                className={`cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 ${scPanelOpen ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                <Cloud className="size-4" />
-              </button>
+                </>
+              )}
             </div>
           </div>
+
+          {/* View mode — filter bar + browse table */}
+          {viewMode === 'view' && (
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <CollectionFilterBar mode={folderMode} />
+              <CollectionTable mode={folderMode} scrollToFilePath={player.currentTrack?.filePath} />
+            </div>
+          )}
+
+          {/* Edit mode — track editor + file list */}
+          {viewMode === 'edit' && (<>
 
           {/* Selected track editor row */}
           {selectedFile && loading && !trackInfo && (
@@ -1261,7 +1321,7 @@ export default function MetaEditorPage() {
           </div>)}
 
           {/* File list */}
-          <div className="flex-1 overflow-y-auto">
+          <div ref={fileListRef} className="flex-1 overflow-y-auto">
             {loading && !trackInfo && null}
             {!trackInfo && files.length === 0 && !loading && (
               <p className="text-xs text-muted-foreground px-4 py-6 text-center">No files found</p>
@@ -1274,6 +1334,7 @@ export default function MetaEditorPage() {
             {files.map((file) => (
               <button
                 key={file.file_path}
+                data-file-path={file.file_path}
                 onClick={() => {
                   if (selectedFile?.file_path === file.file_path) {
                     setSelectedFile(null);
@@ -1323,9 +1384,11 @@ export default function MetaEditorPage() {
               </div>
             )}
           </div>
+          </>)}
         </div>
 
         {/* SoundCloud panel */}
+        {viewMode === 'edit' && (
         <div className={`shrink-0 flex flex-col transition-[width] duration-200 ease-in-out overflow-hidden ${scPanelOpen ? 'w-72 border-l border-border/50' : 'w-0'}`}>
           <div className="w-72 flex flex-col flex-1 min-h-0">
             <div className="px-4 py-2.5 border-b border-border/50 flex items-center gap-2">
@@ -1400,44 +1463,8 @@ export default function MetaEditorPage() {
             </div>
           </div>
         </div>
+        )}
       </div>
-      {/* Audio player strip */}
-      {selectedFile && (
-        <div className="flex items-center gap-3 px-4 h-11 border-t border-border/50 bg-card/80 shrink-0 animate-in fade-in slide-in-from-bottom-3 duration-300 ease-out">
-          <button
-            onClick={() => {
-              if (!audioRef.current) return;
-              if (audioPlaying) {
-                audioRef.current.pause();
-                setAudioPlaying(false);
-              } else {
-                audioRef.current.play();
-                setAudioPlaying(true);
-              }
-            }}
-            className="cursor-pointer size-7 rounded-full bg-primary/10 hover:bg-primary/20 text-primary flex items-center justify-center shrink-0 transition-colors"
-          >
-            {audioPlaying ? <Pause className="size-3" /> : <Play className="size-3 ml-0.5" />}
-          </button>
-          <span className="text-xs text-muted-foreground font-mono truncate min-w-0 flex-1">{selectedFile.file_name}</span>
-          <input
-            type="range"
-            min={0}
-            max={audioDuration || 1}
-            step={0.1}
-            value={audioTime}
-            onChange={(e) => {
-              const t = parseFloat(e.target.value);
-              setAudioTime(t);
-              if (audioRef.current) audioRef.current.currentTime = t;
-            }}
-            className="w-36 accent-primary shrink-0 cursor-pointer"
-          />
-          <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-20 text-right">
-            {formatTime(audioTime)} / {formatTime(audioDuration)}
-          </span>
-        </div>
-      )}
       <AlertDialog
         open={confirmDialog.open}
         onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
