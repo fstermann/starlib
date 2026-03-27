@@ -13,6 +13,7 @@ class Settings(BaseSettings):
         # Load from .env first (dev), then from the user config file (desktop app).
         # Later files win over earlier ones.
         env_file=(".env", str(_USER_CONFIG_FILE)),
+        extra="ignore",
     )
 
     base_url: str = "https://api-v2.soundcloud.com"
