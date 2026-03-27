@@ -255,6 +255,7 @@ export const api = {
 
   async initializeFolders(): Promise<{ success: boolean; message: string }> {
     return fetchApi('/api/metadata/folders/initialize', { method: 'POST' });
+  },
   // Browse (view mode) — full metadata with filtering, sorting, pagination
   async browseFiles(mode: string, params: BrowseParams = {}, signal?: AbortSignal): Promise<BrowsePage> {
     const qs = new URLSearchParams();

@@ -192,7 +192,7 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect }: Collection
       setLoading(true);
 
       // Cancel any in-flight request so stale responses never overwrite current data
-      abortRef.current?.abort();
+      abortRef.current?.abort(new DOMException('Request cancelled', 'AbortError'));
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -228,7 +228,7 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect }: Collection
   const filtersKey = `${mode}|${search}|${genres.join(',')}|${keys.join(',')}|${bpmMin}|${bpmMax}|${sortBy}|${sortOrder}`;
   useEffect(() => {
     // Cancel any in-flight request from the previous mode/filters
-    abortRef.current?.abort();
+    abortRef.current?.abort(new DOMException('Request cancelled', 'AbortError'));
     abortRef.current = null;
     setReloading(true);
     setPage(1);

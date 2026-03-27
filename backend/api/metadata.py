@@ -19,6 +19,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi_pagination import Page, paginate
+from fastapi_pagination.utils import disable_installed_extensions_check
 
 from backend.api.deps import (
     get_root_folder,
@@ -42,6 +43,8 @@ from backend.schemas.metadata import (
 )
 from soundcloud_tools.handler.folder import FolderHandler
 from soundcloud_tools.handler.track import TrackHandler
+
+disable_installed_extensions_check()
 
 router = APIRouter(prefix="/api/metadata", tags=["metadata"])
 
@@ -107,7 +110,7 @@ def list_folder_files(
         folder_path = root_folder
 
     # Validate subfolder exists
-    is_valid, errors = collection.validate_folder(folder_path)
+    is_valid, _ = collection.validate_folder(folder_path)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

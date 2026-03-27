@@ -12,7 +12,7 @@ os.environ.setdefault("BACKEND_RELOAD", "false")
 os.environ.setdefault("BACKEND_HOST", "127.0.0.1")
 os.environ.setdefault("BACKEND_PORT", "8000")
 
-import uvicorn  # noqa: E402
+import uvicorn
 
 if __name__ == "__main__":
     uvicorn.run(

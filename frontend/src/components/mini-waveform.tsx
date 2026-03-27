@@ -138,7 +138,7 @@ export function MiniWaveform({ track, className, artworkReady = true }: MiniWave
 
     return () => {
       observerRef.current?.disconnect();
-      abortRef.current?.abort();
+      abortRef.current?.abort(new DOMException('Request cancelled', 'AbortError'));
       fetchedRef.current = false;
     };
   }, [fetchPeaks, artworkReady]);
