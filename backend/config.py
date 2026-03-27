@@ -33,7 +33,7 @@ class BackendSettings(BaseSettings):
     root_music_folder: Path = Path.home() / "Music"
 
     # Cache Settings
-    cache_dir: Path = Path(__file__).parent.parent.parent / ".cache"
+    cache_dir: Path = Path(".cache")
 
     model_config = {
         "extra": "ignore",

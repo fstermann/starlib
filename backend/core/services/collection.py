@@ -6,17 +6,126 @@ No UI framework dependencies.
 """
 
 import logging
+import threading
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from pathlib import Path
 
 from pydantic import ValidationError
 
+from backend.core.services import cache_db
 from soundcloud_tools.handler.folder import FolderHandler
-from soundcloud_tools.handler.track import TrackHandler
+from soundcloud_tools.handler.track import TrackHandler, TrackInfo
 from soundcloud_tools.utils import load_tracks
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Per-session indexing state
+# The DB holds data across restarts; this dict only tracks which folders
+# have been scanned in the current server process (for mtime comparison).
+# ---------------------------------------------------------------------------
+_indexing: set[Path] = set()  # folders with a scan in progress
+_indexed_this_session: set[Path] = set()  # folders fully scanned this session
+_state_lock = threading.Lock()
+
+
+def _index_one(folder: Path, file: Path) -> None:
+    """Index a single file into the DB if its mtime has changed."""
+    try:
+        stat = file.stat()
+        mtime = stat.st_mtime
+        if cache_db.get_track_mtime(file) == mtime:
+            return  # unchanged
+        handler = TrackHandler(root_folder=folder, file=file)
+        track_info = handler.track_info
+        missing: list[str] = []
+        if not track_info.title:
+            missing.append("title")
+        if not track_info.genre:
+            missing.append("genre")
+        if not track_info.release_date:
+            missing.append("release_date")
+        if not track_info.artwork:
+            missing.append("artwork")
+        cache_db.upsert_track(
+            file_path=file,
+            folder=folder.resolve(),
+            title=track_info.title or None,
+            artist_str=track_info.artist_str,
+            genre=track_info.genre or None,
+            key=track_info.key,
+            bpm=track_info.bpm,
+            release_date=track_info.release_date,
+            has_artwork=track_info.artwork is not None,
+            file_size=stat.st_size,
+            file_format=file.suffix,
+            duration=track_info.length,
+            is_complete=track_info.complete,
+            missing_fields=missing,
+            mtime=mtime,
+        )
+    except Exception as e:
+        logger.warning("Skipping unreadable file %s: %s", file, e)
+
+
+def _load_folder_to_db(folder: Path) -> None:
+    """Scan *folder*, indexing new/changed files into the DB."""
+    resolved = folder.resolve()
+    try:
+        audio_files = load_tracks(folder)
+        with ThreadPoolExecutor() as pool:
+            futures = [pool.submit(_index_one, folder, f) for f in audio_files]
+            for _ in as_completed(futures):
+                pass
+        logger.info("Finished indexing %s (%d files)", folder, len(audio_files))
+    except Exception as e:
+        logger.error("Failed to index folder %s: %s", folder, e)
+    finally:
+        with _state_lock:
+            _indexing.discard(resolved)
+            _indexed_this_session.add(resolved)
+
+
+def ensure_folder_indexed(folder: Path) -> None:
+    """Trigger a background scan of *folder* if not done this session."""
+    resolved = folder.resolve()
+    with _state_lock:
+        if resolved in _indexed_this_session or resolved in _indexing:
+            return
+        _indexing.add(resolved)
+    threading.Thread(target=_load_folder_to_db, args=(folder,), daemon=True).start()
+
+
+def is_indexing(folder: Path) -> bool:
+    """True while the folder is being indexed in the background."""
+    return folder.resolve() in _indexing
+
+
+# Backwards-compatible alias used by the API layer
+def is_cache_loading(folder: Path) -> bool:
+    return is_indexing(folder)
+
+
+def invalidate_file(file_path: Path) -> None:
+    """Remove a file from the cache so it gets re-indexed on next scan."""
+    cache_db.invalidate_file(file_path)
+    with _state_lock:
+        _indexed_this_session.discard(file_path.parent.resolve())
+
+
+def invalidate_cache(folder: Path | None = None) -> None:
+    """Drop cached data for *folder*, or all if None (backwards compat alias)."""
+    if folder is None:
+        with _state_lock:
+            _indexed_this_session.clear()
+            _indexing.clear()
+    else:
+        resolved = folder.resolve()
+        cache_db.invalidate_folder(resolved)
+        with _state_lock:
+            _indexed_this_session.discard(resolved)
 
 
 def list_audio_files(folder: Path) -> list[Path]:
@@ -195,21 +304,26 @@ def check_if_folder_has_audio(folder: Path) -> bool:
         return False
 
 
-def load_all_track_infos(folder: Path):
-    """
-    Load TrackInfo for all tracks in a folder.
-
-    Parameters
-    ----------
-    folder : Path
-        Folder containing audio files
-
-    Returns
-    -------
-    list[TrackInfo]
-        List of track information objects
-    """
-    return [handler.track_info for handler in TrackHandler.load_all(folder)]
+def load_all_track_infos(folder: Path) -> list[TrackInfo]:
+    """Return TrackInfo objects for all tracks in a folder (from DB cache)."""
+    ensure_folder_indexed(folder)
+    rows = cache_db.get_all_tracks(folder.resolve())
+    result: list[TrackInfo] = []
+    for row in rows:
+        try:
+            result.append(
+                TrackInfo(
+                    title=row["title"] or "",
+                    artist=row["artist_str"] or "",
+                    genre=row["genre"] or "",
+                    key=row["key"],
+                    bpm=row["bpm"],
+                    release_date=date.fromisoformat(row["release_date"]) if row["release_date"] else None,
+                )
+            )
+        except Exception:
+            pass
+    return result
 
 
 def filter_tracks_by_metadata(  # noqa: C901
@@ -307,9 +421,9 @@ def filter_tracks_by_metadata(  # noqa: C901
     return selected_indices
 
 
-def get_collection_metadata_stats(folder: Path) -> dict[str, Counter]:
+def get_collection_metadata_stats(folder: Path) -> dict:
     """
-    Get statistics about metadata in a collection.
+    Get statistics and filter values for a collection folder.
 
     Parameters
     ----------
@@ -318,35 +432,114 @@ def get_collection_metadata_stats(folder: Path) -> dict[str, Counter]:
 
     Returns
     -------
-    dict[str, Counter]
-        Dictionary with keys:
-        - "genres": Counter of genres
-        - "artists": Counter of artists
-        - "keys": Counter of keys
-        - "bpms": Counter of BPM values
-        - "versions": Counter of version strings from comments
+    dict
+        Keys: total_tracks, complete_tracks, incomplete_tracks, total_artists,
+        total_genres, missing_fields, genres, artists, keys, bpm_min, bpm_max
     """
-    track_infos = load_all_track_infos(folder)
+    ensure_folder_indexed(folder)
+    return cache_db.get_stats(folder.resolve())
 
-    genres = Counter(t.genre for t in track_infos)
 
-    # Flatten artists (handles both str and list[str])
-    all_artists = []
-    for t in track_infos:
-        if isinstance(t.artist, list):
-            all_artists.extend(t.artist)
-        else:
-            all_artists.append(t.artist)
-    artists = Counter(all_artists)
+def list_and_filter_tracks(
+    folder: Path,
+    search_query: str | None = None,
+    genres: list[str] | None = None,
+    artists: list[str] | None = None,
+    keys: list[str] | None = None,
+    bpm_min: int | None = None,
+    bpm_max: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    sort_by: str = "file_name",
+    sort_order: str = "asc",
+) -> list:
+    """
+    List, filter, and sort tracks via SQL. Returns sqlite3.Row items.
 
-    keys = Counter(t.key for t in track_infos if t.key)
-    bpms = Counter(t.bpm for t in track_infos if t.bpm)
-    versions = Counter(t.comment.version for t in track_infos if t.comment and t.comment.version)
+    Parameters
+    ----------
+    folder : Path
+        Folder to scan
+    search_query : str, optional
+        Case-insensitive substring search across title, artist, genre
+    genres : list[str], optional
+        Exact genre matches (OR logic)
+    artists : list[str], optional
+        Substring artist matches (OR logic)
+    keys : list[str], optional
+        Exact key matches (OR logic)
+    bpm_min : int, optional
+        Minimum BPM (inclusive)
+    bpm_max : int, optional
+        Maximum BPM (inclusive)
+    start_date : date, optional
+        Earliest release date (inclusive)
+    end_date : date, optional
+        Latest release date (inclusive)
+    sort_by : str
+        Field to sort by: title, artist, genre, bpm, key, release_date, file_name
+    sort_order : str
+        "asc" or "desc"
 
-    return {
-        "genres": genres,
-        "artists": artists,
-        "keys": keys,
-        "bpms": bpms,
-        "versions": versions,
-    }
+    Returns
+    -------
+    list[sqlite3.Row]
+        Filtered and sorted track rows from the DB cache.
+    """
+    ensure_folder_indexed(folder)
+    return cache_db.get_tracks(
+        folder.resolve(),
+        search_query=search_query,
+        genres=genres,
+        artists=artists,
+        keys=keys,
+        bpm_min=bpm_min,
+        bpm_max=bpm_max,
+        start_date=start_date,
+        end_date=end_date,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+
+def get_folder_filter_values(
+    folder: Path,
+    *,
+    search_query: str | None = None,
+    genres: list[str] | None = None,
+    keys: list[str] | None = None,
+    bpm_min: int | None = None,
+    bpm_max: int | None = None,
+) -> dict:
+    """
+    Get available filter values for a folder (for filter dropdowns).
+
+    Parameters
+    ----------
+    folder : Path
+        Folder to scan
+    search_query : str, optional
+        Active search filter (used to compute faceted counts)
+    genres : list[str], optional
+        Active genre filters (excluded from genre facet counts)
+    keys : list[str], optional
+        Active key filters (excluded from key facet counts)
+    bpm_min : int, optional
+        Active BPM minimum filter
+    bpm_max : int, optional
+        Active BPM maximum filter
+
+    Returns
+    -------
+    dict
+        Keys: genres, genre_counts, artists, keys, key_counts, bpm_min, bpm_max
+    """
+    ensure_folder_indexed(folder)
+    return cache_db.get_filter_values(
+        folder.resolve(),
+        search_query=search_query,
+        genres=genres,
+        keys=keys,
+        bpm_min=bpm_min,
+        bpm_max=bpm_max,
+    )

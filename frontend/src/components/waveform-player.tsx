@@ -14,7 +14,7 @@ function formatTime(s: number): string {
 }
 
 export function WaveformPlayer() {
-  const { currentTrack, isPlaying, pause, toggle } = usePlayer();
+  const { currentTrack, isPlaying, pause, toggle, reportProgress, registerSeek, reportDuration } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurferType | null>(null);
   const isPlayingRef = useRef(isPlaying);
@@ -108,36 +108,55 @@ export function WaveformPlayer() {
 
       ws.on('ready', () => {
         if (cancelled) return;
-        setDuration(ws!.getDuration());
+        const d = ws!.getDuration();
+        setDuration(d);
+        reportDuration(d);
         setReady(true);
         if (isPlayingRef.current) ws!.play();
       });
 
       ws.on('audioprocess', () => {
-        setCurrentTime(ws!.getCurrentTime());
+        const t = ws!.getCurrentTime();
+        const d = ws!.getDuration();
+        setCurrentTime(t);
+        if (d > 0) reportProgress(t / d);
       });
 
       ws.on('finish', () => {
         pause();
         ws!.seekTo(0);
         setCurrentTime(0);
+        reportProgress(0);
       });
 
       ws.on('seeking', () => {
-        setCurrentTime(ws!.getCurrentTime());
+        const t = ws!.getCurrentTime();
+        const d = ws!.getDuration();
+        setCurrentTime(t);
+        if (d > 0) reportProgress(t / d);
       });
 
-      ws.load(api.getAudioUrl(currentTrack!.filePath));
+      ws.on('error', (err) => {
+        if (!cancelled) console.error('WaveSurfer error:', err);
+      });
+
+      registerSeek((ratio) => ws!.seekTo(ratio));
+      ws.load(api.getAudioUrl(currentTrack!.filePath)).catch((err) => {
+        if (!cancelled) console.error('Failed to load audio:', err);
+      });
     }
 
     init();
 
     return () => {
       cancelled = true;
+      registerSeek(null);
+      reportProgress(0);
+      reportDuration(0);
       ws?.destroy();
       wsRef.current = null;
     };
-  }, [currentTrack?.filePath, pause]);
+  }, [currentTrack?.filePath, pause, reportProgress, registerSeek, reportDuration]);
 
   // Sync isPlaying state to WaveSurfer
   useEffect(() => {

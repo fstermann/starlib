@@ -8,13 +8,15 @@ FastAPI endpoints for metadata editing operations:
 - Artwork management
 """
 
+import asyncio
 import base64
+from datetime import date
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi_pagination import Page, paginate
 
@@ -23,14 +25,18 @@ from backend.api.deps import (
     validate_file_path,
     validate_folder_mode,
 )
-from backend.core.services import collection, metadata
+from backend.config import get_backend_settings
+from backend.core.services import cache_db, collection, metadata
 from backend.schemas.metadata import (
     CollectionStatsResponse,
     FileInfoResponse,
     FileReadinessResponse,
+    FilterValuesResponse,
     FinalizeRequest,
     FinalizeResponse,
     OperationResponse,
+    PeaksResponse,
+    TrackBrowseResponse,
     TrackInfoResponse,
     TrackInfoUpdateRequest,
 )
@@ -105,6 +111,160 @@ def list_folder_files(
         )
 
     return paginate(files, transformer=lambda items: [to_file_info(f) for f in items])
+
+
+@router.get("/folders/{mode}/browse", response_model=Page[TrackBrowseResponse])
+def browse_folder_files(
+    response: Response,
+    mode: str,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+    search: str | None = Query(None, description="Full-text search across title, artist, genre"),
+    genres: list[str] | None = Query(None, description="Filter by genre (OR logic, exact match)"),
+    artists: list[str] | None = Query(None, description="Filter by artist (OR logic, substring match)"),
+    keys: list[str] | None = Query(None, description="Filter by key (OR logic, exact match)"),
+    bpm_min: int | None = Query(None, ge=0, description="Minimum BPM"),
+    bpm_max: int | None = Query(None, ge=0, description="Maximum BPM"),
+    date_from: date | None = Query(None, description="Earliest release date (YYYY-MM-DD)"),
+    date_to: date | None = Query(None, description="Latest release date (YYYY-MM-DD)"),
+    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name)$"),
+    sort_order: str = Query("asc", pattern="^(asc|desc)$"),
+) -> Page[TrackBrowseResponse]:
+    """
+    Browse tracks in a folder with filtering, sorting, and pagination.
+
+    Reads full metadata for each track server-side and applies filters before
+    returning a paginated result. Suitable for large collections (4000+ tracks)
+    because only one page is serialized at a time.
+
+    Parameters
+    ----------
+    mode : str
+        Folder mode: "prepare", "collection", "cleaned", or ""
+    root_folder : Path
+        Root music folder (injected)
+
+    Returns
+    -------
+    Page[TrackBrowseResponse]
+        Filtered, sorted, paginated track metadata
+    """
+    validated_mode = validate_folder_mode(mode)
+    folder_handler = FolderHandler(folder=root_folder)
+
+    if validated_mode == "prepare":
+        folder_path = folder_handler.get_prepare_folder()
+    elif validated_mode == "collection":
+        folder_path = folder_handler.get_collection_folder()
+    elif validated_mode == "cleaned":
+        folder_path = folder_handler.get_cleaned_folder()
+    else:
+        folder_path = root_folder
+
+    is_valid, errors = collection.validate_folder(folder_path)
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=errors)
+
+    try:
+        pairs = collection.list_and_filter_tracks(
+            folder=folder_path,
+            search_query=search,
+            genres=genres,
+            artists=artists,
+            keys=keys,
+            bpm_min=bpm_min,
+            bpm_max=bpm_max,
+            start_date=date_from,
+            end_date=date_to,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list tracks: {e!s}",
+        ) from e
+
+    def to_browse_response(row) -> TrackBrowseResponse:
+        return TrackBrowseResponse(
+            file_path=row["file_path"],
+            file_name=row["file_name"],
+            title=row["title"],
+            artist=row["artist_str"],
+            bpm=row["bpm"],
+            key=row["key"],
+            genre=row["genre"],
+            release_date=date.fromisoformat(row["release_date"]) if row["release_date"] else None,
+            has_artwork=bool(row["has_artwork"]),
+            file_format=row["file_format"],
+            file_size=row["file_size"] or 0,
+            duration=row["duration"],
+        )
+
+    if collection.is_indexing(folder_path):
+        response.headers["X-Cache-Loading"] = "true"
+
+    return paginate(pairs, transformer=lambda items: [to_browse_response(p) for p in items])
+
+
+@router.get("/folders/{mode}/filter-values", response_model=FilterValuesResponse)
+def get_folder_filter_values(
+    mode: str,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+    search: str | None = Query(None, description="Active search filter"),
+    genres: list[str] | None = Query(None, description="Active genre filters"),
+    keys: list[str] | None = Query(None, description="Active key filters"),
+    bpm_min: int | None = Query(None, ge=0, description="Active BPM minimum"),
+    bpm_max: int | None = Query(None, ge=0, description="Active BPM maximum"),
+) -> FilterValuesResponse:
+    """
+    Get available filter values for a folder (genres, artists, keys, BPM range).
+
+    Used to populate filter dropdowns in the View mode.
+
+    Parameters
+    ----------
+    mode : str
+        Folder mode: "prepare", "collection", "cleaned", or ""
+    root_folder : Path
+        Root music folder (injected)
+
+    Returns
+    -------
+    FilterValuesResponse
+        Available filter options
+    """
+    validated_mode = validate_folder_mode(mode)
+    folder_handler = FolderHandler(folder=root_folder)
+
+    if validated_mode == "prepare":
+        folder_path = folder_handler.get_prepare_folder()
+    elif validated_mode == "collection":
+        folder_path = folder_handler.get_collection_folder()
+    elif validated_mode == "cleaned":
+        folder_path = folder_handler.get_cleaned_folder()
+    else:
+        folder_path = root_folder
+
+    is_valid, errors = collection.validate_folder(folder_path)
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=errors)
+
+    try:
+        values = collection.get_folder_filter_values(
+            folder_path,
+            search_query=search,
+            genres=genres,
+            keys=keys,
+            bpm_min=bpm_min,
+            bpm_max=bpm_max,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get filter values: {e!s}",
+        ) from e
+
+    return FilterValuesResponse(**values)
 
 
 @router.get("/files/{file_path:path}/info", response_model=TrackInfoResponse)
@@ -228,6 +388,8 @@ def update_file_info(
     if updates.artwork_data:
         artwork_bytes = base64.b64decode(updates.artwork_data)
         metadata.add_artwork_to_track(new_path, root_folder, artwork_bytes)
+
+    collection.invalidate_cache()
 
     return OperationResponse(
         success=True,
@@ -359,6 +521,8 @@ def finalize_file(
             detail=f"Finalization failed: {e!s}",
         ) from e
 
+    collection.invalidate_cache()
+
     return FinalizeResponse(
         success=result["success"],
         message=result["message"],
@@ -370,12 +534,15 @@ def finalize_file(
 
 
 @router.get("/files/{file_path:path}/artwork")
-def get_file_artwork(
+async def get_file_artwork(
     file_path: str,
     root_folder: Annotated[Path, Depends(get_root_folder)],
 ) -> FileResponse:
     """
     Get artwork image for an audio file.
+
+    Artwork is extracted once and cached to ``<cache_dir>/artwork/``.  Fast
+    path returns the cached file without re-reading the audio file.
 
     Parameters
     ----------
@@ -395,9 +562,13 @@ def get_file_artwork(
         If file doesn't exist or has no artwork
     """
     resolved_path = validate_file_path(file_path, root_folder)
+    settings = get_backend_settings()
 
     try:
-        artwork_path = metadata.extract_artwork(resolved_path, root_folder)
+        loop = asyncio.get_event_loop()
+        artwork_path = await loop.run_in_executor(
+            None, metadata.extract_artwork, resolved_path, root_folder, settings.cache_dir
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -409,7 +580,8 @@ def get_file_artwork(
 
     return FileResponse(
         path=artwork_path,
-        media_type="image/jpeg",  # or detect mime type
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 
@@ -465,6 +637,8 @@ async def update_file_artwork(
             detail=f"Failed to embed artwork: {e!s}",
         ) from e
 
+    collection.invalidate_cache()
+
     return OperationResponse(
         success=True,
         message=f"Artwork updated for {resolved_path.name}",
@@ -506,6 +680,8 @@ def delete_file_artwork(
             detail=f"Failed to remove artwork: {e!s}",
         ) from e
 
+    collection.invalidate_cache()
+
     return OperationResponse(
         success=True,
         message=f"Artwork removed from {resolved_path.name}",
@@ -546,6 +722,8 @@ def delete_file(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete file: {e!s}"
         ) from e
 
+    collection.invalidate_cache()
+
     return OperationResponse(
         success=True,
         message=f"File deleted: {resolved_path.name}",
@@ -566,6 +744,68 @@ AUDIO_MIME_TYPES = {
 
 # Formats that Chrome cannot decode natively — transcode to WAV via ffmpeg.
 _TRANSCODE_EXTENSIONS = {".aiff", ".aif"}
+
+# Limit concurrent ffmpeg peak-computation processes so uncached requests
+# don't overwhelm the server. Cached requests bypass this semaphore entirely.
+_peaks_semaphore = asyncio.Semaphore(4)
+
+
+@router.get("/files/{file_path:path}/peaks", response_model=PeaksResponse)
+async def get_file_peaks(
+    file_path: str,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+    num_peaks: int = Query(200, ge=50, le=500, description="Number of amplitude peaks to return"),
+) -> PeaksResponse:
+    """
+    Get waveform amplitude peak data for a file.
+
+    Cached results (SQLite) are returned immediately without any throttle.
+    Uncached files are decoded via ffmpeg; concurrent ffmpeg calls are capped
+    at 4 to avoid overwhelming the system during fast scrolling.
+
+    Parameters
+    ----------
+    file_path : str
+        Relative or absolute path to audio file
+    root_folder : Path
+        Root music folder (injected)
+    num_peaks : int
+        Number of peak values to return
+
+    Returns
+    -------
+    PeaksResponse
+        Normalized peak amplitudes in range [0, 1]
+    """
+    resolved_path = validate_file_path(file_path, root_folder)
+
+    if not resolved_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
+
+    # Fast path — serve from SQLite cache without touching the semaphore.
+    try:
+        mtime = resolved_path.stat().st_mtime
+        cached = cache_db.get_peaks(resolved_path, mtime)
+        if cached is not None:
+            return PeaksResponse(peaks=cached)
+    except OSError:
+        pass
+
+    # Slow path — throttled ffmpeg computation.
+    settings = get_backend_settings()
+    loop = asyncio.get_event_loop()
+    try:
+        async with _peaks_semaphore:
+            peaks = await loop.run_in_executor(
+                None, metadata.get_waveform_peaks, resolved_path, settings.cache_dir, num_peaks
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to compute peaks: {e!s}",
+        ) from e
+
+    return PeaksResponse(peaks=peaks)
 
 
 @router.get("/files/{file_path:path}/audio")
@@ -685,4 +925,9 @@ def get_collection_stats(
         total_artists=stats["total_artists"],
         total_genres=stats["total_genres"],
         missing_fields=stats["missing_fields"],
+        genres=stats["genres"],
+        artists=stats["artists"],
+        keys=stats["keys"],
+        bpm_min=stats["bpm_min"],
+        bpm_max=stats["bpm_max"],
     )
