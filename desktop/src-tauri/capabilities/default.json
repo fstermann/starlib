@@ -2,13 +2,50 @@
   "$schema": "https://schema.tauri.app/config/2/capability.json",
   "identifier": "default",
   "description": "Default capability for the main window.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
-    "shell:allow-execute",
-    "shell:allow-spawn",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "starlib-backend"
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "starlib-backend"
+        }
+      ]
+    },
     "updater:default",
     "dialog:default",
-    "fs:default"
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        {
+          "path": "$AUDIO/**"
+        },
+        {
+          "path": "$APPCONFIG/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "$AUDIO/**"
+        },
+        {
+          "path": "$APPCONFIG/**"
+        }
+      ]
+    }
   ]
 }

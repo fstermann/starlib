@@ -3,7 +3,6 @@ import json
 import logging
 import re
 import urllib.parse as urlparse
-import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -19,7 +18,6 @@ from soundcloud_tools.settings import get_settings
 from soundcloud_tools.utils import chunk_list, generate_random_user_agent, get_default_kwargs
 
 logger = logging.getLogger(__name__)
-warnings.filterwarnings("ignore", message="Unverified HTTPS request is being made")
 
 
 class SplitParams(BaseModel):
@@ -168,7 +166,7 @@ class Client:
         kwargs["params"] = kwargs.get("params", {}) | self.params
         if self.settings.proxy:
             kwargs.setdefault("proxies", self.proxies)
-        kwargs.setdefault("verify", False)
+
         logger.info(f"Making request {method} {url}")
         response = requests.request(method, url, **kwargs)
         logger.info(f"Response {response.status_code} for {method} {response.url}")

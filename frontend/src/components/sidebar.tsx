@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Music2, FilePen, Moon, Sun } from "lucide-react";
+import { clearTokens } from "@/lib/auth";
 
 interface User {
   id: number;
@@ -42,8 +43,7 @@ export function Sidebar() {
   }, []);
 
   function handleDisconnect() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("sc_user");
+    clearTokens();
     setUser(null);
     router.push("/");
   }
