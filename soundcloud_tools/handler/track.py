@@ -111,6 +111,7 @@ class TrackInfo(BaseModel):
 
     bpm: int | None = None
     key: str | None = None
+    length: float | None = None
 
     artist_options: set[str] = Field(default_factory=set)
 
@@ -217,7 +218,7 @@ class TrackHandler(BaseModel):
 
     @classmethod
     def load_all(cls, root_folder: Path) -> list[Self]:
-        return [cls(root_folder=root_folder, file=f) for f in load_tracks(root_folder)]
+        return [cls(root_folder=root_folder, file=f) for f in load_tracks(root_folder, list(FILETYPE_MAP))]
 
     @classmethod
     def load_track_infos(cls, folder: Path):
@@ -292,6 +293,7 @@ class TrackHandler(BaseModel):
             comment=Comment.from_str(self._get_tag_value(track, "COMM::XXX")),
             bpm=convert_to_int(self._get_tag_value(track, "TBPM")) or None,
             key=self._get_tag_value(track, "TKEY"),
+            length=track.info.length if hasattr(track, "info") else None,
         )
 
     @property

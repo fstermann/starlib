@@ -6,10 +6,13 @@ No UI framework dependencies - only business logic.
 """
 
 import logging
+import struct
+import subprocess
 from datetime import date
 from pathlib import Path
 from typing import Literal
 
+from backend.core.services import cache_db
 from soundcloud_tools.handler.track import TrackHandler, TrackInfo
 from soundcloud_tools.utils.string import (
     remove_double_spaces,
@@ -478,9 +481,13 @@ def remove_all_artwork_from_track(
     track.save()
 
 
-def extract_artwork(file_path: Path, root_folder: Path) -> Path | None:
+def extract_artwork(file_path: Path, root_folder: Path, cache_dir: Path | None = None) -> Path | None:
     """
-    Extract artwork from an audio file and save it to a temporary file.
+    Extract artwork from an audio file, caching it to disk.
+
+    On first call for a given file the cover bytes are extracted from the audio
+    file and written to ``<cache_dir>/artwork/<sha256>.jpg``.  Subsequent calls
+    return the cached path immediately without re-reading the audio file.
 
     Parameters
     ----------
@@ -488,13 +495,25 @@ def extract_artwork(file_path: Path, root_folder: Path) -> Path | None:
         Path to the audio file
     root_folder : Path
         Root folder for the music library
+    cache_dir : Path | None
+        Directory used for persistent caching.  When *None* the artwork is
+        written to a temporary file (legacy behaviour).
 
     Returns
     -------
     Path | None
-        Path to extracted artwork file, or None if no artwork found
+        Path to the artwork file, or None if no artwork found
     """
+    import hashlib
     import tempfile
+
+    # Check disk cache first (fast path - no audio file read needed).
+    if cache_dir is not None:
+        art_cache_dir = cache_dir / "artwork"
+        key = hashlib.sha256(str(file_path).encode()).hexdigest()
+        cached_path = art_cache_dir / f"{key}.jpg"
+        if cached_path.exists():
+            return cached_path
 
     handler = TrackHandler(root_folder=root_folder, file=file_path)
     covers = handler.covers
@@ -502,13 +521,16 @@ def extract_artwork(file_path: Path, root_folder: Path) -> Path | None:
     if not covers:
         return None
 
-    # Use first cover
     cover_data = covers[0].data
 
-    # Save to temp file
-    temp_file = Path(tempfile.mktemp(suffix=".jpg"))
-    temp_file.write_bytes(cover_data)
+    if cache_dir is not None:
+        art_cache_dir.mkdir(parents=True, exist_ok=True)
+        cached_path.write_bytes(cover_data)
+        return cached_path
 
+    # Fallback: write to a temp file (legacy / no cache_dir).
+    temp_file = Path(tempfile.mkstemp(suffix=".jpg")[1])
+    temp_file.write_bytes(cover_data)
     return temp_file
 
 
@@ -543,3 +565,70 @@ def remove_artwork(file_path: Path, root_folder: Path) -> None:
         Root folder for the music library
     """
     remove_all_artwork_from_track(file_path, root_folder)
+
+
+def get_waveform_peaks(file_path: Path, cache_dir: Path, num_peaks: int = 200) -> list[float]:
+    """
+    Compute amplitude peak data for waveform visualization.
+
+    Decodes audio to mono PCM via ffmpeg, computes max absolute amplitude per
+    chunk, normalizes to [0, 1], and caches the result in SQLite.
+
+    Parameters
+    ----------
+    file_path : Path
+        Path to the audio file
+    cache_dir : Path
+        Kept for backwards-compatible signature; no longer used.
+    num_peaks : int
+        Number of peak values to return (default 200)
+
+    Returns
+    -------
+    list[float]
+        Normalized amplitude peaks in range [0, 1]
+    """
+    mtime = file_path.stat().st_mtime
+    cached = cache_db.get_peaks(file_path, mtime)
+    if cached is not None:
+        return cached
+
+    # Decode to raw signed f32le PCM (mono, 8 kHz) via ffmpeg
+    cmd = [
+        "ffmpeg",
+        "-i",
+        str(file_path),
+        "-ac",
+        "1",
+        "-ar",
+        "8000",
+        "-f",
+        "f32le",
+        "-v",
+        "quiet",
+        "pipe:1",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, timeout=120)
+    if proc.returncode != 0:
+        return [0.0] * num_peaks
+
+    raw = proc.stdout
+    n = len(raw) // 4
+    if n == 0:
+        return [0.0] * num_peaks
+
+    samples = struct.unpack(f"{n}f", raw)
+    chunk_size = max(1, n // num_peaks)
+
+    peaks = []
+    for i in range(num_peaks):
+        start = i * chunk_size
+        end = min(start + chunk_size, n)
+        chunk = samples[start:end]
+        peaks.append(max(abs(s) for s in chunk) if chunk else 0.0)
+
+    max_val = max(peaks) or 1.0
+    normalized = [p / max_val for p in peaks]
+
+    cache_db.upsert_peaks(file_path, normalized, mtime)
+    return normalized
