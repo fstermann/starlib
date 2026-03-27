@@ -7,6 +7,8 @@ variables from a .env file. We point it at the user config file via _env_file.
 """
 
 import logging
+import os
+import stat
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
@@ -42,6 +44,7 @@ def _write_config(data: dict[str, str]) -> None:
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     lines = [f"{k}={v}" for k, v in data.items()]
     _CONFIG_FILE.write_text("\n".join(lines) + "\n")
+    os.chmod(_CONFIG_FILE, stat.S_IRUSR | stat.S_IWUSR)  # 0o600 — owner-only
 
 
 @router.get("/status", response_model=SetupStatusResponse)
