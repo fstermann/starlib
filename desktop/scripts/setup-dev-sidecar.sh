@@ -9,7 +9,7 @@ set -e
 ARCH=$(rustc -vV | grep 'host:' | awk '{print $2}')
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARIES_DIR="${SCRIPT_DIR}/../src-tauri/binaries"
-OUT="${BINARIES_DIR}/sct-backend-${ARCH}"
+OUT="${BINARIES_DIR}/starlib-backend-${ARCH}"
 
 mkdir -p "$BINARIES_DIR"
 

@@ -1,11 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for the soundcloud-tools backend sidecar.
+PyInstaller spec for the Starlib backend sidecar.
 
 Build with:
     pyinstaller desktop/sidecar.spec
 
-Output: dist/sct-backend  (or dist/sct-backend.exe on Windows)
+Output: dist/starlib-backend  (or dist/starlib-backend.exe on Windows)
 The resulting binary is placed alongside the Tauri app bundle as a sidecar.
 
 Notes
@@ -83,7 +83,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="sct-backend",
+    name="starlib-backend",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

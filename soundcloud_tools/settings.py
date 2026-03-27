@@ -4,7 +4,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # User config file written by the first-launch setup flow (desktop app)
-_USER_CONFIG_FILE = Path.home() / "Library" / "Application Support" / "soundcloud-tools" / "config.env"
+_USER_CONFIG_FILE = Path.home() / "Library" / "Application Support" / "starlib" / "config.env"
 
 
 class Settings(BaseSettings):

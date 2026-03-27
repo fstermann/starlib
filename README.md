@@ -117,26 +117,26 @@ If `ffmpeg` is not installed on your system, you can install it via Homebrew by 
 brew install ffmpeg
 ```
 
-### `sct` Script
+### `starlib` Script
 
-The `sct` script contains shortcuts to the tools provided in this repository.
+The `starlib` script contains shortcuts to the tools provided in this repository.
 For easier access to the commands, add the following to your `.bashrc` or `.zshrc`. Otherwise, _all following commands have to be prefixed with `./`_:
 
 ```bash
-alias sct="./sct"
+alias starlib="./starlib"
 ```
 
 Execute the following command to make the script executable:
 
 ```bash
-chmod +x sct
+chmod +x starlib
 ```
 
 #### Commands
 
 ```bash
-sct app # Run the Streamlit application
-sct weekly # Run the weekly workflow
+starlib app # Run the Streamlit application
+starlib weekly # Run the weekly workflow
 ```
 
 ## Settings

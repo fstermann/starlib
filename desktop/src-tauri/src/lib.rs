@@ -6,8 +6,8 @@ use tauri_plugin_shell::ShellExt;
 fn start_backend(app: &tauri::AppHandle) {
     let shell = app.shell();
     match shell
-        .sidecar("sct-backend")
-        .expect("sct-backend sidecar not found in bundle")
+        .sidecar("starlib-backend")
+        .expect("starlib-backend sidecar not found in bundle")
         .spawn()
     {
         Ok((mut rx, child)) => {

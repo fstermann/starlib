@@ -10,8 +10,8 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 # Platform-specific user config directory used when running as a bundled desktop app.
-# ~/.config/soundcloud-tools/ on Linux, ~/Library/Application Support/soundcloud-tools/ on macOS.
-_APP_CONFIG_DIR = Path.home() / "Library" / "Application Support" / "soundcloud-tools"
+# ~/.config/starlib/ on Linux, ~/Library/Application Support/starlib/ on macOS.
+_APP_CONFIG_DIR = Path.home() / "Library" / "Application Support" / "starlib"
 
 
 class BackendSettings(BaseSettings):

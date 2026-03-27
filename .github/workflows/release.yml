@@ -13,7 +13,7 @@ on:
 
 env:
     # ── Python backend sidecar binary name (must match tauri.conf.json externalBin)
-    SIDECAR_NAME: sct-backend
+    SIDECAR_NAME: starlib-backend
     # ── Node version for the frontend build
     NODE_VERSION: "22"
     # ── Python version for PyInstaller
@@ -151,7 +151,7 @@ jobs:
                     echo "Generating placeholder icon..."
                     convert -size 512x512 xc:#f97316 \
                       -fill white -font Helvetica-Bold -pointsize 120 \
-                      -gravity center -annotate 0 "SCT" \
+                      -gravity center -annotate 0 "Starlib" \
                       "$ICONS_DIR/icon.png"
                     for size in 32 128; do
                       convert "$ICONS_DIR/icon.png" -resize ${size}x${size} "$ICONS_DIR/${size}x${size}.png"

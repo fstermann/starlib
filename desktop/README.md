@@ -1,6 +1,6 @@
 # Desktop app
 
-This directory contains the **Tauri v2** shell that packages soundcloud-tools as a native macOS (and optionally Windows) desktop application.
+This directory contains the **Tauri v2** shell that packages Starlib as a native macOS (and optionally Windows) desktop application.
 
 ## Architecture
 
@@ -9,7 +9,7 @@ Tauri shell  (Rust / native webview)
   │
   ├─ webview  →  frontend/out/  (Next.js static export)
   │
-  └─ sidecar  →  desktop/binaries/sct-backend  (PyInstaller-frozen FastAPI backend)
+  └─ sidecar  →  desktop/binaries/starlib-backend  (PyInstaller-frozen FastAPI backend)
 ```
 
 The backend sidecar is started automatically when the app opens and killed when it closes. It binds to `127.0.0.1:8000` (localhost only). The Tauri webview loads the static frontend which talks to the sidecar over HTTP.
@@ -33,8 +33,8 @@ uv pip install -e "."
 pyinstaller desktop/sidecar.spec --distpath desktop/src-tauri/binaries --noconfirm
 
 # Tauri needs the binary named with the target triple:
-mv desktop/src-tauri/binaries/sct-backend \
-   desktop/src-tauri/binaries/sct-backend-$(rustc -vV | grep host | cut -d' ' -f2)
+mv desktop/src-tauri/binaries/starlib-backend \
+   desktop/src-tauri/binaries/starlib-backend-$(rustc -vV | grep host | cut -d' ' -f2)
 ```
 
 ## 2. Build the frontend
@@ -67,7 +67,7 @@ npm run desktop:dev
 ```
 
 The `desktop:dev` command automatically creates a lightweight shell-script stub at
-`desktop/binaries/sct-backend-<arch>` that starts the Python backend via `uv`.
+`desktop/binaries/starlib-backend-<arch>` that starts the Python backend via `uv`.
 No PyInstaller build is required for local development.
 
 ## 5. Production build (local)
@@ -83,7 +83,7 @@ npx @tauri-apps/cli build
 Tauri's updater requires a signing key pair. Generate one and add the private key to your GitHub repo secrets:
 
 ```bash
-cd desktop && npx @tauri-apps/cli signer generate -w ~/.tauri/soundcloud-tools.key
+cd desktop && npx @tauri-apps/cli signer generate -w ~/.tauri/starlib.key
 # → prints public key  —  paste into tauri.conf.json "plugins.updater.pubkey"
 # → private key file   —  add as TAURI_SIGNING_PRIVATE_KEY secret (base64-encode first)
 ```

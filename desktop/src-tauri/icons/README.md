@@ -28,6 +28,6 @@ If no icon is provided the build will fail. For CI purposes, a 512×512 placehol
 ```bash
 convert -size 512x512 xc:#f97316 \
   -fill white -font Helvetica -pointsize 120 \
-  -gravity center -annotate 0 "SCT" \
+  -gravity center -annotate 0 "Starlib" \
   icon.png
 ```

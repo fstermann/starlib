@@ -15,7 +15,7 @@ skills-lock.json
 
 # Desktop / Tauri build outputs
 desktop/node_modules/
-desktop/src-tauri/binaries/sct-backend*
+desktop/src-tauri/binaries/starlib-backend*
 desktop/src-tauri/target/
 # PyInstaller build artefacts
 build/
