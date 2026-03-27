@@ -226,7 +226,7 @@ export default function MetaEditorPage() {
   // Load files when folder mode changes
   useEffect(() => {
     // Cancel any in-flight edit-mode request from the previous mode
-    editAbortRef.current?.abort();
+    editAbortRef.current?.abort(new DOMException('Request cancelled', 'AbortError'));
     editAbortRef.current = null;
     loadFiles();
     setSelectedFile(null);
@@ -402,7 +402,7 @@ export default function MetaEditorPage() {
   }, [trackInfo]);
 
   const loadFiles = async () => {
-    editAbortRef.current?.abort();
+    editAbortRef.current?.abort(new DOMException('Request cancelled', 'AbortError'));
     const controller = new AbortController();
     editAbortRef.current = controller;
     try {
