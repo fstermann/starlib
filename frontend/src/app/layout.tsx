@@ -8,6 +8,7 @@ import { PlayerProvider } from "@/lib/player-context";
 import { LayoutShell } from "@/components/layout-shell";
 import { WaveformPlayer } from "@/components/waveform-player";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
+import { ThemeProvider } from "next-themes";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -34,28 +35,23 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){var t=localStorage.getItem('theme');if(t==='light'){document.documentElement.classList.remove('dark')}else{document.documentElement.classList.add('dark')}})();`,
-          }}
-        />
-      </head>
       <body
         className={`${inter.variable} ${geistMono.variable} antialiased h-screen flex flex-row bg-background text-foreground overflow-hidden`}
       >
-        <NuqsAdapter>
-          <PlayerProvider>
-            <Sidebar />
-            <LayoutShell>
-              <SetupGate>
-                {children}
-                </SetupGate>
-                </LayoutShell>
-            <WaveformPlayer />
-            <Toaster />
-          </PlayerProvider>
-        </NuqsAdapter>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+          <NuqsAdapter>
+            <PlayerProvider>
+              <Sidebar />
+              <LayoutShell>
+                <SetupGate>
+                  {children}
+                  </SetupGate>
+                  </LayoutShell>
+              <WaveformPlayer />
+              <Toaster />
+            </PlayerProvider>
+          </NuqsAdapter>
+        </ThemeProvider>
       </body>
     </html>
   );
