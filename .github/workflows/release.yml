@@ -218,13 +218,20 @@ jobs:
                   # Updater signing key — generate with: cd desktop && npx @tauri-apps/cli signer generate
                   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
                   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-                  # macOS signing (optional)
-                  APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-                  APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-                  APPLE_ID: ${{ secrets.APPLE_ID }}
-                  APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-                  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-              run: npx @tauri-apps/cli build --target ${{ matrix.tauri-target }} --config src-tauri/tauri.conf.json
+                  # macOS signing (optional — only set when secrets are configured)
+                  APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE || '' }}
+                  APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+                  APPLE_ID: ${{ secrets.APPLE_ID || '' }}
+                  APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD || '' }}
+                  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
+              shell: bash
+              run: |
+                  # Unset Apple signing env vars if they are empty to prevent
+                  # Tauri from attempting code signing without valid credentials
+                  for var in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
+                    if [[ -z "${!var}" ]]; then unset "$var"; fi
+                  done
+                  npx @tauri-apps/cli build --target ${{ matrix.tauri-target }} --config src-tauri/tauri.conf.json
 
             - name: Upload Tauri bundles
               uses: actions/upload-artifact@v7
