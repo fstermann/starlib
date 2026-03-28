@@ -1,28 +1,27 @@
 # Starlib ⭐
 
-This repository provides a collection of tools to interact with the SoundCloud API.
+Starlib is a DJ library management app. Organise your tracks, edit metadata, and manage artwork, all from a single interface.
 
-## 🏗️ Architecture
+## Architecture
 
-- **Backend API** (`backend/`) - FastAPI server with OAuth 2.1, metadata management, file handling
-- **Frontend** (`frontend/`) - Next.js/React application with modern UI components
-- **Legacy Tools** (`soundcloud_tools/`) - Original Python CLI tools (being migrated to backend/frontend)
+| Component | Stack | Directory |
+|-----------|-------|-----------|
+| Backend API | FastAPI · Python | `backend/` |
+| Frontend | Next.js · React · TypeScript | `frontend/` |
+| Desktop app | Tauri v2 · Rust | `desktop/` |
+| Legacy CLI | Python | `soundcloud_tools/` |
 
-### Quick Start
+## Quick start
 
-**Backend:**
 ```bash
-uv run python -m backend.main
-# → http://localhost:8000
+# Terminal 1 – Backend
+uv run python -m backend.main   # → http://localhost:8000
+
+# Terminal 2 – Frontend
+cd frontend && npm run dev       # → http://localhost:3000
 ```
 
-**Frontend:**
-```bash
-cd frontend && npm run dev
-# → http://localhost:3000
-```
-
-See [Backend README](backend/README.md) for detailed setup.
+See the [documentation](docs/) for detailed setup and configuration.
 
 ## Authentication
 

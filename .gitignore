@@ -24,3 +24,6 @@ dist/
 
 # Rust / Cargo workspace artefacts (non-desktop)
 target/
+
+# Zensical docs build output
+site/

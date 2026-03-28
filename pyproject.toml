@@ -1,7 +1,7 @@
 [project]
 name = "starlib"
 version = "0.1.0"
-description = ""
+description = "DJ library management app."
 authors = [{name = "Fabian Stermann", email = "fabian.stermann@gmail.com"}]
 readme = "README.md"
 requires-python = ">=3.13.0"
@@ -31,6 +31,7 @@ dev = [
     "ruff>=0.15.0",
     "pre-commit>=4.5.1",
     "pytest>=8.0.0",
+    "zensical>=0.0.29",
 ]
 editor = [
     "streamlit>=1.45.1",
