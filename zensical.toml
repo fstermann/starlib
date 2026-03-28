@@ -6,8 +6,8 @@
 site_name = "Starlib"
 site_description = "DJ library management app. Organise tracks, edit metadata, and manage artwork."
 site_author = "Fabian Stermann"
-repo_url = "https://github.com/fstermann/soundcloud-tools"
-repo_name = "fstermann/soundcloud-tools"
+repo_url = "https://github.com/fstermann/starlib"
+repo_name = "fstermann/starlib"
 edit_uri = "edit/main/docs/"
 
 copyright = "Copyright &copy; 2025 – 2026 Fabian Stermann"
@@ -66,4 +66,4 @@ toggle.name = "Switch to light mode"
 # ----------------------------------------------------------------------------
 [[project.extra.social]]
 icon = "fontawesome/brands/github"
-link = "https://github.com/fstermann/soundcloud-tools"
+link = "https://github.com/fstermann/starlib"

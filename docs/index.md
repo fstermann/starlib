@@ -31,11 +31,11 @@ Then open [localhost:3000](http://localhost:3000) in your browser and connect yo
 ## Project layout
 
 ```
-soundcloud-tools/
+starlib/
 ├── backend/          # FastAPI server (Python)
 ├── frontend/         # Next.js / React UI (TypeScript)
 ├── desktop/          # Tauri v2 native wrapper (Rust)
-├── soundcloud_tools/ # Legacy Python CLI tools
+├── soundcloud_tools/ # SoundCloud API client & CLI tools
 ├── tests/            # Backend test suite
 └── docs/             # This documentation
 ```

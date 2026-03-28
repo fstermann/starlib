@@ -13,8 +13,8 @@
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/fstermann/soundcloud-tools.git
-cd soundcloud-tools
+git clone https://github.com/fstermann/starlib.git
+cd starlib
 ```
 
 ### Backend

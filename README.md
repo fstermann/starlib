@@ -22,4 +22,4 @@ cd frontend && npm run dev       # → http://localhost:3000
 
 ## Documentation
 
-Full documentation is available at [fstermann.github.io/soundcloud-tools](https://fstermann.github.io/soundcloud-tools/).
+Full documentation is available at [fstermann.github.io/starlib](https://fstermann.github.io/starlib/).
