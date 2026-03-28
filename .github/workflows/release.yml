@@ -69,7 +69,7 @@ jobs:
                      desktop/src-tauri/binaries/${{ env.SIDECAR_NAME }}-${{ matrix.arch }}${EXT}
 
             - name: Upload sidecar artifact
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: sidecar-${{ matrix.arch }}
                   path: desktop/src-tauri/binaries/${{ env.SIDECAR_NAME }}-${{ matrix.arch }}*
@@ -191,7 +191,7 @@ jobs:
               run: npx @tauri-apps/cli build --target ${{ matrix.tauri-target }} --config src-tauri/tauri.conf.json
 
             - name: Upload Tauri bundles
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: bundle-${{ matrix.arch }}
                   path: |
