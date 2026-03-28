@@ -326,7 +326,8 @@ jobs:
         steps:
             - uses: actions/checkout@v6
               with:
-                  fetch-depth: 2
+                  ref: ${{ github.ref }}
+                  fetch-depth: 0
 
             - name: Delete GitHub Release (if created)
               env:
@@ -334,11 +335,12 @@ jobs:
               run: gh release delete "${{ needs.bump-version.outputs.tag }}" --yes --cleanup-tag || true
 
             - name: Delete remote tag
-              run: git push origin --delete "${{ needs.bump-version.outputs.tag }}" || true
+              run: git push origin --delete "refs/tags/${{ needs.bump-version.outputs.tag }}" || true
 
             - name: Revert version bump commit
               run: |
                   git config user.name "github-actions[bot]"
                   git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git pull --rebase origin ${{ github.ref_name }}
                   git revert --no-edit HEAD
-                  git push origin HEAD
+                  git push origin HEAD:${{ github.ref_name }}
