@@ -13,6 +13,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
 
+from backend.config import get_backend_settings
 from backend.schemas.setup import SetupRequest, SetupResponse, SetupStatusResponse
 from soundcloud_tools.settings import get_settings
 
@@ -101,6 +102,7 @@ def save_setup(body: SetupRequest) -> SetupResponse:
 
     # Invalidate the cached settings so the new values take effect immediately.
     get_settings.cache_clear()
+    get_backend_settings.cache_clear()
 
     logger.info("Setup complete. Config written to %s", _CONFIG_FILE)
     return SetupResponse(success=True, message="Configuration saved successfully.")
