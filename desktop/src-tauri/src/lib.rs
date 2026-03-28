@@ -1,6 +1,34 @@
 use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
 
+const BACKEND_URL: &str = "http://127.0.0.1:8000";
+const HEALTH_MAX_RETRIES: u32 = 30;
+const HEALTH_RETRY_INTERVAL_MS: u64 = 500;
+
+/// Poll the backend /health endpoint until it responds or retries are exhausted.
+async fn wait_for_backend_ready() -> bool {
+    let client = reqwest::Client::new();
+    for attempt in 1..=HEALTH_MAX_RETRIES {
+        match client
+            .get(format!("{BACKEND_URL}/health"))
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                eprintln!("[backend] healthy after {attempt} attempt(s)");
+                return true;
+            }
+            _ => {
+                tokio::time::sleep(std::time::Duration::from_millis(HEALTH_RETRY_INTERVAL_MS))
+                    .await;
+            }
+        }
+    }
+    eprintln!("[backend] failed to become healthy after {HEALTH_MAX_RETRIES} retries");
+    false
+}
+
 /// Start the Python backend sidecar and keep a reference to the child process
 /// so it can be killed when the app window is closed.
 fn start_backend(app: &tauri::AppHandle) {
@@ -33,9 +61,19 @@ fn start_backend(app: &tauri::AppHandle) {
                     }
                 }
             });
+
+            // Wait for backend to be ready before the app continues.
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if !wait_for_backend_ready().await {
+                    eprintln!("[backend] sidecar did not become ready — app may not work correctly");
+                    let _ = handle.emit("backend-error", "Backend failed to start");
+                }
+            });
         }
         Err(e) => {
             eprintln!("Failed to start backend sidecar: {e}");
+            let _ = app.emit("backend-error", format!("Failed to start backend: {e}"));
         }
     }
 }
