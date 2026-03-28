@@ -1,15 +1,16 @@
 'use client';
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { api, ApiError, type FileInfo, type FilePage, type TrackInfo, type TrackInfoUpdateRequest } from '@/lib/api';
+import { api, ApiError, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest } from '@/lib/api';
 import { useQueryState } from 'nuqs';
 import { searchParams } from '@/lib/search-params';
 import { usePlayer } from '@/lib/player-context';
 import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix, removeMix } from '@/lib/string-utils';
-import * as soundcloud from '@/lib/soundcloud';
 import type { SCTrack } from '@/lib/soundcloud';
 import { format, parse, isValid } from 'date-fns';
 import { toast } from 'sonner';
+import { useSoundCloudSearch } from './use-soundcloud-search';
+import { parseComment, serializeComment, stripQueryParams, scReleaseDate } from './utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -56,73 +57,6 @@ import {
   Eye,
 } from 'lucide-react';
 
-/** Parse the backend's semicolon-delimited comment string into structured fields. */
-function parseComment(raw: string | null | undefined): { soundcloud_id: string; soundcloud_permalink: string } {
-  const result: Record<string, string> = {};
-  if (raw) {
-    for (const pair of raw.split(/;\s*\n?/)) {
-      const idx = pair.indexOf('=');
-      if (idx > 0) {
-        const k = pair.slice(0, idx).trim();
-        const v = pair.slice(idx + 1).trim()
-          .replace(/\\;/g, ';')
-          .replace(/\\=/g, '=')
-          .replace(/\\\\/g, '\\');
-        result[k] = v;
-      }
-    }
-  }
-  return {
-    soundcloud_id: result['soundcloud_id'] ?? '',
-    soundcloud_permalink: result['soundcloud_permalink'] ?? '',
-  };
-}
-
-/** Serialize structured comment fields back to the backend's format. */
-function serializeComment(scId: string, scPermalink: string): string {
-  const escape = (v: string) => v.replace(/\\/g, '\\\\').replace(/=/g, '\\=').replace(/;/g, '\\;');
-  const parts = ['version=1.0'];
-  if (scId) parts.push(`soundcloud_id=${escape(scId)}`);
-  if (scPermalink) parts.push(`soundcloud_permalink=${escape(scPermalink)}`);
-  return parts.join('; \n');
-}
-
-/** Strip query string and fragment from a URL. */
-function stripQueryParams(url: string): string {
-  try {
-    const u = new URL(url);
-    return `${u.origin}${u.pathname}`;
-  } catch {
-    return url;
-  }
-}
-/**
- * Extract a YYYY-MM-DD date string from a SoundCloud track.
- * Tries release_year/month/day first, then falls back to created_at.
- */
-function scReleaseDate(track: SCTrack): string | undefined {
-  if (track.release_year && track.release_year > 0) {
-    const m = track.release_month && track.release_month > 0 ? track.release_month : 1;
-    const d = track.release_day && track.release_day > 0 ? track.release_day : 1;
-    return `${track.release_year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  }
-  if (track.created_at) {
-    // SC format: "2012/07/08 18:29:40 +0000" or ISO "2012-07-08T18:29:40Z"
-    const normalized = track.created_at.replace(/\//g, '-').replace(' ', 'T').replace(' +0000', 'Z');
-    const date = new Date(normalized);
-    if (!isNaN(date.getTime())) {
-      return date.toISOString().slice(0, 10);
-    }
-  }
-  return undefined;
-}
-
-/** Format bytes as human-readable size. */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export default function MetaEditorPage() {
   const [folderMode, setFolderMode] = useQueryState('mode', searchParams.mode);
   const [viewMode, setViewMode] = useQueryState('view', searchParams.view);
@@ -139,12 +73,13 @@ export default function MetaEditorPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // SoundCloud search
-  const [scQuery, setScQuery] = useState('');
-  const [scResults, setScResults] = useState<SCTrack[]>([]);
-  const [scSearching, setScSearching] = useState(false);
-  const [scQueryPending, setScQueryPending] = useState(false);
-  const [selectedScTrack, setSelectedScTrack] = useState<SCTrack | null>(null);
+  // UI state
+  const [scPanelOpen, setScPanelOpen] = useState(true);
+
+  // SoundCloud search (extracted hook — fixes stale closure from useEffect)
+  const sc = useSoundCloudSearch(scPanelOpen, setError);
+  const { scQuery, setScQuery, scResults, scSearching, scQueryPending, setScQueryPending,
+          selectedScTrack, setSelectedScTrack, handleScSearch, handleScTrackSelect } = sc;
 
   // Remix state
   const [isRemix, setIsRemix] = useState(false);
@@ -200,7 +135,6 @@ export default function MetaEditorPage() {
   });
 
   // UI state
-  const [scPanelOpen, setScPanelOpen] = useState(true);
   const [isClosingEditor, setIsClosingEditor] = useState(false);
 
   const player = usePlayer();
@@ -261,23 +195,6 @@ export default function MetaEditorPage() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile?.file_path]);
-
-  // Auto-search when query changes
-  useEffect(() => {
-    if (!scQuery.trim() || !scPanelOpen) {
-      setScResults([]);
-      setSelectedScTrack(null);
-      setScQueryPending(false);
-      return;
-    }
-
-    setScQueryPending(true);
-    const timeoutId = setTimeout(() => {
-      handleScSearch();
-    }, 500); // Debounce by 500ms
-
-    return () => clearTimeout(timeoutId);
-  }, [scQuery, scPanelOpen]);
 
   // Auto-fill empty form fields when a SoundCloud track is selected
   useLayoutEffect(() => {
@@ -704,41 +621,6 @@ export default function MetaEditorPage() {
         setLoading(false);
       }
     });
-  };
-
-  const handleScSearch = async () => {
-    if (!scQuery.trim()) return;
-
-    const isUrl = /^https?:\/\/(www\.)?soundcloud\.com\//i.test(scQuery.trim());
-
-    try {
-      setScSearching(true);
-      setError(null);
-      if (isUrl) {
-        const result = await soundcloud.resolveUrl(scQuery.trim());
-        if (result && 'title' in result) {
-          setScResults([result as SCTrack]);
-          setSelectedScTrack(result as SCTrack);
-        } else {
-          setScResults([]);
-          setSelectedScTrack(null);
-          setError('URL did not resolve to a track');
-        }
-      } else {
-        const tracks = await soundcloud.searchTracks(scQuery);
-        setScResults(tracks);
-        setSelectedScTrack(tracks.length > 0 ? tracks[0] : null);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'SoundCloud search failed');
-      setScQueryPending(false);
-    } finally {
-      setScSearching(false);
-    }
-  };
-
-  const handleScTrackSelect = (track: SCTrack) => {
-    setSelectedScTrack(track);
   };
 
   const handleApplyScMetadata = (track: SCTrack) => {
