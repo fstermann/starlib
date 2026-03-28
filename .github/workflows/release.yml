@@ -40,10 +40,10 @@ jobs:
         name: Sidecar (${{ matrix.arch }})
 
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
 
             - name: Set up Python ${{ env.PYTHON_VERSION }}
-              uses: actions/setup-python@v5
+              uses: actions/setup-python@v6
               with:
                   python-version: ${{ env.PYTHON_VERSION }}
                   cache: "pip"
@@ -69,7 +69,7 @@ jobs:
                      desktop/src-tauri/binaries/${{ env.SIDECAR_NAME }}-${{ matrix.arch }}${EXT}
 
             - name: Upload sidecar artifact
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: sidecar-${{ matrix.arch }}
                   path: desktop/src-tauri/binaries/${{ env.SIDECAR_NAME }}-${{ matrix.arch }}*
@@ -98,11 +98,11 @@ jobs:
         name: Tauri (${{ matrix.arch }})
 
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
 
             # ── Download pre-built sidecar binary ──────────────────────────────
             - name: Download sidecar artifact
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v8
               with:
                   name: sidecar-${{ matrix.arch }}
                   path: desktop/src-tauri/binaries/
@@ -124,7 +124,7 @@ jobs:
 
             # ── Node + frontend build ───────────────────────────────────────────
             - name: Set up Node ${{ env.NODE_VERSION }}
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@v6
               with:
                   node-version: ${{ env.NODE_VERSION }}
                   cache: "npm"
@@ -191,7 +191,7 @@ jobs:
               run: npx @tauri-apps/cli build --target ${{ matrix.tauri-target }} --config src-tauri/tauri.conf.json
 
             - name: Upload Tauri bundles
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: bundle-${{ matrix.arch }}
                   path: |
@@ -211,10 +211,10 @@ jobs:
             contents: write
 
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
 
             - name: Download all bundle artifacts
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v8
               with:
                   pattern: bundle-*
                   path: artifacts/
