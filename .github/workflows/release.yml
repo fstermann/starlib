@@ -1,15 +1,19 @@
 name: Release
 
-# Triggered by pushing a version tag: git tag v0.1.0 && git push origin v0.1.0
 on:
-    push:
-        tags:
-            - "v[0-9]+.[0-9]+.[0-9]+"
     workflow_dispatch:
         inputs:
-            tag:
-                description: "Version tag to release (e.g. v0.1.0)"
+            bump:
+                description: "Version bump type"
                 required: true
+                type: choice
+                options:
+                    - patch
+                    - minor
+                    - major
+
+permissions:
+    contents: write
 
 env:
     # ── Python backend sidecar binary name (must match tauri.conf.json externalBin)
@@ -21,9 +25,66 @@ env:
 
 jobs:
     # ────────────────────────────────────────────────────────────────────────
+    # Job 0: Bump version, commit, tag, and push
+    # ────────────────────────────────────────────────────────────────────────
+    bump-version:
+        runs-on: ubuntu-latest
+        outputs:
+            new_version: ${{ steps.bump.outputs.new_version }}
+            tag: ${{ steps.bump.outputs.tag }}
+        steps:
+            - uses: actions/checkout@v6
+
+            - name: Bump version
+              id: bump
+              shell: bash
+              run: |
+                  # Read current version from pyproject.toml
+                  CURRENT=$(grep -m1 '^version' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+                  IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+                  case "${{ inputs.bump }}" in
+                    major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+                    minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+                    patch) PATCH=$((PATCH + 1)) ;;
+                  esac
+
+                  NEW="${MAJOR}.${MINOR}.${PATCH}"
+                  echo "new_version=$NEW" >> "$GITHUB_OUTPUT"
+                  echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
+                  echo "Bumping $CURRENT → $NEW"
+
+            - name: Update version in all files
+              shell: bash
+              run: |
+                  NEW="${{ steps.bump.outputs.new_version }}"
+                  CURRENT=$(grep -m1 '^version' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+
+                  # pyproject.toml
+                  sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/" pyproject.toml
+
+                  # desktop/src-tauri/Cargo.toml (only the package version line)
+                  sed -i "0,/^version = \"$CURRENT\"/s//version = \"$NEW\"/" desktop/src-tauri/Cargo.toml
+
+                  # JSON files
+                  for f in desktop/package.json frontend/package.json desktop/src-tauri/tauri.conf.json; do
+                    sed -i "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW\"/" "$f"
+                  done
+
+            - name: Commit and tag
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git add -A
+                  git commit -m "release: v${{ steps.bump.outputs.new_version }}"
+                  git tag "v${{ steps.bump.outputs.new_version }}"
+                  git push origin HEAD --tags
+
+    # ────────────────────────────────────────────────────────────────────────
     # Job 1: Build the Python backend sidecar (macOS arm64 + optionally x86_64)
     # ────────────────────────────────────────────────────────────────────────
     build-sidecar:
+        needs: bump-version
         strategy:
             fail-fast: false
             matrix:
@@ -41,6 +102,8 @@ jobs:
 
         steps:
             - uses: actions/checkout@v6
+              with:
+                  ref: ${{ needs.bump-version.outputs.tag }}
 
             - name: Set up Python ${{ env.PYTHON_VERSION }}
               uses: actions/setup-python@v6
@@ -79,7 +142,7 @@ jobs:
     # Job 2: Build the Tauri desktop app (depends on sidecar artifacts)
     # ────────────────────────────────────────────────────────────────────────
     build-tauri:
-        needs: build-sidecar
+        needs: [bump-version, build-sidecar]
         strategy:
             fail-fast: false
             matrix:
@@ -99,6 +162,8 @@ jobs:
 
         steps:
             - uses: actions/checkout@v6
+              with:
+                  ref: ${{ needs.bump-version.outputs.tag }}
 
             # ── Download pre-built sidecar binary ──────────────────────────────
             - name: Download sidecar artifact
@@ -205,13 +270,13 @@ jobs:
     # Job 3: Create GitHub Release and upload all artifacts
     # ────────────────────────────────────────────────────────────────────────
     release:
-        needs: build-tauri
+        needs: [bump-version, build-tauri]
         runs-on: ubuntu-latest
-        permissions:
-            contents: write
 
         steps:
             - uses: actions/checkout@v6
+              with:
+                  ref: ${{ needs.bump-version.outputs.tag }}
 
             - name: Download all bundle artifacts
               uses: actions/download-artifact@v8
@@ -226,9 +291,10 @@ jobs:
             - name: Create GitHub Release
               uses: softprops/action-gh-release@v2
               with:
-                  name: "Starlib ${{ github.ref_name }}"
+                  tag_name: ${{ needs.bump-version.outputs.tag }}
+                  name: "Starlib ${{ needs.bump-version.outputs.tag }}"
                   body: |
-                      ## Starlib ${{ github.ref_name }}
+                      ## Starlib ${{ needs.bump-version.outputs.tag }}
 
                       ### Installation (macOS)
                       1. Download the `.dmg` file for your Mac:
@@ -246,5 +312,5 @@ jobs:
                       artifacts/**/*.msi
                       artifacts/**/*.exe
                   draft: false
-                  prerelease: ${{ contains(github.ref_name, '-') }}
+                  prerelease: false
                   generate_release_notes: true
