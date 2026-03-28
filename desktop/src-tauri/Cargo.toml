@@ -2,7 +2,7 @@
 name = "starlib"
 version = "0.2.1"
 description = "Starlib desktop application"
-authors = ["Fabian Stermann <fabian.stermann@gmail.com>"]
+authors = ["Fabian Stermann <56961284+fstermann@users.noreply.github.com>"]
 license = "MIT"
 repository = "https://github.com/fstermann/starlib"
 edition = "2021"
