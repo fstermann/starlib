@@ -8,6 +8,7 @@
         "start": "next start",
         "lint": "eslint",
         "test": "vitest run",
+        "test:e2e": "playwright test",
         "generate": "npm run generate:soundcloud && npm run generate:backend",
         "generate:soundcloud": "npx openapi-typescript https://developers.soundcloud.com/docs/api/explorer/api.json -o src/generated/soundcloud.ts",
         "generate:backend": "npx openapi-typescript src/generated/backend-openapi.json -o src/generated/backend.ts"
@@ -32,6 +33,7 @@
         "wavesurfer.js": "^7.12.5"
     },
     "devDependencies": {
+        "@playwright/test": "^1.58.2",
         "@tailwindcss/postcss": "^4",
         "@types/node": "^25",
         "@types/react": "^19",
