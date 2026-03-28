@@ -1,0 +1,68 @@
+# ============================================================================
+# Starlib Documentation – Zensical configuration
+# ============================================================================
+
+[project]
+site_name = "Starlib"
+site_description = "DJ library management app. Organise tracks, edit metadata, and manage artwork."
+site_author = "Fabian Stermann"
+repo_url = "https://github.com/fstermann/soundcloud-tools"
+repo_name = "fstermann/soundcloud-tools"
+edit_uri = "edit/main/docs/"
+
+copyright = "Copyright &copy; 2025 – 2026 Fabian Stermann"
+
+dev_addr = "localhost:8200"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Getting Started" = "getting-started.md" },
+  { "Architecture" = "architecture.md" },
+  { "Backend" = "backend.md" },
+  { "Frontend" = "frontend.md" },
+  { "Desktop" = "desktop.md" },
+]
+
+# ----------------------------------------------------------------------------
+# Theme
+# ----------------------------------------------------------------------------
+[project.theme]
+language = "en"
+
+features = [
+    "content.action.edit",
+    "content.action.view",
+    "content.code.annotate",
+    "content.code.copy",
+    "content.code.select",
+    "content.tabs.link",
+    "navigation.footer",
+    "navigation.indexes",
+    "navigation.instant",
+    "navigation.instant.prefetch",
+    "navigation.path",
+    "navigation.sections",
+    "navigation.top",
+    "navigation.tracking",
+    "search.highlight",
+]
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+[[project.theme.palette]]
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+# ----------------------------------------------------------------------------
+# Social links
+# ----------------------------------------------------------------------------
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/fstermann/soundcloud-tools"
