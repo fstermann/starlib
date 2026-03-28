@@ -240,8 +240,6 @@ jobs:
                   path: |
                       desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/dmg/*.dmg
                       desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/macos/*.app.tar.gz
-                      desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/msi/*.msi
-                      desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/nsis/*.exe
                   if-no-files-found: error
 
     # ────────────────────────────────────────────────────────────────────────
