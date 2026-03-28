@@ -21,6 +21,7 @@ nav = [
   { "Backend" = "backend.md" },
   { "Frontend" = "frontend.md" },
   { "Desktop" = "desktop.md" },
+  { "Authentication" = "authentication.md" },
 ]
 
 # ----------------------------------------------------------------------------
