@@ -1,10 +1,10 @@
 from functools import lru_cache
-from pathlib import Path
 
+from platformdirs import user_config_path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # User config file written by the first-launch setup flow (desktop app)
-_USER_CONFIG_FILE = Path.home() / "Library" / "Application Support" / "starlib" / "config.env"
+_USER_CONFIG_FILE = user_config_path("starlib") / "config.env"
 
 
 class Settings(BaseSettings):

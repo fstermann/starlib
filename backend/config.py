@@ -7,11 +7,13 @@ Environment variables and settings for the backend server.
 from functools import lru_cache
 from pathlib import Path
 
+from platformdirs import user_config_path
 from pydantic_settings import BaseSettings
 
 # Platform-specific user config directory used when running as a bundled desktop app.
-# ~/.config/starlib/ on Linux, ~/Library/Application Support/starlib/ on macOS.
-_APP_CONFIG_DIR = Path.home() / "Library" / "Application Support" / "starlib"
+# ~/.config/starlib/ on Linux, ~/Library/Application Support/starlib/ on macOS,
+# %LOCALAPPDATA%/starlib/ on Windows.
+_APP_CONFIG_DIR = user_config_path("starlib", ensure_exists=True)
 
 
 class BackendSettings(BaseSettings):
