@@ -56,9 +56,10 @@ def validate_file_path(file_path: str, root_folder: Path) -> Path:
 
     path = path.resolve()
 
-    # Security check: must be within root folder
+    # Security check: must be within root folder (resolve root too to handle symlinks)
+    resolved_root = root_folder.resolve()
     try:
-        path.relative_to(root_folder)
+        path.relative_to(resolved_root)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
