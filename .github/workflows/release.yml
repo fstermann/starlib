@@ -187,7 +187,7 @@ jobs:
             - name: Rust cache
               uses: swatinem/rust-cache@v2
               with:
-                  workspaces: "./desktop/src-tauri -> target"
+                  workspaces: ". -> target"
 
             # ── Node + frontend build ───────────────────────────────────────────
             - name: Set up Node ${{ env.NODE_VERSION }}
@@ -235,13 +235,13 @@ jobs:
 
             - name: List Tauri bundles
               shell: bash
-              run: find desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle -type f || true
+              run: find target/${{ matrix.tauri-target }}/release/bundle -type f || true
 
             - name: Upload Tauri bundles
               uses: actions/upload-artifact@v7
               with:
                   name: bundle-${{ matrix.arch }}
-                  path: desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/**/*
+                  path: target/${{ matrix.tauri-target }}/release/bundle/**/*
                   if-no-files-found: error
 
     # ────────────────────────────────────────────────────────────────────────
