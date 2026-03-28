@@ -14,6 +14,8 @@ copyright = "Copyright &copy; 2025 – 2026 Fabian Stermann"
 
 dev_addr = "localhost:8200"
 
+extra_css = ["assets/stylesheets/extra.css"]
+
 nav = [
   { "Home" = "index.md" },
   { "Getting Started" = "getting-started.md" },
@@ -29,6 +31,8 @@ nav = [
 # ----------------------------------------------------------------------------
 [project.theme]
 language = "en"
+logo = "assets/images/logo.png"
+favicon = "assets/images/favicon.png"
 
 features = [
     "content.action.edit",

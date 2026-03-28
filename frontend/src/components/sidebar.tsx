@@ -52,10 +52,10 @@ export function Sidebar() {
       <div className="h-14 flex items-center px-4 shrink-0 border-b border-border/50">
         <Link href="/" className="flex items-center gap-3 min-w-0">
           <span
-            className="size-5 shrink-0 bg-primary"
+            className="size-6 shrink-0 bg-primary"
             style={{
-              maskImage: 'url(/starlib.svg)',
-              WebkitMaskImage: 'url(/starlib.svg)',
+              maskImage: 'url(/starlib-logo.svg)',
+              WebkitMaskImage: 'url(/starlib-logo.svg)',
               maskSize: 'contain',
               WebkitMaskSize: 'contain',
               maskRepeat: 'no-repeat',
