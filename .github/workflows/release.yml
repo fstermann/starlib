@@ -31,6 +31,7 @@ jobs:
         runs-on: ubuntu-latest
         outputs:
             new_version: ${{ steps.bump.outputs.new_version }}
+            old_version: ${{ steps.bump.outputs.old_version }}
             tag: ${{ steps.bump.outputs.tag }}
         steps:
             - uses: actions/checkout@v6
@@ -51,6 +52,7 @@ jobs:
 
                   NEW="${MAJOR}.${MINOR}.${PATCH}"
                   echo "new_version=$NEW" >> "$GITHUB_OUTPUT"
+                  echo "old_version=$CURRENT" >> "$GITHUB_OUTPUT"
                   echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
                   echo "Bumping $CURRENT → $NEW"
 
@@ -342,5 +344,6 @@ jobs:
                   git config user.name "github-actions[bot]"
                   git config user.email "github-actions[bot]@users.noreply.github.com"
                   git pull --rebase origin ${{ github.ref_name }}
-                  git revert --no-edit HEAD
+                  git revert --no-edit HEAD -m 1 || git revert --no-edit HEAD
+                  git commit --amend -m "release(revert): v${{ needs.bump-version.outputs.new_version }} → v${{ needs.bump-version.outputs.old_version }}"
                   git push origin HEAD:${{ github.ref_name }}

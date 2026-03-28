@@ -4,7 +4,7 @@
     "identifier": "com.fstermann.starlib",
     "version": "0.2.1",
     "build": {
-        "frontendDist": "../frontend/out",
+        "frontendDist": "../../frontend/out",
         "devUrl": "http://localhost:3000",
         "beforeDevCommand": "cd ../frontend && npm run dev",
         "beforeBuildCommand": "cd ../frontend && npm run build"
