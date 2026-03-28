@@ -7,8 +7,7 @@ class CallbackRequest(BaseModel):
     """OAuth callback payload from frontend."""
 
     code: str
-    state: str | None = None
-    code_verifier: str
+    state: str
 
 
 class AuthorizeResponse(BaseModel):
@@ -16,7 +15,6 @@ class AuthorizeResponse(BaseModel):
 
     authorization_url: str
     state: str
-    code_verifier: str
 
 
 class UserInfo(BaseModel):

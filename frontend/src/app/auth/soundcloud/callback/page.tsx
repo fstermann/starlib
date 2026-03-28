@@ -46,19 +46,12 @@ function CallbackHandler() {
       return;
     }
 
-    const codeVerifier = sessionStorage.getItem("oauth_code_verifier");
-    if (!codeVerifier) {
-      setError("Missing PKCE code verifier. Please try connecting again.");
-      return;
-    }
-
     sessionStorage.removeItem("oauth_state");
-    sessionStorage.removeItem("oauth_code_verifier");
 
     fetchApi<CallbackResponse>("/auth/soundcloud/callback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, state, code_verifier: codeVerifier }),
+      body: JSON.stringify({ code, state }),
     })
       .then((data) => {
         storeTokens(data.access_token, data.refresh_token, data.expires_in);
