@@ -1,6 +1,6 @@
 [package]
 name = "starlib"
-version = "0.2.2"
+version = "0.2.1"
 description = "Starlib desktop application"
 authors = ["Fabian Stermann <56961284+fstermann@users.noreply.github.com>"]
 license = "MIT"
