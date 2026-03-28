@@ -22,7 +22,10 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [mounted, setMounted] = useState(false);
   const { theme, setTheme } = useTheme();
+
+  useEffect(() => { setMounted(true); }, []);
 
   function toggleTheme() {
     setTheme(theme === 'dark' ? 'light' : 'dark');
@@ -95,12 +98,12 @@ export function Sidebar() {
       <div className="px-2 pb-1 shrink-0">
         <button
           onClick={toggleTheme}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={mounted ? (theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode') : undefined}
           className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
         >
-          {theme === 'dark' ? <Sun className="size-4 shrink-0" /> : <Moon className="size-4 shrink-0" />}
+          {mounted && theme === 'dark' ? <Sun className="size-4 shrink-0" /> : <Moon className="size-4 shrink-0" />}
           <span className="text-xs opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
-            {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            {mounted ? (theme === 'dark' ? 'Light mode' : 'Dark mode') : null}
           </span>
         </button>
       </div>
