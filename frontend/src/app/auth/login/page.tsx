@@ -8,7 +8,6 @@ import { fetchApi } from "@/lib/api";
 interface AuthorizeResponse {
   authorization_url: string;
   state: string;
-  code_verifier: string;
 }
 
 export default function LoginPage() {
@@ -22,7 +21,6 @@ export default function LoginPage() {
     try {
       const data = await fetchApi<AuthorizeResponse>("/auth/soundcloud/authorize");
       sessionStorage.setItem("oauth_state", data.state);
-      sessionStorage.setItem("oauth_code_verifier", data.code_verifier);
       window.location.href = data.authorization_url;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to initiate login");

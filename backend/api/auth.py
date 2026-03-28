@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth/soundcloud", tags=["authentication"])
 
+# Server-side storage for pending OAuth flows: state -> code_verifier
+_pending_oauth_flows: dict[str, str] = {}
+
 
 @router.get("/authorize", response_model=AuthorizeResponse)
 def get_authorization_url() -> AuthorizeResponse:
@@ -53,7 +56,11 @@ def get_authorization_url() -> AuthorizeResponse:
     }
 
     authorization_url = f"https://secure.soundcloud.com/authorize?{urlencode(params)}"
-    return AuthorizeResponse(authorization_url=authorization_url, state=state, code_verifier=code_verifier)
+
+    # Store code_verifier server-side, keyed by state
+    _pending_oauth_flows[state] = code_verifier
+
+    return AuthorizeResponse(authorization_url=authorization_url, state=state)
 
 
 @router.post("/callback", response_model=CallbackResponse)
@@ -77,6 +84,20 @@ def handle_callback(body: CallbackRequest) -> CallbackResponse:
     """
     settings = get_settings()
 
+    # Validate state and retrieve server-side code_verifier
+    if not body.state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing state parameter.",
+        )
+
+    code_verifier = _pending_oauth_flows.pop(body.state, None)
+    if code_verifier is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired state parameter.",
+        )
+
     # Exchange code for tokens
     token_resp = requests.post(
         "https://secure.soundcloud.com/oauth/token",
@@ -89,7 +110,7 @@ def handle_callback(body: CallbackRequest) -> CallbackResponse:
             "client_id": settings.client_id,
             "client_secret": settings.client_secret,
             "redirect_uri": settings.soundcloud_redirect_uri,
-            "code_verifier": body.code_verifier,
+            "code_verifier": code_verifier,
             "code": body.code,
         },
         timeout=10,
