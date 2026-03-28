@@ -19,13 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Install poetry
-        run: pipx install poetry
+      - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-          cache: 'poetry'
-      - run: poetry install
+      - run: uv sync
       - name: Set CLI arguments based on cron
         run: |
           case "${{ github.event.schedule }}" in
@@ -51,4 +49,4 @@ jobs:
           PROXY: ${{ secrets.PROXY }}
           SC_A_ID: ${{ secrets.SC_A_ID }}
         run: |
-          poetry run soundcloud_tools ${CLI_ARGS:1:-1} --exclude-liked
+          uv run soundcloud_tools ${CLI_ARGS:1:-1} --exclude-liked
