@@ -40,7 +40,7 @@ jobs:
         name: Sidecar (${{ matrix.arch }})
 
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
 
             - name: Set up Python ${{ env.PYTHON_VERSION }}
               uses: actions/setup-python@v5
@@ -98,7 +98,7 @@ jobs:
         name: Tauri (${{ matrix.arch }})
 
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
 
             # ── Download pre-built sidecar binary ──────────────────────────────
             - name: Download sidecar artifact
@@ -211,7 +211,7 @@ jobs:
             contents: write
 
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
 
             - name: Download all bundle artifacts
               uses: actions/download-artifact@v4
