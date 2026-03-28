@@ -331,6 +331,7 @@ export default function MetaEditorPage() {
       setTotalPages(result.pages);
       setTotalFiles(result.total);
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       if (err instanceof ApiError && err.status === 404 && err.message === 'Folder does not exist') {
         showConfirm(
           'One or more required folders do not exist yet. Create them now?',
