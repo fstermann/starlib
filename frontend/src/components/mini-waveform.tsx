@@ -182,6 +182,8 @@ export function MiniWaveform({ track, className, artworkReady = true }: MiniWave
       {peaksLoaded ? (
         <canvas
           ref={canvasRef}
+          role="img"
+          aria-label={`Waveform for ${track.title || track.fileName}`}
           onClick={handleClick}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
