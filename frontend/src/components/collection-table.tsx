@@ -60,8 +60,8 @@ function TrackRow({ item, isActive, isPlaying, onPlay, onSelect }: RowProps) {
   const track: PlayerTrack = {
     filePath: item.file_path,
     fileName: item.file_name,
-    title: item.title,
-    artist: item.artist,
+    title: item.title ?? undefined,
+    artist: item.artist ?? undefined,
   };
 
   return (
@@ -282,11 +282,11 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect }: Collection
   }
 
   function handlePlay(item: TrackBrowse) {
-    toggle({ filePath: item.file_path, fileName: item.file_name, title: item.title, artist: item.artist });
+    toggle({ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: item.artist ?? undefined });
   }
 
   function handleSelect(item: TrackBrowse) {
-    load({ filePath: item.file_path, fileName: item.file_name, title: item.title, artist: item.artist });
+    load({ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: item.artist ?? undefined });
     onSelect?.(item);
   }
 

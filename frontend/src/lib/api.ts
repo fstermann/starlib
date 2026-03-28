@@ -1,6 +1,10 @@
 /**
  * API client for FastAPI backend.
+ *
+ * Types are generated from the backend OpenAPI spec — see `npm run generate:backend`.
  */
+
+import type { components } from '@/generated/backend';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -41,48 +45,15 @@ export async function fetchApi<T>(
   return response.json();
 }
 
-// ==================== Types ====================
+// ==================== Types (generated from backend OpenAPI spec) ====================
 
-export interface TrackInfo {
-  file_path: string;
-  file_name: string;
-  title?: string;
-  artist?: string;
-  bpm?: number;
-  key?: string;
-  genre?: string;
-  comment?: string;
-  release_date?: string;
-  remixers?: string[];
-  has_artwork: boolean;
-  is_ready: boolean;
-  missing_fields: string[];
-  issues: string[];
-}
+export type TrackInfo = components['schemas']['TrackInfoResponse'];
 
-export interface TrackBrowse {
-  file_path: string;
-  file_name: string;
-  title?: string;
-  artist?: string;
-  bpm?: number;
-  key?: string;
-  genre?: string;
-  release_date?: string;
-  has_artwork: boolean;
-  file_format: string;
-  file_size: number;
-  duration?: number;
-}
+export type TrackBrowse = components['schemas']['TrackBrowseResponse'];
 
-export interface BrowsePage {
-  items: TrackBrowse[];
-  total: number;
-  page: number;
-  size: number;
-  pages: number;
+export type BrowsePage = components['schemas']['Page_TrackBrowseResponse_'] & {
   cacheLoading?: boolean;
-}
+};
 
 export interface BrowseParams {
   page?: number;
@@ -99,31 +70,17 @@ export interface BrowseParams {
   sort_order?: 'asc' | 'desc';
 }
 
-export interface FilterValues {
-  genres: string[];
-  genre_counts?: Record<string, number>;
-  artists: string[];
-  keys: string[];
-  key_counts?: Record<string, number>;
-  bpm_min?: number;
-  bpm_max?: number;
-}
+export type FilterValues = components['schemas']['FilterValuesResponse'];
 
-export interface FileInfo {
-  file_path: string;
-  file_name: string;
-  file_size: number;
-  file_format: string;
-  has_artwork: boolean;
-}
+export type FileInfo = components['schemas']['FileInfoResponse'];
 
-export interface FilePage {
-  items: FileInfo[];
-  total: number;
-  page: number;
-  size: number;
-  pages: number;
-}
+export type FilePage = components['schemas']['Page_FileInfoResponse_'];
+
+export type TrackInfoUpdateRequest = components['schemas']['TrackInfoUpdateRequest'];
+
+export type OperationResponse = components['schemas']['OperationResponse'];
+
+export type FinalizeResponse = components['schemas']['FinalizeResponse'];
 
 // ==================== API Methods ====================
 
@@ -140,8 +97,8 @@ export const api = {
 
   async updateTrackInfo(
     filePath: string,
-    updates: Partial<TrackInfo> & { artwork_data?: string }
-  ): Promise<{ success: boolean; message: string; new_file_path: string | null }> {
+    updates: TrackInfoUpdateRequest
+  ): Promise<OperationResponse> {
     const encoded = encodeURIComponent(filePath);
     return fetchApi(`/api/metadata/files/${encoded}/info`, {
       method: 'POST',
@@ -156,7 +113,7 @@ export const api = {
       quality?: number;
       collection_folder?: string;
     }
-  ): Promise<{ success: boolean; message: string; new_file_path: string }> {
+  ): Promise<FinalizeResponse> {
     const encoded = encodeURIComponent(filePath);
     return fetchApi(`/api/metadata/files/${encoded}/finalize`, {
       method: 'POST',
@@ -166,7 +123,7 @@ export const api = {
 
   async deleteFile(
     filePath: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<OperationResponse> {
     const encoded = encodeURIComponent(filePath);
     return fetchApi(`/api/metadata/files/${encoded}`, {
       method: 'DELETE',
@@ -186,7 +143,7 @@ export const api = {
   async uploadArtwork(
     filePath: string,
     artworkFile: File
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<OperationResponse> {
     const encoded = encodeURIComponent(filePath);
     const formData = new FormData();
     formData.append('file', artworkFile);
@@ -206,7 +163,7 @@ export const api = {
 
   async removeArtwork(
     filePath: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<OperationResponse> {
     const encoded = encodeURIComponent(filePath);
     return fetchApi(`/api/metadata/files/${encoded}/artwork`, {
       method: 'DELETE',
@@ -238,22 +195,18 @@ export const api = {
   },
 
   // Setup
-  async getSetupStatus(): Promise<{ configured: boolean }> {
+  async getSetupStatus(): Promise<components['schemas']['SetupStatusResponse']> {
     return fetchApi('/api/setup/status');
   },
 
-  async saveSetup(data: {
-    client_id: string;
-    client_secret: string;
-    root_music_folder: string;
-  }): Promise<{ success: boolean; message: string }> {
+  async saveSetup(data: components['schemas']['SetupRequest']): Promise<components['schemas']['SetupResponse']> {
     return fetchApi('/api/setup', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  async initializeFolders(): Promise<{ success: boolean; message: string }> {
+  async initializeFolders(): Promise<OperationResponse> {
     return fetchApi('/api/metadata/folders/initialize', { method: 'POST' });
   },
   // Browse (view mode) — full metadata with filtering, sorting, pagination

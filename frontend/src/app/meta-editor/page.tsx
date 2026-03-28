@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { api, ApiError, type FileInfo, type FilePage, type TrackInfo } from '@/lib/api';
+import { api, ApiError, type FileInfo, type FilePage, type TrackInfo, type TrackInfoUpdateRequest } from '@/lib/api';
 import { useQueryState } from 'nuqs';
 import { searchParams } from '@/lib/search-params';
 import { usePlayer } from '@/lib/player-context';
@@ -57,7 +57,7 @@ import {
 } from 'lucide-react';
 
 /** Parse the backend's semicolon-delimited comment string into structured fields. */
-function parseComment(raw: string | undefined): { soundcloud_id: string; soundcloud_permalink: string } {
+function parseComment(raw: string | null | undefined): { soundcloud_id: string; soundcloud_permalink: string } {
   const result: Record<string, string> = {};
   if (raw) {
     for (const pair of raw.split(/;\s*\n?/)) {
@@ -594,7 +594,7 @@ export default function MetaEditorPage() {
       setLoading(true);
       setError(null);
 
-      const updates: any = {};
+      const updates: Record<string, string | number | string[] | null> = {};
       Object.entries(formData).forEach(([key, value]) => {
         if (value !== '') {
           if (key === 'bpm') {
@@ -624,7 +624,7 @@ export default function MetaEditorPage() {
         updates.artwork_data = pendingArtworkData;
       }
 
-      const result = await api.updateTrackInfo(trackInfo.file_path, updates);
+      const result = await api.updateTrackInfo(trackInfo.file_path, updates as TrackInfoUpdateRequest);
 
       // Refresh file list and reload track info with (possibly renamed) path
       const newFilePath = result.new_file_path ?? trackInfo.file_path;
@@ -833,8 +833,8 @@ export default function MetaEditorPage() {
                     player.load({
                       filePath: selectedFile.file_path,
                       fileName: selectedFile.file_name,
-                      title: trackInfo?.title,
-                      artist: trackInfo?.artist,
+                      title: trackInfo?.title ?? undefined,
+                      artist: trackInfo?.artist ?? undefined,
                     });
                   }
                 }}
