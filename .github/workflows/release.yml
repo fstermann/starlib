@@ -233,13 +233,15 @@ jobs:
                   done
                   npx @tauri-apps/cli build --target ${{ matrix.tauri-target }} --config src-tauri/tauri.conf.json
 
+            - name: List Tauri bundles
+              shell: bash
+              run: find desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle -type f || true
+
             - name: Upload Tauri bundles
               uses: actions/upload-artifact@v7
               with:
                   name: bundle-${{ matrix.arch }}
-                  path: |
-                      desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/dmg/*.dmg
-                      desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/macos/*.app.tar.gz
+                  path: desktop/src-tauri/target/${{ matrix.tauri-target }}/release/bundle/**/*
                   if-no-files-found: error
 
     # ────────────────────────────────────────────────────────────────────────
