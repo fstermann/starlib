@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense } from 'react';
 import { api, ApiError, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest } from '@/lib/api';
 import { useQueryState } from 'nuqs';
 import { searchParams } from '@/lib/search-params';
@@ -57,7 +57,7 @@ import {
   Eye,
 } from 'lucide-react';
 
-export default function MetaEditorPage() {
+function MetaEditorContent() {
   const [folderMode, setFolderMode] = useQueryState('mode', searchParams.mode);
   const [viewMode, setViewMode] = useQueryState('view', searchParams.view);
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -1371,5 +1371,13 @@ export default function MetaEditorPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+export default function MetaEditorPage() {
+  return (
+    <Suspense>
+      <MetaEditorContent />
+    </Suspense>
   );
 }
