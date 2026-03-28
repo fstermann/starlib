@@ -6,8 +6,34 @@ on:
     pull_request:
         branches: [main]
 
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
 jobs:
+    changes:
+        runs-on: ubuntu-latest
+        permissions:
+            pull-requests: read
+        outputs:
+            backend: ${{ steps.filter.outputs.backend }}
+            frontend: ${{ steps.filter.outputs.frontend }}
+        steps:
+            - uses: actions/checkout@v6
+            - uses: dorny/paths-filter@v3
+              id: filter
+              with:
+                  filters: |
+                      backend:
+                        - 'backend/**'
+                        - 'tests/**'
+                        - 'pyproject.toml'
+                      frontend:
+                        - 'frontend/**'
+
     backend:
+        needs: changes
+        if: ${{ needs.changes.outputs.backend == 'true' }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v6
@@ -26,6 +52,8 @@ jobs:
               run: uv run pytest
 
     frontend:
+        needs: changes
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
         runs-on: ubuntu-latest
         defaults:
             run:
@@ -46,6 +74,8 @@ jobs:
               run: npm test
 
     e2e:
+        needs: changes
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
         runs-on: ubuntu-latest
         defaults:
             run:
