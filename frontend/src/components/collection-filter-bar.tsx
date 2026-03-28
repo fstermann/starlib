@@ -82,7 +82,7 @@ export function CollectionFilterBar({ mode }: CollectionFilterBarProps) {
         bpmMax: bpmMax ?? undefined,
       }).then((vals) => {
         setFilterValues(vals);
-        if (vals.bpm_min !== undefined && vals.bpm_max !== undefined) {
+        if (vals.bpm_min != null && vals.bpm_max != null) {
           const range: [number, number] = [vals.bpm_min, vals.bpm_max];
           setBpmRange((prev) => prev ?? range);
           setBpmValue((prev) => prev ?? [bpmMin ?? range[0], bpmMax ?? range[1]]);

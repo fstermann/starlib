@@ -1,0 +1,2253 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Starlib API",
+    "description": "Backend API for Starlib music management",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/setup/status": {
+      "get": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "Get Setup Status",
+        "description": "Return whether the app has been configured with SoundCloud credentials.\n\nReturns\n-------\nSetupStatusResponse\n    configured=True when both client_id and client_secret are present.",
+        "operationId": "get_setup_status_api_setup_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/setup": {
+      "post": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "Save Setup",
+        "description": "Persist SoundCloud credentials and music folder path entered during first-launch setup.\n\nParameters\n----------\nbody : SetupRequest\n    Credentials and folder path from the setup form.\n\nReturns\n-------\nSetupResponse\n    Success confirmation.\n\nRaises\n------\nHTTPException\n    If saving the config file fails.",
+        "operationId": "save_setup_api_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/soundcloud/authorize": {
+      "get": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Get Authorization Url",
+        "description": "Build and return the SoundCloud authorization URL.\n\nThe frontend should redirect the user to this URL.\n\nReturns\n-------\nAuthorizeResponse\n    The authorization URL and CSRF state token.",
+        "operationId": "get_authorization_url_auth_soundcloud_authorize_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/soundcloud/callback": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Handle Callback",
+        "description": "Exchange authorization code for tokens and return user info.\n\nParameters\n----------\nbody : CallbackRequest\n    Authorization code and state from SoundCloud redirect.\n\nReturns\n-------\nCallbackResponse\n    Access token, refresh token, and basic user info.\n\nRaises\n------\nHTTPException\n    If token exchange or user info fetch fails.",
+        "operationId": "handle_callback_auth_soundcloud_callback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallbackResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/soundcloud/refresh": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Refresh Token",
+        "description": "Exchange a refresh token for a new access token.\n\nParameters\n----------\nbody : RefreshRequest\n    The refresh token.\n\nReturns\n-------\nRefreshResponse\n    New access token and refresh token.\n\nRaises\n------\nHTTPException\n    If the refresh token is invalid or expired.",
+        "operationId": "refresh_token_auth_soundcloud_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/folders/initialize": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Initialize Folders",
+        "description": "Create the root folder and all required subfolders.",
+        "operationId": "initialize_folders_api_metadata_folders_initialize_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/folders/{mode}/files": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "List Folder Files",
+        "description": "List all audio files in a specific folder (paginated).\n\nParameters\n----------\nmode : str\n    Folder mode: \"prepare\", \"collection\", \"cleaned\", or \"\"\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nPage[FileInfoResponse]\n    Paginated list of audio files with basic info\n\nRaises\n------\nHTTPException\n    If folder doesn't exist or is invalid",
+        "operationId": "list_folder_files_api_metadata_folders__mode__files_get",
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Page size",
+              "default": 50,
+              "title": "Size"
+            },
+            "description": "Page size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_FileInfoResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/folders/{mode}/browse": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Browse Folder Files",
+        "description": "Browse tracks in a folder with filtering, sorting, and pagination.\n\nReads full metadata for each track server-side and applies filters before\nreturning a paginated result. Suitable for large collections (4000+ tracks)\nbecause only one page is serialized at a time.\n\nParameters\n----------\nmode : str\n    Folder mode: \"prepare\", \"collection\", \"cleaned\", or \"\"\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nPage[TrackBrowseResponse]\n    Filtered, sorted, paginated track metadata",
+        "operationId": "browse_folder_files_api_metadata_folders__mode__browse_get",
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Full-text search across title, artist, genre",
+              "title": "Search"
+            },
+            "description": "Full-text search across title, artist, genre"
+          },
+          {
+            "name": "genres",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by genre (OR logic, exact match)",
+              "title": "Genres"
+            },
+            "description": "Filter by genre (OR logic, exact match)"
+          },
+          {
+            "name": "artists",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by artist (OR logic, substring match)",
+              "title": "Artists"
+            },
+            "description": "Filter by artist (OR logic, substring match)"
+          },
+          {
+            "name": "keys",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by key (OR logic, exact match)",
+              "title": "Keys"
+            },
+            "description": "Filter by key (OR logic, exact match)"
+          },
+          {
+            "name": "bpm_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum BPM",
+              "title": "Bpm Min"
+            },
+            "description": "Minimum BPM"
+          },
+          {
+            "name": "bpm_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum BPM",
+              "title": "Bpm Max"
+            },
+            "description": "Maximum BPM"
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Earliest release date (YYYY-MM-DD)",
+              "title": "Date From"
+            },
+            "description": "Earliest release date (YYYY-MM-DD)"
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Latest release date (YYYY-MM-DD)",
+              "title": "Date To"
+            },
+            "description": "Latest release date (YYYY-MM-DD)"
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name)$",
+              "default": "file_name",
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(asc|desc)$",
+              "default": "asc",
+              "title": "Sort Order"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Page size",
+              "default": 50,
+              "title": "Size"
+            },
+            "description": "Page size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_TrackBrowseResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/folders/{mode}/filter-values": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Get Folder Filter Values",
+        "description": "Get available filter values for a folder (genres, artists, keys, BPM range).\n\nUsed to populate filter dropdowns in the View mode.\n\nParameters\n----------\nmode : str\n    Folder mode: \"prepare\", \"collection\", \"cleaned\", or \"\"\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFilterValuesResponse\n    Available filter options",
+        "operationId": "get_folder_filter_values_api_metadata_folders__mode__filter_values_get",
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active search filter",
+              "title": "Search"
+            },
+            "description": "Active search filter"
+          },
+          {
+            "name": "genres",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active genre filters",
+              "title": "Genres"
+            },
+            "description": "Active genre filters"
+          },
+          {
+            "name": "keys",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active key filters",
+              "title": "Keys"
+            },
+            "description": "Active key filters"
+          },
+          {
+            "name": "bpm_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active BPM minimum",
+              "title": "Bpm Min"
+            },
+            "description": "Active BPM minimum"
+          },
+          {
+            "name": "bpm_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active BPM maximum",
+              "title": "Bpm Max"
+            },
+            "description": "Active BPM maximum"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilterValuesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/files/{file_path}/info": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Get File Info",
+        "description": "Get metadata for a specific audio file.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nTrackInfoResponse\n    Complete track metadata\n\nRaises\n------\nHTTPException\n    If file doesn't exist or can't be read",
+        "operationId": "get_file_info_api_metadata_files__file_path__info_get",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackInfoResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Update File Info",
+        "description": "Update metadata for a specific audio file.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nupdates : TrackInfoUpdateRequest\n    Fields to update\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nOperationResponse\n    Operation result\n\nRaises\n------\nHTTPException\n    If file doesn't exist or update fails",
+        "operationId": "update_file_info_api_metadata_files__file_path__info_post",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackInfoUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/proxy-image": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Proxy Image",
+        "description": "Proxy an image from an allowed SoundCloud CDN host.",
+        "operationId": "proxy_image_api_metadata_proxy_image_get",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/files/{file_path}/readiness": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Check File Readiness",
+        "description": "Check if a file is ready for finalization.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFileReadinessResponse\n    Readiness status\n\nRaises\n------\nHTTPException\n    If file doesn't exist",
+        "operationId": "check_file_readiness_api_metadata_files__file_path__readiness_get",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileReadinessResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/files/{file_path}/finalize": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Finalize File",
+        "description": "Finalize a track: convert format and move to collection.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nrequest : FinalizeRequest\n    Finalization options (target format, quality, collection folder)\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFinalizeResponse\n    Result with new file path\n\nRaises\n------\nHTTPException\n    If file not ready or finalization fails",
+        "operationId": "finalize_file_api_metadata_files__file_path__finalize_post",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalizeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalizeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/files/{file_path}/artwork": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Get File Artwork",
+        "description": "Get artwork image for an audio file.\n\nArtwork is extracted once and cached to ``<cache_dir>/artwork/``.  Fast\npath returns the cached file without re-reading the audio file.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFileResponse\n    Artwork image (JPEG or PNG)\n\nRaises\n------\nHTTPException\n    If file doesn't exist or has no artwork",
+        "operationId": "get_file_artwork_api_metadata_files__file_path__artwork_get",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Update File Artwork",
+        "description": "Update artwork for an audio file by uploading an image.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nfile : UploadFile\n    Uploaded artwork image file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nOperationResponse\n    Operation result\n\nRaises\n------\nHTTPException\n    If file doesn't exist or upload fails",
+        "operationId": "update_file_artwork_api_metadata_files__file_path__artwork_post",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_update_file_artwork_api_metadata_files__file_path__artwork_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Delete File Artwork",
+        "description": "Remove artwork from an audio file.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nOperationResponse\n    Operation result\n\nRaises\n------\nHTTPException\n    If file doesn't exist or removal fails",
+        "operationId": "delete_file_artwork_api_metadata_files__file_path__artwork_delete",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/files/{file_path}": {
+      "delete": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Delete File",
+        "description": "Delete an audio file.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nOperationResponse\n    Operation result\n\nRaises\n------\nHTTPException\n    If file doesn't exist or deletion fails",
+        "operationId": "delete_file_api_metadata_files__file_path__delete",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/files/{file_path}/peaks": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Get File Peaks",
+        "description": "Get waveform amplitude peak data for a file.\n\nCached results (SQLite) are returned immediately without any throttle.\nUncached files are decoded via ffmpeg; concurrent ffmpeg calls are capped\nat 4 to avoid overwhelming the system during fast scrolling.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\nnum_peaks : int\n    Number of peak values to return\n\nReturns\n-------\nPeaksResponse\n    Normalized peak amplitudes in range [0, 1]",
+        "operationId": "get_file_peaks_api_metadata_files__file_path__peaks_get",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          },
+          {
+            "name": "num_peaks",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 50,
+              "description": "Number of amplitude peaks to return",
+              "default": 200,
+              "title": "Num Peaks"
+            },
+            "description": "Number of amplitude peaks to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeaksResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/files/{file_path}/audio": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Stream Audio",
+        "description": "Stream an audio file.\n\nFormats not natively supported by browsers (e.g. AIFF) are\ntranscoded to WAV on the fly via ffmpeg.\n\nArgs:\n    file_path: Relative or absolute path to audio file.\n    root_folder: Root music folder (injected).\n\nReturns:\n    StreamingResponse with the audio file bytes.\n\nRaises:\n    HTTPException: If the file doesn't exist.",
+        "operationId": "stream_audio_api_metadata_files__file_path__audio_get",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/collection/stats": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Get Collection Stats",
+        "description": "Get statistics for the entire collection.\n\nParameters\n----------\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nCollectionStatsResponse\n    Collection statistics\n\nRaises\n------\nHTTPException\n    If collection folder doesn't exist",
+        "operationId": "get_collection_stats_api_metadata_collection_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionStatsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthorizeResponse": {
+        "properties": {
+          "authorization_url": {
+            "type": "string",
+            "title": "Authorization Url"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "authorization_url",
+          "state"
+        ],
+        "title": "AuthorizeResponse",
+        "description": "Authorization URL response."
+      },
+      "Body_update_file_artwork_api_metadata_files__file_path__artwork_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_update_file_artwork_api_metadata_files__file_path__artwork_post"
+      },
+      "CallbackRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "state"
+        ],
+        "title": "CallbackRequest",
+        "description": "OAuth callback payload from frontend."
+      },
+      "CallbackResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "refresh_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Token"
+          },
+          "expires_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token",
+          "user"
+        ],
+        "title": "CallbackResponse",
+        "description": "OAuth callback response with tokens and user info."
+      },
+      "CollectionStatsResponse": {
+        "properties": {
+          "total_tracks": {
+            "type": "integer",
+            "title": "Total Tracks"
+          },
+          "complete_tracks": {
+            "type": "integer",
+            "title": "Complete Tracks"
+          },
+          "incomplete_tracks": {
+            "type": "integer",
+            "title": "Incomplete Tracks"
+          },
+          "total_artists": {
+            "type": "integer",
+            "title": "Total Artists"
+          },
+          "total_genres": {
+            "type": "integer",
+            "title": "Total Genres"
+          },
+          "missing_fields": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Missing Fields"
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres",
+            "default": []
+          },
+          "artists": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Artists",
+            "default": []
+          },
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Keys",
+            "default": []
+          },
+          "bpm_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Min"
+          },
+          "bpm_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_tracks",
+          "complete_tracks",
+          "incomplete_tracks",
+          "total_artists",
+          "total_genres",
+          "missing_fields"
+        ],
+        "title": "CollectionStatsResponse",
+        "description": "Response containing collection statistics."
+      },
+      "FileInfoResponse": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "file_size": {
+            "type": "integer",
+            "title": "File Size"
+          },
+          "file_format": {
+            "type": "string",
+            "title": "File Format"
+          },
+          "has_artwork": {
+            "type": "boolean",
+            "title": "Has Artwork",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path",
+          "file_name",
+          "file_size",
+          "file_format"
+        ],
+        "title": "FileInfoResponse",
+        "description": "Response containing basic file information."
+      },
+      "FileReadinessResponse": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "is_ready": {
+            "type": "boolean",
+            "title": "Is Ready"
+          },
+          "missing_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Fields"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path",
+          "is_ready",
+          "missing_fields",
+          "issues"
+        ],
+        "title": "FileReadinessResponse",
+        "description": "Response indicating if file is ready for finalization."
+      },
+      "FilterValuesResponse": {
+        "properties": {
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres",
+            "default": []
+          },
+          "genre_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Genre Counts",
+            "default": {}
+          },
+          "artists": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Artists",
+            "default": []
+          },
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Keys",
+            "default": []
+          },
+          "key_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Key Counts",
+            "default": {}
+          },
+          "bpm_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Min"
+          },
+          "bpm_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Max"
+          }
+        },
+        "type": "object",
+        "title": "FilterValuesResponse",
+        "description": "Available filter values for a folder (for filter dropdowns)."
+      },
+      "FinalizeRequest": {
+        "properties": {
+          "target_format": {
+            "type": "string",
+            "enum": [
+              "mp3",
+              "aiff"
+            ],
+            "title": "Target Format",
+            "description": "Target audio format",
+            "default": "aiff"
+          },
+          "quality": {
+            "type": "integer",
+            "title": "Quality",
+            "description": "Quality for MP3 (kbps)",
+            "default": 320
+          },
+          "collection_folder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Folder",
+            "description": "Target collection folder (optional)"
+          }
+        },
+        "type": "object",
+        "title": "FinalizeRequest",
+        "description": "Request to finalize a track (convert and move)."
+      },
+      "FinalizeResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "new_file_path": {
+            "type": "string",
+            "title": "New File Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message",
+          "new_file_path"
+        ],
+        "title": "FinalizeResponse",
+        "description": "Response from finalization operation."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OperationResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "new_file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New File Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "OperationResponse",
+        "description": "Generic operation success/failure response."
+      },
+      "Page_FileInfoResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileInfoResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Size"
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size",
+          "pages"
+        ],
+        "title": "Page[FileInfoResponse]"
+      },
+      "Page_TrackBrowseResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TrackBrowseResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Size"
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size",
+          "pages"
+        ],
+        "title": "Page[TrackBrowseResponse]"
+      },
+      "PeaksResponse": {
+        "properties": {
+          "peaks": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Peaks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "peaks"
+        ],
+        "title": "PeaksResponse",
+        "description": "Waveform amplitude peak data for visualization."
+      },
+      "RefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "description": "Token refresh request."
+      },
+      "RefreshResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "refresh_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Token"
+          },
+          "expires_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "RefreshResponse",
+        "description": "Token refresh response."
+      },
+      "SetupRequest": {
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "type": "string",
+            "title": "Client Secret"
+          },
+          "root_music_folder": {
+            "type": "string",
+            "title": "Root Music Folder",
+            "default": "~/Music/tracks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_id",
+          "client_secret"
+        ],
+        "title": "SetupRequest",
+        "description": "Payload from the first-launch setup form."
+      },
+      "SetupResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "SetupResponse",
+        "description": "Result of saving setup configuration."
+      },
+      "SetupStatusResponse": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "title": "SetupStatusResponse",
+        "description": "Indicates whether the app has been configured."
+      },
+      "TrackBrowseResponse": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "release_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Date"
+          },
+          "has_artwork": {
+            "type": "boolean",
+            "title": "Has Artwork",
+            "default": false
+          },
+          "file_format": {
+            "type": "string",
+            "title": "File Format"
+          },
+          "file_size": {
+            "type": "integer",
+            "title": "File Size"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path",
+          "file_name",
+          "file_format",
+          "file_size"
+        ],
+        "title": "TrackBrowseResponse",
+        "description": "Lightweight response for collection browse/table view."
+      },
+      "TrackInfoResponse": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "release_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Date"
+          },
+          "remixers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remixers"
+          },
+          "has_artwork": {
+            "type": "boolean",
+            "title": "Has Artwork"
+          },
+          "is_ready": {
+            "type": "boolean",
+            "title": "Is Ready"
+          },
+          "missing_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Fields",
+            "default": []
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Issues",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path",
+          "file_name",
+          "has_artwork",
+          "is_ready"
+        ],
+        "title": "TrackInfoResponse",
+        "description": "Response containing track metadata."
+      },
+      "TrackInfoUpdateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "release_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Date"
+          },
+          "remixers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remixers"
+          },
+          "artwork_data": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Data"
+          }
+        },
+        "type": "object",
+        "title": "TrackInfoUpdateRequest",
+        "description": "Request to update track metadata."
+      },
+      "UserInfo": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "permalink": {
+            "type": "string",
+            "title": "Permalink"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "permalink"
+        ],
+        "title": "UserInfo",
+        "description": "Minimal SoundCloud user info."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
