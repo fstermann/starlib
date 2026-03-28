@@ -30,3 +30,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # pre-commit hooks
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
