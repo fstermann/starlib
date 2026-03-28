@@ -66,15 +66,21 @@ function TrackRow({ item, isActive, isPlaying, onPlay, onSelect }: RowProps) {
 
   return (
     <div
+      role="row"
+      tabIndex={0}
       className={`flex items-center h-12 gap-2 px-3 border-b border-border/30 transition-colors select-none cursor-pointer
         ${isActive ? 'bg-accent/40' : 'hover:bg-accent/20'}`}
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onSelect();
+        if (e.key === ' ') { e.preventDefault(); onPlay(); }
+      }}
     >
       {/* Play / Pause button */}
       <button
         className={`shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors cursor-pointer ${isActive ? 'text-primary hover:text-primary/80' : 'text-muted-foreground hover:text-foreground'}`}
         onClick={(e) => { e.stopPropagation(); onPlay(); }}
-        title={isActive && isPlaying ? 'Pause' : 'Play'}
+        aria-label={isActive && isPlaying ? 'Pause' : `Play ${item.title || item.file_name}`}
       >
         {isActive && isPlaying
           ? <Pause className="size-3.5 fill-primary text-primary" />
@@ -295,7 +301,7 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect }: Collection
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header row */}
-      <div className="flex items-center gap-2 px-3 h-9 shrink-0 border-b border-border bg-muted/30 text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
+      <div role="row" className="flex items-center gap-2 px-3 h-9 shrink-0 border-b border-border bg-muted/30 text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
         {/* Spacers for play + waveform + artwork */}
         <div className="shrink-0 w-6" />
         <div className="shrink-0 w-28" />
@@ -306,6 +312,7 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect }: Collection
             key={col.key}
             className={`flex items-center gap-0.5 ${col.className} ${col.sortable ? 'hover:text-foreground transition-colors cursor-pointer' : 'cursor-default'}`}
             onClick={() => col.sortable && handleSort(col.key)}
+            aria-sort={col.sortable && col.key === sortBy ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
           >
             {col.label}
             {col.sortable && <SortIcon col={col.key} sortBy={sortBy} sortOrder={sortOrder} />}
