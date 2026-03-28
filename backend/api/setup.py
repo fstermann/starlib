@@ -93,10 +93,10 @@ def save_setup(body: SetupRequest) -> SetupResponse:
         existing["ROOT_MUSIC_FOLDER"] = body.root_music_folder
         _write_config(existing)
     except OSError as exc:
-        logger.exception("Failed to write config file: %s", exc)
+        logger.exception("Failed to write config file")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Could not write config: {exc}",
+            detail="Could not write config",
         ) from exc
 
     # Invalidate the cached settings so the new values take effect immediately.

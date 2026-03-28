@@ -124,7 +124,7 @@ def handle_callback(body: CallbackRequest) -> CallbackResponse:
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"SoundCloud token exchange failed: {token_resp.text}",
+            detail="SoundCloud token exchange failed",
         )
 
     token_data = token_resp.json()
@@ -210,7 +210,7 @@ def refresh_token(body: RefreshRequest) -> RefreshResponse:
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"SoundCloud token refresh failed: {token_resp.text}",
+            detail="SoundCloud token refresh failed",
         )
 
     token_data = token_resp.json()
