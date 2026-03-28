@@ -91,7 +91,7 @@ jobs:
                 include:
                     - platform: macos-latest # Apple Silicon (arm64)
                       arch: aarch64-apple-darwin
-                    - platform: macos-13 # Intel (x86_64)
+                    - platform: macos-15 # Intel (x86_64)
                       arch: x86_64-apple-darwin
                     # Uncomment to add Windows support:
                     # - platform: windows-latest
@@ -150,7 +150,7 @@ jobs:
                     - platform: macos-latest
                       arch: aarch64-apple-darwin
                       tauri-target: aarch64-apple-darwin
-                    - platform: macos-13
+                    - platform: macos-15
                       arch: x86_64-apple-darwin
                       tauri-target: x86_64-apple-darwin
                     # - platform: windows-latest
@@ -314,3 +314,31 @@ jobs:
                   draft: false
                   prerelease: false
                   generate_release_notes: true
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Job 4: Clean up on failure — revert version bump, delete tag & release
+    # ────────────────────────────────────────────────────────────────────────
+    cleanup-on-failure:
+        needs: [bump-version, build-sidecar, build-tauri, release]
+        if: ${{ always() && needs.bump-version.result == 'success' && (needs.build-sidecar.result == 'failure' || needs.build-tauri.result == 'failure' || needs.release.result == 'failure') }}
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 2
+
+            - name: Delete GitHub Release (if created)
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: gh release delete "${{ needs.bump-version.outputs.tag }}" --yes --cleanup-tag || true
+
+            - name: Delete remote tag
+              run: git push origin --delete "${{ needs.bump-version.outputs.tag }}" || true
+
+            - name: Revert version bump commit
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git revert --no-edit HEAD
+                  git push origin HEAD
