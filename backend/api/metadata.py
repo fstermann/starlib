@@ -10,6 +10,7 @@ FastAPI endpoints for metadata editing operations:
 
 import asyncio
 import base64
+import logging
 from datetime import date
 from pathlib import Path
 from typing import Annotated
@@ -45,6 +46,8 @@ from soundcloud_tools.handler.folder import FolderHandler
 from soundcloud_tools.handler.track import TrackHandler
 
 disable_installed_extensions_check()
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/metadata", tags=["metadata"])
 
@@ -200,9 +203,10 @@ def browse_folder_files(
             sort_order=sort_order,
         )
     except Exception as e:
+        logger.exception("Failed to list tracks")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list tracks: {e!s}",
+            detail="Failed to list tracks",
         ) from e
 
     def to_browse_response(row) -> TrackBrowseResponse:
@@ -280,9 +284,10 @@ def get_folder_filter_values(
             bpm_max=bpm_max,
         )
     except Exception as e:
+        logger.exception("Failed to get filter values")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get filter values: {e!s}",
+            detail="Failed to get filter values",
         ) from e
 
     return FilterValuesResponse(**values)
@@ -320,8 +325,9 @@ def get_file_info(
     try:
         track_info = metadata.get_track_info(resolved_path, root_folder)
     except Exception as e:
+        logger.exception("Failed to read track metadata")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to read track metadata: {e!s}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to read track metadata"
         ) from e
 
     # Check file readiness
@@ -380,8 +386,9 @@ def update_file_info(
     try:
         current_info = metadata.get_track_info(resolved_path, root_folder)
     except Exception as e:
+        logger.exception("Failed to read current metadata")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to read current metadata: {e!s}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to read current metadata"
         ) from e
 
     # Build modified track info
@@ -401,9 +408,8 @@ def update_file_info(
     try:
         new_path = metadata.save_track_metadata(resolved_path, root_folder, modified_info)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to save metadata: {e!s}"
-        ) from e
+        logger.exception("Failed to save metadata")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save metadata") from e
 
     # Download and embed artwork from URL if provided
     if updates.artwork_data:
@@ -434,7 +440,7 @@ def proxy_image(url: str) -> Response:
         r = httpx.get(url, timeout=10, follow_redirects=True)
         r.raise_for_status()
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Failed to fetch image: {e!s}") from e
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch image") from e
     return Response(content=r.content, media_type=r.headers.get("content-type", "image/jpeg"))
 
 
@@ -468,8 +474,9 @@ def check_file_readiness(
     try:
         readiness = metadata.check_file_readiness(resolved_path, root_folder)
     except Exception as e:
+        logger.exception("Failed to check readiness")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to check readiness: {e!s}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to check readiness"
         ) from e
 
     return FileReadinessResponse(
@@ -514,8 +521,9 @@ def finalize_file(
     try:
         readiness = metadata.check_file_readiness(resolved_path, root_folder)
     except Exception as e:
+        logger.exception("Failed to check readiness")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to check readiness: {e!s}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to check readiness"
         ) from e
 
     if not readiness["is_ready"]:
@@ -537,9 +545,10 @@ def finalize_file(
             target_format=request.target_format,
         )
     except Exception as e:
+        logger.exception("Finalization failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Finalization failed: {e!s}",
+            detail="Finalization failed",
         ) from e
 
     collection.invalidate_cache()
@@ -591,9 +600,10 @@ async def get_file_artwork(
             None, metadata.extract_artwork, resolved_path, root_folder, settings.cache_dir
         )
     except Exception as e:
+        logger.exception("Failed to extract artwork")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to extract artwork: {e!s}",
+            detail="Failed to extract artwork",
         ) from e
 
     if not artwork_path or not artwork_path.exists():
@@ -644,18 +654,20 @@ async def update_file_artwork(
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Failed to read uploaded file")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to read uploaded file: {e!s}",
+            detail="Failed to read uploaded file",
         ) from e
 
     # Embed artwork
     try:
         metadata.add_artwork_to_track(resolved_path, root_folder, artwork_data)
     except Exception as e:
+        logger.exception("Failed to embed artwork")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to embed artwork: {e!s}",
+            detail="Failed to embed artwork",
         ) from e
 
     collection.invalidate_cache()
@@ -696,9 +708,10 @@ def delete_file_artwork(
     try:
         metadata.remove_artwork(resolved_path, root_folder)
     except Exception as e:
+        logger.exception("Failed to remove artwork")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to remove artwork: {e!s}",
+            detail="Failed to remove artwork",
         ) from e
 
     collection.invalidate_cache()
@@ -739,9 +752,8 @@ def delete_file(
     try:
         metadata.delete_track_file(resolved_path, root_folder)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete file: {e!s}"
-        ) from e
+        logger.exception("Failed to delete file")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file") from e
 
     collection.invalidate_cache()
 
@@ -821,9 +833,10 @@ async def get_file_peaks(
                 None, metadata.get_waveform_peaks, resolved_path, settings.cache_dir, num_peaks
             )
     except Exception as e:
+        logger.exception("Failed to compute peaks")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to compute peaks: {e!s}",
+            detail="Failed to compute peaks",
         ) from e
 
     return PeaksResponse(peaks=peaks)
@@ -934,9 +947,10 @@ def get_collection_stats(
     try:
         stats = collection.get_collection_metadata_stats(collection_folder)
     except Exception as e:
+        logger.exception("Failed to get collection stats")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get collection stats: {e!s}",
+            detail="Failed to get collection stats",
         ) from e
 
     return CollectionStatsResponse(
