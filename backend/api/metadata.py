@@ -407,7 +407,20 @@ def update_file_info(
 
     # Download and embed artwork from URL if provided
     if updates.artwork_data:
-        artwork_bytes = base64.b64decode(updates.artwork_data)
+        # Limit artwork payload to 10 MB
+        max_artwork_bytes = 10 * 1024 * 1024
+        try:
+            artwork_bytes = base64.b64decode(updates.artwork_data)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid base64 artwork data.",
+            ) from e
+        if len(artwork_bytes) > max_artwork_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Artwork data exceeds 10 MB limit.",
+            )
         metadata.add_artwork_to_track(new_path, root_folder, artwork_bytes)
 
     collection.invalidate_cache()
