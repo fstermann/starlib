@@ -226,15 +226,15 @@ jobs:
             - name: Create GitHub Release
               uses: softprops/action-gh-release@v2
               with:
-                  name: "SoundCloud Tools ${{ github.ref_name }}"
+                  name: "Starlib ${{ github.ref_name }}"
                   body: |
-                      ## SoundCloud Tools ${{ github.ref_name }}
+                      ## Starlib ${{ github.ref_name }}
 
                       ### Installation (macOS)
                       1. Download the `.dmg` file for your Mac:
                          - **Apple Silicon (M1/M2/M3):** `*-aarch64.dmg`
                          - **Intel:** `*-x86_64.dmg`
-                      2. Open the `.dmg` and drag **SoundCloud Tools** to your Applications folder.
+                      2. Open the `.dmg` and drag **Starlib** to your Applications folder.
                       3. On first launch, right-click → Open if macOS shows an unidentified developer warning.
                       4. Follow the setup wizard to enter your SoundCloud API credentials.
 
