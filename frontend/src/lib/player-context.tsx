@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useMemo } from 'react';
 
 export interface PlayerTrack {
   filePath: string;
@@ -36,39 +36,45 @@ const PlayerContext = createContext<PlayerContextValue | null>(null);
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [currentTrack, setCurrentTrack] = useState<PlayerTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const currentTrackRef = useRef<PlayerTrack | null>(null);
 
   const [duration, setDuration] = useState(0);
   const progressRef = useRef(0);
   const progressCallbacksRef = useRef<Set<(p: number) => void>>(new Set());
   const seekFnRef = useRef<((ratio: number) => void) | null>(null);
 
-  const load = useCallback((track: PlayerTrack) => {
+  const updateTrack = useCallback((track: PlayerTrack | null) => {
+    currentTrackRef.current = track;
     setCurrentTrack(track);
-    setIsPlaying(false);
   }, []);
 
+  const load = useCallback((track: PlayerTrack) => {
+    updateTrack(track);
+    setIsPlaying(false);
+  }, [updateTrack]);
+
   const play = useCallback((track: PlayerTrack) => {
-    setCurrentTrack(track);
+    updateTrack(track);
     setIsPlaying(true);
-  }, []);
+  }, [updateTrack]);
 
   const pause = useCallback(() => {
     setIsPlaying(false);
   }, []);
 
   const toggle = useCallback((track?: PlayerTrack) => {
-    if (track && track.filePath !== currentTrack?.filePath) {
-      setCurrentTrack(track);
+    if (track && track.filePath !== currentTrackRef.current?.filePath) {
+      updateTrack(track);
       setIsPlaying(true);
     } else {
       setIsPlaying((prev) => !prev);
     }
-  }, [currentTrack]);
+  }, [updateTrack]);
 
   const stop = useCallback(() => {
     setIsPlaying(false);
-    setCurrentTrack(null);
-  }, []);
+    updateTrack(null);
+  }, [updateTrack]);
 
   const seek = useCallback((ratio: number) => {
     seekFnRef.current?.(ratio);
@@ -95,8 +101,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setDuration(d);
   }, []);
 
+  const value = useMemo<PlayerContextValue>(() => ({
+    currentTrack, isPlaying, load, play, pause, toggle, stop, seek, reportProgress, subscribeProgress, registerSeek, duration, reportDuration,
+  }), [currentTrack, isPlaying, load, play, pause, toggle, stop, seek, reportProgress, subscribeProgress, registerSeek, duration, reportDuration]);
+
   return (
-    <PlayerContext.Provider value={{ currentTrack, isPlaying, load, play, pause, toggle, stop, seek, reportProgress, subscribeProgress, registerSeek, duration, reportDuration }}>
+    <PlayerContext.Provider value={value}>
       {children}
     </PlayerContext.Provider>
   );
