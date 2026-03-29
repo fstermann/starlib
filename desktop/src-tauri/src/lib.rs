@@ -1,6 +1,10 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
+
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
 const BACKEND_URL: &str = "http://127.0.0.1:8000";
 const HEALTH_MAX_RETRIES: u32 = 30;
@@ -82,6 +86,10 @@ fn start_backend(app: &tauri::AppHandle) {
                     tokio::time::sleep(std::time::Duration::from_millis(RESTART_DELAY_MS)).await;
 
                     // Check if the child is still held (None means it exited/was taken).
+                    if SHUTTING_DOWN.load(Ordering::SeqCst) {
+                        break;
+                    }
+
                     let needs_restart = {
                         if let Some(mutex) = handle.try_state::<std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>>() {
                             if let Ok(guard) = mutex.lock() {
@@ -159,11 +167,24 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                // Kill the backend sidecar when the main window is closed.
+                // Signal the watchdog to stop before killing the sidecar.
+                SHUTTING_DOWN.store(true, Ordering::SeqCst);
+                // Shut down the backend sidecar when the main window is closed.
+                // Dropping the child handle closes the stdin pipe; the Python
+                // sidecar detects stdin EOF and exits. We also send SIGTERM as
+                // a backup (PyInstaller's bootloader forwards it to the child).
                 if let Some(mutex) = window.app_handle().try_state::<std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>>() {
                     if let Ok(mut guard) = mutex.lock() {
                         if let Some(child) = guard.take() {
-                            let _ = child.kill();
+                            let pid = child.pid();
+                            // Drop the handle — closes the stdin pipe.
+                            drop(child);
+                            // Backup: send SIGTERM so the bootloader can
+                            // forward it to the actual Python process.
+                            #[cfg(unix)]
+                            unsafe {
+                                libc::kill(pid as i32, libc::SIGTERM);
+                            }
                         }
                     }
                 }
