@@ -18,38 +18,45 @@ The application will automatically obtain, cache, and refresh OAuth tokens.
 
 ## Login flow
 
+The OAuth flow supports two modes depending on the environment:
+
+- **Backend-redirect flow** (desktop app): SoundCloud redirects to the backend (`/auth/soundcloud/redirect`), which exchanges the code server-side and redirects the browser to the frontend callback with only the `state` parameter. The frontend then fetches the result via `GET /auth/soundcloud/result?state=…`.
+- **Direct callback flow** (dev/web): SoundCloud redirects directly to the frontend with `code` and `state`. The frontend sends both to `POST /auth/soundcloud/callback`, which exchanges the code server-side.
+
+The `return_to` query parameter on `/authorize` controls which flow is used. The frontend passes `window.location.origin + "/auth/soundcloud/callback"` so the backend knows where to redirect after exchange.
+
+### Backend-redirect flow (default)
+
 ```
 Browser                  Frontend               Backend                  SoundCloud
   │                          │                      │                         │
   │  Click "Connect"         │                      │                         │
   │─────────────────────────>│                      │                         │
-  │                          │  GET /auth/soundcloud/authorize                │
+  │                          │  GET /authorize       │                         │
+  │                          │  ?return_to=…/callback│                         │
   │                          │─────────────────────>│                         │
-  │                          │  { url, state,        │                         │
-  │                          │    code_verifier }   │                         │
-  │                          │<─────────────────────│                         │
-  │                          │  store state +        │                         │
-  │                          │  code_verifier in     │                         │
+  │                          │  { url, state }      │  (stores code_verifier  │
+  │                          │<─────────────────────│   + return_to by state) │
+  │                          │  store state in       │                         │
   │                          │  sessionStorage       │                         │
   │  redirect to SC          │                      │                         │
   │<─────────────────────────│                      │                         │
   │─────────────────────────────────────────────────────────────────────────>│
-  │  authorize + redirect back with ?code=…&state=… │                         │
+  │  authorize               │                      │                         │
   │<─────────────────────────────────────────────────────────────────────────│
-  │  /auth/soundcloud/callback?code=…&state=…        │                         │
-  │─────────────────────────>│                      │                         │
-  │                          │  verify state        │                         │
-  │                          │  POST /auth/soundcloud/callback                │
-  │                          │  { code, state,       │                         │
-  │                          │    code_verifier }   │                         │
-  │                          │─────────────────────>│                         │
+  │  redirect to /auth/soundcloud/redirect?code=…&state=…                    │
+  │──────────────────────────────────────────────>│                         │
   │                          │                      │  POST /oauth/token      │
   │                          │                      │  (client_secret + PKCE) │
   │                          │                      │────────────────────────>│
-  │                          │                      │  { access_token,        │
-  │                          │                      │    refresh_token,        │
-  │                          │                      │    expires_in }         │
+  │                          │                      │  { access_token, … }   │
   │                          │                      │<────────────────────────│
+  │  redirect to return_to?state=…                 │                         │
+  │<─────────────────────────────────────────────────│                         │
+  │  /callback?state=…       │                      │                         │
+  │─────────────────────────>│                      │                         │
+  │                          │  GET /result?state=…  │                         │
+  │                          │─────────────────────>│                         │
   │                          │  { access_token,      │                         │
   │                          │    refresh_token,     │                         │
   │                          │    expires_in, user } │                         │
@@ -59,6 +66,8 @@ Browser                  Frontend               Backend                  SoundCl
 ```
 
 **Why the backend handles token exchange:** SoundCloud treats all clients as confidential — a `client_secret` is required for every token exchange and refresh. Keeping this in the backend ensures the secret is never exposed to the browser.
+
+**Why the backend-redirect flow exists:** In the desktop app (Tauri), SoundCloud cannot redirect to `tauri://` URLs. Instead, the `redirect_uri` points to the backend, which exchanges the code and then redirects the browser to the frontend callback via the `return_to` parameter.
 
 ## Token storage
 
@@ -80,5 +89,7 @@ Tokens are stored in the frontend's `localStorage`:
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/auth/soundcloud/authorize` | Generate PKCE params + SoundCloud authorization URL |
-| `POST` | `/auth/soundcloud/callback` | Exchange authorization code for tokens |
+| `GET` | `/auth/soundcloud/redirect` | Handle SoundCloud OAuth redirect, exchange code, redirect to frontend |
+| `GET` | `/auth/soundcloud/result` | Retrieve completed OAuth result by state (one-time) |
+| `POST` | `/auth/soundcloud/callback` | Exchange authorization code for tokens (direct flow) |
 | `POST` | `/auth/soundcloud/refresh` | Refresh an expired access token |

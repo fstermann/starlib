@@ -49,10 +49,11 @@ def init_db(db_path: Path) -> None:
         CREATE INDEX IF NOT EXISTS idx_tracks_folder ON tracks(folder);
 
         CREATE TABLE IF NOT EXISTS peaks (
-            file_path TEXT PRIMARY KEY,
+            file_path TEXT NOT NULL,
             num_peaks INTEGER NOT NULL,
             peaks     TEXT NOT NULL,
-            mtime     REAL NOT NULL
+            mtime     REAL NOT NULL,
+            PRIMARY KEY (file_path, num_peaks)
         );
     """)
     # Migrate existing DBs that pre-date the duration column
@@ -61,6 +62,26 @@ def init_db(db_path: Path) -> None:
         conn.commit()
     except sqlite3.OperationalError:
         pass  # column already exists
+
+    # Migrate peaks table from single-column PK to composite PK (file_path, num_peaks)
+    try:
+        cur = conn.execute("PRAGMA table_info(peaks)")
+        cols = {row[1]: row[5] for row in cur.fetchall()}  # name -> pk_index
+        # Old schema had file_path as sole PK (pk=1, num_peaks pk=0)
+        if cols.get("file_path") and not cols.get("num_peaks", 0):
+            conn.execute("DROP TABLE peaks")
+            conn.execute("""
+                CREATE TABLE peaks (
+                    file_path TEXT NOT NULL,
+                    num_peaks INTEGER NOT NULL,
+                    peaks     TEXT NOT NULL,
+                    mtime     REAL NOT NULL,
+                    PRIMARY KEY (file_path, num_peaks)
+                )
+            """)
+            conn.commit()
+    except sqlite3.OperationalError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -458,16 +479,26 @@ def get_stats(folder: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def get_peaks(file_path: Path, mtime: float) -> list[float] | None:
+def get_peaks(file_path: Path, mtime: float, num_peaks: int | None = None) -> list[float] | None:
     """Return cached peak data if it exists and mtime matches, else None."""
-    row = (
-        _get_conn()
-        .execute(
-            "SELECT peaks FROM peaks WHERE file_path = ? AND mtime = ?",
-            (str(file_path), mtime),
+    if num_peaks is not None:
+        row = (
+            _get_conn()
+            .execute(
+                "SELECT peaks FROM peaks WHERE file_path = ? AND mtime = ? AND num_peaks = ?",
+                (str(file_path), mtime, num_peaks),
+            )
+            .fetchone()
         )
-        .fetchone()
-    )
+    else:
+        row = (
+            _get_conn()
+            .execute(
+                "SELECT peaks FROM peaks WHERE file_path = ? AND mtime = ?",
+                (str(file_path), mtime),
+            )
+            .fetchone()
+        )
     return json.loads(row["peaks"]) if row else None
 
 

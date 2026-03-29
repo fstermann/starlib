@@ -39,7 +39,7 @@ _peaks_semaphore = asyncio.Semaphore(4)
 async def get_file_peaks(
     file_path: str,
     root_folder: Annotated[Path, Depends(get_root_folder)],
-    num_peaks: int = Query(200, ge=50, le=500, description="Number of amplitude peaks to return"),
+    num_peaks: int = Query(200, ge=50, le=2000, description="Number of amplitude peaks to return"),
 ) -> PeaksResponse:
     """Get waveform amplitude peak data for a file.
 
@@ -69,7 +69,7 @@ async def get_file_peaks(
     # Fast path — serve from SQLite cache without touching the semaphore.
     try:
         mtime = resolved_path.stat().st_mtime
-        cached = cache_db.get_peaks(resolved_path, mtime)
+        cached = cache_db.get_peaks(resolved_path, mtime, num_peaks)
         if cached is not None:
             return PeaksResponse(peaks=cached)
     except OSError:

@@ -35,32 +35,42 @@ function CallbackHandler() {
       return;
     }
 
-    if (!code || !state) {
-      setError("Missing code or state in callback URL.");
+    if (!state) {
+      setError("Missing state in callback URL.");
       return;
     }
 
-    const storedState = sessionStorage.getItem("oauth_state");
-    if (state !== storedState) {
-      setError("State mismatch. Possible CSRF attack.");
-      return;
-    }
+    const handleSuccess = (data: CallbackResponse) => {
+      storeTokens(data.access_token, data.refresh_token, data.expires_in);
+      localStorage.setItem("sc_user", JSON.stringify(data.user));
+      sessionStorage.removeItem("oauth_state");
+      router.push("/meta-editor");
+    };
 
-    sessionStorage.removeItem("oauth_state");
+    const handleError = (err: unknown) => {
+      setError(err instanceof Error ? err.message : "Authentication failed.");
+    };
 
-    fetchApi<CallbackResponse>("/auth/soundcloud/callback", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, state }),
-    })
-      .then((data) => {
-        storeTokens(data.access_token, data.refresh_token, data.expires_in);
-        localStorage.setItem("sc_user", JSON.stringify(data.user));
-        router.push("/meta-editor");
+    if (code) {
+      // Direct SoundCloud callback: verify state, exchange code for tokens
+      const storedState = sessionStorage.getItem("oauth_state");
+      if (state !== storedState) {
+        setError("State mismatch. Possible CSRF attack.");
+        return;
+      }
+      fetchApi<CallbackResponse>("/auth/soundcloud/callback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, state }),
       })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Authentication failed.");
-      });
+        .then(handleSuccess)
+        .catch(handleError);
+    } else {
+      // Backend-redirect flow: tokens already exchanged server-side
+      fetchApi<CallbackResponse>(`/auth/soundcloud/result?state=${state}`)
+        .then(handleSuccess)
+        .catch(handleError);
+    }
   }, [searchParams, router]);
 
   if (error) {

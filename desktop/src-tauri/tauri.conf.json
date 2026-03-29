@@ -7,7 +7,7 @@
         "frontendDist": "../../frontend/out",
         "devUrl": "http://localhost:3000",
         "beforeDevCommand": "cd ../frontend && npm run dev",
-        "beforeBuildCommand": "cd ../frontend && npm run build"
+        "beforeBuildCommand": "cd ../frontend && NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run build"
     },
     "app": {
         "windows": [
@@ -21,11 +21,13 @@
                 "fullscreen": false,
                 "decorations": true,
                 "transparent": false,
-                "center": true
+                "center": true,
+                "visible": true
             }
         ],
         "security": {
-            "csp": "default-src 'self' tauri: asset: http://127.0.0.1:8000; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://i1.sndcdn.com https://a1.sndcdn.com; connect-src 'self' http://127.0.0.1:8000 https://secure.soundcloud.com https://api.soundcloud.com https://api-v2.soundcloud.com"
+            "csp": "default-src 'self' tauri: asset: http://127.0.0.1:8000; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://127.0.0.1:8000 https://i1.sndcdn.com https://a1.sndcdn.com; media-src 'self' http://127.0.0.1:8000; connect-src 'self' http://127.0.0.1:8000 https://secure.soundcloud.com https://api.soundcloud.com https://api-v2.soundcloud.com",
+            "dangerousDisableAssetCspModification": true
         }
     },
     "bundle": {
@@ -39,11 +41,11 @@
             "icons/icon.ico"
         ],
         "macOS": {
-            "entitlements": null,
+            "entitlements": "Entitlements.plist",
             "exceptionDomain": "",
             "frameworks": [],
             "providerShortName": null,
-            "signingIdentity": null
+            "signingIdentity": "-"
         },
         "externalBin": [
             "binaries/starlib-backend"
@@ -59,7 +61,7 @@
             ]
         },
         "shell": {
-            "open": false
+            "open": true
         }
     }
 }

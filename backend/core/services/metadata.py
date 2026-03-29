@@ -589,7 +589,7 @@ def get_waveform_peaks(file_path: Path, cache_dir: Path, num_peaks: int = 200) -
         Normalized amplitude peaks in range [0, 1]
     """
     mtime = file_path.stat().st_mtime
-    cached = cache_db.get_peaks(file_path, mtime)
+    cached = cache_db.get_peaks(file_path, mtime, num_peaks)
     if cached is not None:
         return cached
 

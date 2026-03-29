@@ -93,7 +93,7 @@ jobs:
                 include:
                     - platform: macos-latest # Apple Silicon (arm64)
                       arch: aarch64-apple-darwin
-                    - platform: macos-15 # Intel (x86_64)
+                    - platform: macos-13 # Intel (x86_64)
                       arch: x86_64-apple-darwin
                     # Uncomment to add Windows support:
                     # - platform: windows-latest
@@ -152,7 +152,7 @@ jobs:
                     - platform: macos-latest
                       arch: aarch64-apple-darwin
                       tauri-target: aarch64-apple-darwin
-                    - platform: macos-15
+                    - platform: macos-13
                       arch: x86_64-apple-darwin
                       tauri-target: x86_64-apple-darwin
                     # - platform: windows-latest
@@ -279,7 +279,10 @@ jobs:
                          - **Apple Silicon (M1/M2/M3):** `*-aarch64.dmg`
                          - **Intel:** `*-x86_64.dmg`
                       2. Open the `.dmg` and drag **Starlib** to your Applications folder.
-                      3. On first launch, right-click → Open if macOS shows an unidentified developer warning.
+                      3. Remove the macOS quarantine flag (required for unsigned builds):
+                         ```bash
+                         xattr -cr /Applications/Starlib.app
+                         ```
                       4. Follow the setup wizard to enter your SoundCloud API credentials.
 
                       ### Getting SoundCloud API credentials

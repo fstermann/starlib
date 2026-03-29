@@ -67,6 +67,12 @@ a = Analysis(
         "fastapi_pagination",
         "fastapi_pagination.ext.sqlalchemy",
         "multipart",
+        "mutagen",
+        "mutagen.aiff",
+        "mutagen.easyid3",
+        "mutagen.id3",
+        "mutagen.mp3",
+        "mutagen.wave",
     ],
     hookspath=[],
     hooksconfig={},
@@ -94,6 +100,6 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,  # None = native arch; set to "universal2" for fat binary
-    codesign_identity=None,
-    entitlements_file=None,
+    codesign_identity="-",  # ad-hoc sign so Team ID matches Tauri's ad-hoc signature
+    entitlements_file=str(root / "desktop" / "src-tauri" / "Entitlements.plist"),
 )
