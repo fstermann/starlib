@@ -1,6 +1,6 @@
 [project]
 name = "starlib"
-version = "0.2.5"
+version = "0.2.6"
 description = "DJ library management app."
 authors = [{name = "Fabian Stermann", email = "56961284+fstermann@users.noreply.github.com"}]
 readme = "README.md"
