@@ -15,12 +15,18 @@ test.describe('Home page', () => {
     await expect(card).toHaveAttribute('href', '/meta-editor');
   });
 
+  test('displays Like Explorer card as available', async ({ page }) => {
+    await page.goto('/');
+    const main = page.locator('main');
+    const card = main.getByRole('link', { name: /Like Explorer/i });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('href', '/like-explorer');
+  });
+
   test('displays coming soon tools as disabled', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Like Explorer')).toBeVisible();
     await expect(page.getByText('Artist Manager')).toBeVisible();
     // Coming-soon cards should not be links
-    await expect(page.getByRole('link', { name: /Like Explorer/i })).toHaveCount(0);
     await expect(page.getByRole('link', { name: /Artist Manager/i })).toHaveCount(0);
   });
 
