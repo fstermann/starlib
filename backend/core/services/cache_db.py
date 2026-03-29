@@ -63,6 +63,13 @@ def init_db(db_path: Path) -> None:
     except sqlite3.OperationalError:
         pass  # column already exists
 
+    # Migrate existing DBs that pre-date the soundcloud_id column
+    try:
+        conn.execute("ALTER TABLE tracks ADD COLUMN soundcloud_id INTEGER")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
     # Migrate peaks table from single-column PK to composite PK (file_path, num_peaks)
     try:
         cur = conn.execute("PRAGMA table_info(peaks)")
@@ -124,6 +131,7 @@ def upsert_track(
     is_complete: bool,
     missing_fields: list[str],
     mtime: float,
+    soundcloud_id: int | None = None,
 ) -> None:
     """Insert or replace a track row."""
     conn = _get_conn()
@@ -132,8 +140,8 @@ def upsert_track(
         INSERT OR REPLACE INTO tracks
             (file_path, file_name, folder, title, artist_str, genre, key, bpm,
              release_date, has_artwork, file_size, file_format, duration, is_complete,
-             missing_fields, mtime)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             missing_fields, mtime, soundcloud_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(file_path),
@@ -152,6 +160,7 @@ def upsert_track(
             int(is_complete),
             json.dumps(missing_fields),
             mtime,
+            soundcloud_id,
         ),
     )
     conn.commit()
@@ -187,6 +196,19 @@ def invalidate_file(file_path: Path) -> None:
     conn = _get_conn()
     conn.execute("DELETE FROM tracks WHERE file_path = ?", (str(file_path),))
     conn.commit()
+
+
+def get_soundcloud_ids(folder: Path) -> list[int]:
+    """Return all non-null soundcloud_ids for tracks in *folder*."""
+    rows = (
+        _get_conn()
+        .execute(
+            "SELECT soundcloud_id FROM tracks WHERE folder = ? AND soundcloud_id IS NOT NULL",
+            (str(folder),),
+        )
+        .fetchall()
+    )
+    return [r["soundcloud_id"] for r in rows]
 
 
 # ---------------------------------------------------------------------------

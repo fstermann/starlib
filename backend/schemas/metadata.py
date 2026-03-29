@@ -199,6 +199,12 @@ class ArtworkResponse(BaseModel):
     artwork_path: str | None = None
 
 
+class CollectionSoundcloudIdsResponse(BaseModel):
+    """SoundCloud track IDs linked to collection tracks."""
+
+    soundcloud_ids: list[int]
+
+
 class RenameResponse(BaseModel):
     """Response from rename operation."""
 

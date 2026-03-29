@@ -76,8 +76,20 @@
           "authentication"
         ],
         "summary": "Get Authorization Url",
-        "description": "Build and return the SoundCloud authorization URL.\n\nThe frontend should redirect the user to this URL.\n\nReturns\n-------\nAuthorizeResponse\n    The authorization URL and CSRF state token.",
+        "description": "Build and return the SoundCloud authorization URL.\n\nThe frontend should redirect the user to this URL.\n\nParameters\n----------\nreturn_to : str\n    URL to redirect back to after OAuth completes.\n\nReturns\n-------\nAuthorizeResponse\n    The authorization URL and CSRF state token.",
         "operationId": "get_authorization_url_auth_soundcloud_authorize_get",
+        "parameters": [
+          {
+            "name": "return_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "http://localhost:3000/auth/soundcloud/callback",
+              "title": "Return To"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -85,6 +97,109 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuthorizeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/soundcloud/redirect": {
+      "get": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Handle Redirect",
+        "description": "Handle OAuth redirect from SoundCloud.\n\nSoundCloud redirects here with code and state. This endpoint exchanges\nthe code for tokens, stores the result, and redirects the browser\nback to the frontend callback page.",
+        "operationId": "handle_redirect_auth_soundcloud_redirect_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/soundcloud/result": {
+      "get": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Get Oauth Result",
+        "description": "Retrieve completed OAuth result by state token.\n\nOne-time retrieval: the result is removed after being fetched.",
+        "operationId": "get_oauth_result_auth_soundcloud_result_get",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallbackResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -274,7 +389,7 @@
           "metadata"
         ],
         "summary": "Browse Folder Files",
-        "description": "Browse tracks in a folder with filtering, sorting, and pagination.\n\nReads full metadata for each track server-side and applies filters before\nreturning a paginated result. Suitable for large collections (4000+ tracks)\nbecause only one page is serialized at a time.\n\nParameters\n----------\nmode : str\n    Folder mode: \"prepare\", \"collection\", \"cleaned\", or \"\"\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nPage[TrackBrowseResponse]\n    Filtered, sorted, paginated track metadata",
+        "description": "Browse tracks in a folder with filtering, sorting, and pagination.\n\nParameters\n----------\nmode : str\n    Folder mode: \"prepare\", \"collection\", \"cleaned\", or \"\"\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nPage[TrackBrowseResponse]\n    Filtered, sorted, paginated track metadata",
         "operationId": "browse_folder_files_api_metadata_folders__mode__browse_get",
         "parameters": [
           {
@@ -523,7 +638,7 @@
           "metadata"
         ],
         "summary": "Get Folder Filter Values",
-        "description": "Get available filter values for a folder (genres, artists, keys, BPM range).\n\nUsed to populate filter dropdowns in the View mode.\n\nParameters\n----------\nmode : str\n    Folder mode: \"prepare\", \"collection\", \"cleaned\", or \"\"\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFilterValuesResponse\n    Available filter options",
+        "description": "Get available filter values for a folder (genres, artists, keys, BPM range).\n\nParameters\n----------\nmode : str\n    Folder mode: \"prepare\", \"collection\", \"cleaned\", or \"\"\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFilterValuesResponse\n    Available filter options",
         "operationId": "get_folder_filter_values_api_metadata_folders__mode__filter_values_get",
         "parameters": [
           {
@@ -752,47 +867,6 @@
         }
       }
     },
-    "/api/metadata/proxy-image": {
-      "get": {
-        "tags": [
-          "metadata"
-        ],
-        "summary": "Proxy Image",
-        "description": "Proxy an image from an allowed SoundCloud CDN host.",
-        "operationId": "proxy_image_api_metadata_proxy_image_get",
-        "parameters": [
-          {
-            "name": "url",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Url"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/metadata/files/{file_path}/readiness": {
       "get": {
         "tags": [
@@ -872,6 +946,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FinalizeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/files/{file_path}": {
+      "delete": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Delete File",
+        "description": "Delete an audio file.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nOperationResponse\n    Operation result\n\nRaises\n------\nHTTPException\n    If file doesn't exist or deletion fails",
+        "operationId": "delete_file_api_metadata_files__file_path__delete",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationResponse"
                 }
               }
             }
@@ -1022,49 +1139,6 @@
         }
       }
     },
-    "/api/metadata/files/{file_path}": {
-      "delete": {
-        "tags": [
-          "metadata"
-        ],
-        "summary": "Delete File",
-        "description": "Delete an audio file.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nOperationResponse\n    Operation result\n\nRaises\n------\nHTTPException\n    If file doesn't exist or deletion fails",
-        "operationId": "delete_file_api_metadata_files__file_path__delete",
-        "parameters": [
-          {
-            "name": "file_path",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "File Path"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OperationResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/metadata/files/{file_path}/peaks": {
       "get": {
         "tags": [
@@ -1089,7 +1163,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 500,
+              "maximum": 2000,
               "minimum": 50,
               "description": "Number of amplitude peaks to return",
               "default": 200,
@@ -1128,7 +1202,7 @@
           "metadata"
         ],
         "summary": "Stream Audio",
-        "description": "Stream an audio file.\n\nFormats not natively supported by browsers (e.g. AIFF) are\ntranscoded to WAV on the fly via ffmpeg.\n\nArgs:\n    file_path: Relative or absolute path to audio file.\n    root_folder: Root music folder (injected).\n\nReturns:\n    StreamingResponse with the audio file bytes.\n\nRaises:\n    HTTPException: If the file doesn't exist.",
+        "description": "Stream an audio file.\n\nFormats not natively supported by browsers (e.g. AIFF) are\ntranscoded to WAV on the fly via ffmpeg.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nStreamingResponse\n    Audio file bytes\n\nRaises\n------\nHTTPException\n    If the file doesn't exist",
         "operationId": "stream_audio_api_metadata_files__file_path__audio_get",
         "parameters": [
           {
@@ -1178,6 +1252,69 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CollectionStatsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/collection/soundcloud-ids": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Get Collection Soundcloud Ids",
+        "description": "Return SoundCloud track IDs linked to tracks in the collection folder.",
+        "operationId": "get_collection_soundcloud_ids_api_metadata_collection_soundcloud_ids_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionSoundcloudIdsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/proxy-image": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Proxy Image",
+        "description": "Proxy an image from an allowed SoundCloud CDN host.",
+        "operationId": "proxy_image_api_metadata_proxy_image_get",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1280,6 +1417,23 @@
         ],
         "title": "CallbackResponse",
         "description": "OAuth callback response with tokens and user info."
+      },
+      "CollectionSoundcloudIdsResponse": {
+        "properties": {
+          "soundcloud_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Soundcloud Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "soundcloud_ids"
+        ],
+        "title": "CollectionSoundcloudIdsResponse",
+        "description": "SoundCloud track IDs linked to collection tracks."
       },
       "CollectionStatsResponse": {
         "properties": {

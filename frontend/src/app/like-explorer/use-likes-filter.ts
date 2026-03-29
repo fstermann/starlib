@@ -7,6 +7,7 @@ interface UseLikesFilterOptions {
   minDuration: number | null;
   maxDuration: number | null;
   excludeMyLikes: boolean;
+  inCollection: boolean | null; // null = any, true = in collection, false = not in collection
 }
 
 interface UseLikesFilterResult {
@@ -24,6 +25,7 @@ export function useLikesFilter(
   tracks: SCTrack[],
   options: UseLikesFilterOptions,
   myLikedIds?: Set<number>,
+  collectionIds?: Set<number>,
 ): UseLikesFilterResult {
   const availableGenres = useMemo(() => {
     const genreSet = new Set<string>();
@@ -61,9 +63,17 @@ export function useLikesFilter(
         if (id && myLikedIds.has(id)) return false;
       }
 
+      // In collection filter
+      if (options.inCollection !== null && collectionIds) {
+        const id = extractId(track);
+        const isInCollection = id != null && collectionIds.has(id);
+        if (options.inCollection && !isInCollection) return false;
+        if (!options.inCollection && isInCollection) return false;
+      }
+
       return true;
     });
-  }, [tracks, options.search, options.genres, options.minDuration, options.maxDuration, options.excludeMyLikes, myLikedIds]);
+  }, [tracks, options.search, options.genres, options.minDuration, options.maxDuration, options.excludeMyLikes, myLikedIds, options.inCollection, collectionIds]);
 
   return { filteredTracks, availableGenres };
 }

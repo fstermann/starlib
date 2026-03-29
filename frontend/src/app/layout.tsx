@@ -11,6 +11,7 @@ import { WaveformPlayer } from "@/components/waveform-player";
 import { UpdateBanner } from "@/components/update-banner";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { ThemeProvider } from "next-themes";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -41,6 +42,7 @@ export default function RootLayout({
         className={`${inter.variable} ${geistMono.variable} antialiased h-screen flex flex-row bg-background text-foreground overflow-hidden`}
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+          <TooltipProvider>
           <BackendGate>
             <NuqsAdapter>
               <PlayerProvider>
@@ -56,6 +58,7 @@ export default function RootLayout({
               </PlayerProvider>
             </NuqsAdapter>
           </BackendGate>
+          </TooltipProvider>
         </ThemeProvider>
       </body>
     </html>
