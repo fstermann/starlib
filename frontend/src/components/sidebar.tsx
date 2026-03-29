@@ -85,7 +85,9 @@ export function Sidebar() {
                   : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
               }`}
             >
-              <Icon className="size-4 shrink-0" />
+              <span className="w-6 shrink-0 flex items-center justify-center">
+                <Icon className="size-4" />
+              </span>
               <span className="text-xs font-medium tracking-wide opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
                 {label}
               </span>
@@ -101,7 +103,9 @@ export function Sidebar() {
           title={mounted ? (theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode') : undefined}
           className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
         >
-          {mounted && theme === 'dark' ? <Sun className="size-4 shrink-0" /> : <Moon className="size-4 shrink-0" />}
+          <span className="w-6 shrink-0 flex items-center justify-center">
+            {mounted && theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+          </span>
           <span className="text-xs opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
             {mounted ? (theme === 'dark' ? 'Light mode' : 'Dark mode') : null}
           </span>
@@ -117,15 +121,19 @@ export function Sidebar() {
             className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
           >
             {user.avatar_url ? (
-              <img
-                src={user.avatar_url}
-                alt={user.username}
-                className="size-5 rounded-full shrink-0 object-cover"
-              />
+              <span className="w-6 shrink-0 flex items-center justify-center">
+                <img
+                  src={user.avatar_url}
+                  alt={user.username}
+                  className="size-5 rounded-full object-cover"
+                />
+              </span>
             ) : (
-              <div className="size-5 rounded-full bg-primary/20 shrink-0 flex items-center justify-center text-[9px] font-bold text-primary">
+              <span className="w-6 shrink-0 flex items-center justify-center">
+              <div className="size-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary">
                 {user.username.slice(0, 1).toUpperCase()}
               </div>
+              </span>
             )}
             <span className="text-xs opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
               Disconnect
@@ -137,7 +145,9 @@ export function Sidebar() {
             title="Connect SoundCloud"
             className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
           >
-            <Music2 className="size-4 shrink-0" />
+            <span className="w-6 shrink-0 flex items-center justify-center">
+              <Music2 className="size-4" />
+            </span>
             <span className="text-xs opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
               Connect SC
             </span>
