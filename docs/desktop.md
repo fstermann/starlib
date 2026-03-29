@@ -94,7 +94,7 @@ desktop/
 
 ```bash
 # 1. Build sidecar
-pyinstaller desktop/sidecar.spec --distpath desktop/src-tauri/binaries --noconfirm
+uv run pyinstaller desktop/sidecar.spec --distpath desktop/src-tauri/binaries --noconfirm
 mv desktop/src-tauri/binaries/starlib-backend \
    desktop/src-tauri/binaries/starlib-backend-$(rustc -vV | grep host | cut -d' ' -f2)
 
