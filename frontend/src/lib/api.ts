@@ -189,6 +189,10 @@ export const api = {
     return response.blob();
   },
 
+  proxyImageUrl(url: string): string {
+    return `${API_BASE_URL}/api/metadata/proxy-image?url=${encodeURIComponent(url)}`;
+  },
+
   // Health check
   async healthCheck(): Promise<{ status: string }> {
     return fetchApi('/health');
