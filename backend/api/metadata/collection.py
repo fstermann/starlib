@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.api.deps import get_root_folder
 from backend.core.services import collection
-from backend.schemas.metadata import CollectionStatsResponse
+from backend.schemas.metadata import CollectionSoundcloudIdsResponse, CollectionStatsResponse
 from soundcloud_tools.handler.folder import FolderHandler
 
 logger = logging.getLogger(__name__)
@@ -62,3 +62,23 @@ def get_collection_stats(
         bpm_min=stats["bpm_min"],
         bpm_max=stats["bpm_max"],
     )
+
+
+@router.get("/collection/soundcloud-ids", response_model=CollectionSoundcloudIdsResponse)
+def get_collection_soundcloud_ids(
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> CollectionSoundcloudIdsResponse:
+    """Return SoundCloud track IDs linked to tracks in the collection folder."""
+    folder_handler = FolderHandler(folder=root_folder)
+    collection_folder = folder_handler.get_collection_folder()
+
+    try:
+        ids = collection.get_collection_soundcloud_ids(collection_folder)
+    except Exception as e:
+        logger.exception("Failed to get collection SoundCloud IDs")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get collection SoundCloud IDs",
+        ) from e
+
+    return CollectionSoundcloudIdsResponse(soundcloud_ids=ids)

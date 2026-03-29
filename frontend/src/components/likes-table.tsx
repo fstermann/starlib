@@ -2,13 +2,14 @@
 
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronUp, ChevronDown, ChevronsUpDown, Music, Check } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronsUpDown, Music, FolderCheck, ShoppingCart } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { api } from '@/lib/api';
 import type { SCTrack } from '@/lib/soundcloud';
 
 const ROW_HEIGHT = 48;
 const IFRAME_HEIGHT = 120;
+const DESCRIPTION_HEIGHT = 120;
 
 type SortKey = 'title' | 'artist' | 'genre' | 'duration' | 'playback_count';
 type SortOrder = 'asc' | 'desc';
@@ -61,15 +62,22 @@ function artworkUrl(track: SCTrack): string | null {
   return api.proxyImageUrl(url);
 }
 
+function searchQuery(track: SCTrack): string {
+  const artist = track.user?.username ?? '';
+  const title = track.title ?? '';
+  return `${artist} ${title}`.trim();
+}
+
 interface TrackRowProps {
   track: SCTrack;
   isSelected: boolean;
   isExpanded: boolean;
+  inCollection: boolean;
   onToggleSelect: () => void;
   onExpand: () => void;
 }
 
-function TrackRow({ track, isSelected, isExpanded, onToggleSelect, onExpand }: TrackRowProps) {
+function TrackRow({ track, isSelected, isExpanded, inCollection, onToggleSelect, onExpand }: TrackRowProps) {
   const imgUrl = artworkUrl(track);
 
   return (
@@ -127,20 +135,68 @@ function TrackRow({ track, isSelected, isExpanded, onToggleSelect, onExpand }: T
         <span className="w-16 shrink-0 text-xs text-muted-foreground text-right tabular-nums">
           {formatPlays(track.playback_count)}
         </span>
+
+        {/* Links group: Collection + Buy/Search */}
+        <div className={`w-24 shrink-0 flex items-center justify-end gap-1 ${inCollection ? 'opacity-35' : ''}`}>
+          <div className="flex items-center justify-center size-5" title={inCollection ? 'In collection' : undefined}>
+            {inCollection && <FolderCheck className="size-3.5 text-primary" />}
+          </div>
+          {track.purchase_url ? (
+            <a
+              href={track.purchase_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center size-5 text-muted-foreground hover:text-foreground transition-colors"
+              onClick={(e) => e.stopPropagation()}
+              title={track.purchase_title || 'Buy'}
+            >
+              <ShoppingCart className="size-3" />
+            </a>
+          ) : (
+            <div className="size-5" />
+          )}
+          <a
+            href={`https://bandcamp.com/search?q=${encodeURIComponent(searchQuery(track))}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center size-5 text-muted-foreground hover:text-foreground transition-colors text-[10px] font-bold"
+            onClick={(e) => e.stopPropagation()}
+            title="Search Bandcamp"
+          >
+            BC
+          </a>
+          <a
+            href={`https://www.beatport.com/search?q=${encodeURIComponent(searchQuery(track))}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center size-5 text-muted-foreground hover:text-foreground transition-colors text-[10px] font-bold"
+            onClick={(e) => e.stopPropagation()}
+            title="Search Beatport"
+          >
+            BP
+          </a>
+        </div>
       </div>
 
-      {/* SC iframe embed */}
-      {isExpanded && track.permalink_url && (
-        <div className="px-3 py-2 border-b border-border/30 bg-muted/20">
-          <iframe
-            width="100%"
-            height={IFRAME_HEIGHT}
-            scrolling="no"
-            frameBorder="no"
-            allow="autoplay"
-            src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(track.permalink_url)}&color=%23e05d38&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`}
-            className="rounded-lg overflow-hidden"
-          />
+      {/* Expanded detail: player + description */}
+      {isExpanded && (
+        <div className="px-3 py-2 border-b border-border/30 bg-muted/20 space-y-2">
+          {track.permalink_url && (
+            <iframe
+              width="100%"
+              height={IFRAME_HEIGHT}
+              scrolling="no"
+              frameBorder="no"
+              allow="autoplay"
+              src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(track.permalink_url)}&color=%23e05d38&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`}
+              className="rounded-lg overflow-hidden"
+            />
+          )}
+          {track.description && (
+            <p className="text-xs text-muted-foreground whitespace-pre-line max-w-prose">
+              {track.description}
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -151,9 +207,10 @@ interface LikesTableProps {
   tracks: SCTrack[];
   selectedIds: Set<number>;
   onToggleSelect: (id: number) => void;
+  collectionIds?: Set<number>;
 }
 
-export function LikesTable({ tracks, selectedIds, onToggleSelect }: LikesTableProps) {
+export function LikesTable({ tracks, selectedIds, onToggleSelect, collectionIds }: LikesTableProps) {
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -192,7 +249,11 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect }: LikesTablePr
       (index: number) => {
         const track = sortedTracks[index];
         const id = track ? extractId(track) : 0;
-        return id === expandedId ? ROW_HEIGHT + IFRAME_HEIGHT + 16 : ROW_HEIGHT;
+        if (id !== expandedId) return ROW_HEIGHT;
+        let h = ROW_HEIGHT + 16; // padding
+        if (track?.permalink_url) h += IFRAME_HEIGHT;
+        if (track?.description) h += DESCRIPTION_HEIGHT;
+        return h;
       },
       [sortedTracks, expandedId],
     ),
@@ -234,6 +295,10 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect }: LikesTablePr
             <SortIcon col={col.key} sortBy={sortBy} sortOrder={sortOrder} />
           </button>
         ))}
+        <div className="w-24 shrink-0 flex items-center justify-center gap-1" title="Links">
+          <FolderCheck className="size-3 opacity-50" />
+          <span className="text-[10px] opacity-50">Links</span>
+        </div>
       </div>
 
       {/* Virtual scroll */}
@@ -261,6 +326,7 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect }: LikesTablePr
                   track={track}
                   isSelected={selectedIds.has(id)}
                   isExpanded={expandedId === id}
+                  inCollection={collectionIds?.has(id) ?? false}
                   onToggleSelect={() => onToggleSelect(id)}
                   onExpand={() => handleExpand(track)}
                 />

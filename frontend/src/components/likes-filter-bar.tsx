@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Search, X, ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { Search, X, ChevronDown, SlidersHorizontal, FolderCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +29,9 @@ interface LikesFilterBarProps {
   excludeMyLikes: boolean;
   onExcludeMyLikesChange: (value: boolean) => void;
   showExcludeMyLikes: boolean;
+  inCollection: boolean | null;
+  onInCollectionChange: (value: boolean | null) => void;
+  showInCollection: boolean;
   filteredCount: number;
   totalCount: number;
   loading: boolean;
@@ -55,6 +58,9 @@ export function LikesFilterBar({
   excludeMyLikes,
   onExcludeMyLikesChange,
   showExcludeMyLikes,
+  inCollection,
+  onInCollectionChange,
+  showInCollection,
   filteredCount,
   totalCount,
   loading,
@@ -85,13 +91,21 @@ export function LikesFilterBar({
     onMaxDurationChange(value[1] === DURATION_MAX ? null : value[1]);
   }
 
+  function cycleInCollection() {
+    // null -> true -> false -> null
+    if (inCollection === null) onInCollectionChange(true);
+    else if (inCollection === true) onInCollectionChange(false);
+    else onInCollectionChange(null);
+  }
+
   const durationActive = minDuration !== null || maxDuration !== null;
 
   const hasActiveFilters =
     search.length > 0 ||
     genres.length > 0 ||
     durationActive ||
-    excludeMyLikes;
+    excludeMyLikes ||
+    inCollection !== null;
 
   function clearAll() {
     setSearchInput('');
@@ -101,6 +115,7 @@ export function LikesFilterBar({
     onMaxDurationChange(null);
     setDurationValue([0, DURATION_MAX]);
     onExcludeMyLikesChange(false);
+    onInCollectionChange(null);
   }
 
   return (
@@ -197,6 +212,20 @@ export function LikesFilterBar({
           />
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* In Collection filter */}
+      {showInCollection && (
+        <Button
+          variant="outline"
+          size="sm"
+          className={`h-7 text-xs gap-1 cursor-pointer ${inCollection !== null ? 'border-primary text-primary' : ''}`}
+          onClick={cycleInCollection}
+          title={inCollection === null ? 'All tracks' : inCollection ? 'In collection' : 'Not in collection'}
+        >
+          <FolderCheck className="size-3" />
+          {inCollection === null ? 'Collection' : inCollection ? 'In collection' : 'Not in collection'}
+        </Button>
+      )}
 
       {/* Exclude my likes */}
       {showExcludeMyLikes && (

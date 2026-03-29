@@ -268,4 +268,12 @@ export const api = {
     );
     return data.peaks;
   },
+
+  // Collection SoundCloud IDs
+  async getCollectionSoundcloudIds(): Promise<number[]> {
+    const data = await fetchApi<components['schemas']['CollectionSoundcloudIdsResponse']>(
+      '/api/metadata/collection/soundcloud-ids'
+    );
+    return data.soundcloud_ids;
+  },
 };

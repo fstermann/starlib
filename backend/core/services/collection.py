@@ -49,6 +49,7 @@ def _index_one(folder: Path, file: Path) -> None:
             missing.append("release_date")
         if not track_info.artwork:
             missing.append("artwork")
+        sc_id = track_info.comment.soundcloud_id if track_info.comment else None
         cache_db.upsert_track(
             file_path=file,
             folder=folder.resolve(),
@@ -65,6 +66,7 @@ def _index_one(folder: Path, file: Path) -> None:
             is_complete=track_info.complete,
             missing_fields=missing,
             mtime=mtime,
+            soundcloud_id=sc_id,
         )
     except Exception as e:
         logger.warning("Skipping unreadable file %s: %s", file, e)
@@ -106,6 +108,12 @@ def is_indexing(folder: Path) -> bool:
 # Backwards-compatible alias used by the API layer
 def is_cache_loading(folder: Path) -> bool:
     return is_indexing(folder)
+
+
+def get_collection_soundcloud_ids(folder: Path) -> list[int]:
+    """Return all SoundCloud track IDs linked to collection tracks."""
+    ensure_folder_indexed(folder)
+    return cache_db.get_soundcloud_ids(folder)
 
 
 def invalidate_file(file_path: Path) -> None:

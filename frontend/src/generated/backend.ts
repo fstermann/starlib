@@ -77,12 +77,63 @@ export interface paths {
          *
          *     The frontend should redirect the user to this URL.
          *
+         *     Parameters
+         *     ----------
+         *     return_to : str
+         *         URL to redirect back to after OAuth completes.
+         *
          *     Returns
          *     -------
          *     AuthorizeResponse
          *         The authorization URL and CSRF state token.
          */
         get: operations["get_authorization_url_auth_soundcloud_authorize_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/soundcloud/redirect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Handle Redirect
+         * @description Handle OAuth redirect from SoundCloud.
+         *
+         *     SoundCloud redirects here with code and state. This endpoint exchanges
+         *     the code for tokens, stores the result, and redirects the browser
+         *     back to the frontend callback page.
+         */
+        get: operations["handle_redirect_auth_soundcloud_redirect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/soundcloud/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Oauth Result
+         * @description Retrieve completed OAuth result by state token.
+         *
+         *     One-time retrieval: the result is removed after being fetched.
+         */
+        get: operations["get_oauth_result_auth_soundcloud_result_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -229,10 +280,6 @@ export interface paths {
          * Browse Folder Files
          * @description Browse tracks in a folder with filtering, sorting, and pagination.
          *
-         *     Reads full metadata for each track server-side and applies filters before
-         *     returning a paginated result. Suitable for large collections (4000+ tracks)
-         *     because only one page is serialized at a time.
-         *
          *     Parameters
          *     ----------
          *     mode : str
@@ -264,8 +311,6 @@ export interface paths {
         /**
          * Get Folder Filter Values
          * @description Get available filter values for a folder (genres, artists, keys, BPM range).
-         *
-         *     Used to populate filter dropdowns in the View mode.
          *
          *     Parameters
          *     ----------
@@ -348,26 +393,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/metadata/proxy-image": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Proxy Image
-         * @description Proxy an image from an allowed SoundCloud CDN host.
-         */
-        get: operations["proxy_image_api_metadata_proxy_image_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/metadata/files/{file_path}/readiness": {
         parameters: {
             query?: never;
@@ -439,6 +464,43 @@ export interface paths {
          */
         post: operations["finalize_file_api_metadata_files__file_path__finalize_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metadata/files/{file_path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete File
+         * @description Delete an audio file.
+         *
+         *     Parameters
+         *     ----------
+         *     file_path : str
+         *         Relative or absolute path to audio file
+         *     root_folder : Path
+         *         Root music folder (injected)
+         *
+         *     Returns
+         *     -------
+         *     OperationResponse
+         *         Operation result
+         *
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         If file doesn't exist or deletion fails
+         */
+        delete: operations["delete_file_api_metadata_files__file_path__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -528,43 +590,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/metadata/files/{file_path}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete File
-         * @description Delete an audio file.
-         *
-         *     Parameters
-         *     ----------
-         *     file_path : str
-         *         Relative or absolute path to audio file
-         *     root_folder : Path
-         *         Root music folder (injected)
-         *
-         *     Returns
-         *     -------
-         *     OperationResponse
-         *         Operation result
-         *
-         *     Raises
-         *     ------
-         *     HTTPException
-         *         If file doesn't exist or deletion fails
-         */
-        delete: operations["delete_file_api_metadata_files__file_path__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/metadata/files/{file_path}/peaks": {
         parameters: {
             query?: never;
@@ -617,15 +642,22 @@ export interface paths {
          *     Formats not natively supported by browsers (e.g. AIFF) are
          *     transcoded to WAV on the fly via ffmpeg.
          *
-         *     Args:
-         *         file_path: Relative or absolute path to audio file.
-         *         root_folder: Root music folder (injected).
+         *     Parameters
+         *     ----------
+         *     file_path : str
+         *         Relative or absolute path to audio file
+         *     root_folder : Path
+         *         Root music folder (injected)
          *
-         *     Returns:
-         *         StreamingResponse with the audio file bytes.
+         *     Returns
+         *     -------
+         *     StreamingResponse
+         *         Audio file bytes
          *
-         *     Raises:
-         *         HTTPException: If the file doesn't exist.
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         If the file doesn't exist
          */
         get: operations["stream_audio_api_metadata_files__file_path__audio_get"];
         put?: never;
@@ -663,6 +695,46 @@ export interface paths {
          *         If collection folder doesn't exist
          */
         get: operations["get_collection_stats_api_metadata_collection_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metadata/collection/soundcloud-ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Collection Soundcloud Ids
+         * @description Return SoundCloud track IDs linked to tracks in the collection folder.
+         */
+        get: operations["get_collection_soundcloud_ids_api_metadata_collection_soundcloud_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metadata/proxy-image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Proxy Image
+         * @description Proxy an image from an allowed SoundCloud CDN host.
+         */
+        get: operations["proxy_image_api_metadata_proxy_image_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -712,6 +784,14 @@ export interface components {
             /** Expires In */
             expires_in?: number | null;
             user: components["schemas"]["UserInfo"];
+        };
+        /**
+         * CollectionSoundcloudIdsResponse
+         * @description SoundCloud track IDs linked to collection tracks.
+         */
+        CollectionSoundcloudIdsResponse: {
+            /** Soundcloud Ids */
+            soundcloud_ids: number[];
         };
         /**
          * CollectionStatsResponse
@@ -1152,7 +1232,9 @@ export interface operations {
     };
     get_authorization_url_auth_soundcloud_authorize_get: {
         parameters: {
-            query?: never;
+            query?: {
+                return_to?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1166,6 +1248,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthorizeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    handle_redirect_auth_soundcloud_redirect_get: {
+        parameters: {
+            query: {
+                code: string;
+                state: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_oauth_result_auth_soundcloud_result_get: {
+        parameters: {
+            query: {
+                state: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallbackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1454,37 +1608,6 @@ export interface operations {
             };
         };
     };
-    proxy_image_api_metadata_proxy_image_get: {
-        parameters: {
-            query: {
-                url: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     check_file_readiness_api_metadata_files__file_path__readiness_get: {
         parameters: {
             query?: never;
@@ -1538,6 +1661,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FinalizeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_file_api_metadata_files__file_path__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1618,37 +1772,6 @@ export interface operations {
         };
     };
     delete_file_artwork_api_metadata_files__file_path__artwork_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                file_path: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OperationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_file_api_metadata_files__file_path__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -1760,6 +1883,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CollectionStatsResponse"];
+                };
+            };
+        };
+    };
+    get_collection_soundcloud_ids_api_metadata_collection_soundcloud_ids_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectionSoundcloudIdsResponse"];
+                };
+            };
+        };
+    };
+    proxy_image_api_metadata_proxy_image_get: {
+        parameters: {
+            query: {
+                url: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

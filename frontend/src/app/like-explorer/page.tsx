@@ -10,6 +10,7 @@ import { UserSearch } from '@/components/user-search';
 import { UserCard } from '@/components/user-card';
 import { CreatePlaylistDialog } from '@/components/create-playlist-dialog';
 import { LogoSpinner } from '@/components/logo-spinner';
+import { api } from '@/lib/api';
 import type { SCUser, SCTrack } from '@/lib/soundcloud';
 
 function extractId(track: SCTrack): number | undefined {
@@ -41,17 +42,27 @@ export default function LikeExplorerPage() {
     return ids;
   }, [myLikes.tracks]);
 
+  // Collection SoundCloud IDs
+  const [collectionIds, setCollectionIds] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    api.getCollectionSoundcloudIds()
+      .then((ids) => setCollectionIds(new Set(ids)))
+      .catch(() => {});  // non-critical — column just stays empty
+  }, []);
+
   // Filter state
   const [search, setSearch] = useState('');
   const [genres, setGenres] = useState<string[]>([]);
   const [minDuration, setMinDuration] = useState<number | null>(null);
   const [maxDuration, setMaxDuration] = useState<number | null>(null);
   const [excludeMyLikes, setExcludeMyLikes] = useState(false);
+  const [inCollection, setInCollection] = useState<boolean | null>(null);
 
   const { filteredTracks, availableGenres } = useLikesFilter(
     activeLikes.tracks,
-    { search, genres, minDuration, maxDuration, excludeMyLikes },
+    { search, genres, minDuration, maxDuration, excludeMyLikes, inCollection },
     tab === 'explore' ? myLikedIds : undefined,
+    collectionIds,
   );
 
   // Selection state
@@ -85,6 +96,7 @@ export default function LikeExplorerPage() {
     setMinDuration(null);
     setMaxDuration(null);
     setExcludeMyLikes(false);
+    setInCollection(null);
   }, [tab]);
 
   // Selected tracks for playlist creation
@@ -148,6 +160,9 @@ export default function LikeExplorerPage() {
             excludeMyLikes={excludeMyLikes}
             onExcludeMyLikesChange={setExcludeMyLikes}
             showExcludeMyLikes={tab === 'explore'}
+            inCollection={inCollection}
+            onInCollectionChange={setInCollection}
+            showInCollection={collectionIds.size > 0}
             filteredCount={filteredTracks.length}
             totalCount={activeLikes.tracks.length}
             loading={activeLikes.loading}
@@ -182,6 +197,7 @@ export default function LikeExplorerPage() {
             tracks={filteredTracks}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
+            collectionIds={collectionIds}
           />
         )}
 
