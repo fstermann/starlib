@@ -231,6 +231,8 @@ export TAURI_SIGNING_PRIVATE_KEY=$(cat ~/.tauri/starlib.key)
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""   # empty if no password set
 ```
 
+Also ensure `desktop/src-tauri/tauri.conf.json` has `"createUpdaterArtifacts": true` in the `bundle` section — without it Tauri silently skips producing the `.app.tar.gz` and `.sig` files even when a signing key is present.
+
 ### Step 1 — Point the updater at localhost
 
 In `desktop/src-tauri/tauri.conf.json`, temporarily change the endpoint:
@@ -247,9 +249,13 @@ Also add `http://127.0.0.1:9999` to the `app.security.csp` `connect-src` directi
 
 > Remember to revert these changes after testing.
 
-### Step 2 — Build and install the "old" version (0.2.4)
+### Step 2 — Build and install the "old" version
 
 ```bash
+# Export signing key — required for tauri to produce the .app.tar.gz updater bundle
+export TAURI_SIGNING_PRIVATE_KEY=$(cat ~/.tauri/starlib.key)
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+
 # From repo root
 uv run pyinstaller desktop/sidecar.spec --distpath desktop/src-tauri/binaries --noconfirm
 mv desktop/src-tauri/binaries/starlib-backend \
@@ -268,6 +274,10 @@ Open the `.dmg` from `target/aarch64-apple-darwin/release/bundle/dmg/` and drag 
 sed -i '' 's/version = "0.2.4"/version = "0.2.5"/' desktop/src-tauri/Cargo.toml
 jq --indent 4 '.version = "0.2.5"' desktop/src-tauri/tauri.conf.json > tmp.json && mv tmp.json desktop/src-tauri/tauri.conf.json
 
+# Ensure signing key is exported (needed for updater bundle)
+export TAURI_SIGNING_PRIVATE_KEY=$(cat ~/.tauri/starlib.key)
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+
 # Rebuild (sidecar can be skipped if unchanged)
 cd frontend && NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run build && cd ..
 cd desktop && npx @tauri-apps/cli build --target aarch64-apple-darwin
@@ -275,29 +285,22 @@ cd desktop && npx @tauri-apps/cli build --target aarch64-apple-darwin
 
 ### Step 4 — Generate `latest.json` and serve it
 
+Run from anywhere inside the repo:
+
 ```bash
-BUNDLE_DIR="target/aarch64-apple-darwin/release/bundle/macos"
-TAR=$(ls "$BUNDLE_DIR"/*.app.tar.gz | head -1 | xargs basename)
-SIG=$(cat "$BUNDLE_DIR/$TAR.sig")
+REPO_ROOT=$(git rev-parse --show-toplevel)
+BUNDLE_DIR="$REPO_ROOT/target/aarch64-apple-darwin/release/bundle/macos"
+TAR=$(find "$BUNDLE_DIR" -name "*.app.tar.gz" | head -1 | xargs basename)
+SIG=$(tail -1 "$BUNDLE_DIR/$TAR.sig")
+PUBDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 mkdir -p /tmp/starlib-update
 cp "$BUNDLE_DIR/$TAR" /tmp/starlib-update/
 cp "$BUNDLE_DIR/$TAR.sig" /tmp/starlib-update/
 
-cat > /tmp/starlib-update/latest.json <<EOF
-{
-  "version": "0.2.5",
-  "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "platforms": {
-    "darwin-aarch64": {
-      "url": "http://127.0.0.1:9999/$TAR",
-      "signature": "$SIG"
-    }
-  }
-}
-EOF
+printf '{\n  "version": "0.2.5",\n  "pub_date": "%s",\n  "platforms": {\n    "darwin-aarch64": {\n      "url": "http://127.0.0.1:9999/%s",\n      "signature": "%s"\n    }\n  }\n}\n' \
+  "$PUBDATE" "$TAR" "$SIG" > /tmp/starlib-update/latest.json
 
-# Start the local update server
 cd /tmp/starlib-update && python3 -m http.server 9999
 ```
 
