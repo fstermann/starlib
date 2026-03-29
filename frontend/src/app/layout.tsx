@@ -8,6 +8,7 @@ import { BackendGate } from "@/components/backend-gate";
 import { PlayerProvider } from "@/lib/player-context";
 import { LayoutShell } from "@/components/layout-shell";
 import { WaveformPlayer } from "@/components/waveform-player";
+import { UpdateBanner } from "@/components/update-banner";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { ThemeProvider } from "next-themes";
 
@@ -39,12 +40,13 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${geistMono.variable} antialiased h-screen flex flex-row bg-background text-foreground overflow-hidden`}
       >
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <BackendGate>
             <NuqsAdapter>
               <PlayerProvider>
                 <Sidebar />
                 <LayoutShell>
+                  <UpdateBanner />
                   <SetupGate>
                     {children}
                   </SetupGate>

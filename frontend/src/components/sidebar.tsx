@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Music2, FilePen, Moon, Sun } from "lucide-react";
+import { Music2, FilePen, Settings } from "lucide-react";
 import { clearTokens } from "@/lib/auth";
-import { useTheme } from "next-themes";
+import { SettingsDialog } from "@/components/settings-dialog";
 
 interface User {
   id: number;
@@ -22,14 +22,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [mounted, setMounted] = useState(false);
-  const { theme, setTheme } = useTheme();
-
-  useEffect(() => { setMounted(true); }, []);
-
-  function toggleTheme() {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  }
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -96,21 +89,23 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Theme toggle */}
+      {/* Settings */}
       <div className="px-2 pb-1 shrink-0">
         <button
-          onClick={toggleTheme}
-          title={mounted ? (theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode') : undefined}
-          className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+          onClick={() => setSettingsOpen(true)}
+          title="Settings"
+          className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors cursor-pointer"
         >
           <span className="w-6 shrink-0 flex items-center justify-center">
-            {mounted && theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            <Settings className="size-4" />
           </span>
           <span className="text-xs opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
-            {mounted ? (theme === 'dark' ? 'Light mode' : 'Dark mode') : null}
+            Settings
           </span>
         </button>
       </div>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       {/* User / disconnect */}
       <div className="border-t border-border/50 px-2 py-3 shrink-0">

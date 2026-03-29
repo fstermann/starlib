@@ -26,12 +26,13 @@
             }
         ],
         "security": {
-            "csp": "default-src 'self' tauri: asset: http://127.0.0.1:8000; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://127.0.0.1:8000 https://i1.sndcdn.com https://a1.sndcdn.com; media-src 'self' http://127.0.0.1:8000; connect-src 'self' http://127.0.0.1:8000 https://secure.soundcloud.com https://api.soundcloud.com https://api-v2.soundcloud.com; frame-src https://w.soundcloud.com",
+            "csp": "default-src 'self' tauri: asset: http://127.0.0.1:8000; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://127.0.0.1:8000 https://i1.sndcdn.com https://a1.sndcdn.com; media-src 'self' http://127.0.0.1:8000; connect-src 'self' http://127.0.0.1:8000 https://secure.soundcloud.com https://api.soundcloud.com https://api-v2.soundcloud.com https://github.com https://objects.githubusercontent.com; frame-src https://w.soundcloud.com",
             "dangerousDisableAssetCspModification": true
         }
     },
     "bundle": {
         "active": true,
+        "createUpdaterArtifacts": true,
         "targets": "all",
         "icon": [
             "icons/32x32.png",
@@ -54,14 +55,14 @@
     "plugins": {
         "updater": {
             "active": true,
-            "dialog": true,
-            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYwQzlFNUE1RkM3M0Q2RDkKUldUWjFuUDhwZVhKOE9sWi80Tm5BQ1RlQkdvK1dIc3ZUcWE5Z08yQ0dBaWE5RFB4OU5MaVhuMlkK",
+            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg0NjM2ODBBNDU1MzdEREEKUldUYWZWTkZDbWhqaEd6U0JFRHJuZ0Uvd0FSN2dLci9ya09wN2QweWxBV1JGbkRscnVTUW9ZOTQK",
             "endpoints": [
                 "https://github.com/fstermann/starlib/releases/latest/download/latest.json"
             ]
         },
         "shell": {
             "open": true
-        }
+        },
+        "store": {}
     }
 }
