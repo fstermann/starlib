@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # OAuth 2.1 credentials (recommended)
     client_secret: str = ""
-    soundcloud_redirect_uri: str = "http://localhost:3000/auth/soundcloud/callback"
+    soundcloud_redirect_uri: str = "http://127.0.0.1:8000/auth/soundcloud/redirect"
 
     user_id: int = 0
     datadome_clientid: str = ""

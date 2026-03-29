@@ -128,10 +128,11 @@ fn start_backend(app: &tauri::AppHandle) {
                 }
             });
 
-            // Wait for backend to be ready before the app continues.
+            // Monitor backend readiness and emit error if it fails.
             let handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                if !wait_for_backend_ready().await {
+                let healthy = wait_for_backend_ready().await;
+                if !healthy {
                     eprintln!("[backend] sidecar did not become ready — app may not work correctly");
                     let _ = handle.emit("backend-error", "Backend failed to start");
                 }
@@ -153,6 +154,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             start_backend(&app.handle());
+
             Ok(())
         })
         .on_window_event(|window, event| {

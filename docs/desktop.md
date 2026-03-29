@@ -79,6 +79,7 @@ desktop/
 └── src-tauri/
     ├── Cargo.toml        # Rust dependencies
     ├── tauri.conf.json   # Tauri configuration
+    ├── Entitlements.plist # macOS entitlements for ad-hoc signing
     ├── binaries/         # Sidecar binary output
     ├── capabilities/     # Tauri permissions
     ├── icons/            # App icons
@@ -86,3 +87,62 @@ desktop/
         ├── lib.rs        # Tauri plugin setup
         └── main.rs       # App entry point
 ```
+
+## Debugging the release build
+
+### Running a release build locally
+
+```bash
+# 1. Build sidecar
+pyinstaller desktop/sidecar.spec --distpath desktop/src-tauri/binaries --noconfirm
+mv desktop/src-tauri/binaries/starlib-backend \
+   desktop/src-tauri/binaries/starlib-backend-$(rustc -vV | grep host | cut -d' ' -f2)
+
+# 2. Build frontend
+cd frontend && npm ci && NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run build && cd ..
+
+# 3. Build Tauri app
+cd desktop && npm install
+npx @tauri-apps/cli build --target aarch64-apple-darwin --config src-tauri/tauri.conf.json
+```
+
+The built app is at `target/aarch64-apple-darwin/release/bundle/macos/Starlib.app`.
+
+### Testing the sidecar binary in isolation
+
+```bash
+# Run the sidecar directly to check for import errors
+/path/to/Starlib.app/Contents/MacOS/starlib-backend
+
+# If port 8000 is in use (e.g. dev server running), use a different port
+BACKEND_PORT=8001 /path/to/Starlib.app/Contents/MacOS/starlib-backend
+```
+
+### Checking macOS system logs
+
+```bash
+# Show all Starlib-related logs from the last 5 minutes
+log show --predicate 'processImagePath CONTAINS "Starlib" OR processImagePath CONTAINS "starlib"' --last 5m --style compact
+
+# Filter for errors only
+log show --predicate 'processImagePath CONTAINS "Starlib" OR processImagePath CONTAINS "starlib"' --last 5m --style compact 2>&1 | grep -i "error\|fail\|denied\|sandbox"
+```
+
+### Verifying code signing and entitlements
+
+```bash
+# Check signing identity and flags
+codesign -dvvv /path/to/Starlib.app
+
+# Check embedded entitlements
+codesign -d --entitlements - /path/to/Starlib.app
+```
+
+### Common issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| "Starlib.app is damaged" | macOS quarantine on unsigned app | `xattr -cr /Applications/Starlib.app` |
+| "Load failed" in webview | Missing entitlements / no code signing | Ensure `signingIdentity: "-"` and `Entitlements.plist` in `tauri.conf.json` |
+| Sidecar `ModuleNotFoundError` | Python module not bundled by PyInstaller | Add to `hiddenimports` in `desktop/sidecar.spec` |
+| Health check passes but app broken | Another process on port 8000 (e.g. dev server) | Stop the dev server before testing release build |

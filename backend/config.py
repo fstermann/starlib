@@ -32,7 +32,13 @@ class BackendSettings(BaseSettings):
     reload: bool = False
 
     # CORS Settings — in production only the Tauri webview origin is needed.
-    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "tauri://localhost"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "tauri://localhost",
+        "https://tauri.localhost",
+        "http://tauri.localhost",
+    ]
     cors_credentials: bool = True
     cors_methods: list[str] = ["*"]
     cors_headers: list[str] = ["*"]

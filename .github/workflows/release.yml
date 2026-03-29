@@ -233,18 +233,6 @@ jobs:
                   done
                   npx @tauri-apps/cli build --target ${{ matrix.tauri-target }} --config src-tauri/tauri.conf.json
 
-            # macOS requires at least an ad-hoc signature for WebKit to load
-            # content inside the webview. Without this, the app shows "Load failed".
-            - name: Ad-hoc codesign (when Apple signing is not configured)
-              if: runner.os == 'macOS'
-              shell: bash
-              run: |
-                  APP_PATH="target/${{ matrix.tauri-target }}/release/bundle/macos/Starlib.app"
-                  # Skip if the app is already properly signed (Apple identity was used)
-                  if ! codesign -v "$APP_PATH" 2>/dev/null; then
-                    codesign --force --deep --sign - "$APP_PATH"
-                  fi
-
             - name: List Tauri bundles
               shell: bash
               run: find target/${{ matrix.tauri-target }}/release/bundle -type f || true

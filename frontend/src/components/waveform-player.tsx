@@ -17,6 +17,7 @@ export function WaveformPlayer() {
   const { currentTrack, isPlaying, pause, toggle, reportProgress, registerSeek, reportDuration } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurferType | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const isPlayingRef = useRef(isPlaying);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -45,14 +46,42 @@ export function WaveformPlayer() {
       const { default: HoverPlugin } = await import('wavesurfer.js/dist/plugins/hover.esm.js');
       if (cancelled || !containerRef.current) return;
 
+      // Calculate how many peaks fit the container at the chosen bar dimensions.
+      const BAR_WIDTH = 2;
+      const BAR_GAP = 1;
+      const containerWidth = containerRef.current.clientWidth || 800;
+      const numPeaks = Math.min(2000, Math.max(50, Math.floor(containerWidth / (BAR_WIDTH + BAR_GAP))));
+
+      // Fetch peaks from the backend so WaveSurfer doesn't need to decode
+      // the audio via AudioContext (which fails in sandboxed WKWebView).
+      const peaks = await api.getFilePeaks(currentTrack!.filePath, numPeaks);
+      if (cancelled || !containerRef.current) return;
+
+      // Use an <audio> element for playback so WaveSurfer uses the native
+      // media pipeline instead of Web Audio API.
+      const audio = new Audio(api.getAudioUrl(currentTrack!.filePath));
+      audio.crossOrigin = 'anonymous';
+      audio.preload = 'metadata';
+      audioRef.current = audio;
+
+      // Wait for duration to be available before creating WaveSurfer,
+      // otherwise the waveform renders with duration=0 and looks broken.
+      await new Promise<void>((resolve) => {
+        if (audio.duration && isFinite(audio.duration)) {
+          resolve();
+        } else {
+          audio.addEventListener('loadedmetadata', () => resolve(), { once: true });
+          audio.addEventListener('error', () => resolve(), { once: true });
+        }
+      });
+      if (cancelled || !containerRef.current) return;
+
       const isDark = document.documentElement.classList.contains('dark');
 
-      // Build canvas gradients exactly like the official SoundCloud wavesurfer example.
-      // Using a CanvasGradient (instead of a plain string) is required for the
-      // source-in compositing the renderer uses on the progress canvas.
+      // Build canvas gradients for the SoundCloud-style waveform.
       const tmpCanvas = document.createElement('canvas');
       const tmpCtx = tmpCanvas.getContext('2d')!;
-      const h = tmpCanvas.height; // 150px default
+      const h = 128;
 
       const waveGrad = tmpCtx.createLinearGradient(0, 0, 0, h * 1.35);
       if (isDark) {
@@ -82,15 +111,17 @@ export function WaveformPlayer() {
       ws = WaveSurfer.create({
         container: containerRef.current,
         height: 44,
-        barWidth: 2,
-        // barGap: 0.5,
+        barWidth: BAR_WIDTH,
+        barGap: BAR_GAP,
         barRadius: 2,
         normalize: true,
         waveColor: waveGrad,
         progressColor: progressGrad,
         cursorWidth: 0,
         interact: true,
-        sampleRate: 44100,
+        peaks: [peaks],
+        duration: audio.duration,
+        media: audio,
         plugins: [
           HoverPlugin.create({
             lineColor: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)',
@@ -141,9 +172,6 @@ export function WaveformPlayer() {
       });
 
       registerSeek((ratio) => ws!.seekTo(ratio));
-      ws.load(api.getAudioUrl(currentTrack!.filePath)).catch((err) => {
-        if (!cancelled) console.error('Failed to load audio:', err);
-      });
     }
 
     init();
@@ -155,6 +183,11 @@ export function WaveformPlayer() {
       reportDuration(0);
       ws?.destroy();
       wsRef.current = null;
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current = null;
+      }
     };
   }, [currentTrack?.filePath, pause, reportProgress, registerSeek, reportDuration]);
 

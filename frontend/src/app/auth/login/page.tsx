@@ -19,7 +19,10 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const data = await fetchApi<AuthorizeResponse>("/auth/soundcloud/authorize");
+      const returnTo = `${window.location.origin}/auth/soundcloud/callback`;
+      const data = await fetchApi<AuthorizeResponse>(
+        `/auth/soundcloud/authorize?return_to=${encodeURIComponent(returnTo)}`
+      );
       sessionStorage.setItem("oauth_state", data.state);
       window.location.href = data.authorization_url;
     } catch (err) {

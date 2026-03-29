@@ -4,6 +4,7 @@ import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { SetupGate } from "@/components/setup-gate";
+import { BackendGate } from "@/components/backend-gate";
 import { PlayerProvider } from "@/lib/player-context";
 import { LayoutShell } from "@/components/layout-shell";
 import { WaveformPlayer } from "@/components/waveform-player";
@@ -39,18 +40,20 @@ export default function RootLayout({
         className={`${inter.variable} ${geistMono.variable} antialiased h-screen flex flex-row bg-background text-foreground overflow-hidden`}
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
-          <NuqsAdapter>
-            <PlayerProvider>
-              <Sidebar />
-              <LayoutShell>
-                <SetupGate>
-                  {children}
+          <BackendGate>
+            <NuqsAdapter>
+              <PlayerProvider>
+                <Sidebar />
+                <LayoutShell>
+                  <SetupGate>
+                    {children}
                   </SetupGate>
-                  </LayoutShell>
-              <WaveformPlayer />
-              <Toaster />
-            </PlayerProvider>
-          </NuqsAdapter>
+                </LayoutShell>
+                <WaveformPlayer />
+                <Toaster />
+              </PlayerProvider>
+            </NuqsAdapter>
+          </BackendGate>
         </ThemeProvider>
       </body>
     </html>
