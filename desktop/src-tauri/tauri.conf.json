@@ -54,7 +54,7 @@
     "plugins": {
         "updater": {
             "active": true,
-            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYwQzlFNUE1RkM3M0Q2RDkKUldUWjFuUDhwZVhKOE9sWi80Tm5BQ1RlQkdvK1dIc3ZUcWE5Z08yQ0dBaWE5RFB4OU5MaVhuMlkK",
+            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg0NjM2ODBBNDU1MzdEREEKUldUYWZWTkZDbWhqaEd6U0JFRHJuZ0Uvd0FSN2dLci9ya09wN2QweWxBV1JGbkRscnVTUW9ZOTQK",
             "endpoints": [
                 "https://github.com/fstermann/starlib/releases/latest/download/latest.json"
             ]
