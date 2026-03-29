@@ -26,7 +26,7 @@
             }
         ],
         "security": {
-            "csp": "default-src 'self' tauri: asset: http://127.0.0.1:8000; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://127.0.0.1:8000 https://i1.sndcdn.com https://a1.sndcdn.com; media-src 'self' http://127.0.0.1:8000; connect-src 'self' http://127.0.0.1:8000 https://secure.soundcloud.com https://api.soundcloud.com https://api-v2.soundcloud.com",
+            "csp": "default-src 'self' tauri: asset: http://127.0.0.1:8000; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://127.0.0.1:8000 https://i1.sndcdn.com https://a1.sndcdn.com; media-src 'self' http://127.0.0.1:8000; connect-src 'self' http://127.0.0.1:8000 https://secure.soundcloud.com https://api.soundcloud.com https://api-v2.soundcloud.com; frame-src https://w.soundcloud.com",
             "dangerousDisableAssetCspModification": true
         }
     },
