@@ -12,7 +12,7 @@ test.describe('Auth login page', () => {
   });
 
   test('shows error when authorize endpoint fails', async ({ page }) => {
-    await page.route('**/auth/soundcloud/authorize', (route) =>
+    await page.route('**/auth/soundcloud/authorize*', (route) =>
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"Server error"}' }),
     );
 
