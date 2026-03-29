@@ -51,8 +51,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [checkError, setCheckError] = useState<string | null>(null);
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      setVersion(process.env.NEXT_PUBLIC_APP_VERSION ?? null);
+      return;
+    }
+    import("@tauri-apps/api/app")
+      .then(({ getVersion }) => getVersion())
+      .then(setVersion)
+      .catch(() => setVersion(process.env.NEXT_PUBLIC_APP_VERSION ?? null));
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -243,6 +255,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 {!inTauri && (
                   <p className="text-xs text-muted-foreground">
                     Update checking is only available in the desktop app.
+                  </p>
+                )}
+
+                {version && (
+                  <p className="text-xs text-muted-foreground/60 mt-auto">
+                    v{version}
                   </p>
                 )}
               </div>
