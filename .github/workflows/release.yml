@@ -56,22 +56,43 @@ jobs:
                   echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
                   echo "Bumping $CURRENT → $NEW"
 
+            - name: Set up Python ${{ env.PYTHON_VERSION }}
+              uses: actions/setup-python@v6
+              with:
+                  python-version: ${{ env.PYTHON_VERSION }}
+
+            - name: Install uv
+              run: pip install uv
+
+            - name: Set up Node ${{ env.NODE_VERSION }}
+              uses: actions/setup-node@v6
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+
+            - name: Install Rust stable
+              uses: dtolnay/rust-toolchain@stable
+
             - name: Update version in all files
               shell: bash
               run: |
                   NEW="${{ steps.bump.outputs.new_version }}"
-                  CURRENT=$(grep -m1 '^version' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
 
-                  # pyproject.toml
-                  sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/" pyproject.toml
+                  # pyproject.toml + uv.lock
+                  uv version "$NEW"
 
-                  # desktop/src-tauri/Cargo.toml (only the package version line)
-                  sed -i "0,/^version = \"$CURRENT\"/s//version = \"$NEW\"/" desktop/src-tauri/Cargo.toml
+                  # desktop/src-tauri/Cargo.toml + Cargo.lock
+                  sed -i "0,/^version = \".*\"/s//version = \"$NEW\"/" desktop/src-tauri/Cargo.toml
+                  cargo update --workspace
 
-                  # JSON files
-                  for f in desktop/package.json frontend/package.json desktop/src-tauri/tauri.conf.json; do
-                    sed -i "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW\"/" "$f"
-                  done
+                  # desktop/package.json + desktop/package-lock.json
+                  npm version "$NEW" --no-git-tag-version --prefix desktop
+
+                  # frontend/package.json + frontend/package-lock.json
+                  npm version "$NEW" --no-git-tag-version --prefix frontend
+
+                  # desktop/src-tauri/tauri.conf.json
+                  jq --indent 4 --arg v "$NEW" '.version = $v' desktop/src-tauri/tauri.conf.json > tmp.json
+                  mv tmp.json desktop/src-tauri/tauri.conf.json
 
             - name: Commit and tag
               run: |
