@@ -15,7 +15,7 @@ const tools = [
     href: "/like-explorer",
     title: "Like Explorer",
     description: "Browse and manage your SoundCloud liked tracks.",
-    available: false,
+    available: true,
     icon: Heart,
   },
   {

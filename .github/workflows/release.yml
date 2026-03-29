@@ -266,6 +266,28 @@ jobs:
                     codesign --force --deep --sign - "$APP_PATH"
                   fi
 
+            # Build a PKG installer whose postinstall script strips the quarantine
+            # flag. Files installed via system_installd (the PKG daemon) don't
+            # inherit the quarantine xattr, so the app opens without any manual step.
+            - name: Create PKG installer (macOS)
+              if: runner.os == 'macOS'
+              shell: bash
+              env:
+                  VERSION: ${{ needs.bump-version.outputs.new_version }}
+              run: |
+                  BUNDLE_DIR="target/${{ matrix.tauri-target }}/release/bundle/macos"
+                  TMP_SCRIPTS=$(mktemp -d)
+                  printf '#!/bin/bash\nxattr -dr com.apple.quarantine /Applications/Starlib.app 2>/dev/null || true\n' \
+                    > "$TMP_SCRIPTS/postinstall"
+                  chmod +x "$TMP_SCRIPTS/postinstall"
+                  pkgbuild \
+                    --component "$BUNDLE_DIR/Starlib.app" \
+                    --install-location /Applications \
+                    --scripts "$TMP_SCRIPTS" \
+                    --identifier "com.starlib.app" \
+                    --version "$VERSION" \
+                    "$BUNDLE_DIR/Starlib_${VERSION}_${{ matrix.arch }}.pkg"
+
             - name: List Tauri bundles
               shell: bash
               run: find target/${{ matrix.tauri-target }}/release/bundle -type f || true
@@ -351,6 +373,15 @@ jobs:
                       ## Starlib ${{ needs.bump-version.outputs.tag }}
 
                       ### Installation (macOS)
+
+                      **Option A — PKG installer (recommended, no extra steps):**
+                      1. Download the `.pkg` file for your Mac:
+                         - **Apple Silicon (M1/M2/M3):** `*-aarch64.pkg`
+                         - **Intel:** `*-x86_64.pkg`
+                      2. Open the `.pkg` and follow the installer wizard.
+                      3. Follow the setup wizard to enter your SoundCloud API credentials.
+
+                      **Option B — DMG (manual quarantine removal required):**
                       1. Download the `.dmg` file for your Mac:
                          - **Apple Silicon (M1/M2/M3):** `*-aarch64.dmg`
                          - **Intel:** `*-x86_64.dmg`
@@ -364,6 +395,7 @@ jobs:
                       ### Getting SoundCloud API credentials
                       Register a free app at https://soundcloud.com/you/apps, then copy your Client ID and Client Secret.
                   files: |
+                      artifacts/**/*.pkg
                       artifacts/**/*.dmg
                       artifacts/**/*.app.tar.gz
                       artifacts/**/*.app.tar.gz.sig

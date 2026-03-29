@@ -91,3 +91,64 @@ export async function addTracksToPlaylist(playlistUrn: string, trackIds: number[
   if (error) throw new Error(`Failed to update playlist: ${JSON.stringify(error)}`);
   return data as SCPlaylist;
 }
+
+export type SCTracks = components['schemas']['Tracks'];
+
+export async function getMyLikedTracks(
+  limit = 200,
+  cursor?: string,
+): Promise<SCTracks> {
+  const client = await getClient();
+  const { data, error } = await client.GET('/me/likes/tracks', {
+    params: { query: { limit, linked_partitioning: true, ...(cursor ? { offset: cursor } : {}) } as never },
+  });
+  if (error) throw new Error(`Failed to fetch liked tracks: ${JSON.stringify(error)}`);
+  return data as SCTracks;
+}
+
+export async function getUserLikedTracks(
+  userUrn: string,
+  limit = 200,
+  cursor?: string,
+): Promise<SCTracks> {
+  const client = await getClient();
+  const { data, error } = await client.GET('/users/{user_urn}/likes/tracks', {
+    params: {
+      path: { user_urn: userUrn },
+      query: { limit, linked_partitioning: true, ...(cursor ? { offset: cursor } : {}) } as never,
+    },
+  });
+  if (error) throw new Error(`Failed to fetch user liked tracks: ${JSON.stringify(error)}`);
+  return data as SCTracks;
+}
+
+export async function fetchLikesPage(nextHref: string): Promise<SCTracks> {
+  const token = await ensureValidToken();
+  const resp = await fetch(nextHref, {
+    headers: { Authorization: `OAuth ${token}` },
+  });
+  if (!resp.ok) throw new Error(`Failed to fetch likes page: ${resp.status}`);
+  return (await resp.json()) as SCTracks;
+}
+
+export async function getUser(userUrn: string): Promise<SCUser | null> {
+  const client = await getClient();
+  const { data, error } = await client.GET('/users/{user_urn}', {
+    params: { path: { user_urn: userUrn } },
+  });
+  if (error) throw new Error(`Failed to fetch user: ${JSON.stringify(error)}`);
+  return (data as SCUser) ?? null;
+}
+
+export async function searchUsers(query: string, limit = 10): Promise<SCUser[]> {
+  const token = await ensureValidToken();
+  const url = new URL('https://api.soundcloud.com/users');
+  url.searchParams.set('q', query);
+  url.searchParams.set('limit', String(limit));
+  const resp = await fetch(url.toString(), {
+    headers: { Authorization: `OAuth ${token}` },
+  });
+  if (!resp.ok) throw new Error(`User search failed: ${resp.status}`);
+  const data = await resp.json();
+  return (data?.collection ?? data) as SCUser[];
+}
