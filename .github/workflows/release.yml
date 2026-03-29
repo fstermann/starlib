@@ -299,6 +299,49 @@ jobs:
             - name: List artifacts
               run: find artifacts/ -type f | sort
 
+            - name: Generate latest.json for Tauri updater
+              shell: bash
+              env:
+                  VERSION: ${{ needs.bump-version.outputs.new_version }}
+                  TAG: ${{ needs.bump-version.outputs.tag }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+                  PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+                  # Build the platforms object by reading .sig files
+                  PLATFORMS="{}"
+                  for sig_file in artifacts/**/*.app.tar.gz.sig; do
+                    [ -f "$sig_file" ] || continue
+                    SIGNATURE=$(cat "$sig_file")
+                    TAR_FILE="${sig_file%.sig}"
+                    TAR_NAME=$(basename "$TAR_FILE")
+
+                    if echo "$TAR_NAME" | grep -q "aarch64"; then
+                      TARGET="darwin-aarch64"
+                    elif echo "$TAR_NAME" | grep -q "x86_64"; then
+                      TARGET="darwin-x86_64"
+                    else
+                      continue
+                    fi
+
+                    PLATFORMS=$(echo "$PLATFORMS" | jq \
+                      --arg target "$TARGET" \
+                      --arg url "${BASE_URL}/${TAR_NAME}" \
+                      --arg sig "$SIGNATURE" \
+                      '. + {($target): {"url": $url, "signature": $sig}}')
+                  done
+
+                  jq -n \
+                    --arg version "$VERSION" \
+                    --arg pub_date "$PUB_DATE" \
+                    --argjson platforms "$PLATFORMS" \
+                    '{version: $version, pub_date: $pub_date, platforms: $platforms}' \
+                    > artifacts/latest.json
+
+                  echo "Generated latest.json:"
+                  cat artifacts/latest.json
+
             - name: Create GitHub Release
               uses: softprops/action-gh-release@v2
               with:
@@ -323,8 +366,10 @@ jobs:
                   files: |
                       artifacts/**/*.dmg
                       artifacts/**/*.app.tar.gz
+                      artifacts/**/*.app.tar.gz.sig
                       artifacts/**/*.msi
                       artifacts/**/*.exe
+                      artifacts/latest.json
                   draft: false
                   prerelease: false
                   generate_release_notes: true
