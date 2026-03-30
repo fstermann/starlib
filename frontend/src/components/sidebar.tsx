@@ -43,7 +43,7 @@ export function Sidebar() {
   return (
     <aside className="group/sidebar fixed left-0 top-0 bottom-0 z-50 flex flex-col bg-card border-r border-border/50 w-14 hover:w-52 transition-[width] duration-200 ease-in-out overflow-hidden shrink-0">
       {/* Logo */}
-      <div className="h-14 flex items-center px-4 shrink-0 border-b border-border/50">
+      <div className="h-14 flex items-center px-4 shrink-0">
         <Link href="/" className="flex items-center gap-3 min-w-0">
           <span
             className="size-6 shrink-0 bg-primary"
@@ -65,7 +65,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav links */}
-      <nav className="flex-1 py-3 flex flex-col gap-0.5 px-2">
+      <nav className="flex-1 py-3 flex flex-col gap-2 px-2">
         {NAV_LINKS.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);
           return (
@@ -109,7 +109,7 @@ export function Sidebar() {
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       {/* User / disconnect */}
-      <div className="border-t border-border/50 px-2 py-3 shrink-0">
+      <div className="px-2 py-3 shrink-0">
         {user ? (
           <button
             onClick={handleDisconnect}

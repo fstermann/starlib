@@ -36,6 +36,7 @@ interface LikesFilterBarProps {
   totalCount: number;
   loading: boolean;
   selectedCount?: number;
+  actions?: React.ReactNode;
 }
 
 function formatDuration(seconds: number): string {
@@ -66,6 +67,7 @@ export function LikesFilterBar({
   totalCount,
   loading,
   selectedCount = 0,
+  actions,
 }: LikesFilterBarProps) {
   const [searchInput, setSearchInput] = useState(search);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -264,6 +266,9 @@ export function LikesFilterBar({
             : `${filteredCount.toLocaleString()} of ${totalCount.toLocaleString()}`}
         {loading && ' (loading…)'}
       </div>
+
+      {/* Slot for page-level actions (e.g. Create Playlist) */}
+      {actions}
     </div>
   );
 }
