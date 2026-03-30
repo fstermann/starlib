@@ -448,16 +448,16 @@ wheels = [
 
 [[package]]
 name = "fastapi-pagination"
-version = "0.15.11"
+version = "0.15.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/38/54/d0f7dc6ead969f4c162930cac6cc282baaccc4dc80723b2bcb557bb36b18/fastapi_pagination-0.15.11.tar.gz", hash = "sha256:f8532247d4ba4d7fd78c2b8f02b755a0fc93821c51645d564d1732760b2f01f6", size = 595309, upload-time = "2026-03-19T18:20:29.499Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/71/7381bf08f9fb6a890ec41a7ee5191ca564e0af94b899c2006fddaf07d78f/fastapi_pagination-0.15.12.tar.gz", hash = "sha256:914b41e07b8556de34c12d3568c9b7137eb62a3558420061a4acbebf7e729a08", size = 595227, upload-time = "2026-03-28T12:51:03.14Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/e0/61e78d9f91c65dbd31ba231aae55bfa6148709b1a2069467cb85dfeed679/fastapi_pagination-0.15.11-py3-none-any.whl", hash = "sha256:77a142b9dbcd9c65aac22781ce6d0abc63cc58555d83f72ccbcc7275cd007d14", size = 60819, upload-time = "2026-03-19T18:20:31.074Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/2f/644fd77ecac100da965221751ae4f7604e149c58c46c1d96c37e828bb5f7/fastapi_pagination-0.15.12-py3-none-any.whl", hash = "sha256:758e21157b2844feecb2409072f1433e24f2dc9526ae7906aa1a1b28622a970a", size = 60921, upload-time = "2026-03-28T12:51:04.288Z" },
 ]
 
 [[package]]
