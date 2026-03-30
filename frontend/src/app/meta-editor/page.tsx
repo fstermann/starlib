@@ -36,6 +36,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { CollectionFilterBar } from '@/components/collection-filter-bar';
 import { CollectionTable } from '@/components/collection-table';
 import { PageHeader } from '@/components/page-header';
+import { LogoSpinner } from '@/components/logo-spinner';
 import {
   Sparkles,
   CaseSensitive,
@@ -69,6 +70,7 @@ function MetaEditorContent() {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const fileListRef = useRef<HTMLDivElement>(null);
   const editAbortRef = useRef<AbortController | null>(null);
+  const scHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
   const [trackInfo, setTrackInfo] = useState<TrackInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -76,6 +78,7 @@ function MetaEditorContent() {
 
   // UI state
   const [scPanelOpen, setScPanelOpen] = useState(true);
+  const [scSidebarOpen, setScSidebarOpen] = useState(false);
 
   // View mode track count state
   const [viewTotal, setViewTotal] = useState(0);
@@ -685,11 +688,12 @@ function MetaEditorContent() {
       )}
 
       {/* Main content */}
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 relative">
         {/* Center area */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           <PageHeader
             title="Meta Editor"
+            className={`${viewMode === 'edit' ? 'pr-72' : ''}`}
             controls={
               <>
                 {/* Edit / View toggle */}
@@ -796,7 +800,7 @@ function MetaEditorContent() {
                   </Popover>
                   <button
                     onClick={() => setScPanelOpen(!scPanelOpen)}
-                    title={scPanelOpen ? 'Hide SoundCloud panel' : 'Show SoundCloud panel'}
+                    title={scPanelOpen ? 'Deactivate SoundCloud search' : 'Activate SoundCloud search'}
                     className={`cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 ${scPanelOpen ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
                   >
                     <Cloud className="size-4" />
@@ -1281,13 +1285,72 @@ function MetaEditorContent() {
 
         {/* SoundCloud panel */}
         {viewMode === 'edit' && (
-        <div className={`shrink-0 flex flex-col transition-[width] duration-200 ease-in-out overflow-hidden ${scPanelOpen ? 'w-72 border-l border-border/50' : 'w-0'}`}>
-          <div className="w-72 flex flex-col flex-1 min-h-0">
-            <div className="px-4 h-14 border-b border-border/50 flex items-center gap-2 shrink-0">
-              <span className="text-[10px] font-bold tracking-widest text-primary uppercase">SoundCloud</span>
+        <div
+          className={`absolute right-0 top-0 z-10 flex flex-col w-72 max-h-full bg-background border-l border-border/50 overflow-hidden transition-[border-radius] duration-200 shadow-lg shadow-black/10 ${scSidebarOpen ? 'rounded-b-xl border-b' : ''}`}
+          onMouseEnter={() => {
+            if (scHoverTimerRef.current) clearTimeout(scHoverTimerRef.current);
+            scHoverTimerRef.current = setTimeout(() => setScSidebarOpen(true), 150);
+          }}
+          onMouseLeave={() => {
+            if (scHoverTimerRef.current) clearTimeout(scHoverTimerRef.current);
+            scHoverTimerRef.current = setTimeout(() => setScSidebarOpen(false), 300);
+          }}
+        >
+          <div className="flex flex-col flex-1 min-h-0">
+            <div
+              className="px-3 h-14 border-b border-border/50 flex items-center gap-2.5 shrink-0"
+            >
+              {scSearching ? (
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <LogoSpinner className="size-8 shrink-0" />
+                  <span className="text-[10px] text-muted-foreground">Searching…</span>
+                </div>
+              ) : selectedScTrack ? (
+                <a
+                  href={selectedScTrack.permalink_url ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer group/sclink"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="size-8 shrink-0 rounded overflow-hidden border">
+                    {selectedScTrack.artwork_url ? (
+                      <img src={selectedScTrack.artwork_url} alt="" className="size-full object-cover" />
+                    ) : (
+                      <div className="size-full bg-accent/40 flex items-center justify-center">
+                        <Image className="size-3 text-muted-foreground/40" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium truncate text-foreground group-hover/sclink:text-primary transition-colors">{selectedScTrack.title}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{selectedScTrack.user?.username}</div>
+                  </div>
+                </a>
+              ) : scResults[0] ? (
+                <>
+                  <div className="size-8 shrink-0 rounded overflow-hidden border border-border/30">
+                    {scResults[0].artwork_url ? (
+                      <img src={scResults[0].artwork_url} alt="" className="size-full object-cover" />
+                    ) : (
+                      <div className="size-full bg-accent/40 flex items-center justify-center">
+                        <Image className="size-3 text-muted-foreground/40" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium truncate">{scResults[0].title}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{scResults[0].user?.username}</div>
+                  </div>
+                </>
+              ) : (
+                <span className={`text-[10px] font-bold tracking-widest uppercase flex-1 ${scPanelOpen ? 'text-primary' : 'text-muted-foreground/50'}`}>SoundCloud Search</span>
+              )}
+
             </div>
-            <div className="flex flex-col flex-1 min-h-0">
-                <div className="px-3 py-2.5 border-b border-border/50">
+            <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out flex-1 min-h-0 ${scSidebarOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+              <div className="flex flex-col min-h-0 overflow-hidden">
+                <div className={`px-3 py-2.5 ${(selectedScTrack || scResults.length > 0) ? 'border-b border-border/50' : ''}`}>
                   <div className="flex gap-2">
                     <Input
                       value={scQuery}
@@ -1320,7 +1383,7 @@ function MetaEditorContent() {
                   </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto">
+                <div className={`flex-1 overflow-y-auto ${scResults.length > 0 ? 'pb-4' : ''}`}>
                   {scResults.map((track) => (
                     <button
                       key={track.urn}
@@ -1352,6 +1415,7 @@ function MetaEditorContent() {
                     </button>
                   ))}
                 </div>
+            </div>
             </div>
           </div>
         </div>
