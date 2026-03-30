@@ -76,6 +76,10 @@ function MetaEditorContent() {
   // UI state
   const [scPanelOpen, setScPanelOpen] = useState(true);
 
+  // View mode track count state
+  const [viewTotal, setViewTotal] = useState(0);
+  const [viewCacheLoading, setViewCacheLoading] = useState(false);
+
   // SoundCloud search (extracted hook — fixes stale closure from useEffect)
   const sc = useSoundCloudSearch(scPanelOpen, setError);
   const { scQuery, setScQuery, scResults, scSearching, scQueryPending, setScQueryPending,
@@ -800,8 +804,8 @@ function MetaEditorContent() {
           {/* View mode — filter bar + browse table */}
           {viewMode === 'view' && (
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              <CollectionFilterBar mode={folderMode} />
-              <CollectionTable mode={folderMode} scrollToFilePath={player.currentTrack?.filePath} />
+              <CollectionFilterBar mode={folderMode} total={viewTotal} cacheLoading={viewCacheLoading} />
+              <CollectionTable mode={folderMode} scrollToFilePath={player.currentTrack?.filePath} onTotalChange={(t, cl) => { setViewTotal(t); setViewCacheLoading(cl); }} />
             </div>
           )}
 

@@ -20,6 +20,7 @@ interface CollectionTableProps {
   mode: string;
   scrollToFilePath?: string;
   onSelect?: (item: TrackBrowse) => void;
+  onTotalChange?: (total: number, cacheLoading: boolean) => void;
 }
 
 interface Column {
@@ -161,7 +162,7 @@ function SkeletonRow() {
   );
 }
 
-export function CollectionTable({ mode, scrollToFilePath, onSelect }: CollectionTableProps) {
+export function CollectionTable({ mode, scrollToFilePath, onSelect, onTotalChange }: CollectionTableProps) {
   const [sortBy, setSortBy] = useQueryState('sort', searchParams.sort);
   const [sortOrder, setSortOrder] = useQueryState('order', searchParams.order);
   const [search] = useQueryState('search', searchParams.search);
@@ -219,6 +220,7 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect }: Collection
         setPage(pageNum);
         setTotal(resp.total);
         setCacheLoading(resp.cacheLoading ?? false);
+        onTotalChange?.(resp.total, resp.cacheLoading ?? false);
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
       } finally {
@@ -365,14 +367,6 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect }: Collection
         )}
       </div>
 
-      {/* Footer: total count */}
-      <div className="shrink-0 px-3 py-1.5 border-t border-border/50 text-[10px] text-muted-foreground flex items-center justify-between">
-        <span>
-          {total.toLocaleString()} track{total !== 1 ? 's' : ''}
-          {cacheLoading && ' (loading…)'}
-        </span>
-        {loading && <span>Loading…</span>}
-      </div>
     </div>
   );
 }

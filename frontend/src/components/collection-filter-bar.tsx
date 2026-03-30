@@ -21,9 +21,11 @@ import { api, type FilterValues } from '@/lib/api';
 
 interface CollectionFilterBarProps {
   mode: string;
+  total?: number;
+  cacheLoading?: boolean;
 }
 
-export function CollectionFilterBar({ mode }: CollectionFilterBarProps) {
+export function CollectionFilterBar({ mode, total, cacheLoading }: CollectionFilterBarProps) {
   const [filterValues, setFilterValues] = useState<FilterValues | null>(null);
   const [bpmRange, setBpmRange] = useState<[number, number] | null>(null);
   const [bpmValue, setBpmValue] = useState<[number, number] | null>(null);
@@ -340,6 +342,14 @@ export function CollectionFilterBar({ mode }: CollectionFilterBarProps) {
         <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={clearAll}>
           Clear all
         </Button>
+      )}
+
+      {/* Track count */}
+      {total !== undefined && (
+        <div className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+          {total.toLocaleString()} track{total !== 1 ? 's' : ''}
+          {cacheLoading && ' (loading…)'}
+        </div>
       )}
     </div>
   );
