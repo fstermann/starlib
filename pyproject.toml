@@ -13,11 +13,7 @@ dependencies = [
     "devtools>=0.12.2",
     "fake-useragent>=1.5.1",
     "requests>=2.32.4",
-    "tabulate>=0.9.0",
-    "streamlit>=1.50.0",
-    "yt-dlp>=2025.10.22",
-    "shazamio>=0.8.1",
-    "audioop-lts>=0.2.2",
+    "mutagen>=1.47.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "python-multipart>=0.0.22",
@@ -32,16 +28,6 @@ dev = [
     "pre-commit>=4.5.1",
     "pytest>=8.0.0",
     "zensical>=0.0.29",
-]
-editor = [
-    "streamlit>=1.45.1",
-    "numpy>=2.2.2",
-    "pydub>=0.25.1",
-    "plotly>=5.24.1",
-    "mutagen>=1.47.0",
-    "essentia>=2.1b6.dev1389",
-    "essentia-tensorflow>=2.1b6.dev1389",
-    "scipy>=1.15.0",
 ]
 desktop = [
     # PyInstaller is used to package the FastAPI backend into a self-contained binary.
