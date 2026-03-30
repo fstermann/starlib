@@ -7,7 +7,7 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      minor-and-patch:
+      backend:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
@@ -17,7 +17,7 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      minor-and-patch:
+      frontend:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
@@ -27,7 +27,7 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      minor-and-patch:
+      desktop:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
@@ -37,7 +37,7 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      minor-and-patch:
+      cargo:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
@@ -47,7 +47,7 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      minor-and-patch:
+      github-actions:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
@@ -57,6 +57,6 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      minor-and-patch:
+      pre-commit:
         patterns: ["*"]
         update-types: ["minor", "patch"]
