@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { TriangleAlert } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -15,9 +17,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { ListPlus } from 'lucide-react';
+import { ListPlus, CheckCircle2, ExternalLink } from 'lucide-react';
 
-const MAX_TRACKS = 500;
+export const MAX_TRACKS = 500;
 
 interface CreatePlaylistDialogProps {
   tracks: SCTrack[];
@@ -94,31 +96,34 @@ export function CreatePlaylistDialog({ tracks, trigger }: CreatePlaylistDialogPr
           <DialogTitle>Create SoundCloud Playlist</DialogTitle>
           <DialogDescription>
             {tracks.length} track{tracks.length !== 1 ? 's' : ''} · {formatTotalDuration(tracks)}
-            {truncated && (
-              <span className="text-destructive">
-                {' '}(limited to {MAX_TRACKS} – {tracks.length - MAX_TRACKS} tracks will be excluded)
-              </span>
-            )}
           </DialogDescription>
         </DialogHeader>
 
+        {truncated && (
+          <Alert variant="destructive" className="py-2 [&>svg]:translate-y-0">
+            <TriangleAlert className="size-4" />
+            <AlertDescription className="text-xs">
+              Limited to {MAX_TRACKS} tracks — {tracks.length - MAX_TRACKS} track{tracks.length - MAX_TRACKS !== 1 ? 's' : ''} will be excluded.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {result ? (
-          <div className="py-4 text-center space-y-3">
-            <p className="text-sm text-muted-foreground">Playlist created successfully!</p>
-            {result.url && (
-              <a
-                href={result.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-primary underline"
-              >
-                Open on SoundCloud
-              </a>
-            )}
-            <div>
-              <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
-                Close
-              </Button>
+          <div className="py-6 flex flex-col items-center gap-4">
+            <div className="flex flex-col items-center gap-2">
+              <CheckCircle2 className="size-10 text-green-500" />
+              <p className="font-medium">Playlist created!</p>
+              <p className="text-xs text-muted-foreground">Your playlist is ready on SoundCloud.</p>
+            </div>
+            <div className="flex gap-2">
+              {result.url && (
+                <Button asChild variant="default" size="sm">
+                  <a href={result.url} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="size-4 mr-1.5" />
+                    Open on SoundCloud
+                  </a>
+                </Button>
+              )}
             </div>
           </div>
         ) : (
@@ -155,10 +160,7 @@ export function CreatePlaylistDialog({ tracks, trigger }: CreatePlaylistDialogPr
               {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleCreate} disabled={creating || !title.trim() || trackUrns.length === 0}>
+              <Button onClick={handleCreate} disabled={creating || !title.trim() || trackUrns.length === 0 || truncated}>
                 {creating ? 'Creating…' : 'Create'}
               </Button>
             </DialogFooter>
