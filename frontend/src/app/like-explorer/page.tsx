@@ -11,6 +11,8 @@ import { UserCard } from '@/components/user-card';
 import { CreatePlaylistDialog, MAX_TRACKS } from '@/components/create-playlist-dialog';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { PageHeader } from '@/components/page-header';
 import { LogoSpinner } from '@/components/logo-spinner';
 import { ListPlus } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -120,34 +122,25 @@ export default function LikeExplorerPage() {
   );
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="shrink-0 px-6 pt-6 pb-4 space-y-4">
-        <h1 className="text-lg font-bold tracking-tight">Like Explorer</h1>
-
-        {/* Tab switcher */}
-        <div className="flex gap-1 p-0.5 bg-muted rounded-lg w-fit">
-          <button
-            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
-              tab === 'me' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setTab('me')}
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <PageHeader
+        title="Like Explorer"
+        controls={
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={tab}
+            onValueChange={(v) => { if (v) setTab(v); }}
+            className="h-7"
           >
-            My Likes
-          </button>
-          <button
-            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
-              tab === 'explore' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setTab('explore')}
-          >
-            Explore
-          </button>
-        </div>
-
+            <ToggleGroupItem value="me" className="h-7 px-3 text-xs cursor-pointer">My Likes</ToggleGroupItem>
+            <ToggleGroupItem value="explore" className="h-7 px-3 text-xs cursor-pointer">Explore</ToggleGroupItem>
+          </ToggleGroup>
+        }
+      >
         {/* Explore tab: user search / selected user */}
         {tab === 'explore' && (
-          <div>
+          <div className="px-4 py-2">
             {selectedUser ? (
               <UserCard user={selectedUser} onClear={() => setSelectedUser(null)} />
             ) : (
@@ -155,61 +148,56 @@ export default function LikeExplorerPage() {
             )}
           </div>
         )}
+      </PageHeader>
 
-        {/* Filter bar (show when we have tracks or are loading) */}
-        {(activeLikes.tracks.length > 0 || activeLikes.loading) && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="flex-1">
-                <LikesFilterBar
-                  search={search}
-                  onSearchChange={setSearch}
-                  genres={genres}
-                  onGenresChange={setGenres}
-                  availableGenres={availableGenres}
-                  minDuration={minDuration}
-                  maxDuration={maxDuration}
-                  onMinDurationChange={setMinDuration}
-                  onMaxDurationChange={setMaxDuration}
-                  excludeMyLikes={excludeMyLikes}
-                  onExcludeMyLikesChange={setExcludeMyLikes}
-                  showExcludeMyLikes={tab === 'explore'}
-                  inCollection={inCollection}
-                  onInCollectionChange={setInCollection}
-                  showInCollection={collectionIds.size > 0}
-                  filteredCount={filteredTracks.length}
-                  totalCount={activeLikes.tracks.length}
-                  loading={activeLikes.loading}
-                  selectedCount={selectedIds.size}
-                />
-              </div>
-              {selectedIds.size > MAX_TRACKS ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span tabIndex={0}>
-                      <Button size="sm" variant="default" disabled>
-                        <ListPlus className="size-4 mr-1.5" />
-                        Create Playlist
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Too many tracks selected — limit is {MAX_TRACKS}
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <CreatePlaylistDialog tracks={selectedTracks} trigger={
-                  <Button size="sm" variant={selectedIds.size > 0 ? "default" : "secondary"} disabled={selectedIds.size === 0}>
-                    <ListPlus className="size-4 mr-1.5" />
-                    Create Playlist
-                  </Button>
-                } />
-              )}
-            </div>
-
-          </div>
-        )}
-      </div>
+      {/* Filter bar (show when we have tracks or are loading) */}
+      {(activeLikes.tracks.length > 0 || activeLikes.loading) && (
+        <LikesFilterBar
+          search={search}
+          onSearchChange={setSearch}
+          genres={genres}
+          onGenresChange={setGenres}
+          availableGenres={availableGenres}
+          minDuration={minDuration}
+          maxDuration={maxDuration}
+          onMinDurationChange={setMinDuration}
+          onMaxDurationChange={setMaxDuration}
+          excludeMyLikes={excludeMyLikes}
+          onExcludeMyLikesChange={setExcludeMyLikes}
+          showExcludeMyLikes={tab === 'explore'}
+          inCollection={inCollection}
+          onInCollectionChange={setInCollection}
+          showInCollection={collectionIds.size > 0}
+          filteredCount={filteredTracks.length}
+          totalCount={activeLikes.tracks.length}
+          loading={activeLikes.loading}
+          selectedCount={selectedIds.size}
+          actions={
+            selectedIds.size > MAX_TRACKS ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>
+                    <Button size="sm" className="h-7 text-xs" variant="default" disabled>
+                      <ListPlus className="size-3.5 mr-1" />
+                      Create Playlist
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Too many tracks selected — limit is {MAX_TRACKS}
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <CreatePlaylistDialog tracks={selectedTracks} trigger={
+                <Button size="sm" className="h-7 text-xs" variant={selectedIds.size > 0 ? "default" : "secondary"} disabled={selectedIds.size === 0}>
+                  <ListPlus className="size-3.5 mr-1" />
+                  Create Playlist
+                </Button>
+              } />
+            )
+          }
+        />
+      )}
 
       {/* Content */}
       <div className="flex-1 min-h-0 relative">
@@ -255,8 +243,6 @@ export default function LikeExplorerPage() {
           </div>
         )}
       </div>
-
-
     </div>
   );
 }

@@ -35,6 +35,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { CollectionFilterBar } from '@/components/collection-filter-bar';
 import { CollectionTable } from '@/components/collection-table';
+import { PageHeader } from '@/components/page-header';
 import {
   Sparkles,
   CaseSensitive,
@@ -687,73 +688,77 @@ function MetaEditorContent() {
       <div className="flex flex-1 min-h-0">
         {/* Center area */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          {/* Folder mode tabs + SC panel toggle */}
-          <div className="flex items-center justify-between px-4 border-b border-border/50 shrink-0 h-11">
-            <div className="flex items-center gap-2">
-              {/* Edit / View toggle */}
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                value={viewMode}
-                onValueChange={(v) => {
-                  if (!v) return;
-                  const next = v as 'edit' | 'view';
-                  setViewMode(next);
-                  if (next === 'edit' && player.currentTrack) {
-                    // Sync player's active track → edit file selection
-                    const match = files.find((f) => f.file_path === player.currentTrack!.filePath);
-                    if (match && match.file_path !== selectedFile?.file_path) {
-                      loadTrackInfo(match);
-                    } else if (!match && player.currentTrack.filePath !== selectedFile?.file_path) {
-                      // Track not in loaded pages — load directly
-                      const stub: FileInfo = {
-                        file_path: player.currentTrack.filePath,
-                        file_name: player.currentTrack.fileName,
-                        file_size: 0,
-                        file_format: '',
-                        has_artwork: false,
-                      };
-                      loadTrackInfo(stub);
+          <PageHeader
+            title="Meta Editor"
+            controls={
+              <>
+                {/* Edit / View toggle */}
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  value={viewMode}
+                  onValueChange={(v) => {
+                    if (!v) return;
+                    const next = v as 'edit' | 'view';
+                    setViewMode(next);
+                    if (next === 'edit' && player.currentTrack) {
+                      // Sync player's active track → edit file selection
+                      const match = files.find((f) => f.file_path === player.currentTrack!.filePath);
+                      if (match && match.file_path !== selectedFile?.file_path) {
+                        loadTrackInfo(match);
+                      } else if (!match && player.currentTrack.filePath !== selectedFile?.file_path) {
+                        // Track not in loaded pages — load directly
+                        const stub: FileInfo = {
+                          file_path: player.currentTrack.filePath,
+                          file_name: player.currentTrack.fileName,
+                          file_size: 0,
+                          file_format: '',
+                          has_artwork: false,
+                        };
+                        loadTrackInfo(stub);
+                      }
+                    } else if (next === 'view' && selectedFile) {
+                      // Sync edit selection → player (load without playing)
+                      player.load({
+                        filePath: selectedFile.file_path,
+                        fileName: selectedFile.file_name,
+                        title: trackInfo?.title ?? undefined,
+                        artist: trackInfo?.artist ?? undefined,
+                      });
                     }
-                  } else if (next === 'view' && selectedFile) {
-                    // Sync edit selection → player (load without playing)
-                    player.load({
-                      filePath: selectedFile.file_path,
-                      fileName: selectedFile.file_name,
-                      title: trackInfo?.title ?? undefined,
-                      artist: trackInfo?.artist ?? undefined,
-                    });
-                  }
-                }}
-                className="h-7"
-              >
-                <ToggleGroupItem value="edit" className="h-7 w-7 p-0 cursor-pointer" title="Edit">
-                  <PencilLine className="size-3.5" />
-                </ToggleGroupItem>
-                <ToggleGroupItem value="view" className="h-7 w-7 p-0 cursor-pointer" title="View">
-                  <Eye className="size-3.5" />
-                </ToggleGroupItem>
-              </ToggleGroup>
-
-              <div className="w-px h-5 bg-border/50" />
-
-              {(['prepare', 'collection', 'cleaned'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setFolderMode(mode)}
-                  className={`cursor-pointer px-3 py-1.5 rounded text-[10px] font-medium tracking-widest uppercase transition-colors ${
-                    folderMode === mode
-                      ? 'text-primary bg-primary/10'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                  }}
+                  className="h-7"
                 >
-                  {mode}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
+                  <ToggleGroupItem value="edit" className="h-7 w-7 p-0 cursor-pointer" title="Edit">
+                    <PencilLine className="size-3.5" />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="view" className="h-7 w-7 p-0 cursor-pointer" title="View">
+                    <Eye className="size-3.5" />
+                  </ToggleGroupItem>
+                </ToggleGroup>
 
-              {viewMode === 'edit' && (
+                {/* Folder mode tabs */}
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  value={folderMode}
+                  onValueChange={(v) => { if (v) setFolderMode(v as typeof folderMode); }}
+                  className="h-7"
+                >
+                  {(['prepare', 'collection', 'cleaned'] as const).map((mode) => (
+                    <ToggleGroupItem
+                      key={mode}
+                      value={mode}
+                      className="h-7 px-3 text-[10px] font-medium tracking-widest uppercase cursor-pointer"
+                    >
+                      {mode}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </>
+            }
+            actions={
+              viewMode === 'edit' ? (
                 <>
                   <Popover>
                     <PopoverTrigger asChild>
@@ -797,9 +802,9 @@ function MetaEditorContent() {
                     <Cloud className="size-4" />
                   </button>
                 </>
-              )}
-            </div>
-          </div>
+              ) : undefined
+            }
+          />
 
           {/* View mode — filter bar + browse table */}
           {viewMode === 'view' && (
@@ -1278,7 +1283,7 @@ function MetaEditorContent() {
         {viewMode === 'edit' && (
         <div className={`shrink-0 flex flex-col transition-[width] duration-200 ease-in-out overflow-hidden ${scPanelOpen ? 'w-72 border-l border-border/50' : 'w-0'}`}>
           <div className="w-72 flex flex-col flex-1 min-h-0">
-            <div className="px-4 py-2.5 border-b border-border/50 flex items-center gap-2">
+            <div className="px-4 h-14 border-b border-border/50 flex items-center gap-2 shrink-0">
               <span className="text-[10px] font-bold tracking-widest text-primary uppercase">SoundCloud</span>
             </div>
             <div className="flex flex-col flex-1 min-h-0">
