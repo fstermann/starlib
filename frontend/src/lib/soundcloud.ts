@@ -64,7 +64,7 @@ export async function getMe(): Promise<SCUser> {
 
 export async function createPlaylist(
   title: string,
-  trackIds: number[],
+  trackUrns: string[],
   options?: { description?: string; sharing?: 'public' | 'private' },
 ): Promise<SCPlaylist> {
   const client = await getClient();
@@ -74,19 +74,19 @@ export async function createPlaylist(
         title,
         sharing: options?.sharing ?? 'private',
         description: options?.description,
-        tracks: trackIds.map((id) => ({ id })),
+        tracks: trackUrns.map((urn) => ({ urn })),
       },
-    } as never,
+    },
   });
   if (error) throw new Error(`Failed to create playlist: ${JSON.stringify(error)}`);
   return data as SCPlaylist;
 }
 
-export async function addTracksToPlaylist(playlistUrn: string, trackIds: number[]): Promise<SCPlaylist> {
+export async function addTracksToPlaylist(playlistUrn: string, trackUrns: string[]): Promise<SCPlaylist> {
   const client = await getClient();
   const { data, error } = await client.PUT('/playlists/{playlist_urn}', {
     params: { path: { playlist_urn: playlistUrn } },
-    body: { playlist: { tracks: trackIds.map((id) => ({ id })) } } as never,
+    body: { playlist: { tracks: trackUrns.map((urn) => ({ urn })) } },
   });
   if (error) throw new Error(`Failed to update playlist: ${JSON.stringify(error)}`);
   return data as SCPlaylist;

@@ -24,10 +24,8 @@ interface CreatePlaylistDialogProps {
   trigger?: React.ReactNode;
 }
 
-function extractId(track: SCTrack): number | undefined {
-  if (!track.urn) return undefined;
-  const parts = track.urn.split(':');
-  return parseInt(parts[parts.length - 1], 10) || undefined;
+function extractUrn(track: SCTrack): string | undefined {
+  return track.urn ?? undefined;
 }
 
 function formatTotalDuration(tracks: SCTrack[]): string {
@@ -48,15 +46,15 @@ export function CreatePlaylistDialog({ tracks, trigger }: CreatePlaylistDialogPr
   const [result, setResult] = useState<{ url: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const trackIds = tracks.slice(0, MAX_TRACKS).map((t) => extractId(t)).filter((id): id is number => id != null);
+  const trackUrns = tracks.slice(0, MAX_TRACKS).map((t) => extractUrn(t)).filter((urn): urn is string => urn != null);
   const truncated = tracks.length > MAX_TRACKS;
 
   async function handleCreate() {
-    if (!title.trim() || trackIds.length === 0) return;
+    if (!title.trim() || trackUrns.length === 0) return;
     setCreating(true);
     setError(null);
     try {
-      const playlist = await createPlaylist(title.trim(), trackIds, {
+      const playlist = await createPlaylist(title.trim(), trackUrns, {
         description: description.trim() || undefined,
         sharing: isPublic ? 'public' : 'private',
       });
@@ -160,7 +158,7 @@ export function CreatePlaylistDialog({ tracks, trigger }: CreatePlaylistDialogPr
               <Button variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleCreate} disabled={creating || !title.trim() || trackIds.length === 0}>
+              <Button onClick={handleCreate} disabled={creating || !title.trim() || trackUrns.length === 0}>
                 {creating ? 'Creating…' : 'Create'}
               </Button>
             </DialogFooter>
