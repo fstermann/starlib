@@ -35,6 +35,7 @@ interface LikesFilterBarProps {
   filteredCount: number;
   totalCount: number;
   loading: boolean;
+  selectedCount?: number;
 }
 
 function formatDuration(seconds: number): string {
@@ -64,6 +65,7 @@ export function LikesFilterBar({
   filteredCount,
   totalCount,
   loading,
+  selectedCount = 0,
 }: LikesFilterBarProps) {
   const [searchInput, setSearchInput] = useState(search);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -255,9 +257,11 @@ export function LikesFilterBar({
 
       {/* Track count */}
       <div className="ml-auto text-[10px] text-muted-foreground tabular-nums">
-        {filteredCount === totalCount
-          ? `${totalCount.toLocaleString()} track${totalCount !== 1 ? 's' : ''}`
-          : `${filteredCount.toLocaleString()} of ${totalCount.toLocaleString()}`}
+        {selectedCount > 0
+          ? `${selectedCount.toLocaleString()} / ${filteredCount.toLocaleString()} selected`
+          : filteredCount === totalCount
+            ? `${totalCount.toLocaleString()} track${totalCount !== 1 ? 's' : ''}`
+            : `${filteredCount.toLocaleString()} of ${totalCount.toLocaleString()}`}
         {loading && ' (loading…)'}
       </div>
     </div>

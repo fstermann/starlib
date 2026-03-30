@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronUp, ChevronDown, ChevronsUpDown, Music, FolderCheck, ShoppingCart } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import type { SCTrack } from '@/lib/soundcloud';
 
@@ -73,7 +74,7 @@ interface TrackRowProps {
   isSelected: boolean;
   isExpanded: boolean;
   inCollection: boolean;
-  onToggleSelect: () => void;
+  onToggleSelect: (shiftKey: boolean) => void;
   onExpand: () => void;
 }
 
@@ -90,15 +91,17 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, onToggleSelect,
         onClick={onExpand}
         onKeyDown={(e) => {
           if (e.key === 'Enter') onExpand();
-          if (e.key === ' ') { e.preventDefault(); onToggleSelect(); }
+          if (e.key === ' ') { e.preventDefault(); onToggleSelect(e.shiftKey); }
         }}
       >
         {/* Checkbox */}
-        <div className="shrink-0 w-6 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="shrink-0 w-6 self-stretch flex items-center justify-center cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); onToggleSelect(e.shiftKey); }}
+        >
           <Checkbox
             checked={isSelected}
-            onCheckedChange={onToggleSelect}
-            className="size-3.5"
+            className="size-3.5 pointer-events-none"
           />
         </div>
 
@@ -207,14 +210,18 @@ interface LikesTableProps {
   tracks: SCTrack[];
   selectedIds: Set<number>;
   onToggleSelect: (id: number) => void;
+  onRangeSelect: (ids: number[]) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
   collectionIds?: Set<number>;
 }
 
-export function LikesTable({ tracks, selectedIds, onToggleSelect, collectionIds }: LikesTableProps) {
+export function LikesTable({ tracks, selectedIds, onToggleSelect, onRangeSelect, onSelectAll, onDeselectAll, collectionIds }: LikesTableProps) {
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const scrollParentRef = useRef<HTMLDivElement>(null);
+  const lastSelectedIndexRef = useRef<number | null>(null);
 
   const sortedTracks = useMemo(() => {
     if (!sortBy) return tracks;
@@ -278,12 +285,25 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect, collectionIds 
   }
 
   const virtualItems = virtualizer.getVirtualItems();
+  const someSelected = selectedIds.size > 0;
+  const allSelected = sortedTracks.length > 0 && sortedTracks.every((t) => { const id = extractId(t); return id != null && selectedIds.has(id); });
 
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
       <div role="row" className="flex items-center gap-2 px-3 h-9 shrink-0 border-b border-border bg-muted/30 text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
-        <div className="shrink-0 w-6" />
+        <div className="shrink-0 w-6 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={allSelected ? true : someSelected ? "indeterminate" : false}
+            onCheckedChange={(checked) => checked ? onSelectAll() : onDeselectAll()}
+            aria-label="Select all"
+            className={cn(
+              "size-3.5 cursor-pointer",
+              "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
+              allSelected && "data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500",
+            )}
+          />
+        </div>
         <div className="shrink-0 size-8" />
         {COLUMNS.map((col) => (
           <button
@@ -327,7 +347,18 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect, collectionIds 
                   isSelected={selectedIds.has(id)}
                   isExpanded={expandedId === id}
                   inCollection={collectionIds?.has(id) ?? false}
-                  onToggleSelect={() => onToggleSelect(id)}
+                  onToggleSelect={(shiftKey) => {
+                    const currentIndex = virtualRow.index;
+                    if (shiftKey && lastSelectedIndexRef.current !== null) {
+                      const start = Math.min(lastSelectedIndexRef.current, currentIndex);
+                      const end = Math.max(lastSelectedIndexRef.current, currentIndex);
+                      const rangeIds = sortedTracks.slice(start, end + 1).map(extractId).filter(Boolean);
+                      onRangeSelect(rangeIds);
+                    } else {
+                      onToggleSelect(id);
+                      lastSelectedIndexRef.current = currentIndex;
+                    }
+                  }}
                   onExpand={() => handleExpand(track)}
                 />
               </div>

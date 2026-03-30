@@ -8,8 +8,11 @@ import { LikesFilterBar } from '@/components/likes-filter-bar';
 import { LikesTable } from '@/components/likes-table';
 import { UserSearch } from '@/components/user-search';
 import { UserCard } from '@/components/user-card';
-import { CreatePlaylistDialog } from '@/components/create-playlist-dialog';
+import { CreatePlaylistDialog, MAX_TRACKS } from '@/components/create-playlist-dialog';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { LogoSpinner } from '@/components/logo-spinner';
+import { ListPlus } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { SCUser, SCTrack } from '@/lib/soundcloud';
 
@@ -88,6 +91,14 @@ export default function LikeExplorerPage() {
 
   const deselectAll = useCallback(() => setSelectedIds(new Set()), []);
 
+  const selectRange = useCallback((ids: number[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }, []);
+
   // Reset selection when switching tabs
   useEffect(() => {
     setSelectedIds(new Set());
@@ -147,26 +158,56 @@ export default function LikeExplorerPage() {
 
         {/* Filter bar (show when we have tracks or are loading) */}
         {(activeLikes.tracks.length > 0 || activeLikes.loading) && (
-          <LikesFilterBar
-            search={search}
-            onSearchChange={setSearch}
-            genres={genres}
-            onGenresChange={setGenres}
-            availableGenres={availableGenres}
-            minDuration={minDuration}
-            maxDuration={maxDuration}
-            onMinDurationChange={setMinDuration}
-            onMaxDurationChange={setMaxDuration}
-            excludeMyLikes={excludeMyLikes}
-            onExcludeMyLikesChange={setExcludeMyLikes}
-            showExcludeMyLikes={tab === 'explore'}
-            inCollection={inCollection}
-            onInCollectionChange={setInCollection}
-            showInCollection={collectionIds.size > 0}
-            filteredCount={filteredTracks.length}
-            totalCount={activeLikes.tracks.length}
-            loading={activeLikes.loading}
-          />
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <LikesFilterBar
+                  search={search}
+                  onSearchChange={setSearch}
+                  genres={genres}
+                  onGenresChange={setGenres}
+                  availableGenres={availableGenres}
+                  minDuration={minDuration}
+                  maxDuration={maxDuration}
+                  onMinDurationChange={setMinDuration}
+                  onMaxDurationChange={setMaxDuration}
+                  excludeMyLikes={excludeMyLikes}
+                  onExcludeMyLikesChange={setExcludeMyLikes}
+                  showExcludeMyLikes={tab === 'explore'}
+                  inCollection={inCollection}
+                  onInCollectionChange={setInCollection}
+                  showInCollection={collectionIds.size > 0}
+                  filteredCount={filteredTracks.length}
+                  totalCount={activeLikes.tracks.length}
+                  loading={activeLikes.loading}
+                  selectedCount={selectedIds.size}
+                />
+              </div>
+              {selectedIds.size > MAX_TRACKS ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={0}>
+                      <Button size="sm" variant="default" disabled>
+                        <ListPlus className="size-4 mr-1.5" />
+                        Create Playlist
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Too many tracks selected — limit is {MAX_TRACKS}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <CreatePlaylistDialog tracks={selectedTracks} trigger={
+                  <Button size="sm" variant={selectedIds.size > 0 ? "default" : "secondary"} disabled={selectedIds.size === 0}>
+                    <ListPlus className="size-4 mr-1.5" />
+                    Create Playlist
+                  </Button>
+                } />
+              )}
+            </div>
+
+          </div>
         )}
       </div>
 
@@ -197,6 +238,9 @@ export default function LikeExplorerPage() {
             tracks={filteredTracks}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
+            onRangeSelect={selectRange}
+            onSelectAll={selectAllFiltered}
+            onDeselectAll={deselectAll}
             collectionIds={collectionIds}
           />
         )}
@@ -212,23 +256,7 @@ export default function LikeExplorerPage() {
         )}
       </div>
 
-      {/* Floating action bar */}
-      {selectedIds.size > 0 && (
-        <div className="shrink-0 border-t border-border bg-card px-6 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              {selectedIds.size} track{selectedIds.size !== 1 ? 's' : ''} selected
-            </span>
-            <button className="text-xs text-primary underline cursor-pointer" onClick={selectAllFiltered}>
-              Select all filtered ({filteredTracks.length})
-            </button>
-            <button className="text-xs text-muted-foreground underline cursor-pointer" onClick={deselectAll}>
-              Deselect all
-            </button>
-          </div>
-          <CreatePlaylistDialog tracks={selectedTracks} />
-        </div>
-      )}
+
     </div>
   );
 }
