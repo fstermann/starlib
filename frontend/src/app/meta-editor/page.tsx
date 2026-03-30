@@ -729,11 +729,11 @@ function MetaEditorContent() {
                   }}
                   className="h-7"
                 >
-                  <ToggleGroupItem value="edit" className="h-7 w-7 p-0 cursor-pointer" title="Edit">
-                    <PencilLine className="size-3.5" />
+                  <ToggleGroupItem value="edit" className="h-7 px-3 gap-1.5 text-xs cursor-pointer" title="Edit">
+                    <PencilLine className="size-3.5" /> Edit
                   </ToggleGroupItem>
-                  <ToggleGroupItem value="view" className="h-7 w-7 p-0 cursor-pointer" title="View">
-                    <Eye className="size-3.5" />
+                  <ToggleGroupItem value="view" className="h-7 px-3 gap-1.5 text-xs cursor-pointer" title="View">
+                    <Eye className="size-3.5" /> View
                   </ToggleGroupItem>
                 </ToggleGroup>
 

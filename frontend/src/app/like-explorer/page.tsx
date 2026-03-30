@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { PageHeader } from '@/components/page-header';
 import { LogoSpinner } from '@/components/logo-spinner';
-import { ListPlus } from 'lucide-react';
+import { ListPlus, Heart, Compass } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { SCUser, SCTrack } from '@/lib/soundcloud';
 
@@ -133,8 +133,8 @@ export default function LikeExplorerPage() {
             onValueChange={(v) => { if (v) setTab(v); }}
             className="h-7"
           >
-            <ToggleGroupItem value="me" className="h-7 px-3 text-xs cursor-pointer">My Likes</ToggleGroupItem>
-            <ToggleGroupItem value="explore" className="h-7 px-3 text-xs cursor-pointer">Explore</ToggleGroupItem>
+            <ToggleGroupItem value="me" className="h-7 px-2 gap-1.5 text-xs cursor-pointer"><Heart className="size-3.5" />My Likes</ToggleGroupItem>
+            <ToggleGroupItem value="explore" className="h-7 px-2 gap-1.5 text-xs cursor-pointer"><Compass className="size-3.5" />Explore</ToggleGroupItem>
           </ToggleGroup>
         }
       >
