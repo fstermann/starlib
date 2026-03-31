@@ -145,7 +145,7 @@ jobs:
                   pyinstaller desktop/sidecar.spec --distpath desktop/src-tauri/binaries --noconfirm
 
             # Tauri expects the sidecar binary to be named
-            # `sct-backend-<target-triple>` in the binaries/ directory.
+            # `starlib-backend-<target-triple>` in the binaries/ directory.
             - name: Rename sidecar binary for Tauri
               shell: bash
               run: |
@@ -162,10 +162,15 @@ jobs:
                   if-no-files-found: error
 
     # ────────────────────────────────────────────────────────────────────────
-    # Job 2: Build the Tauri desktop app (depends on sidecar artifacts)
+    # Job 2: Build and release the Tauri desktop app via tauri-apps/tauri-action
+    #
+    # tauri-action handles: Tauri build, latest.json generation, GitHub Release
+    # creation, and artifact upload. We handle ad-hoc codesign after.
     # ────────────────────────────────────────────────────────────────────────
     build-tauri:
         needs: [bump-version, build-sidecar]
+        permissions:
+            contents: write
         strategy:
             fail-fast: false
             matrix:
@@ -196,7 +201,6 @@ jobs:
                   path: desktop/src-tauri/binaries/
 
             - name: Make sidecar executable
-              if: runner.os != 'Windows'
               run: chmod +x desktop/src-tauri/binaries/${{ env.SIDECAR_NAME }}-${{ matrix.arch }}
 
             # ── Rust toolchain ──────────────────────────────────────────────────
@@ -228,160 +232,54 @@ jobs:
                   NEXT_PUBLIC_API_URL: "http://127.0.0.1:8000"
               run: npm run build
 
-            # ── Tauri build ─────────────────────────────────────────────────────
-            - name: Install Tauri CLI
+            # ── Desktop npm deps (needed so tauri-action finds the local CLI) ───
+            - name: Install desktop dependencies
               working-directory: desktop
               run: npm install
 
-            - name: Build Tauri app
-              working-directory: desktop
+            # ── Forward only non-empty Apple signing secrets into GITHUB_ENV ────
+            # Tauri errors if signing env vars are set to empty strings, so we
+            # only export them when the corresponding secret is actually populated.
+            - name: Propagate Apple signing secrets
+              shell: bash
               env:
-                  # Updater signing key — generate with: cd desktop && npx @tauri-apps/cli signer generate
+                  _APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+                  _APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+                  _APPLE_ID: ${{ secrets.APPLE_ID }}
+                  _APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+                  _APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+              run: |
+                  declare -A MAPPING=(
+                    [APPLE_CERTIFICATE]=_APPLE_CERTIFICATE
+                    [APPLE_CERTIFICATE_PASSWORD]=_APPLE_CERTIFICATE_PASSWORD
+                    [APPLE_ID]=_APPLE_ID
+                    [APPLE_ID_PASSWORD]=_APPLE_ID_PASSWORD
+                    [APPLE_TEAM_ID]=_APPLE_TEAM_ID
+                  )
+                  for dest in "${!MAPPING[@]}"; do
+                    src="${MAPPING[$dest]}"
+                    val="${!src}"
+                    if [[ -n "$val" ]]; then
+                      echo "${dest}=${val}" >> "$GITHUB_ENV"
+                    fi
+                  done
+
+            # ── tauri-action: build, create release, upload artifacts + latest.json
+            - name: Build and release
+              uses: tauri-apps/tauri-action@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
                   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-                  # macOS signing (optional — only set when secrets are configured)
-                  APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE || '' }}
-                  APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-                  APPLE_ID: ${{ secrets.APPLE_ID || '' }}
-                  APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD || '' }}
-                  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
-              shell: bash
-              run: |
-                  # Unset Apple signing env vars if they are empty to prevent
-                  # Tauri from attempting code signing without valid credentials
-                  for var in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
-                    if [[ -z "${!var}" ]]; then unset "$var"; fi
-                  done
-                  npx @tauri-apps/cli build --target ${{ matrix.tauri-target }} --config src-tauri/tauri.conf.json
-
-            # macOS requires at least an ad-hoc signature for WebKit to load
-            # content inside the webview. Without this, the app shows "Load failed".
-            - name: Ad-hoc codesign (when Apple signing is not configured)
-              if: runner.os == 'macOS'
-              shell: bash
-              run: |
-                  APP_PATH="target/${{ matrix.tauri-target }}/release/bundle/macos/Starlib.app"
-                  # Skip if the app is already properly signed (Apple identity was used)
-                  if ! codesign -v "$APP_PATH" 2>/dev/null; then
-                    codesign --force --deep --sign - "$APP_PATH"
-                  fi
-
-            # Build a PKG installer whose postinstall script strips the quarantine
-            # flag. Files installed via system_installd (the PKG daemon) don't
-            # inherit the quarantine xattr, so the app opens without any manual step.
-            - name: Create PKG installer (macOS)
-              if: runner.os == 'macOS'
-              shell: bash
-              env:
-                  VERSION: ${{ needs.bump-version.outputs.new_version }}
-              run: |
-                  BUNDLE_DIR="target/${{ matrix.tauri-target }}/release/bundle/macos"
-                  TMP_SCRIPTS=$(mktemp -d)
-                  printf '#!/bin/bash\nxattr -dr com.apple.quarantine /Applications/Starlib.app 2>/dev/null || true\n' \
-                    > "$TMP_SCRIPTS/postinstall"
-                  chmod +x "$TMP_SCRIPTS/postinstall"
-                  pkgbuild \
-                    --component "$BUNDLE_DIR/Starlib.app" \
-                    --install-location /Applications \
-                    --scripts "$TMP_SCRIPTS" \
-                    --identifier "com.starlib.app" \
-                    --version "$VERSION" \
-                    "$BUNDLE_DIR/Starlib_${VERSION}_${{ matrix.arch }}.pkg"
-
-            - name: List Tauri bundles
-              shell: bash
-              run: find target/${{ matrix.tauri-target }}/release/bundle -type f || true
-
-            - name: Upload Tauri bundles
-              uses: actions/upload-artifact@v7
               with:
-                  name: bundle-${{ matrix.arch }}
-                  path: target/${{ matrix.tauri-target }}/release/bundle/**/*
-                  if-no-files-found: error
-
-    # ────────────────────────────────────────────────────────────────────────
-    # Job 3: Create GitHub Release and upload all artifacts
-    # ────────────────────────────────────────────────────────────────────────
-    release:
-        needs: [bump-version, build-tauri]
-        runs-on: ubuntu-latest
-
-        steps:
-            - uses: actions/checkout@v6
-              with:
-                  ref: ${{ needs.bump-version.outputs.tag }}
-
-            - name: Download all bundle artifacts
-              uses: actions/download-artifact@v8
-              with:
-                  pattern: bundle-*
-                  path: artifacts/
-                  merge-multiple: true
-
-            - name: List artifacts
-              run: find artifacts/ -type f | sort
-
-            - name: Generate latest.json for Tauri updater
-              shell: bash
-              env:
-                  VERSION: ${{ needs.bump-version.outputs.new_version }}
-                  TAG: ${{ needs.bump-version.outputs.tag }}
-                  REPO: ${{ github.repository }}
-              run: |
-                  BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
-                  PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-                  # Build the platforms object by reading .sig files
-                  PLATFORMS="{}"
-                  for sig_file in artifacts/**/*.app.tar.gz.sig; do
-                    [ -f "$sig_file" ] || continue
-                    SIGNATURE=$(cat "$sig_file")
-                    TAR_FILE="${sig_file%.sig}"
-                    TAR_NAME=$(basename "$TAR_FILE")
-
-                    if echo "$TAR_NAME" | grep -q "aarch64"; then
-                      TARGET="darwin-aarch64"
-                    elif echo "$TAR_NAME" | grep -q "x86_64"; then
-                      TARGET="darwin-x86_64"
-                    else
-                      continue
-                    fi
-
-                    PLATFORMS=$(echo "$PLATFORMS" | jq \
-                      --arg target "$TARGET" \
-                      --arg url "${BASE_URL}/${TAR_NAME}" \
-                      --arg sig "$SIGNATURE" \
-                      '. + {($target): {"url": $url, "signature": $sig}}')
-                  done
-
-                  jq -n \
-                    --arg version "$VERSION" \
-                    --arg pub_date "$PUB_DATE" \
-                    --argjson platforms "$PLATFORMS" \
-                    '{version: $version, pub_date: $pub_date, platforms: $platforms}' \
-                    > artifacts/latest.json
-
-                  echo "Generated latest.json:"
-                  cat artifacts/latest.json
-
-            - name: Create GitHub Release
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: ${{ needs.bump-version.outputs.tag }}
-                  name: "Starlib ${{ needs.bump-version.outputs.tag }}"
-                  body: |
+                  projectPath: desktop
+                  tagName: ${{ needs.bump-version.outputs.tag }}
+                  releaseName: "Starlib ${{ needs.bump-version.outputs.tag }}"
+                  releaseBody: |
                       ## Starlib ${{ needs.bump-version.outputs.tag }}
 
                       ### Installation (macOS)
 
-                      **Option A — PKG installer (recommended, no extra steps):**
-                      1. Download the `.pkg` file for your Mac:
-                         - **Apple Silicon (M1/M2/M3):** `*-aarch64.pkg`
-                         - **Intel:** `*-x86_64.pkg`
-                      2. Open the `.pkg` and follow the installer wizard.
-                      3. Follow the setup wizard to enter your SoundCloud API credentials.
-
-                      **Option B — DMG (manual quarantine removal required):**
                       1. Download the `.dmg` file for your Mac:
                          - **Apple Silicon (M1/M2/M3):** `*-aarch64.dmg`
                          - **Intel:** `*-x86_64.dmg`
@@ -394,24 +292,29 @@ jobs:
 
                       ### Getting SoundCloud API credentials
                       Register a free app at https://soundcloud.com/you/apps, then copy your Client ID and Client Secret.
-                  files: |
-                      artifacts/**/*.pkg
-                      artifacts/**/*.dmg
-                      artifacts/**/*.app.tar.gz
-                      artifacts/**/*.app.tar.gz.sig
-                      artifacts/**/*.msi
-                      artifacts/**/*.exe
-                      artifacts/latest.json
-                  draft: false
+                  releaseDraft: false
                   prerelease: false
-                  generate_release_notes: true
+                  generateReleaseNotes: true
+                  args: --target ${{ matrix.tauri-target }}
+
+            # ── Ad-hoc codesign (run after tauri-action, .app still on disk) ──────
+            # macOS requires at least an ad-hoc signature for WebKit to load
+            # content inside the webview. Without this, the app shows "Load failed".
+            - name: Ad-hoc codesign (when Apple signing is not configured)
+              shell: bash
+              run: |
+                  APP_PATH="target/${{ matrix.tauri-target }}/release/bundle/macos/Starlib.app"
+                  # Skip if the app is already properly signed (Apple identity was used)
+                  if ! codesign -v "$APP_PATH" 2>/dev/null; then
+                    codesign --force --deep --sign - "$APP_PATH"
+                  fi
 
     # ────────────────────────────────────────────────────────────────────────
-    # Job 4: Clean up on failure — revert version bump, delete tag & release
+    # Job 3: Clean up on failure — revert version bump, delete tag & release
     # ────────────────────────────────────────────────────────────────────────
     cleanup-on-failure:
-        needs: [bump-version, build-sidecar, build-tauri, release]
-        if: ${{ always() && needs.bump-version.result == 'success' && (needs.build-sidecar.result == 'failure' || needs.build-tauri.result == 'failure' || needs.release.result == 'failure') }}
+        needs: [bump-version, build-sidecar, build-tauri]
+        if: ${{ always() && needs.bump-version.result == 'success' && (needs.build-sidecar.result == 'failure' || needs.build-tauri.result == 'failure') }}
         runs-on: ubuntu-latest
 
         steps:
