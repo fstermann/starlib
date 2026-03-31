@@ -348,6 +348,11 @@ jobs:
         runs-on: ubuntu-latest
 
         steps:
+            - uses: actions/checkout@v6
+              with:
+                  ref: ${{ github.ref }}
+                  fetch-depth: 0
+
             - name: Delete GitHub Release (if created)
               env:
                   GH_TOKEN: ${{ github.token }}
