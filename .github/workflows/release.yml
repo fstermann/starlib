@@ -240,33 +240,6 @@ jobs:
               working-directory: desktop
               run: npm install
 
-            # ── Forward only non-empty Apple signing secrets into GITHUB_ENV ────
-            # Tauri errors if signing env vars are set to empty strings, so we
-            # only export them when the corresponding secret is actually populated.
-            - name: Propagate Apple signing secrets
-              shell: bash
-              env:
-                  _APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-                  _APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-                  _APPLE_ID: ${{ secrets.APPLE_ID }}
-                  _APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-                  _APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-              run: |
-                  declare -A MAPPING=(
-                    [APPLE_CERTIFICATE]=_APPLE_CERTIFICATE
-                    [APPLE_CERTIFICATE_PASSWORD]=_APPLE_CERTIFICATE_PASSWORD
-                    [APPLE_ID]=_APPLE_ID
-                    [APPLE_ID_PASSWORD]=_APPLE_ID_PASSWORD
-                    [APPLE_TEAM_ID]=_APPLE_TEAM_ID
-                  )
-                  for dest in "${!MAPPING[@]}"; do
-                    src="${MAPPING[$dest]}"
-                    val="${!src}"
-                    if [[ -n "$val" ]]; then
-                      echo "${dest}=${val}" >> "$GITHUB_ENV"
-                    fi
-                  done
-
             # ── tauri-action: build, create release, upload artifacts + latest.json
             - name: Build and release
               uses: tauri-apps/tauri-action@v0
@@ -274,6 +247,11 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
                   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+                  APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+                  APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+                  APPLE_ID: ${{ secrets.APPLE_ID }}
+                  APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+                  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
               with:
                   projectPath: desktop
                   tagName: ${{ needs.bump-version.outputs.tag }}
@@ -299,18 +277,6 @@ jobs:
                   prerelease: false
                   generateReleaseNotes: true
                   args: --target ${{ matrix.tauri-target }}
-
-            # ── Ad-hoc codesign (run after tauri-action, .app still on disk) ──────
-            # macOS requires at least an ad-hoc signature for WebKit to load
-            # content inside the webview. Without this, the app shows "Load failed".
-            - name: Ad-hoc codesign (when Apple signing is not configured)
-              shell: bash
-              run: |
-                  APP_PATH="target/${{ matrix.tauri-target }}/release/bundle/macos/Starlib.app"
-                  # Skip if the app is already properly signed (Apple identity was used)
-                  if ! codesign -v "$APP_PATH" 2>/dev/null; then
-                    codesign --force --deep --sign - "$APP_PATH"
-                  fi
 
     # ────────────────────────────────────────────────────────────────────────
     # Job 3: Merge release branch into main after everything succeeds
