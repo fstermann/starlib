@@ -33,6 +33,7 @@ jobs:
             new_version: ${{ steps.bump.outputs.new_version }}
             old_version: ${{ steps.bump.outputs.old_version }}
             tag: ${{ steps.bump.outputs.tag }}
+            release_branch: ${{ steps.bump.outputs.release_branch }}
         steps:
             - uses: actions/checkout@v6
 
@@ -54,6 +55,7 @@ jobs:
                   echo "new_version=$NEW" >> "$GITHUB_OUTPUT"
                   echo "old_version=$CURRENT" >> "$GITHUB_OUTPUT"
                   echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
+                  echo "release_branch=releases/v$NEW" >> "$GITHUB_OUTPUT"
                   echo "Bumping $CURRENT → $NEW"
 
             - name: Set up Python ${{ env.PYTHON_VERSION }}
@@ -98,10 +100,11 @@ jobs:
               run: |
                   git config user.name "github-actions[bot]"
                   git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git checkout -b "${{ steps.bump.outputs.release_branch }}"
                   git add -A
                   git commit -m "release: v${{ steps.bump.outputs.old_version }} → v${{ steps.bump.outputs.new_version }}"
                   git tag "v${{ steps.bump.outputs.new_version }}"
-                  git push origin HEAD --tags
+                  git push origin "${{ steps.bump.outputs.release_branch }}" --tags
 
     # ────────────────────────────────────────────────────────────────────────
     # Job 1: Build the Python backend sidecar (macOS arm64 + optionally x86_64)
@@ -310,7 +313,34 @@ jobs:
                   fi
 
     # ────────────────────────────────────────────────────────────────────────
-    # Job 3: Clean up on failure — revert version bump, delete tag & release
+    # Job 3: Merge release branch into main after everything succeeds
+    # ────────────────────────────────────────────────────────────────────────
+    merge-to-main:
+        needs: [bump-version, build-tauri]
+        if: ${{ success() }}
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  ref: ${{ github.ref_name }}
+                  fetch-depth: 0
+
+            - name: Fast-forward merge release branch into main
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git fetch origin "${{ needs.bump-version.outputs.release_branch }}"
+                  git merge --ff-only "origin/${{ needs.bump-version.outputs.release_branch }}"
+                  git push origin HEAD:${{ github.ref_name }}
+
+            - name: Delete release branch
+              run: git push origin --delete "${{ needs.bump-version.outputs.release_branch }}"
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Job 4: Clean up on failure — delete release branch, tag & release
     # ────────────────────────────────────────────────────────────────────────
     cleanup-on-failure:
         needs: [bump-version, build-sidecar, build-tauri]
@@ -318,11 +348,6 @@ jobs:
         runs-on: ubuntu-latest
 
         steps:
-            - uses: actions/checkout@v6
-              with:
-                  ref: ${{ github.ref }}
-                  fetch-depth: 0
-
             - name: Delete GitHub Release (if created)
               env:
                   GH_TOKEN: ${{ github.token }}
@@ -331,11 +356,5 @@ jobs:
             - name: Delete remote tag
               run: git push origin --delete "refs/tags/${{ needs.bump-version.outputs.tag }}" || true
 
-            - name: Revert version bump commit
-              run: |
-                  git config user.name "github-actions[bot]"
-                  git config user.email "github-actions[bot]@users.noreply.github.com"
-                  git pull --rebase origin ${{ github.ref_name }}
-                  git revert --no-edit HEAD -m 1 || git revert --no-edit HEAD
-                  git commit --amend -m "release(revert): v${{ needs.bump-version.outputs.new_version }} → v${{ needs.bump-version.outputs.old_version }}"
-                  git push origin HEAD:${{ github.ref_name }}
+            - name: Delete release branch
+              run: git push origin --delete "${{ needs.bump-version.outputs.release_branch }}" || true
