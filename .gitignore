@@ -10,7 +10,7 @@ ca.crt
 *.pb
 *.onnx
 .vscode
-.agents
+.agents/skills/shadcn
 skills-lock.json
 
 # Desktop / Tauri build outputs
