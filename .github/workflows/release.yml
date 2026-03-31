@@ -344,7 +344,7 @@ jobs:
     # ────────────────────────────────────────────────────────────────────────
     cleanup-on-failure:
         needs: [bump-version, build-sidecar, build-tauri]
-        if: ${{ always() && needs.bump-version.result == 'success' && (needs.build-sidecar.result == 'failure' || needs.build-tauri.result == 'failure') }}
+        if: ${{ always() && (needs.bump-version.result == 'failure' || needs.build-sidecar.result == 'failure' || needs.build-tauri.result == 'failure') }}
         runs-on: ubuntu-latest
 
         steps:
