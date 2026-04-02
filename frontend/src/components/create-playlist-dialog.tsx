@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { createPlaylist, type SCTrack } from '@/lib/soundcloud';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,13 +18,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { ListPlus, CheckCircle2, ExternalLink } from 'lucide-react';
+import { ListPlus } from 'lucide-react';
 
 export const MAX_TRACKS = 500;
 
 interface CreatePlaylistDialogProps {
   tracks: SCTrack[];
   trigger?: React.ReactNode;
+  defaultTitle?: string;
+  defaultDescription?: string;
+  onCreated?: () => void;
 }
 
 function extractUrn(track: SCTrack): string | undefined {
@@ -39,13 +43,12 @@ function formatTotalDuration(tracks: SCTrack[]): string {
   return `${mins}m`;
 }
 
-export function CreatePlaylistDialog({ tracks, trigger }: CreatePlaylistDialogProps) {
+export function CreatePlaylistDialog({ tracks, trigger, defaultTitle, defaultDescription, onCreated }: CreatePlaylistDialogProps) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [result, setResult] = useState<{ url: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const trackUrns = tracks.slice(0, MAX_TRACKS).map((t) => extractUrn(t)).filter((urn): urn is string => urn != null);
@@ -61,7 +64,13 @@ export function CreatePlaylistDialog({ tracks, trigger }: CreatePlaylistDialogPr
         sharing: isPublic ? 'public' : 'private',
       });
       const url = (playlist as Record<string, unknown>).permalink_url as string | undefined;
-      setResult({ url: url ?? '' });
+      onCreated?.();
+      setOpen(false);
+      toast.success(`Playlist "${title.trim()}" created`, {
+        action: url
+          ? { label: 'Open', onClick: () => window.open(url, '_blank') }
+          : undefined,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create playlist');
     } finally {
@@ -73,10 +82,9 @@ export function CreatePlaylistDialog({ tracks, trigger }: CreatePlaylistDialogPr
     setOpen(next);
     if (next) {
       // Reset form on open
-      setTitle(`Liked tracks – ${new Date().toLocaleDateString()}`);
-      setDescription('');
+      setTitle(defaultTitle ?? `Liked tracks – ${new Date().toLocaleDateString()}`);
+      setDescription(defaultDescription ?? '');
       setIsPublic(false);
-      setResult(null);
       setError(null);
     }
   }
@@ -108,64 +116,42 @@ export function CreatePlaylistDialog({ tracks, trigger }: CreatePlaylistDialogPr
           </Alert>
         )}
 
-        {result ? (
-          <div className="py-6 flex flex-col items-center gap-4">
-            <div className="flex flex-col items-center gap-2">
-              <CheckCircle2 className="size-10 text-green-500" />
-              <p className="font-medium">Playlist created!</p>
-              <p className="text-xs text-muted-foreground">Your playlist is ready on SoundCloud.</p>
-            </div>
-            <div className="flex gap-2">
-              {result.url && (
-                <Button asChild variant="default" size="sm">
-                  <a href={result.url} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="size-4 mr-1.5" />
-                    Open on SoundCloud
-                  </a>
-                </Button>
-              )}
-            </div>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="playlist-title">Title</Label>
+            <Input
+              id="playlist-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Playlist title"
+            />
           </div>
-        ) : (
-          <>
-            <div className="space-y-4 py-2">
-              <div className="space-y-2">
-                <Label htmlFor="playlist-title">Title</Label>
-                <Input
-                  id="playlist-title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Playlist title"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="playlist-description">Description</Label>
-                <Input
-                  id="playlist-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Optional description"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="playlist-public"
-                  checked={isPublic}
-                  onCheckedChange={(v) => setIsPublic(v === true)}
-                />
-                <Label htmlFor="playlist-public" className="text-sm font-normal">
-                  Make playlist public
-                </Label>
-              </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-            </div>
-            <DialogFooter>
-              <Button onClick={handleCreate} disabled={creating || !title.trim() || trackUrns.length === 0 || truncated}>
-                {creating ? 'Creating…' : 'Create'}
-              </Button>
-            </DialogFooter>
-          </>
-        )}
+          <div className="space-y-2">
+            <Label htmlFor="playlist-description">Description</Label>
+            <Input
+              id="playlist-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Optional description"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="playlist-public"
+              checked={isPublic}
+              onCheckedChange={(v) => setIsPublic(v === true)}
+            />
+            <Label htmlFor="playlist-public" className="text-sm font-normal">
+              Make playlist public
+            </Label>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button onClick={handleCreate} disabled={creating || !title.trim() || trackUrns.length === 0 || truncated}>
+            {creating ? 'Creating…' : 'Create'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

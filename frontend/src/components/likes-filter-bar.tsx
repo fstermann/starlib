@@ -29,6 +29,12 @@ interface LikesFilterBarProps {
   excludeMyLikes: boolean;
   onExcludeMyLikesChange: (value: boolean) => void;
   showExcludeMyLikes: boolean;
+  excludeMyLikesLabel?: string;
+  trackType: 'track' | 'set' | null;
+  onTrackTypeChange: (value: 'track' | 'set' | null) => void;
+  excludeOwnLikes: boolean;
+  onExcludeOwnLikesChange: (value: boolean) => void;
+  showExcludeOwnLikes: boolean;
   inCollection: boolean | null;
   onInCollectionChange: (value: boolean | null) => void;
   showInCollection: boolean;
@@ -60,6 +66,12 @@ export function LikesFilterBar({
   excludeMyLikes,
   onExcludeMyLikesChange,
   showExcludeMyLikes,
+  excludeMyLikesLabel = 'Exclude my likes',
+  trackType,
+  onTrackTypeChange,
+  excludeOwnLikes,
+  onExcludeOwnLikesChange,
+  showExcludeOwnLikes,
   inCollection,
   onInCollectionChange,
   showInCollection,
@@ -104,11 +116,19 @@ export function LikesFilterBar({
 
   const durationActive = minDuration !== null || maxDuration !== null;
 
+  function cycleTrackType() {
+    if (trackType === null) onTrackTypeChange('track');
+    else if (trackType === 'track') onTrackTypeChange('set');
+    else onTrackTypeChange(null);
+  }
+
   const hasActiveFilters =
     search.length > 0 ||
     genres.length > 0 ||
     durationActive ||
+    trackType !== null ||
     excludeMyLikes ||
+    excludeOwnLikes ||
     inCollection !== null;
 
   function clearAll() {
@@ -118,7 +138,9 @@ export function LikesFilterBar({
     onMinDurationChange(null);
     onMaxDurationChange(null);
     setDurationValue([0, DURATION_MAX]);
+    onTrackTypeChange(null);
     onExcludeMyLikesChange(false);
+    onExcludeOwnLikesChange(false);
     onInCollectionChange(null);
   }
 
@@ -217,6 +239,17 @@ export function LikesFilterBar({
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {/* Track / Set filter */}
+      <Button
+        variant="outline"
+        size="sm"
+        className={`h-7 text-xs gap-1 cursor-pointer ${trackType !== null ? 'border-primary text-primary' : ''}`}
+        onClick={cycleTrackType}
+        title="Filter by track type: Track (<12 min) or Set (≥12 min)"
+      >
+        {trackType === 'track' ? 'Track' : trackType === 'set' ? 'Set' : 'Track / Set'}
+      </Button>
+
       {/* In Collection filter */}
       {showInCollection && (
         <Button
@@ -239,7 +272,19 @@ export function LikesFilterBar({
             onCheckedChange={(v) => onExcludeMyLikesChange(v === true)}
             className="size-3.5"
           />
-          Exclude my likes
+          {excludeMyLikesLabel}
+        </label>
+      )}
+
+      {/* Exclude own liked tracks */}
+      {showExcludeOwnLikes && (
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <Checkbox
+            checked={excludeOwnLikes}
+            onCheckedChange={(v) => onExcludeOwnLikesChange(v === true)}
+            className="size-3.5"
+          />
+          Exclude my liked tracks
         </label>
       )}
 

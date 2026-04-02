@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FilePen, Heart, Users } from "lucide-react";
+import { CalendarDays, FilePen, Heart } from "lucide-react";
 
 const tools = [
   {
@@ -14,16 +14,16 @@ const tools = [
   {
     href: "/like-explorer",
     title: "Like Explorer",
-    description: "Browse and manage your SoundCloud liked tracks.",
+    description: "Browse your liked tracks or explore the likes of any other profile.",
     available: true,
     icon: Heart,
   },
   {
-    href: "/artist-manager",
-    title: "Artist Manager",
-    description: "Manage artist shortcuts and track collections.",
-    available: false,
-    icon: Users,
+    href: "/weekly",
+    title: "Weekly Favorites",
+    description: "Browse recent tracks from followed artists and create weekly playlists.",
+    available: true,
+    icon: CalendarDays,
   },
 ];
 

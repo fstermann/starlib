@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Music2, FilePen, Heart, Settings } from "lucide-react";
+import { Music2, FilePen, Heart, Settings, CalendarDays } from "lucide-react";
 import { clearTokens } from "@/lib/auth";
 import { SettingsDialog } from "@/components/settings-dialog";
 
@@ -17,6 +17,7 @@ interface User {
 const NAV_LINKS = [
   { href: "/meta-editor", label: "Meta Editor", icon: FilePen },
   { href: "/like-explorer", label: "Like Explorer", icon: Heart },
+  { href: "/weekly", label: "Weekly Favorites", icon: CalendarDays },
 ];
 
 export function Sidebar() {
