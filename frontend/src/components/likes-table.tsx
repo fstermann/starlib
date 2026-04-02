@@ -9,7 +9,7 @@ import { api } from '@/lib/api';
 import type { SCTrack } from '@/lib/soundcloud';
 
 const ROW_HEIGHT = 48;
-const IFRAME_HEIGHT = 120;
+const IFRAME_HEIGHT = 166;
 const DESCRIPTION_HEIGHT = 120;
 
 type SortKey = 'title' | 'artist' | 'genre' | 'duration' | 'playback_count';
@@ -74,11 +74,12 @@ interface TrackRowProps {
   isSelected: boolean;
   isExpanded: boolean;
   inCollection: boolean;
+  isNew?: boolean;
   onToggleSelect: (shiftKey: boolean) => void;
   onExpand: () => void;
 }
 
-function TrackRow({ track, isSelected, isExpanded, inCollection, onToggleSelect, onExpand }: TrackRowProps) {
+function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggleSelect, onExpand }: TrackRowProps) {
   const imgUrl = artworkUrl(track);
 
   return (
@@ -113,10 +114,15 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, onToggleSelect,
         </div>
 
         {/* Title */}
-        <div className="flex-3 min-w-0 flex flex-col justify-center">
+        <div className="flex-3 min-w-0 flex items-center gap-1.5">
           <span className={`text-xs font-medium truncate leading-tight ${isExpanded ? 'text-primary' : ''}`}>
             {track.title || '—'}
           </span>
+          {isNew && (
+            <span className="shrink-0 text-[9px] font-semibold px-1 py-0.5 rounded bg-green-500/15 text-green-600 leading-none">
+              NEW
+            </span>
+          )}
         </div>
 
         {/* Artist */}
@@ -191,7 +197,7 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, onToggleSelect,
               scrolling="no"
               frameBorder="no"
               allow="autoplay"
-              src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(track.permalink_url)}&color=%23e05d38&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`}
+              src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(track.permalink_url)}&color=%23e05d38&auto_play=false&buying=false&sharing=false&download=false&show_artwork=true&show_playcount=false&show_user=true&hide_related=true&show_comments=false&show_reposts=false&show_teaser=false&visual=true`}
               className="rounded-lg overflow-hidden"
             />
           )}
@@ -214,9 +220,10 @@ interface LikesTableProps {
   onSelectAll: () => void;
   onDeselectAll: () => void;
   collectionIds?: Set<number>;
+  newTrackUrns?: Set<string>;
 }
 
-export function LikesTable({ tracks, selectedIds, onToggleSelect, onRangeSelect, onSelectAll, onDeselectAll, collectionIds }: LikesTableProps) {
+export function LikesTable({ tracks, selectedIds, onToggleSelect, onRangeSelect, onSelectAll, onDeselectAll, collectionIds, newTrackUrns }: LikesTableProps) {
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -347,6 +354,7 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect, onRangeSelect,
                   isSelected={selectedIds.has(id)}
                   isExpanded={expandedId === id}
                   inCollection={collectionIds?.has(id) ?? false}
+                  isNew={newTrackUrns ? (track.urn ? newTrackUrns.has(track.urn) : false) : undefined}
                   onToggleSelect={(shiftKey) => {
                     const currentIndex = virtualRow.index;
                     if (shiftKey && lastSelectedIndexRef.current !== null) {

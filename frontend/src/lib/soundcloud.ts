@@ -152,3 +152,60 @@ export async function searchUsers(query: string, limit = 10): Promise<SCUser[]> 
   const data = await resp.json();
   return (data?.collection ?? data) as SCUser[];
 }
+
+export type SCPlaylists = components['schemas']['Playlists'];
+export type SCActivities = components['schemas']['Activities'];
+
+/**
+ * Fetches one page of the authenticated user's recent track feed.
+ *
+ * Each returned track's `created_at` is overridden with the activity timestamp
+ * (i.e. when it appeared in the feed, not when it was originally uploaded), so
+ * that reposts are bucketed correctly in weekly groups.
+ */
+export async function getFeedTracksPage(
+  limit = 50,
+  nextHref?: string,
+): Promise<{ tracks: SCTrack[]; nextHref?: string }> {
+  let data: SCActivities;
+
+  if (nextHref) {
+    const token = await ensureValidToken();
+    const resp = await fetch(nextHref, { headers: { Authorization: `OAuth ${token}` } });
+    if (!resp.ok) throw new Error(`Failed to fetch feed page: ${resp.status}`);
+    data = (await resp.json()) as SCActivities;
+  } else {
+    const client = await getClient();
+    const { data: raw, error } = await client.GET('/me/feed/tracks', {
+      params: { query: { limit } as never },
+    });
+    if (error) throw new Error(`Failed to fetch feed: ${JSON.stringify(error)}`);
+    data = raw as SCActivities;
+  }
+
+  const tracks = (data.collection ?? [])
+    .filter((item) => item.type === 'track' && item.origin)
+    .map((item) => ({
+      ...(item.origin as SCTrack),
+      // Use the activity date (when it appeared in the feed / was reposted),
+      // not the track's original upload date.
+      created_at: item.created_at ?? (item.origin as SCTrack).created_at,
+    }));
+
+  return { tracks, nextHref: data.next_href ?? undefined };
+}
+
+export async function getMyPlaylists(limit = 50, nextHref?: string): Promise<SCPlaylists> {
+  if (nextHref) {
+    const token = await ensureValidToken();
+    const resp = await fetch(nextHref, { headers: { Authorization: `OAuth ${token}` } });
+    if (!resp.ok) throw new Error(`Failed to fetch playlists page: ${resp.status}`);
+    return (await resp.json()) as SCPlaylists;
+  }
+  const client = await getClient();
+  const { data, error } = await client.GET('/me/playlists', {
+    params: { query: { limit, show_tracks: true, linked_partitioning: true } as never },
+  });
+  if (error) throw new Error(`Failed to fetch playlists: ${JSON.stringify(error)}`);
+  return data as SCPlaylists;
+}
