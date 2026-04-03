@@ -209,7 +209,7 @@ export function WaveformPlayer() {
   const artistLabel = currentTrack.artist;
 
   return (
-    <div className="fixed bottom-0 left-14 right-0 h-17 bg-card border-t border-border/60 flex items-center gap-4 px-4 z-40 shadow-[0_-8px_32px_rgba(0,0,0,0.18)]">
+    <div data-testid="waveform-player" className="fixed bottom-0 left-14 right-0 h-17 bg-card border-t border-border/60 flex items-center gap-4 px-4 z-40 shadow-[0_-8px_32px_rgba(0,0,0,0.18)]">
       {/* Play / Pause */}
       <button
         onClick={() => toggle()}
