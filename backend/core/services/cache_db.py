@@ -17,16 +17,15 @@ _local = threading.local()
 _db_path: Path | None = None
 
 
-def init_db(db_path: Path) -> None:
-    """Initialise the database at *db_path*, creating tables if missing."""
-    global _db_path
-    _db_path = db_path
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = _get_conn()
-    conn.executescript("""
-        PRAGMA journal_mode=WAL;
-        PRAGMA synchronous=NORMAL;
-
+def _ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create tables and run migrations on *conn* if they are missing."""
+    # Use explicit execute+commit instead of executescript to guarantee DDL is
+    # committed under any isolation_level / Python version (executescript changed
+    # internals in Python 3.12 and is unreliable with WAL in some cases).
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS tracks (
             file_path    TEXT PRIMARY KEY,
             file_name    TEXT NOT NULL,
@@ -44,18 +43,22 @@ def init_db(db_path: Path) -> None:
             is_complete  INTEGER NOT NULL DEFAULT 0,
             missing_fields TEXT,
             mtime        REAL NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_tracks_folder ON tracks(folder);
-
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_folder ON tracks(folder)")
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS peaks (
             file_path TEXT NOT NULL,
             num_peaks INTEGER NOT NULL,
             peaks     TEXT NOT NULL,
             mtime     REAL NOT NULL,
             PRIMARY KEY (file_path, num_peaks)
-        );
-    """)
+        )
+        """
+    )
+    conn.commit()
     # Migrate existing DBs that pre-date the duration column
     try:
         conn.execute("ALTER TABLE tracks ADD COLUMN duration REAL")
@@ -91,6 +94,14 @@ def init_db(db_path: Path) -> None:
         pass
 
 
+def init_db(db_path: Path) -> None:
+    """Initialise the database at *db_path*, creating tables if missing."""
+    global _db_path
+    _db_path = db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    _get_conn()  # opens connection + ensures schema via _ensure_schema
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -106,6 +117,7 @@ def _get_conn() -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         _local.conn = conn
+        _ensure_schema(conn)
     return _local.conn
 
 
