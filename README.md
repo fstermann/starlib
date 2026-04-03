@@ -1,12 +1,13 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="frontend/public/starlib-logo-white.svg">
-  <source media="(prefers-color-scheme: light)" srcset="frontend/public/starlib-logo.svg">
-  <img src="frontend/public/starlib-logo.svg" alt="Starlib logo" height="60">
-</picture>
-
-# Starlib
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/starlib-logo-white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="frontend/public/starlib-logo.svg">
+    <img src="frontend/public/starlib-logo.svg" alt="Starlib logo" height="32">
+  </picture>
+  Starlib
+</h1>
 
 **A DJ library management app for SoundCloud.**\
 Organise your tracks, edit metadata, and discover new music — all from a single interface.
