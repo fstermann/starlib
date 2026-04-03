@@ -1,20 +1,25 @@
 [data-md-color-primary="indigo"] {
-  --md-primary-fg-color: #e05d38;
-  --md-primary-fg-color--light: #e87a5c;
-  --md-primary-fg-color--dark: #c44d2d;
+  /* Primary color palette - must match frontend globals.css colors:
+     Light mode: --primary-light (#bde752)
+     Dark mode: --primary-dark (#d0fd5a)
+     Accent: --primary-accent (#a8cd49)
+  */
+  --md-primary-fg-color: #bde752;
+  --md-primary-fg-color--light: #d0fd5a;
+  --md-primary-fg-color--dark: #a8cd49;
 }
 
 [data-md-color-accent="indigo"] {
-  --md-accent-fg-color: #e05d38;
-  --md-accent-fg-color--transparent: rgba(224, 93, 56, 0.1);
+  --md-accent-fg-color: #bde752;
+  --md-accent-fg-color--transparent: rgba(189, 231, 82, 0.1);
 }
 
 [data-md-color-scheme="slate"] {
-  --md-typeset-a-color: #e05d38;
+  --md-typeset-a-color: #d0fd5a;
 }
 
 [data-md-color-scheme="slate"] .md-typeset a:not(.md-button) {
-  color: #e05d38;
+  color: #d0fd5a;
 }
 
 /* Hero cards on the index page */

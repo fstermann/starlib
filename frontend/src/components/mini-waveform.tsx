@@ -51,6 +51,7 @@ export function MiniWaveform({ track, className, artworkReady = true }: MiniWave
     const barW = (w - (BAR_COUNT - 1) * BAR_GAP) / BAR_COUNT;
     const played = Math.round(progress * BAR_COUNT);
     const active = isActiveRef.current;
+    const isDark = document.documentElement.classList.contains('dark');
 
     for (let i = 0; i < BAR_COUNT; i++) {
       const amp = peaksRef.current[i] ?? 0.3;
@@ -59,9 +60,10 @@ export function MiniWaveform({ track, className, artworkReady = true }: MiniWave
       const y = (h - barH) / 2;
 
       if (active && i < played) {
-        ctx.fillStyle = 'rgb(191 68 8 / 0.9)';
+        /* Primary colors (defined in globals.css: --primary-light, --primary-dark) */
+        ctx.fillStyle = isDark ? 'rgb(208 253 90 / 0.9)' : 'rgb(189 231 82 / 0.9)';
       } else if (active) {
-        ctx.fillStyle = 'rgb(191 68 8 / 0.35)';
+        ctx.fillStyle = isDark ? 'rgb(208 253 90 / 0.35)' : 'rgb(189 231 82 / 0.35)';
       } else {
         ctx.fillStyle = 'rgb(128 128 128 / 0.4)';
       }
@@ -73,7 +75,6 @@ export function MiniWaveform({ track, className, artworkReady = true }: MiniWave
 
     // Hover cursor
     if (hoverX !== null) {
-      const isDark = document.documentElement.classList.contains('dark');
       ctx.save();
       ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.3)';
       ctx.lineWidth = 1;
