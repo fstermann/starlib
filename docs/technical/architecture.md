@@ -7,16 +7,12 @@ Starlib is structured as three independent components: a Python backend, a React
 ```
 Development
 ───────────
-
 ┌──────────┐  :3000   ┌───────────────┐  :8000   ┌────────────┐
 │  Browser ├─────────►│ Next.js (dev) ├─────────►│  FastAPI   │
 │          │◄─────────┤               │◄─────────┤  Backend   ├──► SoundCloud API
 └──────────┘          └───────────────┘          └────────────┘
-
-
 Desktop (Tauri)
 ───────────────
-
 ┌───────────────────────────────────────────────────┐
 │  Tauri Shell                                      │
 │                                                   │

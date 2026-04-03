@@ -8,3 +8,40 @@
   --md-accent-fg-color: #e05d38;
   --md-accent-fg-color--transparent: rgba(224, 93, 56, 0.1);
 }
+
+[data-md-color-scheme="slate"] {
+  --md-typeset-a-color: #e05d38;
+}
+
+[data-md-color-scheme="slate"] .md-typeset a:not(.md-button) {
+  color: #e05d38;
+}
+
+/* Hero cards on the index page */
+.hero-card {
+  padding: 1.5rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.5rem;
+  text-align: center;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.hero-card:hover {
+  border-color: var(--md-primary-fg-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.hero-icon {
+  font-size: 2.5rem;
+  color: var(--md-primary-fg-color);
+}
+
+.hero-card h3 {
+  margin-top: 0.5rem;
+}
+
+.hero-card .md-button {
+  margin-top: 0.5rem;
+}

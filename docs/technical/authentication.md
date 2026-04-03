@@ -1,6 +1,6 @@
 # Authentication
 
-Starlib uses **OAuth 2.1 + PKCE** (Authorization Code Flow) to authenticate with SoundCloud. The flow is split between frontend and backend — the backend holds the `client_secret` and is the only party that exchanges or refreshes tokens with SoundCloud.
+Starlib uses **OAuth 2.1 + PKCE** (Authorization Code Flow) to authenticate with SoundCloud. The flow is split between frontend and backend; the backend holds the `client_secret` and is the only party that exchanges or refreshes tokens with SoundCloud.
 
 ## Setup
 
@@ -65,7 +65,7 @@ Browser                  Frontend               Backend                  SoundCl
   │                          │  localStorage         │                         │
 ```
 
-**Why the backend handles token exchange:** SoundCloud treats all clients as confidential — a `client_secret` is required for every token exchange and refresh. Keeping this in the backend ensures the secret is never exposed to the browser.
+**Why the backend handles token exchange:** SoundCloud treats all clients as confidential: a `client_secret` is required for every token exchange and refresh. Keeping this in the backend ensures the secret is never exposed to the browser.
 
 **Why the backend-redirect flow exists:** In the desktop app (Tauri), SoundCloud cannot redirect to `tauri://` URLs. Instead, the `redirect_uri` points to the backend, which exchanges the code and then redirects the browser to the frontend callback via the `return_to` parameter.
 

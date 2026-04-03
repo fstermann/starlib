@@ -31,11 +31,24 @@ export default function Home() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-16">
       <div className="mb-16 flex flex-col items-center text-center">
-        <div className="size-24 rounded-3xl bg-primary shadow-xl shadow-primary/30 flex items-center justify-center mb-7">
-          <img src="/starlib-icon-gradient.png" alt="Starlib" className="size-[4.5rem]" />
-        </div>
-        <h1 className="text-8xl font-bold tracking-tight mb-3">
-          <span className="bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
+        <h1 className="text-8xl font-bold tracking-tight mb-3 flex items-center gap-0">
+          <span
+            className="inline-block shrink-0 bg-gradient-to-br from-primary to-chart-2"
+            style={{
+              maskImage: 'url(/starlib-logo.svg)',
+              WebkitMaskImage: 'url(/starlib-logo.svg)',
+              maskSize: 'contain',
+              WebkitMaskSize: 'contain',
+              maskRepeat: 'no-repeat',
+              WebkitMaskRepeat: 'no-repeat',
+              maskPosition: 'center',
+              WebkitMaskPosition: 'center',
+              width: '1.5em',
+              height: '1.5em',
+            }}
+            aria-hidden="true"
+          />
+          <span className="-ml-3 bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
             Starlib
           </span>
         </h1>
