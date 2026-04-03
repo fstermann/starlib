@@ -8,7 +8,6 @@ site_description = "DJ library management app. Organise tracks, edit metadata, a
 site_author = "Fabian Stermann"
 repo_url = "https://github.com/fstermann/starlib"
 repo_name = "fstermann/starlib"
-edit_uri = "edit/main/docs/"
 
 copyright = "Copyright &copy; 2025 – 2026 Fabian Stermann"
 
@@ -18,12 +17,21 @@ extra_css = ["assets/stylesheets/extra.css"]
 
 nav = [
   { "Home" = "index.md" },
-  { "Getting Started" = "getting-started.md" },
-  { "Architecture" = "architecture.md" },
-  { "Backend" = "backend.md" },
-  { "Frontend" = "frontend.md" },
-  { "Desktop" = "desktop.md" },
-  { "Authentication" = "authentication.md" },
+  { "User Guide" = [
+    { "Overview" = "guide/index.md" },
+    { "Installation" = "guide/installation.md" },
+    { "Setup" = "guide/setup.md" },
+    { "Features" = "guide/features.md" },
+  ] },
+  { "Technical" = [
+    { "Overview" = "technical/index.md" },
+    { "Getting Started" = "technical/getting-started.md" },
+    { "Architecture" = "technical/architecture.md" },
+    { "Backend" = "technical/backend.md" },
+    { "Frontend" = "technical/frontend.md" },
+    { "Desktop" = "technical/desktop.md" },
+    { "Authentication" = "technical/authentication.md" },
+  ] },
 ]
 
 # ----------------------------------------------------------------------------
@@ -35,8 +43,6 @@ logo = "assets/images/logo.png"
 favicon = "assets/images/favicon.png"
 
 features = [
-    "content.action.edit",
-    "content.action.view",
     "content.code.annotate",
     "content.code.copy",
     "content.code.select",

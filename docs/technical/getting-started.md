@@ -69,6 +69,37 @@ Once the backend is running, interactive API docs are available at:
 - **Swagger UI:** [localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc:** [localhost:8000/redoc](http://localhost:8000/redoc)
 
+## CLI
+
+Starlib ships a `starlib` command for common dev tasks.
+
+### Installation
+
+Install it once as a global uv tool so it's available in every shell:
+
+```bash
+uv tool install --editable .
+uv tool update-shell   # adds ~/.local/bin to PATH (restart shell after)
+```
+
+After restarting your shell, `starlib` is available globally.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `starlib screenshot` | Capture all documentation screenshots |
+
+#### `starlib screenshot`
+
+Fetches fresh track metadata from the iTunes Search API, then runs the Playwright screenshot suite (`screenshots.spec.ts`) and writes PNGs to `docs/assets/images/screenshots/`. The track cache is stored in `.cache/screenshot-tracks.json`.
+
+```bash
+starlib screenshot
+```
+
+Make sure the frontend dev server is running (`cd frontend && npm run dev`) before capturing screenshots, or let Playwright start it automatically via `reuseExistingServer`.
+
 ## Running tests
 
 ```bash

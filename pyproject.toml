@@ -28,6 +28,10 @@ dev = [
     "pre-commit>=4.5.1",
     "pytest>=8.0.0",
     "zensical>=0.0.29",
+    # pygments 2.20 added `filename` as a recognized HtmlFormatter option; pymdownx 10.21
+    # passes filename=None when no code block title is given, which causes html.escape(None)
+    # to fail and silently breaks all code block rendering. Pin until pymdownx is fixed.
+    "pygments<2.20",
 ]
 desktop = [
     # PyInstaller is used to package the FastAPI backend into a self-contained binary.

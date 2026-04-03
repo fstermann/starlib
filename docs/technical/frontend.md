@@ -39,7 +39,7 @@ npm run generate
 
 !!! warning
 
-    Do not edit `src/generated/soundcloud.ts` manually — it will be overwritten on regeneration.
+    Do not edit `src/generated/soundcloud.ts` manually; it will be overwritten on regeneration.
 
 ## Key pages
 
