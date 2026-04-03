@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import HTTPException, status
 
-from soundcloud_tools.settings import get_settings
+from backend.config import get_backend_settings
 
 
 def get_root_folder() -> Path:
@@ -20,7 +20,7 @@ def get_root_folder() -> Path:
     Path
         Root folder for music library
     """
-    settings = get_settings()
+    settings = get_backend_settings()
     return Path(settings.root_music_folder).expanduser()
 
 
