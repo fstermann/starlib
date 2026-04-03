@@ -4,7 +4,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="frontend/public/starlib-logo-white.svg">
     <source media="(prefers-color-scheme: light)" srcset="frontend/public/starlib-logo.svg">
-    <img src="frontend/public/starlib-logo.svg" alt="Starlib logo" height="32">
+    <img src="frontend/public/starlib-logo.svg" alt="Starlib logo" height="60">
   </picture>
   Starlib
 </h1>
