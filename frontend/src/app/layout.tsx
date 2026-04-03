@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   title: "Starlib",
   description: "Music management tools for DJs and producers",
   icons: {
-    icon: "/favicon.ico",
+    icon: "/favicon.png",
   },
 };
 

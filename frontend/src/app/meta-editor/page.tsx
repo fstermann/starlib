@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense } from 'react';
+import { useTheme } from 'next-themes';
 import { api, ApiError, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest } from '@/lib/api';
 import { useQueryState } from 'nuqs';
 import { searchParams } from '@/lib/search-params';
@@ -60,6 +61,8 @@ import {
 } from 'lucide-react';
 
 function MetaEditorContent() {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
   const [folderMode, setFolderMode] = useQueryState('mode', searchParams.mode);
   const [viewMode, setViewMode] = useQueryState('view', searchParams.view);
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -832,12 +835,12 @@ function MetaEditorContent() {
                   </div>
                   <div className="flex-1 flex flex-col gap-2 mt-4">
                     <div className="flex gap-2">
-                      <Skeleton className="h-8 flex-[3]" />
+                      <Skeleton className="h-8 flex-3" />
                       <Skeleton className="h-8 flex-[1.2]" />
                       <Skeleton className="h-8 w-16" />
                     </div>
                     <div className="flex gap-2">
-                      <Skeleton className="h-8 flex-[3]" />
+                      <Skeleton className="h-8 flex-3" />
                       <Skeleton className="h-8 flex-[1.2]" />
                       <Skeleton className="h-8 w-16" />
                     </div>
@@ -920,7 +923,7 @@ function MetaEditorContent() {
                   {/* Row 1: Title | Genre | BPM */}
                   <div className="flex gap-2 items-start">
                     {/* Title */}
-                    <div className="group flex-[3] min-w-0 flex flex-col gap-0.5">
+                    <div className="group flex-3 min-w-0 flex flex-col gap-0.5">
                       <div className="flex items-center justify-between h-4">
                         <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Title</span>
                         <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
@@ -964,7 +967,7 @@ function MetaEditorContent() {
                   {/* Row 2: Artist | Release | Key */}
                   <div className="flex gap-2 items-start">
                     {/* Artist */}
-                    <div className="group flex-[3] min-w-0 flex flex-col gap-0.5">
+                    <div className="group flex-3 min-w-0 flex flex-col gap-0.5">
                       <div className="flex items-center justify-between h-4">
                         <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Artist</span>
                         <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
@@ -1046,7 +1049,7 @@ function MetaEditorContent() {
                     {/* Toggle button sits on the top border */}
                     <button
                       onClick={() => setIsRemix(!isRemix)}
-                      className={`cursor-pointer absolute -top-[11px] left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
+                      className={`cursor-pointer absolute -top-2.75 left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
                         isRemix
                           ? 'bg-card border text-primary shadow-sm'
                           : 'bg-card border border-dashed text-muted-foreground hover:text-foreground'
@@ -1134,7 +1137,7 @@ function MetaEditorContent() {
                 <div className={`relative rounded-lg border min-w-0 flex-1 transition-colors duration-200 ${scLinkEnabled ? 'border-border/50 bg-accent/40' : 'border-border/30 bg-accent/20'}`}>
                 <button
                   onClick={() => setScLinkEnabled(!scLinkEnabled)}
-                  className={`cursor-pointer absolute -top-[11px] left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
+                  className={`cursor-pointer absolute -top-2.75 left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
                     scLinkEnabled
                       ? 'bg-card border text-primary shadow-sm'
                       : 'bg-card border border-dashed text-muted-foreground hover:text-foreground'
@@ -1373,7 +1376,7 @@ function MetaEditorContent() {
                       scrolling="no"
                       frameBorder="no"
                       allow="autoplay"
-                      src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(selectedScTrack.permalink_url ?? '')}&color=%23e05d38&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`}
+                      src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(selectedScTrack.permalink_url ?? '')}&color=${encodeURIComponent(isDark ? '#d0fd5a' : '#bde752')}&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`}
                       className="rounded-lg overflow-hidden"
                     />
                     <div className="flex gap-1.5">

@@ -101,12 +101,13 @@ export function WaveformPlayer() {
       }
 
       const progressGrad = tmpCtx.createLinearGradient(0, 0, 0, h * 1.35);
-      progressGrad.addColorStop(0, '#d4510a');
-      progressGrad.addColorStop((h * 0.7) / h, '#bf4408');
+      /* Primary colors (defined in globals.css: --primary-light, --primary-dark, --primary-accent) */
+      progressGrad.addColorStop(0, isDark ? '#d0fd5a' : '#bde752');
+      progressGrad.addColorStop((h * 0.7) / h, '#a8cd49');
       progressGrad.addColorStop((h * 0.7 + 1) / h, '#ffffff');
       progressGrad.addColorStop((h * 0.7 + 2) / h, '#ffffff');
-      progressGrad.addColorStop((h * 0.7 + 3) / h, '#c97a55');
-      progressGrad.addColorStop(1, '#c97a55');
+      progressGrad.addColorStop((h * 0.7 + 3) / h, '#a8cd49');
+      progressGrad.addColorStop(1, '#a8cd49');
 
       ws = WaveSurfer.create({
         container: containerRef.current,
@@ -213,8 +214,8 @@ export function WaveformPlayer() {
       <button
         onClick={() => toggle()}
         disabled={!ready}
-        className="size-9 rounded-full disabled:opacity-40 text-white flex items-center justify-center shrink-0 transition-colors cursor-pointer disabled:cursor-default"
-        style={{ backgroundColor: ready ? '#bf4408' : undefined }}
+        className="size-9 rounded-full disabled:opacity-40 text-primary-foreground flex items-center justify-center shrink-0 transition-colors cursor-pointer disabled:cursor-default"
+        style={{ backgroundColor: ready ? 'var(--primary)' : undefined }}
         aria-label={isPlaying ? 'Pause' : 'Play'}
       >
         {isPlaying ? (

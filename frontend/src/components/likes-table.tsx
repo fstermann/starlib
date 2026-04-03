@@ -197,7 +197,7 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
               scrolling="no"
               frameBorder="no"
               allow="autoplay"
-              src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(track.permalink_url)}&color=%23e05d38&auto_play=false&buying=false&sharing=false&download=false&show_artwork=true&show_playcount=false&show_user=true&hide_related=true&show_comments=false&show_reposts=false&show_teaser=false&visual=true`}
+              src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(track.permalink_url)}&color=${encodeURIComponent('#bde752')}&auto_play=false&buying=false&sharing=false&download=false&show_artwork=true&show_playcount=false&show_user=true&hide_related=true&show_comments=false&show_reposts=false&show_teaser=false&visual=true`}
               className="rounded-lg overflow-hidden"
             />
           )}
@@ -307,7 +307,7 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect, onRangeSelect,
             className={cn(
               "size-3.5 cursor-pointer",
               "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
-              allSelected && "data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500",
+              allSelected && "data-[state=checked]:bg-primary data-[state=checked]:border-primary",
             )}
           />
         </div>
