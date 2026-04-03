@@ -8,6 +8,8 @@ from functools import lru_cache
 from pathlib import Path
 
 from platformdirs import user_config_path
+from pydantic import Field
+from pydantic.aliases import AliasChoices
 from pydantic_settings import BaseSettings
 
 # Platform-specific user config directory used when running as a bundled desktop app.
@@ -44,7 +46,12 @@ class BackendSettings(BaseSettings):
     cors_headers: list[str] = ["*"]
 
     # Music Library Settings (from main settings)
-    root_music_folder: Path = Path.home() / "Music"
+    root_music_folder: Path = Field(
+        default=Path.home() / "Music",
+        # Accept both BACKEND_ROOT_MUSIC_FOLDER (production sidecar env vars) and
+        # ROOT_MUSIC_FOLDER (user config.env written by the desktop setup flow).
+        validation_alias=AliasChoices("BACKEND_ROOT_MUSIC_FOLDER", "ROOT_MUSIC_FOLDER"),
+    )
 
     # Cache Settings
     cache_dir: Path = _APP_CONFIG_DIR / ".cache"
@@ -52,9 +59,9 @@ class BackendSettings(BaseSettings):
     model_config = {
         "extra": "ignore",
         "env_prefix": "BACKEND_",
-        # In development: load from .env at repo root.
+        # In development: load from .env at repo root, then from user config.env.
         # In production (Tauri sidecar): env vars are set by the Tauri shell plugin.
-        "env_file": ".env",
+        "env_file": (".env", str(_APP_CONFIG_DIR / "config.env")),
     }
 
 
