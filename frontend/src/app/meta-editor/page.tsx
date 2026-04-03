@@ -178,8 +178,14 @@ function MetaEditorContent() {
     setTrackInfo(null);
     setFormData({ title: '', artist: '', bpm: '', key: '', genre: '', release_date: '' });
     setCommentData({ soundcloud_id: '', soundcloud_permalink: '' });
+    player.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderMode]);
+
+  // Clear player when navigating away from the meta editor
+  useEffect(() => {
+    return () => { player.stop(); };
+  }, []);
 
   // Infinite scroll: load next page when sentinel becomes visible
   useEffect(() => {
