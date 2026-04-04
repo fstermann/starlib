@@ -30,11 +30,11 @@ interface LikesFilterBarProps {
   onExcludeMyLikesChange: (value: boolean) => void;
   showExcludeMyLikes: boolean;
   excludeMyLikesLabel?: string;
-  trackType: 'track' | 'set' | null;
-  onTrackTypeChange: (value: 'track' | 'set' | null) => void;
-  excludeOwnLikes: boolean;
-  onExcludeOwnLikesChange: (value: boolean) => void;
-  showExcludeOwnLikes: boolean;
+  trackType?: 'track' | 'set' | null;
+  onTrackTypeChange?: (value: 'track' | 'set' | null) => void;
+  excludeOwnLikes?: boolean;
+  onExcludeOwnLikesChange?: (value: boolean) => void;
+  showExcludeOwnLikes?: boolean;
   inCollection: boolean | null;
   onInCollectionChange: (value: boolean | null) => void;
   showInCollection: boolean;
@@ -67,11 +67,11 @@ export function LikesFilterBar({
   onExcludeMyLikesChange,
   showExcludeMyLikes,
   excludeMyLikesLabel = 'Exclude my likes',
-  trackType,
+  trackType = null,
   onTrackTypeChange,
-  excludeOwnLikes,
+  excludeOwnLikes = false,
   onExcludeOwnLikesChange,
-  showExcludeOwnLikes,
+  showExcludeOwnLikes = false,
   inCollection,
   onInCollectionChange,
   showInCollection,
@@ -117,9 +117,9 @@ export function LikesFilterBar({
   const durationActive = minDuration !== null || maxDuration !== null;
 
   function cycleTrackType() {
-    if (trackType === null) onTrackTypeChange('track');
-    else if (trackType === 'track') onTrackTypeChange('set');
-    else onTrackTypeChange(null);
+    if (trackType === null) onTrackTypeChange?.('track');
+    else if (trackType === 'track') onTrackTypeChange?.('set');
+    else onTrackTypeChange?.(null);
   }
 
   const hasActiveFilters =
@@ -138,9 +138,9 @@ export function LikesFilterBar({
     onMinDurationChange(null);
     onMaxDurationChange(null);
     setDurationValue([0, DURATION_MAX]);
-    onTrackTypeChange(null);
+    onTrackTypeChange?.(null);
     onExcludeMyLikesChange(false);
-    onExcludeOwnLikesChange(false);
+    onExcludeOwnLikesChange?.(false);
     onInCollectionChange(null);
   }
 
@@ -281,7 +281,7 @@ export function LikesFilterBar({
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
           <Checkbox
             checked={excludeOwnLikes}
-            onCheckedChange={(v) => onExcludeOwnLikesChange(v === true)}
+            onCheckedChange={(v) => onExcludeOwnLikesChange?.(v === true)}
             className="size-3.5"
           />
           Exclude my liked tracks
