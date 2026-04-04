@@ -1,19 +1,13 @@
 <div align="center">
 
-<h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/starlib-logo-white.svg">
-    <source media="(prefers-color-scheme: light)" srcset="frontend/public/starlib-logo.svg">
-    <img src="frontend/public/starlib-logo.svg" alt="Starlib logo" height="32">
-  </picture>
-  Starlib
-</h1>
+<img src="frontend/public/starlib-wordmark.svg" alt="Starlib" height="48"><br>
 
 **A DJ library management app for SoundCloud.**\
 Organise your tracks, edit metadata, and discover new music — all from a single interface.
 
-[![Latest Release](https://img.shields.io/github/v/release/fstermann/starlib?style=flat-square)](https://github.com/fstermann/starlib/releases/latest)
-[![Docs](https://img.shields.io/badge/docs-fstermann.github.io%2Fstarlib-blue?style=flat-square)](https://fstermann.github.io/starlib/)
+[![Latest Release](https://img.shields.io/github/v/release/fstermann/starlib?style=for-the-badge&logo=github&logoColor=white&labelColor=111&color=a8cd49)](https://github.com/fstermann/starlib/releases/latest)
+[![Docs](https://img.shields.io/badge/docs-fstermann.github.io%2Fstarlib-a8cd49?style=for-the-badge&logo=gitbook&logoColor=white&labelColor=111)](https://fstermann.github.io/starlib/)
+[![Platform](https://img.shields.io/badge/platform-macOS-a8cd49?style=for-the-badge&logo=apple&logoColor=white&labelColor=111)](https://github.com/fstermann/starlib/releases/latest)
 
 ![Starlib screenshot](docs/assets/images/screenshots/home.png)
 
