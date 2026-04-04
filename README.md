@@ -2,7 +2,7 @@
 
 <img src="assets/starlib-wordmark.svg" alt="Starlib" height="48">
 
-<br>
+<p class="" style="margin: 16px;"></p>
 
 **A DJ library management app for SoundCloud.**\
 Organise your tracks, edit metadata, and discover new music — all from a single interface.
