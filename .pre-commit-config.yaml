@@ -54,3 +54,11 @@ repos:
           - --treat-property-methods-as-class-attributes=True
           # - --arg-type-hints-in-signature=True
         # https://jsh9.github.io/pydoclint/config_options.html
+  - repo: local
+    hooks:
+      - id: tsc
+        name: TypeScript type check
+        language: system
+        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        types_or: [ts, tsx]
+        pass_filenames: false
