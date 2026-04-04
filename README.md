@@ -4,7 +4,7 @@
 
 <p class="" style="margin: 16px;"></p>
 
-**A DJ library management app for SoundCloud.**\
+**Music management for DJs and producers.**\
 Organise your tracks, edit metadata, and discover new music — all from a single interface.
 
 <br>
