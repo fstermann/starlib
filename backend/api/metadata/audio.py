@@ -1,13 +1,14 @@
 """Audio streaming and waveform peaks for the Meta Editor."""
 
 import asyncio
+import hashlib
 import logging
 import subprocess
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.api.deps import get_root_folder, validate_file_path
 from backend.config import get_backend_settings
@@ -93,15 +94,17 @@ async def get_file_peaks(
     return PeaksResponse(peaks=peaks)
 
 
-@router.get("/files/{file_path:path}/audio")
-def stream_audio(
+@router.get("/files/{file_path:path}/audio", response_model=None)
+async def stream_audio(
     file_path: str,
     root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> StreamingResponse:
+) -> FileResponse | StreamingResponse:
     """Stream an audio file.
 
-    Formats not natively supported by browsers (e.g. AIFF) are
-    transcoded to WAV on the fly via ffmpeg.
+    Formats not natively supported by browsers (e.g. AIFF) are transcoded to
+    WAV via ffmpeg and cached.  Transcoding is awaited before responding so
+    that the browser always receives a real file with Content-Length and range
+    support, which is required for seeking to work.
 
     Parameters
     ----------
@@ -112,13 +115,13 @@ def stream_audio(
 
     Returns
     -------
-    StreamingResponse
+    FileResponse | StreamingResponse
         Audio file bytes
 
     Raises
     ------
     HTTPException
-        If the file doesn't exist
+        If the file doesn't exist or transcoding fails
     """
     resolved_path = validate_file_path(file_path, root_folder)
 
@@ -126,7 +129,23 @@ def stream_audio(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
 
     if resolved_path.suffix.lower() in _TRANSCODE_EXTENSIONS:
-        return _stream_transcoded(resolved_path)
+        settings = get_backend_settings()
+        wav_path = _cached_wav_path(resolved_path, settings.cache_dir)
+        if not wav_path.exists():
+            loop = asyncio.get_event_loop()
+            try:
+                await loop.run_in_executor(None, _transcode_to_wav, resolved_path, wav_path)
+            except Exception as e:
+                logger.exception("Failed to transcode audio file")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to transcode audio file",
+                ) from e
+        return FileResponse(
+            wav_path,
+            media_type="audio/wav",
+            headers={"Content-Disposition": f'inline; filename="{resolved_path.stem}.wav"'},
+        )
 
     mime_type = AUDIO_MIME_TYPES.get(resolved_path.suffix.lower(), "application/octet-stream")
 
@@ -146,26 +165,30 @@ def stream_audio(
     )
 
 
-def _stream_transcoded(path: Path) -> StreamingResponse:
-    """Transcode an audio file to WAV via ffmpeg and stream it."""
-    proc = subprocess.Popen(
-        ["ffmpeg", "-i", str(path), "-f", "wav", "-"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
+def _cached_wav_path(path: Path, cache_dir: Path) -> Path:
+    """Return the expected cache path for a transcoded WAV without creating it."""
+    mtime = int(path.stat().st_mtime)
+    digest = hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:16]
+    transcoded_dir = cache_dir / "transcoded"
+    transcoded_dir.mkdir(parents=True, exist_ok=True)
+    # Remove stale entries for this file (different mtime).
+    for stale in transcoded_dir.glob(f"{digest}_*.wav"):
+        if stale.name != f"{digest}_{mtime}.wav":
+            stale.unlink(missing_ok=True)
+    return transcoded_dir / f"{digest}_{mtime}.wav"
 
-    def iterfile():
-        assert proc.stdout is not None
-        try:
-            while chunk := proc.stdout.read(65536):
-                yield chunk
-        finally:
-            proc.stdout.close()
-            proc.wait()
 
-    stem = path.stem
-    return StreamingResponse(
-        iterfile(),
-        media_type="audio/wav",
-        headers={"Content-Disposition": f'inline; filename="{stem}.wav"'},
-    )
+def _transcode_to_wav(path: Path, wav_path: Path) -> None:
+    """Transcode *path* to a WAV file at *wav_path* using ffmpeg."""
+    tmp_path = wav_path.with_suffix(".tmp")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-i", str(path), "-f", "wav", str(tmp_path), "-y"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+        tmp_path.rename(wav_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise

@@ -50,7 +50,7 @@ export function WaveformPlayer() {
       const BAR_WIDTH = 2;
       const BAR_GAP = 1;
       const containerWidth = containerRef.current.clientWidth || 800;
-      const numPeaks = Math.min(2000, Math.max(50, Math.floor(containerWidth / (BAR_WIDTH + BAR_GAP))));
+      const numPeaks = Math.min(2000, Math.max(50, Math.ceil(containerWidth / (BAR_WIDTH + BAR_GAP))));
 
       // Fetch peaks from the backend so WaveSurfer doesn't need to decode
       // the audio via AudioContext (which fails in sandboxed WKWebView).
@@ -64,17 +64,30 @@ export function WaveformPlayer() {
       audio.preload = 'metadata';
       audioRef.current = audio;
 
-      // Wait for duration to be available before creating WaveSurfer,
-      // otherwise the waveform renders with duration=0 and looks broken.
+      // Wait until audio.duration is a finite positive number before creating
+      // WaveSurfer. For AIFF files (served as transcoded WAV), loadedmetadata
+      // can fire with duration=Infinity if the browser hasn't read the full
+      // RIFF header yet. We also listen to durationchange so we catch the
+      // moment the browser settles on a real value.
       await new Promise<void>((resolve) => {
-        if (audio.duration && isFinite(audio.duration)) {
-          resolve();
-        } else {
-          audio.addEventListener('loadedmetadata', () => resolve(), { once: true });
-          audio.addEventListener('error', () => resolve(), { once: true });
-        }
+        if (isFinite(audio.duration) && audio.duration > 0) { resolve(); return; }
+        const cleanup = () => {
+          audio.removeEventListener('durationchange', check);
+          audio.removeEventListener('loadedmetadata', check);
+          audio.removeEventListener('error', onError);
+        };
+        const check = () => {
+          if (isFinite(audio.duration) && audio.duration > 0) { cleanup(); resolve(); }
+        };
+        const onError = () => { cleanup(); resolve(); };
+        audio.addEventListener('durationchange', check);
+        audio.addEventListener('loadedmetadata', check);
+        audio.addEventListener('error', onError, { once: true });
       });
       if (cancelled || !containerRef.current) return;
+      // Bail on a hard load error (duration stays NaN).
+      if (!isFinite(audio.duration) || audio.duration <= 0) return;
+      const knownDuration = audio.duration;
 
       const isDark = document.documentElement.classList.contains('dark');
 
@@ -121,7 +134,7 @@ export function WaveformPlayer() {
         cursorWidth: 0,
         interact: true,
         peaks: [peaks],
-        duration: audio.duration,
+        duration: knownDuration,
         media: audio,
         plugins: [
           HoverPlugin.create({
@@ -140,39 +153,37 @@ export function WaveformPlayer() {
 
       ws.on('ready', () => {
         if (cancelled) return;
-        const d = ws!.getDuration();
-        setDuration(d);
-        reportDuration(d);
+        setDuration(knownDuration);
+        reportDuration(knownDuration);
         setReady(true);
+        registerSeek((ratio) => {
+          audio.currentTime = Math.max(0, Math.min(1, ratio)) * audio.duration;
+        });
         if (isPlayingRef.current) ws!.play();
       });
 
       ws.on('audioprocess', () => {
         const t = ws!.getCurrentTime();
-        const d = ws!.getDuration();
         setCurrentTime(t);
-        if (d > 0) reportProgress(t / d);
+        reportProgress(t / knownDuration);
       });
 
       ws.on('finish', () => {
         pause();
-        ws!.seekTo(0);
+        audio.currentTime = 0;
         setCurrentTime(0);
         reportProgress(0);
       });
 
       ws.on('seeking', () => {
         const t = ws!.getCurrentTime();
-        const d = ws!.getDuration();
         setCurrentTime(t);
-        if (d > 0) reportProgress(t / d);
+        reportProgress(t / knownDuration);
       });
 
       ws.on('error', (err) => {
         if (!cancelled) console.error('WaveSurfer error:', err);
       });
-
-      registerSeek((ratio) => ws!.seekTo(ratio));
     }
 
     init();
@@ -234,7 +245,7 @@ export function WaveformPlayer() {
       </div>
 
       {/* Waveform canvas */}
-      <div ref={containerRef} className="flex-1 min-w-0" />
+      <div ref={containerRef} className="flex-1 min-w-0" style={{ cursor: 'pointer' }} />
 
       {/* Time display */}
       <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-18 text-right tabular-nums">
