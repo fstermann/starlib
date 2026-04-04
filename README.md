@@ -1,23 +1,26 @@
 <div align="center">
 
-<h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/starlib-logo-white.svg">
-    <source media="(prefers-color-scheme: light)" srcset="frontend/public/starlib-logo.svg">
-    <img src="frontend/public/starlib-logo.svg" alt="Starlib logo" height="32">
-  </picture>
-  Starlib
-</h1>
+<img src="assets/starlib-wordmark.svg" alt="Starlib" height="72">
 
-**A DJ library management app for SoundCloud.**\
+<p class="" style="margin: 16px;"></p>
+
+**Music management for DJs and producers.**\
 Organise your tracks, edit metadata, and discover new music — all from a single interface.
 
-[![Latest Release](https://img.shields.io/github/v/release/fstermann/starlib?style=flat-square)](https://github.com/fstermann/starlib/releases/latest)
-[![Docs](https://img.shields.io/badge/docs-fstermann.github.io%2Fstarlib-blue?style=flat-square)](https://fstermann.github.io/starlib/)
+<br>
 
-![Starlib screenshot](docs/assets/images/screenshots/home.png)
+[![Latest Release](https://img.shields.io/github/v/release/fstermann/starlib?style=for-the-badge&logo=github&logoColor=white&labelColor=111&color=a8cd49)](https://github.com/fstermann/starlib/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-macOS-a8cd49?style=for-the-badge&logo=apple&logoColor=white&labelColor=111)](https://github.com/fstermann/starlib/releases/latest)
 
-[**Download**](https://github.com/fstermann/starlib/releases/latest) · [**Documentation**](https://fstermann.github.io/starlib/) · [**Report a Bug**](https://github.com/fstermann/starlib/issues/new)
+[![Download](https://img.shields.io/badge/Download-latest_release-a8cd49?style=for-the-badge&logo=github&logoColor=white&labelColor=111)](https://github.com/fstermann/starlib/releases/latest)
+[![Docs](https://img.shields.io/badge/docs-fstermann.github.io%2Fstarlib-a8cd49?style=for-the-badge&logo=gitbook&logoColor=white&labelColor=111)](https://fstermann.github.io/starlib/)
+[![Report a Bug](https://img.shields.io/badge/Report_a_Bug-open_issue-a8cd49?style=for-the-badge&logo=github&logoColor=white&labelColor=111)](https://github.com/fstermann/starlib/issues/new)
+
+<br>
+
+---
+
+<img src="docs/assets/images/screenshots/home.png" alt="Starlib screenshot" width="80%">
 
 </div>
 
@@ -29,19 +32,19 @@ Organise your tracks, edit metadata, and discover new music — all from a singl
 
 Edit ID3/AIFF metadata on local audio files. Search SoundCloud to auto-fill title, artist, BPM, key, genre, and artwork.
 
-![Meta Editor](docs/assets/images/screenshots/meta-editor.png)
+<div align="center"><img src="docs/assets/images/screenshots/meta-editor.png" alt="Meta Editor" width="80%"></div>
 
 ### Like Explorer
 
 Browse your liked tracks and discover new music from other users. Filter by genre, duration, and collection status. Create playlists from your selections.
 
-![Like Explorer](docs/assets/images/screenshots/like-explorer.png)
+<div align="center"><img src="docs/assets/images/screenshots/like-explorer.png" alt="Like Explorer" width="80%"></div>
 
 ### Weekly Favorites
 
 See new tracks from artists you follow, grouped by calendar week. Generate playlists automatically and keep track of what you've already seen.
 
-![Weekly Favorites](docs/assets/images/screenshots/weekly.png)
+<div align="center"><img src="docs/assets/images/screenshots/weekly.png" alt="Weekly Favorites" width="80%"></div>
 
 ## Install
 
