@@ -146,7 +146,7 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
         </span>
 
         {/* Links group: Collection + Buy/Search */}
-        <div className={`w-24 shrink-0 flex items-center justify-end gap-1 ${inCollection ? 'opacity-35' : ''}`}>
+        <div className={`w-24 shrink-0 flex items-center justify-between ${inCollection ? 'opacity-35' : ''}`}>
           <div className="flex items-center justify-center size-5" title={inCollection ? 'In collection' : undefined}>
             {inCollection && <FolderCheck className="size-3.5 text-primary" />}
           </div>
@@ -168,21 +168,21 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
             href={`https://bandcamp.com/search?q=${encodeURIComponent(searchQuery(track))}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center size-5 text-muted-foreground hover:text-foreground transition-colors text-[10px] font-bold"
+            className="flex items-center justify-center size-5 opacity-40 hover:opacity-100 transition-opacity"
             onClick={(e) => e.stopPropagation()}
             title="Search Bandcamp"
           >
-            BC
+            <img src="/icons/bandcamp.svg" alt="Bandcamp" className="size-3.5" />
           </a>
           <a
             href={`https://www.beatport.com/search?q=${encodeURIComponent(searchQuery(track))}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center size-5 text-muted-foreground hover:text-foreground transition-colors text-[10px] font-bold"
+            className="flex items-center justify-center size-5 opacity-40 hover:opacity-100 transition-opacity"
             onClick={(e) => e.stopPropagation()}
             title="Search Beatport"
           >
-            BP
+            <img src="/icons/beatport.svg" alt="Beatport" className="size-3.5" />
           </a>
         </div>
       </div>
