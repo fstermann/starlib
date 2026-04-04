@@ -2,23 +2,23 @@
 
 <img src="assets/starlib-wordmark.svg" alt="Starlib" height="48">
 
-<div style="height:16px"></div>
+<br><br>
 
 **A DJ library management app for SoundCloud.**\
 Organise your tracks, edit metadata, and discover new music — all from a single interface.
 
-<div style="height:16px"></div>
+<br>
+
+[![Latest Release](https://img.shields.io/github/v/release/fstermann/starlib?style=for-the-badge&logo=github&logoColor=white&labelColor=111&color=a8cd49)](https://github.com/fstermann/starlib/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-macOS-a8cd49?style=for-the-badge&logo=apple&logoColor=white&labelColor=111)](https://github.com/fstermann/starlib/releases/latest)
+
+<br>
 
 [![Download](https://img.shields.io/badge/Download-latest_release-a8cd49?style=for-the-badge&logo=github&logoColor=white&labelColor=111)](https://github.com/fstermann/starlib/releases/latest)
 [![Docs](https://img.shields.io/badge/docs-fstermann.github.io%2Fstarlib-a8cd49?style=for-the-badge&logo=gitbook&logoColor=white&labelColor=111)](https://fstermann.github.io/starlib/)
 [![Report a Bug](https://img.shields.io/badge/Report_a_Bug-open_issue-a8cd49?style=for-the-badge&logo=github&logoColor=white&labelColor=111)](https://github.com/fstermann/starlib/issues/new)
 
-<div style="height:8px"></div>
-
-[![Latest Release](https://img.shields.io/github/v/release/fstermann/starlib?style=for-the-badge&logo=github&logoColor=white&labelColor=111&color=a8cd49)](https://github.com/fstermann/starlib/releases/latest)
-[![Platform](https://img.shields.io/badge/platform-macOS-a8cd49?style=for-the-badge&logo=apple&logoColor=white&labelColor=111)](https://github.com/fstermann/starlib/releases/latest)
-
-<div style="height:16px"></div>
+<br>
 
 ![Starlib screenshot](docs/assets/images/screenshots/home.png)
 
