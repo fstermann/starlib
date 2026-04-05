@@ -1,7 +1,7 @@
 """
 Metadata Service - Core business logic for track metadata operations.
 
-This module contains pure functions extracted from the Streamlit Meta Editor.
+This module contains pure functions extracted from the old Meta Editor.
 No UI framework dependencies - only business logic.
 """
 
