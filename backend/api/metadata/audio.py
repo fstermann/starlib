@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 
 from backend.api.deps import get_root_folder, validate_file_path
 from backend.config import get_backend_settings
@@ -98,7 +98,7 @@ async def get_file_peaks(
 async def stream_audio(
     file_path: str,
     root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> FileResponse | StreamingResponse:
+) -> FileResponse:
     """Stream an audio file.
 
     Formats not natively supported by browsers (e.g. AIFF) are transcoded to
@@ -115,7 +115,7 @@ async def stream_audio(
 
     Returns
     -------
-    FileResponse | StreamingResponse
+    FileResponse
         Audio file bytes
 
     Raises
@@ -149,19 +149,10 @@ async def stream_audio(
 
     mime_type = AUDIO_MIME_TYPES.get(resolved_path.suffix.lower(), "application/octet-stream")
 
-    def iter_file():
-        with open(resolved_path, "rb") as f:
-            while chunk := f.read(65536):
-                yield chunk
-
-    return StreamingResponse(
-        iter_file(),
+    return FileResponse(
+        resolved_path,
         media_type=mime_type,
-        headers={
-            "Content-Disposition": f'inline; filename="{resolved_path.name}"',
-            "Content-Length": str(resolved_path.stat().st_size),
-            "Accept-Ranges": "bytes",
-        },
+        headers={"Content-Disposition": f'inline; filename="{resolved_path.name}"'},
     )
 
 
