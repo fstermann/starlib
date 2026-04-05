@@ -158,15 +158,17 @@ function MetaEditorContent() {
   const showConfirm = (message: string, onConfirm: () => void) =>
     setConfirmDialog({ open: true, message, onConfirm });
 
-  // Load track into global player when selected file changes
+  // Load track into global player when selected file changes (edit mode only).
+  // Guarding on viewMode prevents late-resolving loadTrackInfo() calls from
+  // overwriting the player state after the user has switched back to view mode.
   useEffect(() => {
-    if (!selectedFile) return;
+    if (!selectedFile || viewMode !== 'edit') return;
     player.load({
       filePath: selectedFile.file_path,
       fileName: selectedFile.file_name,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFile?.file_path]);
+  }, [selectedFile?.file_path, viewMode]);
 
   // Load files when folder mode changes
   useEffect(() => {
