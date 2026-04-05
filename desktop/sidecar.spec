@@ -77,7 +77,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["streamlit", "essentia", "scipy", "numpy", "tensorflow"],
+    excludes=["essentia", "scipy", "numpy", "tensorflow"],
     noarchive=False,
 )
 
