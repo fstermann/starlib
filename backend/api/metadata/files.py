@@ -394,7 +394,8 @@ def check_file_readiness(
     except Exception as e:
         logger.exception("Failed to check readiness")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to check readiness"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check readiness: {e}",
         ) from e
 
     return FileReadinessResponse(
@@ -439,7 +440,8 @@ def finalize_file(
     except Exception as e:
         logger.exception("Failed to check readiness")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to check readiness"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check readiness: {e}",
         ) from e
 
     if not readiness["is_ready"]:
@@ -463,7 +465,7 @@ def finalize_file(
         logger.exception("Finalization failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Finalization failed",
+            detail=f"Finalization failed: {e}",
         ) from e
 
     # Remove the old file from cache (it's been moved/converted)
