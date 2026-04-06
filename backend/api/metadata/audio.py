@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from backend.api.deps import get_root_folder, validate_file_path
 from backend.config import get_backend_settings
 from backend.core.services import cache_db, metadata
+from backend.core.services.metadata import _find_ffmpeg
 from backend.schemas.metadata import PeaksResponse
 
 logger = logging.getLogger(__name__)
@@ -174,7 +175,7 @@ def _transcode_to_wav(path: Path, wav_path: Path) -> None:
     tmp_path = wav_path.with_suffix(".tmp")
     try:
         subprocess.run(
-            ["ffmpeg", "-i", str(path), "-f", "wav", str(tmp_path), "-y"],
+            [_find_ffmpeg(), "-i", str(path), "-f", "wav", str(tmp_path), "-y"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True,

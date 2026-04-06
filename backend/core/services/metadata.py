@@ -6,8 +6,10 @@ No UI framework dependencies - only business logic.
 """
 
 import logging
+import shutil
 import struct
 import subprocess
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Literal
@@ -23,6 +25,34 @@ from soundcloud_tools.utils.string import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _find_ffmpeg() -> str:
+    """Return the path to the ffmpeg binary.
+
+    Priority:
+    1. Bundled binary inside the PyInstaller extraction dir (``sys._MEIPASS``) —
+       present when running as a frozen desktop sidecar.
+    2. Common Homebrew prefixes (``/opt/homebrew``, ``/usr/local``) — covers
+       developer machines where Homebrew is installed but PATH is stripped by
+       the macOS app sandbox.
+    3. Whatever ``shutil.which`` finds on the current PATH.
+    """
+    # When frozen by PyInstaller, _MEIPASS is the temp dir containing bundled files.
+    if getattr(sys, "frozen", False):
+        bundled = Path(sys._MEIPASS) / "ffmpeg"  # type: ignore[attr-defined]
+        if bundled.exists():
+            return str(bundled)
+
+    for candidate in (
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "ffmpeg",
+    ):
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return "ffmpeg"
 
 
 def prepare_search_query(filename: str) -> str:
@@ -595,7 +625,7 @@ def get_waveform_peaks(file_path: Path, cache_dir: Path, num_peaks: int = 200) -
 
     # Decode to raw signed f32le PCM (mono, 8 kHz) via ffmpeg
     cmd = [
-        "ffmpeg",
+        _find_ffmpeg(),
         "-i",
         str(file_path),
         "-ac",
