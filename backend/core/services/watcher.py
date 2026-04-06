@@ -22,6 +22,9 @@ AUDIO_EXTENSIONS = {".mp3", ".flac", ".aif", ".aiff", ".wav", ".m4a"}
 DEBOUNCE_DELAY = 1.5  # seconds — avoid double-triggers from editor saves
 
 
+_IGNORED_SUBFOLDERS = {"archive"}
+
+
 class _MusicFolderHandler(FileSystemEventHandler):
     def __init__(self, root_folder: Path) -> None:
         self._root_folder = root_folder
@@ -30,6 +33,14 @@ class _MusicFolderHandler(FileSystemEventHandler):
 
     def _is_audio(self, path: str) -> bool:
         return Path(path).suffix.lower() in AUDIO_EXTENSIONS
+
+    def _is_ignored(self, path: str) -> bool:
+        """Return True if *path* is inside a subfolder that should not be indexed."""
+        try:
+            rel = Path(path).relative_to(self._root_folder)
+            return rel.parts[0] in _IGNORED_SUBFOLDERS
+        except ValueError:
+            return False
 
     def _schedule(self, key: str, action) -> None:
         with self._lock:
@@ -41,12 +52,12 @@ class _MusicFolderHandler(FileSystemEventHandler):
             t.start()
 
     def on_created(self, event: FileSystemEvent) -> None:
-        if not event.is_directory and self._is_audio(event.src_path):
+        if not event.is_directory and self._is_audio(event.src_path) and not self._is_ignored(event.src_path):
             p = Path(event.src_path)
             self._schedule(str(p), lambda: self._index(p))
 
     def on_modified(self, event: FileSystemEvent) -> None:
-        if not event.is_directory and self._is_audio(event.src_path):
+        if not event.is_directory and self._is_audio(event.src_path) and not self._is_ignored(event.src_path):
             p = Path(event.src_path)
             self._schedule(str(p), lambda: self._index(p))
 
@@ -65,7 +76,7 @@ class _MusicFolderHandler(FileSystemEventHandler):
         dest = Path(event.dest_path)
         if self._is_audio(str(src)):
             cache_db.delete_track(src)
-        if self._is_audio(str(dest)):
+        if self._is_audio(str(dest)) and not self._is_ignored(str(dest)):
             self._schedule(str(dest), lambda: self._index(dest))
 
     def _index(self, path: Path) -> None:
