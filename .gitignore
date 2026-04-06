@@ -17,6 +17,8 @@ skills-lock.json
 desktop/node_modules/
 desktop/src-tauri/binaries/starlib-backend*
 desktop/src-tauri/target/
+# Bundled ffmpeg binary (downloaded at build time, not committed)
+desktop/bin/ffmpeg
 # PyInstaller build artefacts
 build/
 dist/

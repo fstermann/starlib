@@ -25,7 +25,10 @@ root = Path(SPECPATH).parent  # repo root
 
 # ── Collect packages that have data files / dynamic imports ───────────────
 datas = []
-binaries = []
+# Bundle ffmpeg static binary so the app works without a system ffmpeg install.
+# The binary is resolved in _find_ffmpeg() via sys._MEIPASS at runtime.
+_ffmpeg_bin = root / "desktop" / "bin" / "ffmpeg"
+binaries = [(str(_ffmpeg_bin), ".")] if _ffmpeg_bin.exists() else []
 hiddenimports = []
 
 for pkg in [
