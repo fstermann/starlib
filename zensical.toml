@@ -79,8 +79,8 @@ custom_fences = [{name = "mermaid", class = "mermaid"}]
 # ----------------------------------------------------------------------------
 [project.theme]
 language = "en"
-logo = "assets/images/logo.png"
-favicon = "assets/images/favicon.png"
+logo = "assets/images/starlib-logo.png"
+favicon = "assets/images/starlib-icon.png"
 
 features = [
     "content.code.annotate",
