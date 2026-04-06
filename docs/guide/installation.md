@@ -4,10 +4,10 @@ Starlib is a native macOS desktop app. Download the latest release and install i
 
 ## Download
 
-Download the `.dmg` file for your Mac:
+Download the `.dmg` file for your Mac (version **{{ version }}**):
 
-[Apple Silicon (M1/M2/M3/M4) :material-apple:](https://github.com/fstermann/starlib/releases/download/v0.2.11/Starlib_0.2.11_aarch64.dmg){ .md-button .md-button--primary }
-[Intel :material-apple:](https://github.com/fstermann/starlib/releases/download/v0.2.11/Starlib_0.2.11_x64.dmg){ .md-button }
+[Apple Silicon (M1/M2/M3/M4) :material-apple:](https://github.com/fstermann/starlib/releases/download/v{{ version }}/Starlib_{{ version }}_aarch64.dmg){ .md-button .md-button--primary }
+[Intel :material-apple:](https://github.com/fstermann/starlib/releases/download/v{{ version }}/Starlib_{{ version }}_x64.dmg){ .md-button }
 
 Or browse [all releases on GitHub](https://github.com/fstermann/starlib/releases).
 
