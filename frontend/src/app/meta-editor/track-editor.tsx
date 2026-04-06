@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { api, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest } from '@/lib/api';
 import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix, removeMix } from '@/lib/string-utils';
-import type { SCTrack } from '@/lib/soundcloud';
+import { soundCloudSource } from '@/lib/sources/soundcloud';
+import type { SourceTrack } from '@/lib/sources/types';
 import { format, parse, isValid } from 'date-fns';
 import { toast } from 'sonner';
-import { useSoundCloudSearch } from './use-soundcloud-search';
-import { parseComment, serializeComment, stripQueryParams, scReleaseDate } from './utils';
+import { useSourceSearch } from './use-source-search';
+import { parseComment, serializeComment } from './utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -29,12 +30,12 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { LogoSpinner } from '@/components/logo-spinner';
+import { SoundCloudLogo } from '@/components/icons/soundcloud-logo';
 import {
   Sparkles,
   CaseSensitive,
   Trash2,
   Brackets,
-  Cloud,
   Wand2,
   Users,
   Image,
@@ -74,13 +75,15 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // SoundCloud sidebar
-  const scHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Source search panel
   const [scSidebarOpen, setScSidebarOpen] = useState(false);
+  const activeSource = soundCloudSource;
 
-  const sc = useSoundCloudSearch(true, setError);
-  const { scQuery, setScQuery, scResults, scSearching, scQueryPending, setScQueryPending,
-          selectedScTrack, setSelectedScTrack, handleScSearch, handleScTrackSelect } = sc;
+  const sc = useSourceSearch(activeSource, true, setError);
+  const { query: scQuery, setQuery: setScQuery, results: scResults, searching: scSearching,
+          queryPending: scQueryPending, setQueryPending: setScQueryPending,
+          selectedTrack: selectedScTrack, setSelectedTrack: setSelectedScTrack,
+          handleSearch: handleScSearch, handleTrackSelect: handleScTrackSelect } = sc;
 
   // Remix state
   const [isRemix, setIsRemix] = useState(false);
@@ -148,37 +151,36 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
     return () => { cancelled = true; };
   }, [selectedFile.file_path]);
 
-  // Auto-fill empty form fields when a SoundCloud track is selected
+  // Auto-fill empty form fields when a source track is selected
   useLayoutEffect(() => {
     setScQueryPending(false);
 
     if (!selectedScTrack || !autoActions.autoCopyMetadata) return;
 
-    const releaseDate = scReleaseDate(selectedScTrack);
+    const meta = activeSource.extractMetadata(selectedScTrack);
 
     setFormData(prev => ({
       ...prev,
       title: prev.title || selectedScTrack.title || '',
-      artist: prev.artist || selectedScTrack.user?.username || '',
+      artist: prev.artist || selectedScTrack.username || '',
       genre: prev.genre || selectedScTrack.genre || '',
-      release_date: prev.release_date || releaseDate || '',
+      release_date: prev.release_date || meta.release_date || '',
     }));
 
     setCommentData(prev => ({
-      soundcloud_id: prev.soundcloud_id || String(selectedScTrack.urn?.split(':').pop() ?? ''),
-      soundcloud_permalink: prev.soundcloud_permalink || stripQueryParams(selectedScTrack.permalink_url || '') || '',
+      soundcloud_id: prev.soundcloud_id || meta.source_id,
+      soundcloud_permalink: prev.soundcloud_permalink || meta.source_permalink,
     }));
     setScLinkEnabled(true);
   }, [selectedScTrack, autoActions.autoCopyMetadata]);
 
-  // Show SC artwork in preview when no existing artwork
+  // Show source artwork in preview when no existing artwork
   useEffect(() => {
     if (!selectedScTrack || !autoActions.autoCopyArtwork || !trackInfo || trackInfo.has_artwork) return;
 
-    const scArtworkUrl = selectedScTrack.artwork_url;
-    if (!scArtworkUrl) return;
+    const hqUrl = activeSource.extractMetadata(selectedScTrack).artwork_url;
+    if (!hqUrl) return;
 
-    const hqUrl = scArtworkUrl.replace('-large', '-t500x500');
     setArtworkUrl(hqUrl);
     api.proxyImage(hqUrl).then((blob) => {
       const reader = new FileReader();
@@ -329,21 +331,19 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
 
   const handleCopyFromSc = (field: keyof typeof formData) => {
     if (!selectedScTrack) return;
-    const releaseDate = scReleaseDate(selectedScTrack);
-    const scFieldMap: Record<string, string | undefined> = {
-      title: selectedScTrack.title ?? undefined,
-      artist: selectedScTrack.user?.username ?? undefined,
-      genre: selectedScTrack.genre ?? undefined,
-      release_date: releaseDate,
+    const meta = activeSource.extractMetadata(selectedScTrack);
+    const fieldMap: Record<string, string | undefined> = {
+      title: meta.title,
+      artist: meta.artist,
+      genre: meta.genre,
+      release_date: meta.release_date,
     };
-    if (field in scFieldMap) {
-      setFormData({ ...formData, [field]: scFieldMap[field] || '' });
+    if (field in fieldMap) {
+      setFormData({ ...formData, [field]: fieldMap[field] || '' });
     }
   };
 
-  const scArtistOptions = selectedScTrack
-    ? [...new Set([selectedScTrack.metadata_artist, selectedScTrack.user?.username].filter((x): x is string => !!x))]
-    : [];
+  const scArtistOptions = selectedScTrack?.artist_options ?? [];
 
   const handleBuildTitleFromRemix = () => {
     if (!isRemix || !remixData.original_artist || !remixData.remixer) return;
@@ -467,27 +467,25 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
     });
   };
 
-  const handleApplyScMetadata = (track: SCTrack) => {
-    const releaseDate = scReleaseDate(track);
-    const artist = track.user?.username;
+  const handleApplyScMetadata = (track: SourceTrack) => {
+    const meta = activeSource.extractMetadata(track);
 
     setFormData(prev => ({
       ...prev,
-      ...(track.title ? { title: track.title } : {}),
-      ...(artist ? { artist } : {}),
-      ...(track.genre ? { genre: track.genre } : {}),
-      ...(releaseDate ? { release_date: releaseDate } : {}),
+      ...(meta.title ? { title: meta.title } : {}),
+      ...(meta.artist ? { artist: meta.artist } : {}),
+      ...(meta.genre ? { genre: meta.genre } : {}),
+      ...(meta.release_date ? { release_date: meta.release_date } : {}),
     }));
 
     setCommentData({
-      soundcloud_id: String(track.urn?.split(':').pop() ?? ''),
-      soundcloud_permalink: stripQueryParams(track.permalink_url || ''),
+      soundcloud_id: meta.source_id,
+      soundcloud_permalink: meta.source_permalink,
     });
 
-    if (trackInfo && !trackInfo.has_artwork && track.artwork_url) {
-      const hqUrl = track.artwork_url.replace('-large', '-t500x500');
-      setArtworkUrl(hqUrl);
-      api.proxyImage(hqUrl).then((blob) => {
+    if (trackInfo && !trackInfo.has_artwork && meta.artwork_url) {
+      setArtworkUrl(meta.artwork_url);
+      api.proxyImage(meta.artwork_url).then((blob) => {
         const reader = new FileReader();
         reader.onloadend = () => {
           const b64 = (reader.result as string).split(',')[1];
@@ -499,7 +497,7 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
   };
 
   return (
-    <>
+    <div className="flex flex-col h-full">
       {/* Artwork lightbox preview */}
       {artworkPreviewOpen && artworkUrl && (
         <div
@@ -515,43 +513,76 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
         </div>
       )}
 
+      <AlertDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialog.message}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                confirmDialog.onConfirm();
+                setConfirmDialog((prev) => ({ ...prev, open: false }));
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Panel header: filename + close */}
+      <div className="px-3 h-10 flex items-center justify-between border-b border-border/50 shrink-0">
+        <span className="text-xs text-muted-foreground truncate min-w-0 mr-2">{trackInfo?.file_name ?? selectedFile.file_name}</span>
+        <button
+          onClick={onClose}
+          className="cursor-pointer shrink-0 size-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+          title="Close editor"
+        >
+          <X className="size-3" />
+        </button>
+      </div>
+
+      {/* Error */}
       {error && (
-        <div className="mx-4 mt-2 shrink-0 bg-destructive/10 border border-destructive/20 text-destructive text-xs px-3 py-2 rounded-lg">
+        <div className="mx-3 mt-2 shrink-0 bg-destructive/10 border border-destructive/20 text-destructive text-xs px-3 py-2 rounded-lg">
           {error}
         </div>
       )}
 
       {/* Skeleton while loading */}
       {loading && !trackInfo && (
-        <div className="px-3 pt-2.5 pb-2 shrink-0">
-          <div className="rounded-xl border border-border bg-card shadow-sm p-3">
-            <div className="flex items-start gap-2">
-              <div className="flex flex-col gap-0.5 shrink-0 items-center">
-                <Skeleton className="size-4 w-16 mt-4" />
-                <Skeleton className="size-21.5 rounded-lg mt-0.5" />
-              </div>
-              <div className="flex-1 flex flex-col gap-2 mt-4">
-                <div className="flex gap-2">
-                  <Skeleton className="h-8 flex-3" />
-                  <Skeleton className="h-8 flex-[1.2]" />
-                  <Skeleton className="h-8 w-16" />
-                </div>
-                <div className="flex gap-2">
-                  <Skeleton className="h-8 flex-3" />
-                  <Skeleton className="h-8 flex-[1.2]" />
-                  <Skeleton className="h-8 w-16" />
-                </div>
-              </div>
+        <div className="px-3 pt-3 flex flex-col gap-3">
+          <div className="flex gap-3 items-start">
+            <Skeleton className="size-21.5 rounded-lg shrink-0" />
+            <div className="flex-1 flex flex-col gap-1.5 pt-5">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8" />
           </div>
         </div>
       )}
 
-      {/* Editor form */}
+      {/* Scrollable form */}
       {trackInfo && (
-        <div className="px-3 pt-2.5 pb-2 shrink-0">
-          <div className="rounded-xl border border-border bg-card shadow-sm p-3">
-            <div className="flex items-start gap-2">
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="px-3 py-3 flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
+
+            {/* Artwork + Title + Artist */}
+            <div className="flex gap-3 items-start">
               {/* Artwork */}
               <div className="group flex flex-col gap-0.5 shrink-0 items-center">
                 <div className="flex items-center justify-between h-4">
@@ -562,8 +593,9 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
                       title="Copy artwork from SoundCloud"
                       disabled={!selectedScTrack?.artwork_url}
                       onClick={() => {
-                        if (!selectedScTrack?.artwork_url) return;
-                        const hqUrl = selectedScTrack.artwork_url.replace('-large', '-t500x500');
+                        if (!selectedScTrack) return;
+                        const hqUrl = activeSource.extractMetadata(selectedScTrack).artwork_url;
+                        if (!hqUrl) return;
                         setArtworkUrl(hqUrl);
                         api.proxyImage(hqUrl).then((blob) => {
                           const reader = new FileReader();
@@ -574,7 +606,7 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
                           reader.readAsDataURL(blob);
                         }).catch(() => {});
                       }}
-                    ><Cloud /></Button>
+                    ><activeSource.Icon className="size-3"  /></Button>
                     <Button
                       variant="ghost"
                       size="icon-xs"
@@ -617,230 +649,221 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
                 </div>
               </div>
 
-              {/* Two-row field grid */}
+              {/* Title + Artist stacked */}
               <div className="flex-1 min-w-0 flex flex-col gap-1">
-                {/* Row 1: Title | Genre | BPM */}
-                <div className="flex gap-2 items-start">
-                  {/* Title */}
-                  <div className="group flex-3 min-w-0 flex flex-col gap-0.5">
-                    <div className="flex items-center justify-between h-4">
-                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Title</span>
-                      <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
-                        <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('title')} disabled={!selectedScTrack} title="Copy from SoundCloud"><Cloud /></Button>
-                        <Button variant="ghost" size="icon-xs" onClick={handleCleanTitle} title="Clean"><Sparkles /></Button>
-                        <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.title) return; const t = titelize(formData.title); if (t !== formData.title) setFormData({...formData, title: t}); }} title="Titelize"><CaseSensitive /></Button>
-                        <Button variant="ghost" size="icon-xs" onClick={handleBuildTitleFromRemix} disabled={!isRemix} title="Build from remix"><Wand2 /></Button>
-                        <Button variant="ghost" size="icon-xs" onClick={handleRemoveParenthesis} title="Remove brackets"><Brackets /></Button>
-                        <Button variant="ghost" size="icon-xs" onClick={handleIsolateTitle} title="Isolate"><Trash2 /></Button>
-                        {isChanged('title') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('title', originalFormData.title)} title="Reset"><RotateCcw /></Button>}
-                      </div>
+                {/* Title */}
+                <div className="group flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between h-4">
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Title</span>
+                    <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                      <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('title')} disabled={!selectedScTrack} title="Copy from SoundCloud"><activeSource.Icon className="size-3"  /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleCleanTitle} title="Clean"><Sparkles /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.title) return; const t = titelize(formData.title); if (t !== formData.title) setFormData({...formData, title: t}); }} title="Titelize"><CaseSensitive /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleBuildTitleFromRemix} disabled={!isRemix} title="Build from remix"><Wand2 /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleRemoveParenthesis} title="Remove brackets"><Brackets /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleIsolateTitle} title="Isolate"><Trash2 /></Button>
+                      {isChanged('title') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('title', originalFormData.title)} title="Reset"><RotateCcw /></Button>}
                     </div>
-                    <Input value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} className={`h-8 text-xs${isChanged('title') ? ' border-amber-400/70' : ''}`} placeholder="Title" />
                   </div>
-
-                  {/* Genre */}
-                  <div className="group flex-[1.2] min-w-0 flex flex-col gap-0.5">
-                    <div className="flex items-center justify-between h-4">
-                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Genre</span>
-                      <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
-                        <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('genre')} disabled={!selectedScTrack} title="Copy from SC"><Cloud /></Button>
-                        <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.genre) return; const t = titelize(formData.genre); if (t !== formData.genre) setFormData({...formData, genre: t}); }} title="Titelize"><CaseSensitive /></Button>
-                        {isChanged('genre') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('genre', originalFormData.genre)} title="Reset"><RotateCcw /></Button>}
-                      </div>
-                    </div>
-                    <Input value={formData.genre} onChange={(e) => handleFormChange('genre', e.target.value)} className={`h-8 text-xs${isChanged('genre') ? ' border-amber-400/70' : ''}`} placeholder="—" />
-                  </div>
-
-                  {/* BPM */}
-                  <div className="group flex flex-col gap-0.5 w-16 shrink-0">
-                    <div className="flex items-center justify-between h-4">
-                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">BPM</span>
-                      <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
-                        {isChanged('bpm') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('bpm', originalFormData.bpm)} title="Reset"><RotateCcw /></Button>}
-                      </div>
-                    </div>
-                    <Input type="number" value={formData.bpm} onChange={(e) => handleFormChange('bpm', e.target.value)} className={`h-8 text-xs${isChanged('bpm') ? ' border-amber-400/70' : ''}`} placeholder="—" />
-                  </div>
+                  <Input value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} className={`h-8 text-xs${isChanged('title') ? ' border-amber-400/70' : ''}`} placeholder="Title" />
                 </div>
 
-                {/* Row 2: Artist | Release | Key */}
-                <div className="flex gap-2 items-start">
-                  {/* Artist */}
-                  <div className="group flex-3 min-w-0 flex flex-col gap-0.5">
+                {/* Artist */}
+                <div className="group flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between h-4">
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Artist</span>
+                    <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                      <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('artist')} disabled={!selectedScTrack} title="Copy from SoundCloud"><activeSource.Icon className="size-3"  /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleCleanArtist} title="Clean"><Sparkles /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.artist) return; const t = titelize(formData.artist); if (t !== formData.artist) setFormData({...formData, artist: t}); }} title="Titelize"><CaseSensitive /></Button>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length} title="Artist options"><Users /></Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-48 p-2">
+                          <div className="space-y-1">
+                            {scArtistOptions.map((artist) => (
+                              <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setFormData({ ...formData, artist })}>{artist}</Button>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                      {isChanged('artist') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('artist', originalFormData.artist)} title="Reset"><RotateCcw /></Button>}
+                    </div>
+                  </div>
+                  <Input value={formData.artist} onChange={(e) => handleFormChange('artist', e.target.value)} className={`h-8 text-xs${isChanged('artist') ? ' border-amber-400/70' : ''}`} placeholder="Artist" />
+                </div>
+              </div>
+            </div>
+
+            {/* 2-col: Genre | BPM */}
+            <div className="grid grid-cols-2 gap-2">
+              {/* Genre */}
+              <div className="group flex flex-col gap-0.5">
+                <div className="flex items-center justify-between h-4">
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Genre</span>
+                  <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                    <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('genre')} disabled={!selectedScTrack} title="Copy from SC"><activeSource.Icon className="size-3"  /></Button>
+                    <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.genre) return; const t = titelize(formData.genre); if (t !== formData.genre) setFormData({...formData, genre: t}); }} title="Titelize"><CaseSensitive /></Button>
+                    {isChanged('genre') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('genre', originalFormData.genre)} title="Reset"><RotateCcw /></Button>}
+                  </div>
+                </div>
+                <Input value={formData.genre} onChange={(e) => handleFormChange('genre', e.target.value)} className={`h-8 text-xs${isChanged('genre') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+              </div>
+
+              {/* BPM */}
+              <div className="group flex flex-col gap-0.5">
+                <div className="flex items-center justify-between h-4">
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">BPM</span>
+                  <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                    {isChanged('bpm') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('bpm', originalFormData.bpm)} title="Reset"><RotateCcw /></Button>}
+                  </div>
+                </div>
+                <Input type="number" value={formData.bpm} onChange={(e) => handleFormChange('bpm', e.target.value)} className={`h-8 text-xs${isChanged('bpm') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+              </div>
+            </div>
+
+            {/* 2-col: Release | Key */}
+            <div className="grid grid-cols-2 gap-2">
+              {/* Release */}
+              <div className="group flex flex-col gap-0.5">
+                <div className="flex items-center justify-between h-4">
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Release</span>
+                  <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                    <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('release_date')} disabled={!selectedScTrack} title="Copy from SC"><activeSource.Icon className="size-3"  /></Button>
+                    {isChanged('release_date') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('release_date', originalFormData.release_date)} title="Reset"><RotateCcw /></Button>}
+                  </div>
+                </div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`h-8 w-full justify-start text-left font-normal text-sm px-2.5 dark:bg-input/30${isChanged('release_date') ? ' border-amber-400/70 dark:border-amber-400/70' : ' dark:border-input'}${!formData.release_date ? ' text-muted-foreground' : ' text-foreground/80'}`}
+                    >
+                      <CalendarIcon className="mr-1 shrink-0" />
+                      {formData.release_date
+                        ? format(parse(formData.release_date, 'yyyy-MM-dd', new Date()), 'dd.MM.yyyy')
+                        : <span>Pick date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.release_date && isValid(parse(formData.release_date, 'yyyy-MM-dd', new Date())) ? parse(formData.release_date, 'yyyy-MM-dd', new Date()) : undefined}
+                      onSelect={(date) => handleFormChange('release_date', date ? format(date, 'yyyy-MM-dd') : '')}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Key */}
+              <div className="group flex flex-col gap-0.5">
+                <div className="flex items-center justify-between h-4">
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Key</span>
+                  <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                    {isChanged('key') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('key', originalFormData.key)} title="Reset"><RotateCcw /></Button>}
+                  </div>
+                </div>
+                <Input value={formData.key} onChange={(e) => handleFormChange('key', e.target.value)} className={`h-8 text-xs${isChanged('key') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+              </div>
+            </div>
+
+            {/* Remix section */}
+            <div className="pt-3">
+              <div className={`relative rounded-lg border transition-colors duration-200 ${isRemix ? 'border-border/50 bg-accent/20' : 'border-border/30'}`}>
+                <button
+                  onClick={() => setIsRemix(!isRemix)}
+                  className={`cursor-pointer absolute -top-2.75 left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
+                    isRemix
+                      ? 'bg-card border text-primary shadow-sm'
+                      : 'bg-card border border-dashed text-muted-foreground hover:text-foreground'
+                  } ${isRemix !== originalIsRemix ? 'border-amber-400/70' : isRemix ? 'border-border/50' : 'border-border/60 hover:border-border'}`}
+                >
+                  <Wand2 className="size-2.5" />
+                  Remix
+                </button>
+                <div className={`flex flex-col gap-3 px-3 pb-3 pt-5 transition-opacity duration-150 ${isRemix ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                  {/* Row 1: Original Artist | Remixer */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="group flex flex-col gap-0.5">
+                      <div className="flex items-center justify-between h-4">
+                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Original Artist</span>
+                        <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                          <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.original_artist) return; const t = cleanArtist(remixData.original_artist); if (t !== remixData.original_artist) setRemixData({...remixData, original_artist: t}); }} title="Clean"><Sparkles /></Button>
+                          <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.original_artist) return; const t = titelize(remixData.original_artist); if (t !== remixData.original_artist) setRemixData({...remixData, original_artist: t}); }} title="Titelize"><CaseSensitive /></Button>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length}><Users /></Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-48 p-2">
+                              <div className="space-y-1">
+                                {scArtistOptions.map((artist) => (
+                                  <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setRemixData({ ...remixData, original_artist: artist })}>{artist}</Button>
+                                ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                          {remixData.original_artist !== originalRemixData.original_artist && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, original_artist: originalRemixData.original_artist })} title="Reset"><RotateCcw /></Button>}
+                        </div>
+                      </div>
+                      <Input value={remixData.original_artist} onChange={(e) => handleRemixChange('original_artist', e.target.value)} className={`h-8 text-xs${remixData.original_artist !== originalRemixData.original_artist ? ' border-amber-400/70' : ''}`} placeholder="Original artist" />
+                    </div>
+                    <div className="group flex flex-col gap-0.5">
+                      <div className="flex items-center justify-between h-4">
+                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Remixer</span>
+                        <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                          <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.remixer) return; const t = cleanArtist(remixData.remixer); if (t !== remixData.remixer) setRemixData({...remixData, remixer: t}); }} title="Clean"><Sparkles /></Button>
+                          <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.remixer) return; const t = titelize(remixData.remixer); if (t !== remixData.remixer) setRemixData({...remixData, remixer: t}); }} title="Titelize"><CaseSensitive /></Button>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length}><Users /></Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-48 p-2">
+                              <div className="space-y-1">
+                                {scArtistOptions.map((artist) => (
+                                  <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setRemixData({ ...remixData, remixer: artist })}>{artist}</Button>
+                                ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                          {remixData.remixer !== originalRemixData.remixer && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, remixer: originalRemixData.remixer })} title="Reset"><RotateCcw /></Button>}
+                        </div>
+                      </div>
+                      <Input value={remixData.remixer} onChange={(e) => handleRemixChange('remixer', e.target.value)} className={`h-8 text-xs${remixData.remixer !== originalRemixData.remixer ? ' border-amber-400/70' : ''}`} placeholder="Remixer" />
+                    </div>
+                  </div>
+                  {/* Row 2: Mix Type (full width) */}
+                  <div className="group flex flex-col gap-0.5">
                     <div className="flex items-center justify-between h-4">
-                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Artist</span>
-                      <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
-                        <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('artist')} disabled={!selectedScTrack} title="Copy from SoundCloud"><Cloud /></Button>
-                        <Button variant="ghost" size="icon-xs" onClick={handleCleanArtist} title="Clean"><Sparkles /></Button>
-                        <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.artist) return; const t = titelize(formData.artist); if (t !== formData.artist) setFormData({...formData, artist: t}); }} title="Titelize"><CaseSensitive /></Button>
+                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Mix Type</span>
+                      <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out">
                         <Popover>
                           <PopoverTrigger asChild>
-                            <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length} title="Artist options"><Users /></Button>
+                            <Button variant="ghost" size="icon-xs" title="Predefined mix types"><ChevronDown /></Button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-48 p-2">
-                            <div className="space-y-1">
-                              {scArtistOptions.map((artist) => (
-                                <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setFormData({ ...formData, artist })}>{artist}</Button>
+                          <PopoverContent className="w-36 p-1" align="end">
+                            <div className="space-y-0.5">
+                              {['Remix', 'VIP Mix', 'Extended Mix', 'Radio Edit', 'Club Mix', 'Dub Mix'].map((opt) => (
+                                <Button key={opt} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => handleRemixChange('mix_name', opt)}>{opt}</Button>
                               ))}
                             </div>
                           </PopoverContent>
                         </Popover>
-                        {isChanged('artist') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('artist', originalFormData.artist)} title="Reset"><RotateCcw /></Button>}
+                        {remixData.mix_name !== originalRemixData.mix_name && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, mix_name: originalRemixData.mix_name })} title="Reset"><RotateCcw /></Button>}
                       </div>
                     </div>
-                    <Input value={formData.artist} onChange={(e) => handleFormChange('artist', e.target.value)} className={`h-8 text-xs${isChanged('artist') ? ' border-amber-400/70' : ''}`} placeholder="Artist" />
-                  </div>
-
-                  {/* Release */}
-                  <div className="group flex-[1.2] min-w-0 flex flex-col gap-0.5">
-                    <div className="flex items-center justify-between h-4">
-                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Release</span>
-                      <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
-                        <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('release_date')} disabled={!selectedScTrack} title="Copy from SC"><Cloud /></Button>
-                        {isChanged('release_date') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('release_date', originalFormData.release_date)} title="Reset"><RotateCcw /></Button>}
-                      </div>
-                    </div>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className={`h-8 w-full justify-start text-left font-normal text-sm px-2.5 dark:bg-input/30${isChanged('release_date') ? ' border-amber-400/70 dark:border-amber-400/70' : ' dark:border-input'}${!formData.release_date ? ' text-muted-foreground' : ' text-foreground/80'}`}
-                        >
-                          <CalendarIcon className="mr-1 shrink-0" />
-                          {formData.release_date
-                            ? format(parse(formData.release_date, 'yyyy-MM-dd', new Date()), 'dd.MM.yyyy')
-                            : <span>Pick date</span>}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="end">
-                        <Calendar
-                          mode="single"
-                          selected={formData.release_date && isValid(parse(formData.release_date, 'yyyy-MM-dd', new Date())) ? parse(formData.release_date, 'yyyy-MM-dd', new Date()) : undefined}
-                          onSelect={(date) => handleFormChange('release_date', date ? format(date, 'yyyy-MM-dd') : '')}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-
-                  {/* Key */}
-                  <div className="group flex flex-col gap-0.5 w-16 shrink-0">
-                    <div className="flex items-center justify-between h-4">
-                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Key</span>
-                      <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
-                        {isChanged('key') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('key', originalFormData.key)} title="Reset"><RotateCcw /></Button>}
-                      </div>
-                    </div>
-                    <Input value={formData.key} onChange={(e) => handleFormChange('key', e.target.value)} className={`h-8 text-xs${isChanged('key') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+                    <Input value={remixData.mix_name} onChange={(e) => handleRemixChange('mix_name', e.target.value)} className={`h-8 text-xs${remixData.mix_name !== originalRemixData.mix_name ? ' border-amber-400/70' : ''}`} placeholder="Mix type" />
                   </div>
                 </div>
               </div>
-
-              {/* Close button */}
-              <button
-                onClick={onClose}
-                className="cursor-pointer shrink-0 size-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors -mt-0.5"
-                title="Close editor"
-              >
-                <X className="size-3" />
-              </button>
             </div>
 
-            <div className="py-3 shrink-0 flex flex-col gap-3">
-              <div className="flex gap-2 items-start">
-
-                {/* Remix fields */}
-                <div className="flex-1 min-w-0 pt-3">
-                  <div className={`relative rounded-lg border transition-colors duration-200 ${isRemix ? 'border-border/50 bg-accent/20' : 'border-border/30'}`}>
-                    <button
-                      onClick={() => setIsRemix(!isRemix)}
-                      className={`cursor-pointer absolute -top-2.75 left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
-                        isRemix
-                          ? 'bg-card border text-primary shadow-sm'
-                          : 'bg-card border border-dashed text-muted-foreground hover:text-foreground'
-                      } ${isRemix !== originalIsRemix ? 'border-amber-400/70' : isRemix ? 'border-border/50' : 'border-border/60 hover:border-border'}`}
-                    >
-                      <Wand2 className="size-2.5" />
-                      Remix
-                    </button>
-                    <div className={`grid grid-cols-3 gap-3 px-3 pb-3 pt-5 transition-opacity duration-150 ${isRemix ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                      <div className="group flex flex-col gap-0.5">
-                        <div className="flex items-center justify-between h-4">
-                          <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Original Artist</span>
-                          <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
-                            <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.original_artist) return; const t = cleanArtist(remixData.original_artist); if (t !== remixData.original_artist) setRemixData({...remixData, original_artist: t}); }} title="Clean"><Sparkles /></Button>
-                            <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.original_artist) return; const t = titelize(remixData.original_artist); if (t !== remixData.original_artist) setRemixData({...remixData, original_artist: t}); }} title="Titelize"><CaseSensitive /></Button>
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length}><Users /></Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-48 p-2">
-                                <div className="space-y-1">
-                                  {scArtistOptions.map((artist) => (
-                                    <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setRemixData({ ...remixData, original_artist: artist })}>{artist}</Button>
-                                  ))}
-                                </div>
-                              </PopoverContent>
-                            </Popover>
-                            {remixData.original_artist !== originalRemixData.original_artist && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, original_artist: originalRemixData.original_artist })} title="Reset"><RotateCcw /></Button>}
-                          </div>
-                        </div>
-                        <Input value={remixData.original_artist} onChange={(e) => handleRemixChange('original_artist', e.target.value)} className={`h-8 text-xs${remixData.original_artist !== originalRemixData.original_artist ? ' border-amber-400/70' : ''}`} placeholder="Original artist" />
-                      </div>
-                      <div className="group flex flex-col gap-0.5">
-                        <div className="flex items-center justify-between h-4">
-                          <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Remixer</span>
-                          <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
-                            <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.remixer) return; const t = cleanArtist(remixData.remixer); if (t !== remixData.remixer) setRemixData({...remixData, remixer: t}); }} title="Clean"><Sparkles /></Button>
-                            <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.remixer) return; const t = titelize(remixData.remixer); if (t !== remixData.remixer) setRemixData({...remixData, remixer: t}); }} title="Titelize"><CaseSensitive /></Button>
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length}><Users /></Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-48 p-2">
-                                <div className="space-y-1">
-                                  {scArtistOptions.map((artist) => (
-                                    <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setRemixData({ ...remixData, remixer: artist })}>{artist}</Button>
-                                  ))}
-                                </div>
-                              </PopoverContent>
-                            </Popover>
-                            {remixData.remixer !== originalRemixData.remixer && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, remixer: originalRemixData.remixer })} title="Reset"><RotateCcw /></Button>}
-                          </div>
-                        </div>
-                        <Input value={remixData.remixer} onChange={(e) => handleRemixChange('remixer', e.target.value)} className={`h-8 text-xs${remixData.remixer !== originalRemixData.remixer ? ' border-amber-400/70' : ''}`} placeholder="Remixer" />
-                      </div>
-                      <div className="group flex flex-col gap-0.5">
-                        <div className="flex items-center justify-between h-4">
-                          <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Mix Type</span>
-                          <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out">
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon-xs" title="Predefined mix types"><ChevronDown /></Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-36 p-1" align="end">
-                                <div className="space-y-0.5">
-                                  {['Remix', 'VIP Mix', 'Extended Mix', 'Radio Edit', 'Club Mix', 'Dub Mix'].map((opt) => (
-                                    <Button key={opt} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => handleRemixChange('mix_name', opt)}>{opt}</Button>
-                                  ))}
-                                </div>
-                              </PopoverContent>
-                            </Popover>
-                            {remixData.mix_name !== originalRemixData.mix_name && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, mix_name: originalRemixData.mix_name })} title="Reset"><RotateCcw /></Button>}
-                          </div>
-                        </div>
-                        <Input value={remixData.mix_name} onChange={(e) => handleRemixChange('mix_name', e.target.value)} className={`h-8 text-xs${remixData.mix_name !== originalRemixData.mix_name ? ' border-amber-400/70' : ''}`} placeholder="Mix type" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* SC link */}
-              <div className="pt-3 flex items-end gap-2">
-                <div className={`relative rounded-lg border min-w-0 flex-1 transition-colors duration-200 ${scLinkEnabled ? 'border-border/50 bg-accent/40' : 'border-border/30 bg-accent/20'}`}>
+            {/* SC link + search */}
+            <div className="pt-3">
+              <div className={`relative rounded-lg border transition-colors duration-200 ${scLinkEnabled ? 'border-border/50 bg-accent/40' : 'border-border/30 bg-accent/20'}`}>
+                {/* Left chip: SC link toggle */}
                 <button
                   onClick={() => setScLinkEnabled(!scLinkEnabled)}
                   className={`cursor-pointer absolute -top-2.75 left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
@@ -849,9 +872,24 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
                       : 'bg-card border border-dashed text-muted-foreground hover:text-foreground'
                   } ${scLinkEnabled !== originalScLinkEnabled ? 'border-amber-400/70' : scLinkEnabled ? 'border-border/50' : 'border-border/60 hover:border-border'}`}
                 >
-                  <Cloud className="size-2.5" />
+                  <activeSource.Icon className="size-2.5" />
                   SoundCloud
                 </button>
+                {/* Right chip: search toggle */}
+                <button
+                  onClick={() => setScSidebarOpen(!scSidebarOpen)}
+                  className={`cursor-pointer absolute -top-2.75 right-3 inline-flex items-center gap-1 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md border transition-all duration-150 ${
+                    scSidebarOpen
+                      ? 'bg-card border-border/50 text-primary shadow-sm'
+                      : 'bg-card border-dashed border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
+                  }`}
+                  title={scSidebarOpen ? 'Close search' : 'Search SoundCloud'}
+                >
+                  {scSidebarOpen ? <X className="size-2.5" /> : <Search className="size-2.5" />}
+                  {scSidebarOpen ? 'Close' : 'Search'}
+                </button>
+
+                {/* Link row */}
                 <div className={`group flex items-center gap-3 px-3 pt-3 pb-2 transition-opacity duration-150 ${scLinkEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                   <div className="flex-1 min-w-0">
                     {commentData.soundcloud_id ? (
@@ -873,16 +911,17 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
                       size="icon-xs"
                       onClick={() => {
                         if (!selectedScTrack) return;
+                        const meta = activeSource.extractMetadata(selectedScTrack);
                         setCommentData({
-                          soundcloud_id: String(selectedScTrack.urn?.split(':').pop() ?? ''),
-                          soundcloud_permalink: stripQueryParams(selectedScTrack.permalink_url || ''),
+                          soundcloud_id: meta.source_id,
+                          soundcloud_permalink: meta.source_permalink,
                         });
                         setScLinkEnabled(true);
                       }}
                       disabled={!selectedScTrack}
                       title="Link selected SC track"
                     >
-                      <Cloud />
+                      <activeSource.Icon className="size-3" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -897,191 +936,151 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
                       <Button variant="ghost" size="icon-xs" onClick={() => setCommentData(originalCommentData)} title="Reset"><RotateCcw /></Button>
                     )}
                   </div>
+                </div>
+
+                {/* Compact track preview (search closed, track selected) */}
+                {!scSidebarOpen && selectedScTrack && (
+                  <div className="flex items-center gap-2 px-3 pb-2 pt-0 border-t border-border/30">
+                    <div className="size-5 shrink-0 rounded overflow-hidden border border-border/30 mt-1.5">
+                      {selectedScTrack.artwork_url ? (
+                        <img src={selectedScTrack.artwork_url} alt="" className="size-full object-cover" />
+                      ) : (
+                        <div className="size-full bg-accent/40 flex items-center justify-center">
+                          <Image className="size-3 text-muted-foreground/40" />
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs truncate text-muted-foreground mt-1.5">{selectedScTrack.title}</span>
                   </div>
-                </div>
-                <div className="flex items-center gap-1 pb-2 pl-2 shrink-0">
-                  {(hasChanges || folderMode !== 'prepare') ? (
-                    <>
-                      <div
-                        className={`size-2 rounded-full shrink-0 ${trackInfo.is_ready ? 'bg-chart-1' : 'bg-amber-400'}`}
-                        title={[
-                          ...(trackInfo.missing_fields.length ? [`Missing: ${trackInfo.missing_fields.join(', ')}`] : []),
-                          ...(trackInfo.issues.length ? [trackInfo.issues.join(' · ')] : []),
-                        ].join('\n') || 'Ready'}
-                      />
-                      <Button onClick={handleSave} disabled={loading || !hasChanges} size="sm" className="h-7 text-xs px-2.5">Save</Button>
-                    </>
-                  ) : (
-                    <Button
-                      onClick={handleFinalize}
-                      disabled={!trackInfo.is_ready || !formComplete || loading}
-                      size="sm"
-                      className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold animate-in fade-in slide-in-from-right-2 duration-200"
-                    >Finalize</Button>
-                  )}
-                  <Button onClick={handleDelete} disabled={loading} variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive animate-in fade-in slide-in-from-right-2 duration-200"><Trash2 /></Button>
-                </div>
+                )}
+
+                {/* Expanded search UI */}
+                {scSidebarOpen && (
+                  <div className="border-t border-border/30">
+                    <div className={`px-3 py-2.5 ${(selectedScTrack || scResults.length > 0) ? 'border-b border-border/30' : ''}`}>
+                      <div className="flex gap-2">
+                        <Input
+                          value={scQuery}
+                          onChange={(e) => setScQuery(e.target.value)}
+                          placeholder="Search tracks..."
+                          onKeyDown={(e) => e.key === 'Enter' && handleScSearch()}
+                          className="text-xs h-8"
+                          autoFocus
+                        />
+                        <Button onClick={handleScSearch} disabled={scSearching || !scQuery.trim()} size="sm" className="h-8 px-2.5 shrink-0">
+                          <Search className="size-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {selectedScTrack && (
+                      <div className="px-3 py-3 border-b border-border/30 space-y-2">
+                        <a
+                          href={selectedScTrack.permalink_url ?? undefined}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2.5 group/sclink"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="size-8 shrink-0 rounded overflow-hidden border">
+                            {selectedScTrack.artwork_url ? (
+                              <img src={selectedScTrack.artwork_url} alt="" className="size-full object-cover" />
+                            ) : (
+                              <div className="size-full bg-accent/40 flex items-center justify-center">
+                                <Image className="size-3 text-muted-foreground/40" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-medium truncate text-foreground group-hover/sclink:text-primary transition-colors">{selectedScTrack.title}</div>
+                            <div className="flex items-center gap-1 text-[10px] text-muted-foreground truncate">
+                              <activeSource.Icon className="size-2.5 shrink-0" />
+                              {selectedScTrack.username}
+                            </div>
+                          </div>
+                        </a>
+                        {activeSource.getEmbedUrl(selectedScTrack, isDark) && (
+                          <iframe
+                            width="100%"
+                            height="120"
+                            scrolling="no"
+                            frameBorder="no"
+                            allow="autoplay"
+                            src={activeSource.getEmbedUrl(selectedScTrack, isDark)!}
+                            className="rounded-lg overflow-hidden"
+                          />
+                        )}
+                        <div className="flex gap-1.5">
+                          <Button onClick={() => { handleApplyScMetadata(selectedScTrack); setScSidebarOpen(false); }} disabled={!trackInfo} size="sm" className="flex-1 h-7 text-xs">Apply All</Button>
+                          <Button onClick={() => setSelectedScTrack(null)} variant="ghost" size="sm" className="h-7 text-xs">Clear</Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {scResults.map((track, i) => (
+                      <button
+                        key={track.id}
+                        onClick={() => handleScTrackSelect(track)}
+                        className={`cursor-pointer w-full text-left px-3 py-2 transition-colors relative overflow-hidden ${
+                          i === scResults.length - 1 ? 'rounded-b-lg' : ''
+                        } ${
+                          selectedScTrack?.id === track.id
+                            ? 'bg-primary/10 text-foreground'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                        }`}
+                      >
+                        {selectedScTrack?.id === track.id && (
+                          <div className="absolute inset-y-0 left-0 w-0.5 bg-primary rounded-r" />
+                        )}
+                        <div className="flex items-center gap-2.5">
+                          <div className="size-8 shrink-0 rounded overflow-hidden border border-border/30">
+                            {track.artwork_url ? (
+                              <img src={track.artwork_url} alt="" className="size-full object-cover" loading="lazy" />
+                            ) : (
+                              <div className="size-full bg-accent/40 flex items-center justify-center">
+                                <Image className="size-3 text-muted-foreground/40" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium truncate">{track.title}</div>
+                            <div className="text-[10px] opacity-60 truncate">{track.username}{track.genre ? ` · ${track.genre}` : ''}</div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
+
+          </div>
+
+          {/* Actions */}
+          <div className="shrink-0 border-t border-border/50 px-3 py-2.5 flex items-center gap-1">
+            {(hasChanges || folderMode !== 'prepare') ? (
+              <>
+                <div
+                  className={`size-2 rounded-full shrink-0 ${trackInfo.is_ready ? 'bg-chart-1' : 'bg-amber-400'}`}
+                  title={[
+                    ...(trackInfo.missing_fields.length ? [`Missing: ${trackInfo.missing_fields.join(', ')}`] : []),
+                    ...(trackInfo.issues.length ? [trackInfo.issues.join(' · ')] : []),
+                  ].join('\n') || 'Ready'}
+                />
+                <Button onClick={handleSave} disabled={loading || !hasChanges} size="sm" className="h-7 text-xs px-2.5">Save</Button>
+              </>
+            ) : (
+              <Button
+                onClick={handleFinalize}
+                disabled={!trackInfo.is_ready || !formComplete || loading}
+                size="sm"
+                className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold animate-in fade-in slide-in-from-right-2 duration-200"
+              >Finalize</Button>
+            )}
+            <Button onClick={handleDelete} disabled={loading} variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive animate-in fade-in slide-in-from-right-2 duration-200"><Trash2 /></Button>
           </div>
         </div>
       )}
-
-      {/* SoundCloud panel — absolutely positioned relative to the nearest positioned ancestor in the page */}
-      <div
-        className={`absolute right-0 top-0 z-10 flex flex-col w-72 max-h-full bg-background border-l border-border/50 overflow-hidden transition-[border-radius] duration-200 shadow-lg shadow-black/10 ${scSidebarOpen ? 'rounded-b-xl border-b' : ''}`}
-        onMouseEnter={() => {
-          if (scHoverTimerRef.current) clearTimeout(scHoverTimerRef.current);
-          scHoverTimerRef.current = setTimeout(() => setScSidebarOpen(true), 150);
-        }}
-        onMouseLeave={() => {
-          if (scHoverTimerRef.current) clearTimeout(scHoverTimerRef.current);
-          scHoverTimerRef.current = setTimeout(() => setScSidebarOpen(false), 300);
-        }}
-      >
-        <div className="flex flex-col flex-1 min-h-0">
-          <div className="px-3 h-14 border-b border-border/50 flex items-center gap-2.5 shrink-0">
-            {scSearching ? (
-              <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                <LogoSpinner className="size-8 shrink-0" />
-                <span className="text-[10px] text-muted-foreground">Searching…</span>
-              </div>
-            ) : selectedScTrack ? (
-              <a
-                href={selectedScTrack.permalink_url ?? undefined}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer group/sclink"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="size-8 shrink-0 rounded overflow-hidden border">
-                  {selectedScTrack.artwork_url ? (
-                    <img src={selectedScTrack.artwork_url} alt="" className="size-full object-cover" />
-                  ) : (
-                    <div className="size-full bg-accent/40 flex items-center justify-center">
-                      <Image className="size-3 text-muted-foreground/40" />
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium truncate text-foreground group-hover/sclink:text-primary transition-colors">{selectedScTrack.title}</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{selectedScTrack.user?.username}</div>
-                </div>
-              </a>
-            ) : scResults[0] ? (
-              <>
-                <div className="size-8 shrink-0 rounded overflow-hidden border border-border/30">
-                  {scResults[0].artwork_url ? (
-                    <img src={scResults[0].artwork_url} alt="" className="size-full object-cover" />
-                  ) : (
-                    <div className="size-full bg-accent/40 flex items-center justify-center">
-                      <Image className="size-3 text-muted-foreground/40" />
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium truncate">{scResults[0].title}</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{scResults[0].user?.username}</div>
-                </div>
-              </>
-            ) : (
-              <span className="text-[10px] font-bold tracking-widest uppercase flex-1 text-muted-foreground/50">SoundCloud Search</span>
-            )}
-          </div>
-          <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out flex-1 min-h-0 ${scSidebarOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-            <div className="flex flex-col min-h-0 overflow-hidden">
-              <div className={`px-3 py-2.5 ${(selectedScTrack || scResults.length > 0) ? 'border-b border-border/50' : ''}`}>
-                <div className="flex gap-2">
-                  <Input
-                    value={scQuery}
-                    onChange={(e) => setScQuery(e.target.value)}
-                    placeholder="Search tracks..."
-                    onKeyDown={(e) => e.key === 'Enter' && handleScSearch()}
-                    className="text-xs h-8"
-                  />
-                  <Button onClick={handleScSearch} disabled={scSearching || !scQuery.trim()} size="sm" className="h-8 px-2.5 shrink-0">
-                    <Search className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-
-              {selectedScTrack && (
-                <div className="px-3 py-3 border-b border-border/50 space-y-2">
-                  <iframe
-                    width="100%"
-                    height="120"
-                    scrolling="no"
-                    frameBorder="no"
-                    allow="autoplay"
-                    src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(selectedScTrack.permalink_url ?? '')}&color=${encodeURIComponent(isDark ? '#d0fd5a' : '#bde752')}&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=true`}
-                    className="rounded-lg overflow-hidden"
-                  />
-                  <div className="flex gap-1.5">
-                    <Button onClick={() => handleApplyScMetadata(selectedScTrack)} disabled={!trackInfo} size="sm" className="flex-1 h-7 text-xs">Apply All</Button>
-                    <Button onClick={() => setSelectedScTrack(null)} variant="ghost" size="sm" className="h-7 text-xs">Clear</Button>
-                  </div>
-                </div>
-              )}
-
-              <div className={`flex-1 overflow-y-auto ${scResults.length > 0 ? 'pb-4' : ''}`}>
-                {scResults.map((track) => (
-                  <button
-                    key={track.urn}
-                    onClick={() => handleScTrackSelect(track)}
-                    className={`cursor-pointer w-full text-left px-3 py-2 transition-colors relative ${
-                      selectedScTrack?.urn === track.urn
-                        ? 'bg-primary/10 text-foreground'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                    }`}
-                  >
-                    {selectedScTrack?.urn === track.urn && (
-                      <div className="absolute inset-y-0 left-0 w-0.5 bg-primary rounded-r" />
-                    )}
-                    <div className="flex items-center gap-2.5">
-                      <div className="size-8 shrink-0 rounded overflow-hidden border border-border/30">
-                        {track.artwork_url ? (
-                          <img src={track.artwork_url} alt="" className="size-full object-cover" loading="lazy" />
-                        ) : (
-                          <div className="size-full bg-accent/40 flex items-center justify-center">
-                            <Image className="size-3 text-muted-foreground/40" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-medium truncate">{track.title}</div>
-                        <div className="text-[10px] opacity-60 truncate">{track.user?.username}{track.genre ? ` · ${track.genre}` : ''}</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <AlertDialog
-        open={confirmDialog.open}
-        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirm</AlertDialogTitle>
-            <AlertDialogDescription>{confirmDialog.message}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                confirmDialog.onConfirm();
-                setConfirmDialog((prev) => ({ ...prev, open: false }));
-              }}
-            >
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    </div>
   );
 }

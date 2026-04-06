@@ -112,14 +112,9 @@ function MetaEditorContent() {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      {/* Main content */}
-      <div className="flex flex-1 min-h-0 relative">
-        {/* Center area */}
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          <PageHeader
-            title="Meta Editor"
-            className={editorOpen ? 'pr-72' : ''}
-            controls={
+      <PageHeader
+        title="Meta Editor"
+        controls={
               <ToggleGroup
                 type="single"
                 variant="outline"
@@ -189,25 +184,13 @@ function MetaEditorContent() {
             }
           />
 
-          <div
-            className="grid transition-[grid-template-rows] duration-300 ease-out"
-            style={{ gridTemplateRows: editorOpen && selectedFile ? '1fr' : '0fr' }}
-          >
-            <div className="overflow-hidden min-h-0">
-              {selectedFile && (
-                <TrackEditor
-                  selectedFile={selectedFile}
-                  folderMode={folderMode}
-                  autoActions={autoActions}
-                  onTableRefresh={() => setRefreshToken(t => t + 1)}
-                  onClose={() => setEditorOpen(false)}
-                  onFileChange={setSelectedFile}
-                  onSelectNext={selectNextTrack}
-                />
-              )}
-            </div>
-          </div>
-
+      {/* Horizontal split: table left (60%), editor right (40%) */}
+      <div
+        className="grid flex-1 min-h-0 transition-[grid-template-columns] duration-300 ease-out"
+        style={{ gridTemplateColumns: editorOpen && selectedFile ? '3fr 2fr' : '1fr 0fr' }}
+      >
+        {/* Left: filter + table */}
+        <div className="flex flex-col min-w-0 overflow-hidden">
           {/* Always-visible filter bar + browse table */}
           <CollectionFilterBar mode={folderMode} total={tableTotal} cacheLoading={tableCacheLoading} />
           <CollectionTable
@@ -218,6 +201,20 @@ function MetaEditorContent() {
             onSelect={handleTableSelect}
             onTotalChange={(t, cl) => { setTableTotal(t); setTableCacheLoading(cl); }}
           />
+        </div>
+        {/* Right: editor panel */}
+        <div className={`overflow-hidden min-w-0 flex flex-col bg-card${editorOpen && selectedFile ? ' border-l border-border/50' : ''}`}>
+          {selectedFile && (
+            <TrackEditor
+              selectedFile={selectedFile}
+              folderMode={folderMode}
+              autoActions={autoActions}
+              onTableRefresh={() => setRefreshToken(t => t + 1)}
+              onClose={() => setEditorOpen(false)}
+              onFileChange={setSelectedFile}
+              onSelectNext={selectNextTrack}
+            />
+          )}
         </div>
       </div>
     </div>

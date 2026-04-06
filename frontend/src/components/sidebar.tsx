@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Music2, FilePen, Heart, Settings, CalendarDays } from "lucide-react";
 import { clearTokens } from "@/lib/auth";
 import { SettingsDialog } from "@/components/settings-dialog";
+import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 
 interface User {
   id: number;
@@ -114,16 +115,17 @@ export function Sidebar() {
         {user ? (
           <button
             onClick={handleDisconnect}
-            title="Disconnect"
+            title="Disconnect SoundCloud"
             className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
           >
             {user.avatar_url ? (
-              <span className="w-6 shrink-0 flex items-center justify-center">
+              <span className="w-6 shrink-0 flex items-center justify-center relative">
                 <img
                   src={user.avatar_url}
                   alt={user.username}
                   className="size-5 rounded-full object-cover"
                 />
+                <SoundCloudLogo className="absolute -bottom-0.5 -right-0.5 size-2.5"  />
               </span>
             ) : (
               <span className="w-6 shrink-0 flex items-center justify-center">
@@ -143,10 +145,10 @@ export function Sidebar() {
             className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
           >
             <span className="w-6 shrink-0 flex items-center justify-center">
-              <Music2 className="size-4" />
+              <SoundCloudLogo className="size-4"  />
             </span>
             <span className="text-xs opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
-              Connect SC
+              Connect SoundCloud
             </span>
           </Link>
         )}
