@@ -58,9 +58,11 @@ export function WaveformPlayer() {
       if (cancelled || !containerRef.current) return;
 
       // Use an <audio> element for playback so WaveSurfer uses the native
-      // media pipeline instead of Web Audio API.
+      // media pipeline instead of Web Audio API. crossOrigin is intentionally
+      // omitted: peaks are pre-fetched so no Web Audio decoding is needed, and
+      // CORS mode on the <audio> element can cause playback failures in the
+      // Tauri WKWebView when the WebKit media assertion (RBS) is unavailable.
       const audio = new Audio(api.getAudioUrl(currentTrack!.filePath));
-      audio.crossOrigin = 'anonymous';
       audio.preload = 'metadata';
       audioRef.current = audio;
 
