@@ -72,6 +72,7 @@ function TrackRow({ item, isActive, isPlaying, onPlay, onSelect }: RowProps) {
     <div
       role="row"
       tabIndex={0}
+      data-file-path={item.file_path}
       className={`flex items-center h-12 gap-2 px-3 border-b border-border/30 transition-colors select-none cursor-pointer
         ${isActive ? 'bg-accent/40' : 'hover:bg-accent/20'}`}
       onClick={onSelect}

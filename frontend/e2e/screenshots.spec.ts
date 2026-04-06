@@ -201,12 +201,33 @@ async function mockScreenshotApi(page: Page) {
     }
   });
 
-  // Browse endpoint
+  // Browse endpoint — return the same tracks as the file listing with full TrackBrowse fields
+  const browseItems = MOCK_TRACKS.slice(0, 8).map((t) => {
+    const filePath = `/music/${t.user.username} - ${t.title}.mp3`;
+    return {
+      file_path: filePath,
+      file_name: `${t.user.username} - ${t.title}.mp3`,
+      file_size: 8_000_000 + t.id * 1000,
+      file_format: 'mp3',
+      has_artwork: !!t.artwork_url,
+      title: t.title,
+      artist: t.user.username,
+      bpm: t.bpm ?? null,
+      key: t.key_signature ?? null,
+      genre: t.genre ?? null,
+      comment: null,
+      release_date: t.created_at ? t.created_at.split('T')[0] : null,
+      remixers: [],
+      is_ready: true,
+      missing_fields: [],
+      issues: [],
+    };
+  });
   await page.route('**/api/metadata/folders/*/browse*', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ items: [], total: 0, page: 1, size: 50, pages: 0 }),
+      body: JSON.stringify({ items: browseItems, total: browseItems.length, page: 1, size: 50, pages: 1 }),
     }),
   );
 
@@ -371,7 +392,7 @@ test.describe('Documentation screenshots', () => {
   });
 
   test('meta editor', async ({ page }) => {
-    await page.goto('/meta-editor?view=edit');
+    await page.goto('/meta-editor');
     await page.waitForLoadState('networkidle');
     // Click the first file to open the edit panel
     const firstFile = page.locator('[data-file-path]').first();

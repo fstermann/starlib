@@ -52,7 +52,7 @@ const MOCK_TRACK_INFO = {
 test.describe('Meta editor waveform visibility', () => {
   test.beforeEach(async ({ page }) => {
     // Override file listing to return one file
-    await page.route('**/api/metadata/folders/*/files*', (route) =>
+    await page.route('**/api/metadata/folders/*/browse*', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -108,7 +108,7 @@ test.describe('Meta editor waveform visibility', () => {
 
 test.describe('Meta editor track playback', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/metadata/folders/*/files*', (route) =>
+    await page.route('**/api/metadata/folders/*/browse*', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -149,7 +149,7 @@ test.describe('Meta editor track playback', () => {
     await page.locator('[data-file-path="track.mp3"]').click();
 
     await expect(page.getByTestId('waveform-player')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 10_000 });
+    await expect(page.getByTestId('waveform-player').getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 10_000 });
   });
 
   test('clicking play switches button to pause', async ({ page }) => {
@@ -157,10 +157,10 @@ test.describe('Meta editor track playback', () => {
     await page.waitForLoadState('networkidle');
     await page.locator('[data-file-path="track.mp3"]').click();
 
-    const playBtn = page.getByRole('button', { name: 'Play' });
+    const playBtn = page.getByTestId('waveform-player').getByRole('button', { name: 'Play' });
     await expect(playBtn).toBeEnabled({ timeout: 10_000 });
     await playBtn.click();
 
-    await expect(page.getByRole('button', { name: 'Pause' })).toBeVisible();
+    await expect(page.getByTestId('waveform-player').getByRole('button', { name: 'Pause' })).toBeVisible();
   });
 });
