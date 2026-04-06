@@ -1,6 +1,8 @@
 import logging
 import re
+import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -21,6 +23,27 @@ from soundcloud_tools.utils import convert_to_int, load_tracks
 from soundcloud_tools.utils.string import get_first_artist, get_mix_arist, get_mix_name, is_remix, parse_date
 
 logger = logging.getLogger(__name__)
+
+
+def _find_binary(name: str) -> str:
+    """Resolve *name* (ffmpeg or ffprobe) to an absolute path.
+
+    Checks (in order):
+    1. Bundled binary in the PyInstaller extraction dir (sys._MEIPASS).
+    2. Common Homebrew prefixes - PATH is often stripped in the macOS app sandbox.
+    3. Whatever shutil.which finds on the current PATH.
+    """
+    if getattr(sys, "frozen", False):
+        bundled = Path(sys._MEIPASS) / name  # type: ignore[attr-defined]
+        if bundled.exists():
+            return str(bundled)
+    for candidate in (f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}", name):
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return name
+
+
 FILETYPE_MAP = {
     ".mp3": MP3,
     ".aif": AIFF,
@@ -311,7 +334,7 @@ class TrackHandler(BaseModel):
         if not self.cleaned_folder.exists():
             self.cleaned_folder.mkdir(parents=True)
         command = [
-            "ffmpeg",
+            _find_binary("ffmpeg"),
             "-i",
             self.file,
             "-c:a",
@@ -351,7 +374,7 @@ class TrackHandler(BaseModel):
 
         # Detect bit depth using ffprobe
         probe_command = [
-            "ffprobe",
+            _find_binary("ffprobe"),
             "-v",
             "error",
             "-select_streams",
@@ -389,7 +412,7 @@ class TrackHandler(BaseModel):
         )
 
         command = [
-            "ffmpeg",
+            _find_binary("ffmpeg"),
             "-i",
             self.file,
             "-c:a",
