@@ -123,6 +123,11 @@ def invalidate_file(file_path: Path) -> None:
         _indexed_this_session.discard(file_path.parent.resolve())
 
 
+def reindex_file(folder: Path, file_path: Path) -> None:
+    """Re-index a single file immediately without a full folder re-scan."""
+    _index_one(folder, file_path)
+
+
 def invalidate_cache(folder: Path | None = None) -> None:
     """Drop cached data for *folder*, or all if None (backwards compat alias)."""
     if folder is None:

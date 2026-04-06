@@ -19,8 +19,11 @@ type SortOrder = 'asc' | 'desc';
 interface CollectionTableProps {
   mode: string;
   scrollToFilePath?: string;
+  selectedFilePath?: string;
   onSelect?: (item: TrackBrowse) => void;
   onTotalChange?: (total: number, cacheLoading: boolean) => void;
+  onItemsChange?: (items: TrackBrowse[]) => void;
+  refreshToken?: number;
 }
 
 interface Column {
@@ -162,7 +165,7 @@ function SkeletonRow() {
   );
 }
 
-export function CollectionTable({ mode, scrollToFilePath, onSelect, onTotalChange }: CollectionTableProps) {
+export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSelect, onTotalChange, onItemsChange, refreshToken }: CollectionTableProps) {
   const [sortBy, setSortBy] = useQueryState('sort', searchParams.sort);
   const [sortOrder, setSortOrder] = useQueryState('order', searchParams.order);
   const [search] = useQueryState('search', searchParams.search);
@@ -180,6 +183,7 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect, onTotalChang
 
   const loadingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const itemsRef = useRef<TrackBrowse[]>([]);
 
   const { currentTrack, isPlaying, toggle, load } = usePlayer();
 
@@ -215,7 +219,10 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect, onTotalChang
           page: pageNum,
           size: PAGE_SIZE,
         }, controller.signal);
-        setItems((prev) => (reset ? resp.items : [...prev, ...resp.items]));
+        const nextItems = reset ? resp.items : [...itemsRef.current, ...resp.items];
+        itemsRef.current = nextItems;
+        setItems(nextItems);
+        onItemsChange?.(nextItems);
         setHasMore(pageNum < resp.pages);
         setPage(pageNum);
         setTotal(resp.total);
@@ -244,6 +251,14 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect, onTotalChang
     loadingRef.current = false;
     loadPage(1, true);
   }, [filtersKey, loadPage]);
+
+  // Refresh without remount when refreshToken changes
+  useEffect(() => {
+    if (refreshToken === undefined) return;
+    loadingRef.current = false;
+    loadPage(1, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken]);
 
   // Auto-refresh while cache is still loading (server is progressively reading files)
   useEffect(() => {
@@ -329,6 +344,7 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect, onTotalChang
           {virtualItems.map((virtualRow) => {
             const item = items[virtualRow.index];
             const isActive = currentTrack?.filePath === item?.file_path;
+            const isSelected = selectedFilePath === item?.file_path;
 
             return (
               <div
@@ -346,7 +362,7 @@ export function CollectionTable({ mode, scrollToFilePath, onSelect, onTotalChang
                 {item ? (
                   <TrackRow
                     item={item}
-                    isActive={isActive}
+                    isActive={isActive || isSelected}
                     isPlaying={isActive && isPlaying}
                     onPlay={() => handlePlay(item)}
                     onSelect={() => handleSelect(item)}

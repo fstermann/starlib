@@ -22,11 +22,17 @@ export function WaveformPlayer() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [ready, setReady] = useState(false);
+  const [displayedTrack, setDisplayedTrack] = useState(currentTrack);
 
   // Keep isPlayingRef current for use in async callbacks
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  // Update displayed track only when the new waveform is ready
+  useEffect(() => {
+    if (ready && currentTrack) setDisplayedTrack(currentTrack);
+  }, [ready, currentTrack]);
 
   // Initialize / rebuild WaveSurfer whenever the track changes
   useEffect(() => {
@@ -218,11 +224,11 @@ export function WaveformPlayer() {
 
   if (!currentTrack) return null;
 
-  const trackLabel = currentTrack.title ?? currentTrack.fileName;
-  const artistLabel = currentTrack.artist;
+  const trackLabel = displayedTrack?.title ?? displayedTrack?.fileName;
+  const artistLabel = displayedTrack?.artist;
 
   return (
-    <div data-testid="waveform-player" className="fixed bottom-0 left-14 right-0 h-17 bg-card border-t border-border/60 flex items-center gap-4 px-4 z-40 shadow-[0_-8px_32px_rgba(0,0,0,0.18)]">
+    <div data-testid="waveform-player" className={`fixed bottom-0 left-14 right-0 h-17 bg-card border-t border-border/60 flex items-center gap-4 px-4 z-40 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] transition-opacity duration-200 ${!ready ? 'opacity-60' : 'opacity-100'}`}>
       {/* Play / Pause */}
       <button
         onClick={() => toggle()}
