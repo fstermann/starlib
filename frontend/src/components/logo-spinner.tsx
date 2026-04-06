@@ -27,7 +27,7 @@ export function LogoSpinner({ className = "size-28" }: { className?: string }) {
         <path
           ref={pathRef}
           d={LOGO_PATH}
-          stroke="currentColor"
+          stroke="var(--primary)"
           strokeWidth={12}
           strokeLinejoin="round"
           fill="none"
