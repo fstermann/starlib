@@ -11,7 +11,7 @@ from fastapi_pagination import Page, paginate
 
 from backend.api.deps import get_root_folder, validate_file_path, validate_folder_mode
 from backend.api.metadata._helpers import resolve_folder
-from backend.core.services import collection, metadata
+from backend.core.services import cache_db, collection, metadata
 from backend.schemas.metadata import (
     FileInfoResponse,
     FileReadinessResponse,
@@ -351,7 +351,10 @@ def update_file_info(
             )
         metadata.add_artwork_to_track(new_path, root_folder, artwork_bytes)
 
-    collection.invalidate_cache()
+    # Targeted cache update: remove old entry and re-index the (possibly renamed) file
+    if new_path != resolved_path:
+        cache_db.delete_track(resolved_path)
+    collection.reindex_file(new_path.parent, new_path)
 
     return OperationResponse(
         success=True,
@@ -463,7 +466,8 @@ def finalize_file(
             detail="Finalization failed",
         ) from e
 
-    collection.invalidate_cache()
+    # Remove the old file from cache (it's been moved/converted)
+    cache_db.delete_track(resolved_path)
 
     return FinalizeResponse(
         success=result["success"],
@@ -504,7 +508,7 @@ def delete_file(
         logger.exception("Failed to delete file")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file") from e
 
-    collection.invalidate_cache()
+    cache_db.delete_track(resolved_path)
 
     return OperationResponse(
         success=True,
