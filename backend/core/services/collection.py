@@ -67,6 +67,7 @@ def _index_one(folder: Path, file: Path) -> None:
             missing_fields=missing,
             mtime=mtime,
             soundcloud_id=sc_id,
+            remixers=[track_info.remix.remixer_str] if track_info.remix else None,
         )
     except Exception as e:
         logger.warning("Skipping unreadable file %s: %s", file, e)

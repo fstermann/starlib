@@ -73,6 +73,16 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # column already exists
 
+    # Migrate existing DBs that pre-date the remixers column
+    try:
+        conn.execute("ALTER TABLE tracks ADD COLUMN remixers TEXT")
+        conn.commit()
+        # Force re-index so existing tracks populate the new column
+        conn.execute("DELETE FROM tracks")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
     # Migrate peaks table from single-column PK to composite PK (file_path, num_peaks)
     try:
         cur = conn.execute("PRAGMA table_info(peaks)")
@@ -144,6 +154,7 @@ def upsert_track(
     missing_fields: list[str],
     mtime: float,
     soundcloud_id: int | None = None,
+    remixers: list[str] | None = None,
 ) -> None:
     """Insert or replace a track row."""
     conn = _get_conn()
@@ -152,8 +163,8 @@ def upsert_track(
         INSERT OR REPLACE INTO tracks
             (file_path, file_name, folder, title, artist_str, genre, key, bpm,
              release_date, has_artwork, file_size, file_format, duration, is_complete,
-             missing_fields, mtime, soundcloud_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             missing_fields, mtime, soundcloud_id, remixers)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(file_path),
@@ -173,6 +184,7 @@ def upsert_track(
             json.dumps(missing_fields),
             mtime,
             soundcloud_id,
+            json.dumps(remixers) if remixers else None,
         ),
     )
     conn.commit()

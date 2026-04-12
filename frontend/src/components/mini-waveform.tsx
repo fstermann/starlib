@@ -9,12 +9,14 @@ interface MiniWaveformProps {
   className?: string;
   /** Set to true once artwork has loaded/errored — delays peak fetch until then */
   artworkReady?: boolean;
+  /** Draw bars anchored to the bottom (top-half waveform style) */
+  halfHeight?: boolean;
 }
 
 const BAR_COUNT = 60;
 const BAR_GAP = 1;
 
-export function MiniWaveform({ track, className, artworkReady = true }: MiniWaveformProps) {
+export function MiniWaveform({ track, className, artworkReady = true, halfHeight = false }: MiniWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const peaksRef = useRef<number[] | null>(null);
@@ -33,6 +35,8 @@ export function MiniWaveform({ track, className, artworkReady = true }: MiniWave
   const hoverXRef = useRef<number | null>(null);
   const durationRef = useRef(duration);
   durationRef.current = duration;
+  const halfHeightRef = useRef(halfHeight);
+  halfHeightRef.current = halfHeight;
 
   const draw = useCallback((progress: number, hoverX: number | null = null) => {
     const canvas = canvasRef.current;
@@ -57,7 +61,7 @@ export function MiniWaveform({ track, className, artworkReady = true }: MiniWave
       const amp = peaksRef.current[i] ?? 0.3;
       const barH = Math.max(2, amp * h * 0.9);
       const x = i * (barW + BAR_GAP);
-      const y = (h - barH) / 2;
+      const y = halfHeightRef.current ? h - barH : (h - barH) / 2;
 
       if (active && i < played) {
         /* Primary colors (defined in globals.css: --primary-light, --primary-dark) */

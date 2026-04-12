@@ -100,7 +100,10 @@ def save_setup(body: SetupRequest) -> SetupResponse:
         ) from exc
 
     # Persist root music folder to settings.json (single source of truth).
-    if body.root_music_folder:
+    # Only set if no folder is configured yet — avoids overwriting an existing
+    # value when the user is just re-entering credentials.
+    existing_folder = app_settings_service.get_root_music_folder()
+    if not existing_folder and body.root_music_folder:
         app_settings_service.set_root_music_folder(body.root_music_folder)
 
     # Invalidate the cached settings so the new values take effect immediately.

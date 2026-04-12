@@ -53,7 +53,9 @@ export async function fetchApi<T>(
 
 export type TrackInfo = components['schemas']['TrackInfoResponse'];
 
-export type TrackBrowse = components['schemas']['TrackBrowseResponse'];
+export type TrackBrowse = components['schemas']['TrackBrowseResponse'] & {
+  remixers?: string[] | null;
+};
 
 export type BrowsePage = components['schemas']['Page_TrackBrowseResponse_'] & {
   cacheLoading?: boolean;
@@ -87,6 +89,24 @@ export type OperationResponse = components['schemas']['OperationResponse'];
 export type FinalizeResponse = components['schemas']['FinalizeResponse'] & {
   steps?: { id: string; type: RuleType; status: 'done' | 'skipped'; message: string }[];
 };
+
+// ==================== Batch Types ====================
+
+export interface BatchUpdateItem {
+  file_path: string;
+  updates: TrackInfoUpdateRequest;
+}
+
+export interface BatchResultItem {
+  file_path: string;
+  success: boolean;
+  message: string;
+  new_file_path?: string | null;
+}
+
+export interface BatchUpdateResponse {
+  results: BatchResultItem[];
+}
 
 // ==================== Ruleset Types ====================
 
@@ -197,6 +217,21 @@ export const api = {
     const encoded = encodeURIComponent(filePath);
     return fetchApi(`/api/metadata/files/${encoded}`, {
       method: 'DELETE',
+    });
+  },
+
+  // Batch operations
+  async batchGetTrackInfo(filePaths: string[]): Promise<TrackInfo[]> {
+    return fetchApi('/api/metadata/files/batch-info', {
+      method: 'POST',
+      body: JSON.stringify({ file_paths: filePaths }),
+    });
+  },
+
+  async batchUpdateTrackInfo(items: BatchUpdateItem[]): Promise<BatchUpdateResponse> {
+    return fetchApi('/api/metadata/files/batch-update', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
     });
   },
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
-import { api, type FileInfo, type FolderConfig, type TrackBrowse } from '@/lib/api';
+import { api, type FileInfo, type FolderConfig, type TrackBrowse, type Ruleset } from '@/lib/api';
 import { useQueryState } from 'nuqs';
 import { searchParams } from '@/lib/search-params';
 import { usePlayer } from '@/lib/player-context';
@@ -23,6 +23,7 @@ import {
   ArrowUp,
   XCircle,
   PencilLine,
+  ListChecks,
 } from 'lucide-react';
 import { TrackEditor, type AutoActions } from './track-editor';
 
@@ -67,6 +68,22 @@ function MetaEditorContent() {
   const [tableTotal, setTableTotal] = useState(0);
   const [tableCacheLoading, setTableCacheLoading] = useState(false);
 
+  // Edit mode (table switches between view and inline-edit)
+  const [editMode, setEditMode] = useState(false);
+
+  // Active ruleset for the current folder tab
+  const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
+  const currentRulesetId = folderTabs.find((f) => f.name === folderMode)?.ruleset_id ?? null;
+  useEffect(() => {
+    if (currentRulesetId) {
+      api.getRulesets()
+        .then((data) => setActiveRuleset(data.rulesets.find((r) => r.id === currentRulesetId) ?? null))
+        .catch(() => setActiveRuleset(null));
+    } else {
+      setActiveRuleset(null);
+    }
+  }, [currentRulesetId]);
+
   // Auto-action settings (shown in PageHeader, passed to TrackEditor)
   const [autoActions, setAutoActions] = useState<AutoActions>({
     autoCopyArtwork: true,
@@ -82,6 +99,7 @@ function MetaEditorContent() {
   useEffect(() => {
     setSelectedFile(null);
     setEditorOpen(false);
+    setEditMode(false);
     player.stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderMode]);
@@ -131,6 +149,8 @@ function MetaEditorContent() {
     setEditorOpen(true);
   };
 
+  const showEditor = editorOpen && selectedFile;
+
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <PageHeader
@@ -156,6 +176,14 @@ function MetaEditorContent() {
             }
             actions={
               <div className="flex items-center gap-1">
+                {/* Edit mode toggle */}
+                <button
+                  onClick={() => setEditMode(!editMode)}
+                  className={`cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 ${editMode ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                  title={editMode ? 'Switch to view mode' : 'Switch to edit mode'}
+                >
+                  <ListChecks className="size-3.5" />
+                </button>
                 {selectedFile && !editorOpen && (
                   <button
                     onClick={() => setEditorOpen(true)}
@@ -165,7 +193,7 @@ function MetaEditorContent() {
                     <PencilLine className="size-3.5" />
                   </button>
                 )}
-                {editorOpen && (
+                {(editorOpen || editMode) && (
                   <Popover>
                     <PopoverTrigger asChild>
                       <button className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 text-muted-foreground hover:text-foreground">
@@ -205,10 +233,10 @@ function MetaEditorContent() {
             }
           />
 
-      {/* Horizontal split: table left (60%), editor right (40%) */}
+      {/* Horizontal split: table left, editor right (or full width in edit mode) */}
       <div
         className="grid flex-1 min-h-0 transition-[grid-template-columns] duration-300 ease-out"
-        style={{ gridTemplateColumns: editorOpen && selectedFile ? '3fr 2fr' : '1fr 0fr' }}
+        style={{ gridTemplateColumns: showEditor ? '3fr 2fr' : '1fr 0fr' }}
       >
         {/* Left: filter + table */}
         <div className="flex flex-col min-w-0 overflow-hidden">
@@ -221,11 +249,14 @@ function MetaEditorContent() {
             onItemsChange={useCallback((items: TrackBrowse[]) => { setTableItems(items); tableItemsRef.current = items; }, [])}
             onSelect={handleTableSelect}
             onTotalChange={(t, cl) => { setTableTotal(t); setTableCacheLoading(cl); }}
+            editMode={editMode}
+            onEditSaved={() => setRefreshToken(t => t + 1)}
+            activeRuleset={activeRuleset}
           />
         </div>
         {/* Right: editor panel */}
-        <div className={`overflow-hidden min-w-0 flex flex-col bg-card${editorOpen && selectedFile ? ' border-l border-border/50' : ''}`}>
-          {selectedFile && (
+        <div className={`overflow-hidden min-w-0 flex flex-col bg-card${showEditor ? ' border-l border-border/50' : ''}`}>
+          {showEditor && (
             <TrackEditor
               selectedFile={selectedFile}
               folderMode={folderMode}

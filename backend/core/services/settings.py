@@ -18,13 +18,12 @@ import stat
 from collections.abc import Callable
 from pathlib import Path
 
-from platformdirs import user_config_path
-
+from backend.config import _APP_CONFIG_DIR
 from backend.schemas.folder_config import FolderConfig, FoldersConfig
 from backend.schemas.ruleset import Rule, Ruleset, RulesetsConfig
 from backend.schemas.settings import AppSettings, Settings
 
-_CONFIG_DIR = user_config_path("starlib", ensure_exists=True)
+_CONFIG_DIR = _APP_CONFIG_DIR
 _SETTINGS_FILE = _CONFIG_DIR / "settings.json"
 
 _LEGACY_FILES = ("app_settings.json", "rulesets.json", "folders.json")

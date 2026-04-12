@@ -72,6 +72,25 @@ class MoveFilesRequest(BaseModel):
     file_indices: list[int] | None = Field(None, description="Indices of files to move (None = all)")
 
 
+class BatchInfoRequest(BaseModel):
+    """Request to get metadata for multiple files at once."""
+
+    file_paths: list[str]
+
+
+class BatchUpdateItem(BaseModel):
+    """A single file update within a batch."""
+
+    file_path: str
+    updates: TrackInfoUpdateRequest
+
+
+class BatchUpdateRequest(BaseModel):
+    """Request to update metadata for multiple files at once."""
+
+    items: list[BatchUpdateItem]
+
+
 # ============================================================================
 # Response Schemas
 # ============================================================================
@@ -151,6 +170,21 @@ class OperationResponse(BaseModel):
     new_file_path: str | None = None
 
 
+class BatchResultItem(BaseModel):
+    """Result of a single file update within a batch."""
+
+    file_path: str
+    success: bool
+    message: str
+    new_file_path: str | None = None
+
+
+class BatchUpdateResponse(BaseModel):
+    """Response from a batch update operation."""
+
+    results: list[BatchResultItem]
+
+
 class TrackBrowseResponse(BaseModel):
     """Lightweight response for collection browse/table view."""
 
@@ -162,6 +196,7 @@ class TrackBrowseResponse(BaseModel):
     key: str | None = None
     genre: str | None = None
     release_date: date | None = None
+    remixers: list[str] | None = None
     has_artwork: bool = False
     file_format: str
     file_size: int
