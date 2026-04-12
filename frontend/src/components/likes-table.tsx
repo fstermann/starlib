@@ -2,8 +2,9 @@
 
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronUp, ChevronDown, ChevronsUpDown, Music, FolderCheck, ShoppingCart } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronsUpDown, Music, FolderCheck, ShoppingCart, Download } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import type { SCTrack } from '@/lib/soundcloud';
@@ -67,6 +68,16 @@ function searchQuery(track: SCTrack): string {
   const artist = track.user?.username ?? '';
   const title = track.title ?? '';
   return `${artist} ${title}`.trim();
+}
+
+function purchaseIcon(url: string): { src: string; alt: string } | null {
+  try {
+    const host = new URL(url).hostname;
+    if (host.includes('hypeddit')) return { src: '/icons/hypeddit.svg', alt: 'Hypeddit' };
+    if (host.includes('bandcamp')) return { src: '/icons/bandcamp.svg', alt: 'Bandcamp' };
+    if (host.includes('beatport')) return { src: '/icons/beatport.svg', alt: 'Beatport' };
+  } catch { /* invalid url */ }
+  return null;
 }
 
 interface TrackRowProps {
@@ -145,45 +156,82 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
           {formatPlays(track.playback_count)}
         </span>
 
-        {/* Links group: Collection + Buy/Search */}
-        <div className={`w-24 shrink-0 flex items-center justify-between ${inCollection ? 'opacity-35' : ''}`}>
+        {/* Links group: Collection + Download + Buy/Search */}
+        <div className={`w-28 shrink-0 flex items-center justify-between ${inCollection ? 'opacity-35' : ''}`}>
           <div className="flex items-center justify-center size-5" title={inCollection ? 'In collection' : undefined}>
             {inCollection && <FolderCheck className="size-3.5 text-primary" />}
           </div>
-          {track.purchase_url ? (
-            <a
-              href={track.purchase_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center size-5 text-muted-foreground hover:text-foreground transition-colors"
-              onClick={(e) => e.stopPropagation()}
-              title={track.purchase_title || 'Buy'}
-            >
-              <ShoppingCart className="size-3" />
-            </a>
-          ) : (
-            <div className="size-5" />
-          )}
-          <a
-            href={`https://bandcamp.com/search?q=${encodeURIComponent(searchQuery(track))}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center size-5 opacity-40 hover:opacity-100 transition-opacity"
-            onClick={(e) => e.stopPropagation()}
-            title="Search Bandcamp"
-          >
-            <img src="/icons/bandcamp.svg" alt="Bandcamp" className="size-3.5" />
-          </a>
-          <a
-            href={`https://www.beatport.com/search?q=${encodeURIComponent(searchQuery(track))}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center size-5 opacity-40 hover:opacity-100 transition-opacity"
-            onClick={(e) => e.stopPropagation()}
-            title="Search Beatport"
-          >
-            <img src="/icons/beatport.svg" alt="Beatport" className="size-3.5" />
-          </a>
+          <TooltipProvider>
+            {track.download_url ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <a
+                    href={track.download_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center size-5 text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Download className="size-3" />
+                  </a>
+                </TooltipTrigger>
+                <TooltipContent>Download</TooltipContent>
+              </Tooltip>
+            ) : (
+              <div className="size-5" />
+            )}
+            {track.purchase_url ? (() => {
+              const icon = purchaseIcon(track.purchase_url);
+              return (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <a
+                      href={track.purchase_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center size-5 text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {icon
+                        ? <img src={icon.src} alt={icon.alt} className="size-3.5" />
+                        : <ShoppingCart className="size-3" />}
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent>{track.purchase_title || icon?.alt || 'Buy'}</TooltipContent>
+                </Tooltip>
+              );
+            })() : (
+              <div className="size-5" />
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href={`https://bandcamp.com/search?q=${encodeURIComponent(searchQuery(track))}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center size-5 opacity-40 hover:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <img src="/icons/bandcamp.svg" alt="Bandcamp" className="size-3.5" />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>Search Bandcamp</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href={`https://www.beatport.com/search?q=${encodeURIComponent(searchQuery(track))}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center size-5 opacity-40 hover:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <img src="/icons/beatport.svg" alt="Beatport" className="size-3.5" />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>Search Beatport</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -322,7 +370,7 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect, onRangeSelect,
             <SortIcon col={col.key} sortBy={sortBy} sortOrder={sortOrder} />
           </button>
         ))}
-        <div className="w-24 shrink-0 flex items-center justify-center gap-1" title="Links">
+        <div className="w-28 shrink-0 flex items-center justify-center gap-1" title="Links">
           <FolderCheck className="size-3 opacity-50" />
           <span className="text-[10px] opacity-50">Links</span>
         </div>
