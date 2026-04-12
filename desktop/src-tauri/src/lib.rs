@@ -1,4 +1,13 @@
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Returns the app config directory used by both the Rust and Python layers.
+/// Matches `platformdirs.user_config_path("com.starlib.Starlib")`.
+fn app_config_dir() -> PathBuf {
+    dirs::config_dir()
+        .expect("cannot determine config directory")
+        .join("com.starlib.Starlib")
+}
 
 use tauri::Emitter;
 use tauri::Manager;
@@ -23,7 +32,7 @@ async fn wait_for_backend_ready() -> bool {
             .await
         {
             Ok(resp) if resp.status().is_success() => {
-                eprintln!("[backend] healthy after {attempt} attempt(s)");
+                log::info!("[backend] healthy after {attempt} attempt(s)");
                 return true;
             }
             _ => {
@@ -32,7 +41,7 @@ async fn wait_for_backend_ready() -> bool {
             }
         }
     }
-    eprintln!("[backend] failed to become healthy after {HEALTH_MAX_RETRIES} retries");
+    log::error!("[backend] failed to become healthy after {HEALTH_MAX_RETRIES} retries");
     false
 }
 
@@ -53,13 +62,13 @@ fn spawn_sidecar(
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
-                    eprintln!("[backend] {}", String::from_utf8_lossy(&line));
+                    log::info!("[backend] {}", String::from_utf8_lossy(&line));
                 }
                 CommandEvent::Stderr(line) => {
-                    eprintln!("[backend:err] {}", String::from_utf8_lossy(&line));
+                    log::warn!("[backend:err] {}", String::from_utf8_lossy(&line));
                 }
                 CommandEvent::Terminated(status) => {
-                    eprintln!("[backend] process exited: {:?}", status);
+                    log::info!("[backend] process exited: {:?}", status);
                     let _ = handle.emit("backend-disconnected", "Backend process exited");
                     break;
                 }
@@ -110,7 +119,7 @@ fn start_backend(app: &tauri::AppHandle) {
 
                     attempts += 1;
                     if attempts > MAX_RESTART_ATTEMPTS {
-                        eprintln!(
+                        log::error!(
                             "[backend] exceeded {MAX_RESTART_ATTEMPTS} restart attempts — giving up"
                         );
                         let _ = handle.emit(
@@ -120,7 +129,7 @@ fn start_backend(app: &tauri::AppHandle) {
                         break;
                     }
 
-                    eprintln!("[backend] restarting sidecar (attempt {attempts}/{MAX_RESTART_ATTEMPTS})");
+                    log::warn!("[backend] restarting sidecar (attempt {attempts}/{MAX_RESTART_ATTEMPTS})");
                     match spawn_sidecar(&handle) {
                         Ok(child) => {
                             if let Some(mutex) = handle.try_state::<std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>>() {
@@ -130,7 +139,7 @@ fn start_backend(app: &tauri::AppHandle) {
                             }
                         }
                         Err(e) => {
-                            eprintln!("[backend] restart failed: {e}");
+                            log::error!("[backend] restart failed: {e}");
                         }
                     }
                 }
@@ -141,13 +150,13 @@ fn start_backend(app: &tauri::AppHandle) {
             tauri::async_runtime::spawn(async move {
                 let healthy = wait_for_backend_ready().await;
                 if !healthy {
-                    eprintln!("[backend] sidecar did not become ready — app may not work correctly");
+                    log::error!("[backend] sidecar did not become ready — app may not work correctly");
                     let _ = handle.emit("backend-error", "Backend failed to start");
                 }
             });
         }
         Err(e) => {
-            eprintln!("Failed to start backend sidecar: {e}");
+            log::error!("Failed to start backend sidecar: {e}");
             let _ = app.emit("backend-error", format!("Failed to start backend: {e}"));
         }
     }
@@ -156,6 +165,20 @@ fn start_backend(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+                        path: app_config_dir(),
+                        file_name: Some("backend".into()),
+                    }),
+                ])
+                .level(log::LevelFilter::Info)
+                .max_file_size(5_242_880) // 5 MB
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .build(),
+        )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
