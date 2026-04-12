@@ -12,7 +12,7 @@ Starlib needs API credentials to access your SoundCloud data.
 4. Set the **Redirect URI** to:
 
     ```
-    http://localhost:3000/auth/soundcloud/callback
+    http://127.0.0.1:8000/auth/soundcloud/redirect
     ```
 
 5. Save the app and copy the **Client ID** and **Client Secret**.
