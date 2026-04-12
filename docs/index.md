@@ -21,7 +21,7 @@ Starlib is a DJ library management app. Organise your tracks, edit metadata, and
 
 Download the latest release for your Mac and start using it in minutes.
 
-[Download v0.2.11 :material-arrow-right:](guide/installation.md){ .md-button .md-button--primary }
+[Download v{{ version }} :material-arrow-right:](guide/installation.md){ .md-button .md-button--primary }
 </div>
 
 <div class="hero-card" markdown>
