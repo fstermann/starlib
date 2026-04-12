@@ -29,7 +29,9 @@ On the setup screen, enter:
 | **Client Secret** | From your SoundCloud app |
 | **Music folder** | Path to your local music folder (defaults to `~/Music/tracks`) |
 
-![Setup screen](../assets/images/screenshots/setup.png)
+<figure markdown="span" style="text-align: center;">
+  ![Setup screen](../assets/images/screenshots/setup.png){ width="90%" }
+</figure>
 
 Click **Save** to continue.
 
@@ -39,4 +41,6 @@ After saving your credentials, you'll be taken to the home screen. Click **Conne
 
 SoundCloud will ask you to authorise Starlib. After approval, you'll be redirected back to the app and can start using it.
 
-![Login screen](../assets/images/screenshots/login.png)
+<figure markdown="span" style="text-align: center;">
+  ![Login screen](../assets/images/screenshots/login.png){ width="90%" }
+</figure>
