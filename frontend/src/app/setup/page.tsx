@@ -60,7 +60,7 @@ export default function SetupPage() {
               </a>{" "}
               and register a new application.
             </li>
-            <li>Set the redirect URI to: <code className="bg-muted px-1 rounded text-xs">http://localhost:3000/auth/soundcloud/callback</code></li>
+            <li>Set the redirect URI to: <code className="bg-muted px-1 rounded text-xs">http://127.0.0.1:8000/auth/soundcloud/redirect</code></li>
             <li>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> from the app page.</li>
           </ol>
         </div>
