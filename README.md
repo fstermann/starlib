@@ -18,7 +18,7 @@ Organise your tracks, edit metadata, and discover new music — all from a singl
 
 ---
 
-<img src="docs/assets/images/screenshots/home.png" alt="Starlib screenshot" width="80%">
+<img src="docs/assets/images/screenshots/home.png" alt="Starlib screenshot" width="90%">
 
 </div>
 
@@ -30,19 +30,19 @@ Organise your tracks, edit metadata, and discover new music — all from a singl
 
 Edit ID3/AIFF metadata on local audio files. Search SoundCloud to auto-fill title, artist, BPM, key, genre, and artwork.
 
-<div align="center"><img src="docs/assets/images/screenshots/meta-editor.png" alt="Meta Editor" width="80%"></div>
+<div align="center"><img src="docs/assets/images/screenshots/meta-editor.png" alt="Meta Editor" width="90%"></div>
 
 ### Like Explorer
 
 Browse your liked tracks and discover new music from other users. Filter by genre, duration, and collection status. Create playlists from your selections.
 
-<div align="center"><img src="docs/assets/images/screenshots/like-explorer.png" alt="Like Explorer" width="80%"></div>
+<div align="center"><img src="docs/assets/images/screenshots/like-explorer.png" alt="Like Explorer" width="90%"></div>
 
 ### Weekly Favorites
 
 See new tracks from artists you follow, grouped by calendar week. Generate playlists automatically and keep track of what you've already seen.
 
-<div align="center"><img src="docs/assets/images/screenshots/weekly.png" alt="Weekly Favorites" width="80%"></div>
+<div align="center"><img src="docs/assets/images/screenshots/weekly.png" alt="Weekly Favorites" width="90%"></div>
 
 ## Install
 

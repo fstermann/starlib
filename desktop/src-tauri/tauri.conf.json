@@ -1,8 +1,8 @@
 {
     "$schema": "https://schema.tauri.app/config/2",
     "productName": "Starlib",
-    "identifier": "com.fstermann.starlib",
-    "version": "0.3.6",
+    "identifier": "com.starlib.Starlib",
+    "version": "0.3.7",
     "build": {
         "frontendDist": "../../frontend/out",
         "devUrl": "http://localhost:3000",
