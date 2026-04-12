@@ -2,7 +2,9 @@
 
 Starlib has three main tools, accessible from the sidebar or the home screen.
 
-![Home screen](../assets/images/screenshots/home.png)
+<figure markdown="span" style="text-align: center;">
+  ![Home screen](../assets/images/screenshots/home.png){ width="90%" }
+</figure>
 
 ## :material-tag-edit: Meta Editor
 
@@ -14,7 +16,9 @@ The metadata editor lets you edit ID3/AIFF tags on your local audio files and en
 - Detect and parse remix information automatically
 - Apply metadata from SoundCloud to local files
 
-![Meta Editor](../assets/images/screenshots/meta-editor.png)
+<figure markdown="span" style="text-align: center;">
+  ![Meta Editor](../assets/images/screenshots/meta-editor.png){ width="90%" }
+</figure>
 
 ### Workflow
 
@@ -33,7 +37,9 @@ Browse and explore liked tracks, both yours and other users'.
 - Create playlists from selected tracks
 - See which tracks are already in your collection
 
-![Like Explorer](../assets/images/screenshots/like-explorer.png)
+<figure markdown="span" style="text-align: center;">
+  ![Like Explorer](../assets/images/screenshots/like-explorer.png){ width="90%" }
+</figure>
 
 ### Tabs
 
@@ -53,4 +59,6 @@ Discover new tracks from artists you follow, grouped by week.
 - Exclude tracks you've already liked
 - Generate playlists from any week group
 
-![Weekly Favorites](../assets/images/screenshots/weekly.png)
+<figure markdown="span" style="text-align: center;">
+  ![Weekly Favorites](../assets/images/screenshots/weekly.png){ width="90%" }
+</figure>

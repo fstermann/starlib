@@ -2,7 +2,9 @@
 
 Starlib is a DJ library management app. Organise your tracks, edit metadata, and manage artwork, all from a single interface.
 
-![Starlib](assets/images/screenshots/home.png)
+<figure markdown="span" style="text-align: center;">
+  ![Starlib](assets/images/screenshots/home.png){ width="90%" }
+</figure>
 
 ## What can it do?
 
