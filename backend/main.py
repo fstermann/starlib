@@ -5,6 +5,7 @@ Configures FastAPI app with CORS, routes, and middleware.
 """
 
 import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,9 +20,11 @@ from backend.config import get_backend_settings
 from backend.core.services import cache_db, watcher
 from backend.core.services.collection import ensure_folder_indexed
 
+# Log to stdout so the Tauri sidecar captures and writes everything to backend.log.
 logging.basicConfig(
     level=logging.INFO,
-    format="%(levelname)s: %(name)s: %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    stream=sys.stdout,
 )
 
 logger = logging.getLogger(__name__)
