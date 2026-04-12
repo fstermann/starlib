@@ -10,8 +10,6 @@ from functools import lru_cache
 from pathlib import Path
 
 from platformdirs import user_config_path
-from pydantic import Field
-from pydantic.aliases import AliasChoices
 from pydantic_settings import BaseSettings
 
 _logger = logging.getLogger(__name__)
@@ -80,14 +78,6 @@ class BackendSettings(BaseSettings):
     cors_credentials: bool = True
     cors_methods: list[str] = ["*"]
     cors_headers: list[str] = ["*"]
-
-    # Music Library Settings (from main settings)
-    root_music_folder: Path = Field(
-        default=Path.home() / "Music",
-        # Accept both BACKEND_ROOT_MUSIC_FOLDER (production sidecar env vars) and
-        # ROOT_MUSIC_FOLDER (user config.env written by the desktop setup flow).
-        validation_alias=AliasChoices("BACKEND_ROOT_MUSIC_FOLDER", "ROOT_MUSIC_FOLDER"),
-    )
 
     # Cache Settings
     cache_dir: Path = _APP_CONFIG_DIR / ".cache"

@@ -15,7 +15,7 @@ class SetupRequest(BaseModel):
 
     client_id: str
     client_secret: str
-    root_music_folder: str = "~/Music/tracks"
+    root_music_folder: str = "~/Music/tracks"  # kept for backwards compat; value written to settings.json
 
 
 class SetupResponse(BaseModel):

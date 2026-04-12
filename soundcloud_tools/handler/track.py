@@ -494,6 +494,134 @@ class TrackHandler(BaseModel):
             self.archive_folder.mkdir(parents=True)
         self.file.rename(self.archive_folder / self.file.name)
 
+    def archive_to(self, folder: Path) -> None:
+        """Archive original file to an arbitrary folder, creating it if needed."""
+        folder.mkdir(parents=True, exist_ok=True)
+        self.file.rename(folder / self.file.name)
+
+    def copy_to(self, folder: Path) -> Path:
+        """Copy file to an arbitrary folder (leaving the original in place).
+
+        Creates the destination folder if needed and returns the path of the
+        new copy.
+        """
+        folder.mkdir(parents=True, exist_ok=True)
+        safe_name = self.file.name.replace("/", "-")
+        dest = folder / safe_name
+        shutil.copy2(self.file, dest)
+        return dest
+
+    def move_to(self, folder: Path) -> Path:
+        """Move file to an arbitrary folder, creating it if needed. Returns new path."""
+        folder.mkdir(parents=True, exist_ok=True)
+        safe_name = self.file.name.replace("/", "-")
+        new_path = folder / safe_name
+        self.file.rename(new_path)
+        return new_path
+
+    def _detect_aiff_codec(self) -> str:
+        """Detect appropriate PCM codec for AIFF conversion based on source bit depth."""
+        probe_command: list[str] = [
+            _find_binary("ffprobe"),
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=bits_per_raw_sample,sample_fmt",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(self.file),
+        ]
+        result = subprocess.run(probe_command, capture_output=True, text=True, check=True)
+        output_lines = result.stdout.strip().split("\n")
+        bit_depth = None
+        sample_fmt = None
+        for line in output_lines:
+            if line and line.isdigit():
+                bit_depth = int(line)
+            elif line:
+                sample_fmt = line
+        if bit_depth == 24 or (sample_fmt and "s32" in sample_fmt):
+            return "pcm_s24be"
+        if bit_depth == 32 or (sample_fmt and ("s32" in sample_fmt or "f32" in sample_fmt)):
+            return "pcm_s32be"
+        return "pcm_s16be"
+
+    def convert(self, target_format: Literal["mp3", "aiff"], output_dir: Path, quality: int = 320) -> Path | None:
+        """Convert file to target format, placing the output in output_dir.
+
+        Parameters
+        ----------
+        target_format:
+            "mp3" or "aiff".
+        output_dir:
+            Directory where the converted file will be written.
+        quality:
+            Bitrate in kbps for MP3 output (ignored for AIFF).
+
+        Returns
+        -------
+        Path | None
+            Path to the converted file, or None if conversion was skipped
+            (e.g. source is not lossless and target is aiff).
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{self.file.stem}.{target_format}"
+
+        if target_format == "mp3":
+            command = [
+                _find_binary("ffmpeg"),
+                "-i",
+                str(self.file),
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                f"{quality}k",
+                "-y",
+                str(output_path),
+            ]
+            subprocess.run(command, check=True)
+            return output_path
+
+        if target_format == "aiff":
+            if not self.is_lossless:
+                logger.warning("Cannot convert %s to AIFF: source file is not lossless", self.file.suffix)
+                return None
+            codec = self._detect_aiff_codec()
+            logger.info("Converting %s to AIFF with codec %s", self.file.name, codec)
+            command = [
+                _find_binary("ffmpeg"),
+                "-i",
+                str(self.file),
+                "-c:a",
+                codec,
+                "-y",
+                str(output_path),
+            ]
+            subprocess.run(command, check=True)
+            return output_path
+
+        return None
+
+    def copy_tags_to(self, target_path: Path) -> None:
+        """Copy all metadata tags and artwork from this file to target_path."""
+        info = self.track_info
+        artwork = self.get_single_cover(raise_error=False)
+        suffix = target_path.suffix.lower()
+        if suffix == ".mp3":
+            track = ID3(str(target_path))
+            self._add_info(track, info=info, artwork=artwork)
+            track.save()
+        else:
+            try:
+                track = EasyID3(str(target_path))
+            except mutagen.id3.ID3NoHeaderError:
+                track = mutagen.File(str(target_path), easy=True)
+                track.add_tags()
+            self._add_info(track.tags, info=info, artwork=artwork)
+            track.save(str(target_path))
+
     def rename(self, new_name: str):
         safe_name = new_name.replace("/", "-")
         return self.file.rename(Path(self.file.parent, safe_name + self.file.suffix))

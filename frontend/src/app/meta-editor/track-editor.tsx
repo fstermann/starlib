@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { api, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest } from '@/lib/api';
+import { api, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest, type Ruleset, type RuleType } from '@/lib/api';
 import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix, removeMix } from '@/lib/string-utils';
 import { soundCloudSource } from '@/lib/sources/soundcloud';
 import type { SourceTrack } from '@/lib/sources/types';
@@ -28,8 +28,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Calendar } from '@/components/ui/calendar';
 import { LogoSpinner } from '@/components/logo-spinner';
+import { StepBadge, RULE_ICONS, RULE_ICON_COLORS } from '@/components/rulesets/rule-card';
 import { SoundCloudLogo } from '@/components/icons/soundcloud-logo';
 import {
   Sparkles,
@@ -44,6 +46,7 @@ import {
   RotateCcw,
   ChevronDown,
   X,
+  MoveRight,
 } from 'lucide-react';
 
 export interface AutoActions {
@@ -56,7 +59,8 @@ export interface AutoActions {
 
 export interface TrackEditorProps {
   selectedFile: FileInfo;
-  folderMode: 'prepare' | 'collection' | 'cleaned';
+  folderMode: string;
+  folderRulesetId: string | null;
   autoActions: AutoActions;
   onTableRefresh: () => void;
   onClose: () => void;
@@ -66,7 +70,7 @@ export interface TrackEditorProps {
   onSelectNext: (currentFilePath: string) => void;
 }
 
-export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefresh, onClose, onFileChange, onSelectNext }: TrackEditorProps) {
+export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoActions, onTableRefresh, onClose, onFileChange, onSelectNext }: TrackEditorProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
 
@@ -117,6 +121,18 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
   // Structured comment state (SC ID + permalink)
   const [commentData, setCommentData] = useState({ soundcloud_id: '', soundcloud_permalink: '' });
   const [scLinkEnabled, setScLinkEnabled] = useState(true);
+
+  // Active ruleset (shown in Apply Rules popover) — only set when the folder has one assigned
+  const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
+  useEffect(() => {
+    if (folderRulesetId) {
+      api.getRulesets()
+        .then((data) => setActiveRuleset(data.rulesets.find((r) => r.id === folderRulesetId) ?? null))
+        .catch(() => setActiveRuleset(null));
+    } else {
+      setActiveRuleset(null);
+    }
+  }, [folderRulesetId]);
 
   // Original values for remix/SC-link change detection
   const [originalIsRemix, setOriginalIsRemix] = useState(false);
@@ -436,15 +452,35 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
     if (!trackInfo) return;
     const filePathToFinalize = trackInfo.file_path;
     const trackName = formData.title || selectedFile.file_name || filePathToFinalize;
-    const toastId = toast.loading(`Finalizing "${trackName}"…`);
-    api.finalizeTrack(filePathToFinalize, { target_format: 'aiff' })
+    const toastId = toast.loading(`Applying rules to "${trackName}"…`);
+    api.finalizeTrack(filePathToFinalize, {})
       .then((result) => {
-        toast.success(result.message, { id: toastId });
+        const steps = result.steps ?? [];
+        toast.success(
+          <div className="flex flex-col gap-1">
+            <span className="font-medium text-sm">{trackName}</span>
+            {steps.length > 0 && (
+              <div className="flex flex-col gap-0.5 mt-0.5">
+                {steps.map((step, i) => {
+                  const Icon = RULE_ICONS[step.type as RuleType] ?? MoveRight;
+                  const color = RULE_ICON_COLORS[step.type as RuleType] ?? 'text-muted-foreground';
+                  return (
+                    <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Icon className={`size-3 shrink-0 ${step.status === 'skipped' ? 'opacity-30' : color}`} />
+                      <span className={step.status === 'skipped' ? 'line-through opacity-50' : ''}>{step.message}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>,
+          { id: toastId },
+        );
         onSelectNext(filePathToFinalize);
         onTableRefresh();
       })
       .catch((err) => {
-        const message = err instanceof Error ? err.message : 'Failed to finalize track';
+        const message = err instanceof Error ? err.message : 'Failed to apply rules';
         toast.error(message, { id: toastId, duration: Infinity });
       });
   };
@@ -1058,7 +1094,7 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
 
           {/* Actions */}
           <div className="shrink-0 border-t border-border/50 px-3 py-2.5 flex items-center gap-1">
-            {(hasChanges || folderMode !== 'prepare') ? (
+            {(hasChanges || !activeRuleset?.rules.length) ? (
               <>
                 <div
                   className={`size-2 rounded-full shrink-0 ${trackInfo.is_ready ? 'bg-chart-1' : 'bg-amber-400'}`}
@@ -1070,12 +1106,47 @@ export function TrackEditor({ selectedFile, folderMode, autoActions, onTableRefr
                 <Button onClick={handleSave} disabled={loading || !hasChanges} size="sm" className="h-7 text-xs px-2.5">Save</Button>
               </>
             ) : (
-              <Button
-                onClick={handleFinalize}
-                disabled={!trackInfo.is_ready || !formComplete || loading}
-                size="sm"
-                className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold animate-in fade-in slide-in-from-right-2 duration-200"
-              >Finalize</Button>
+              <TooltipProvider delayDuration={400} disableHoverableContent>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={handleFinalize}
+                      disabled={!trackInfo.is_ready || !formComplete || loading}
+                      size="sm"
+                      className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold animate-in fade-in slide-in-from-right-2 duration-200"
+                    >Apply Rules</Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={6} showArrow={false} className="p-0 max-w-64 bg-popover text-popover-foreground border">
+                    <div className="px-3 py-2 border-b border-border">
+                      <p className="text-xs font-medium">{activeRuleset?.name ?? 'Rules'}</p>
+                    </div>
+                    <div className="py-1.5 flex flex-col gap-0.5 px-1.5">
+                      {activeRuleset?.rules.map((rule, i) => {
+                        const Icon = RULE_ICONS[rule.type];
+                        const folderParam = rule.params.folder as string | undefined;
+                        const formatParam = rule.params.format as string | undefined;
+                        const detail = rule.type === 'convert'
+                          ? formatParam ? formatParam.toUpperCase() : 'preferred'
+                          : folderParam ? `${folderParam}/` : '';
+                        const isConditional = rule.requires.length > 0;
+                        return (
+                          <div key={i} className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${isConditional ? 'ml-4 border-l-2 border-blue-400/30 pl-2.5' : ''}`}>
+                            <StepBadge step={i + 1} type={rule.type} />
+                            <Icon className={`size-3.5 shrink-0 ${RULE_ICON_COLORS[rule.type]}`} />
+                            <span className="capitalize">{rule.type}</span>
+                            {detail && <span className="font-mono text-[10px] opacity-70">{detail}</span>}
+                            {isConditional && (
+                              <span className="text-[9px] rounded bg-blue-400/20 text-blue-300 px-1 font-medium">
+                                if converted
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
             <Button onClick={handleDelete} disabled={loading} variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive animate-in fade-in slide-in-from-right-2 duration-200"><Trash2 /></Button>
           </div>

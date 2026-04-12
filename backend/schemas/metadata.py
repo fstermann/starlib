@@ -125,12 +125,22 @@ class FileReadinessResponse(BaseModel):
     issues: list[str]
 
 
+class FinalizeStep(BaseModel):
+    """A single rule execution result."""
+
+    id: str
+    type: str
+    status: str  # "done" or "skipped"
+    message: str
+
+
 class FinalizeResponse(BaseModel):
     """Response from finalization operation."""
 
     success: bool
     message: str
     new_file_path: str
+    steps: list[FinalizeStep] = []
 
 
 class OperationResponse(BaseModel):

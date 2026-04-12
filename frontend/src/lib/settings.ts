@@ -8,10 +8,12 @@ import { isTauri } from "./tauri";
 
 export interface Settings {
   autoUpdate: boolean;
+  preferredOutputFormat: "aiff" | "mp3";
 }
 
 const DEFAULTS: Settings = {
   autoUpdate: true,
+  preferredOutputFormat: "aiff",
 };
 
 const STORAGE_KEY = "starlib_settings";

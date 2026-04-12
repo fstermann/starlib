@@ -551,3 +551,18 @@ def delete_peaks(file_path: Path) -> None:
     conn = _get_conn()
     conn.execute("DELETE FROM peaks WHERE file_path = ?", (str(file_path),))
     conn.commit()
+
+
+def prune_missing_files() -> int:
+    """Delete cache entries for files that no longer exist on disk. Returns count removed."""
+    conn = _get_conn()
+    rows = conn.execute("SELECT file_path FROM tracks").fetchall()
+    stale = [r["file_path"] for r in rows if not Path(r["file_path"]).exists()]
+    if not stale:
+        return 0
+    for fp in stale:
+        conn.execute("DELETE FROM tracks WHERE file_path = ?", (fp,))
+        conn.execute("DELETE FROM peaks WHERE file_path = ?", (fp,))
+    conn.commit()
+    logger.info("Pruned %d stale cache entries", len(stale))
+    return len(stale)

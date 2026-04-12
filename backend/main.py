@@ -13,11 +13,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_pagination import add_pagination
 
+from backend.api.app_settings import router as app_settings_router
 from backend.api.auth import router as auth_router
+from backend.api.folder_config import router as folder_config_router
 from backend.api.metadata import router as metadata_router
+from backend.api.rulesets import router as rulesets_router
 from backend.api.setup import router as setup_router
 from backend.config import get_backend_settings
+from backend.core.services import app_settings as app_settings_service
 from backend.core.services import cache_db, watcher
+from backend.core.services import folder_config as folder_config_service
 from backend.core.services.collection import ensure_folder_indexed
 
 # Log to stdout so the Tauri sidecar captures and writes everything to backend.log.
@@ -33,17 +38,19 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_backend_settings()
-    root = Path(settings.root_music_folder).expanduser()
+    root = Path(app_settings_service.get_root_music_folder()).expanduser()
 
     # Initialise SQLite cache (creates tables if first run)
     cache_db.init_db(settings.cache_dir / "metadata.db")
+    cache_db.prune_missing_files()
 
     # Start watchdog observer for real-time file change detection
     watcher.start_watcher(root)
 
-    # Kick off initial mtime-comparison scan for each folder
-    for sub in ("collection", "prepare", "cleaned"):
-        folder = root / sub
+    # Kick off initial mtime-comparison scan for each configured folder
+    folders_config = folder_config_service.load_folders()
+    for fc in folders_config.folders:
+        folder = root / fc.name
         if folder.is_dir():
             logger.info("Starting index scan for %s", folder)
             ensure_folder_indexed(folder)
@@ -85,6 +92,9 @@ def create_app() -> FastAPI:
     app.include_router(setup_router)
     app.include_router(auth_router)
     app.include_router(metadata_router)
+    app.include_router(rulesets_router)
+    app.include_router(folder_config_router)
+    app.include_router(app_settings_router)
 
     add_pagination(app)
 

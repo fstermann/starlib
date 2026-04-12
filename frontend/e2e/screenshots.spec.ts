@@ -51,7 +51,7 @@ function makePlaceholderTracks(
     duration: 300000 + i * 30000,
     bpm: 120 + (i % 8),
     key_signature: ['Cm', 'Am', 'Dm', 'Fm', 'Gm', 'Bbm'][i % 6],
-    created_at: new Date(2026, 2, 25 - i).toISOString(),
+    created_at: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
     playback_count: 10000 + i * 5000,
     likes_count: 500 + i * 200,
     permalink_url: `https://soundcloud.com/artist/track-${idOffset + i}`,
@@ -106,10 +106,10 @@ if (fs.existsSync(CACHE_FILE)) {
   console.log(`[screenshots] Using ${realTracks.length} real tracks + ${realFeed.length} feed tracks from cache`);
   MOCK_TRACKS = realTracks
     .slice(0, 12)
-    .map((t, i) => buildSCTrack(t, i, new Date(2026, 2, 25 - i)));
+    .map((t, i) => buildSCTrack(t, i, new Date(Date.now() - i * 24 * 60 * 60 * 1000)));
   MOCK_FEED_TRACKS = realFeed
     .slice(0, 12)
-    .map((t, i) => buildSCTrack(t, i, new Date(2026, 2, 26 - i)));
+    .map((t, i) => buildSCTrack(t, i, new Date(Date.now() - i * 24 * 60 * 60 * 1000)));
 } else {
   MOCK_TRACKS = makePlaceholderTracks(12, 1000, PLACEHOLDER_TITLES, PLACEHOLDER_ARTISTS, 'Track');
   MOCK_FEED_TRACKS = makePlaceholderTracks(12, 3000, PLACEHOLDER_FEED_TITLES, PLACEHOLDER_ARTISTS, 'Feed');
@@ -307,6 +307,88 @@ async function mockScreenshotApi(page: Page) {
     }),
   );
 
+  // App settings
+  await page.route('**/api/settings', (route) => {
+    if (route.request().method() === 'GET') {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ preferred_output_format: 'aiff', root_music_folder: '~/Music/tracks' }),
+      });
+    } else {
+      route.fulfill({ status: 200, contentType: 'application/json', body: route.request().postData() ?? '{}' });
+    }
+  });
+
+  // Root music folder
+  await page.route('**/api/settings/root-folder', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ root_music_folder: '~/Music/tracks' }),
+    }),
+  );
+
+  // Rulesets
+  await page.route('**/api/rulesets', (route) => {
+    if (route.request().method() === 'GET') {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          rulesets: [
+            {
+              id: 'classic',
+              name: 'Classic',
+              is_builtin: true,
+              rules: [
+                { id: 'convert', type: 'convert', input: 'source', requires: [], params: { format: 'preferred', quality: 320 } },
+                { id: 'archive', type: 'move', input: 'convert.original', requires: ['convert.converted'], params: { folder: 'archive' } },
+                { id: 'move', type: 'move', input: 'convert.result', requires: [], params: { folder: 'cleaned' } },
+              ],
+            },
+          ],
+          active_ruleset_id: 'classic',
+        }),
+      });
+    } else {
+      route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    }
+  });
+
+  // Active ruleset
+  await page.route('**/api/rulesets/active', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'classic',
+        name: 'Classic',
+        is_builtin: true,
+        rules: [
+          { id: 'convert', type: 'convert', input: 'source', requires: [], params: { format: 'preferred', quality: 320 } },
+          { id: 'archive', type: 'move', input: 'convert.original', requires: ['convert.converted'], params: { folder: 'archive' } },
+          { id: 'move', type: 'move', input: 'convert.result', requires: [], params: { folder: 'cleaned' } },
+        ],
+      }),
+    }),
+  );
+
+  // Folders config
+  await page.route('**/api/folders/config', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        folders: [
+          { name: 'prepare', label: 'Prepare', visible: true, order: 0, ruleset_id: 'classic' },
+          { name: 'cleaned', label: 'Cleaned', visible: true, order: 1, ruleset_id: null },
+          { name: 'collection', label: 'Collection', visible: true, order: 2, ruleset_id: null },
+        ],
+      }),
+    }),
+  );
+
   // Track info — used when a file is clicked in edit mode
   await page.route(/\/api\/metadata\/files\/.+\/info/, (route) => {
     const t = MOCK_TRACKS[0];
@@ -443,6 +525,38 @@ test.describe('Documentation screenshots', () => {
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, 'setup.png'),
       fullPage: false,
+    });
+  });
+
+  test('settings — folders', async ({ page }) => {
+    await page.goto('/meta-editor');
+    await page.waitForLoadState('networkidle');
+    // Open settings dialog via sidebar button
+    await page.locator('button[title="Settings"]').click();
+    await page.locator('[data-slot="dialog-content"]').waitFor({ state: 'visible' });
+    // Navigate to Folders section
+    await page.getByText('Folders', { exact: true }).click();
+    await page.waitForTimeout(300);
+    // Screenshot just the dialog content
+    const dialog = page.locator('[data-slot="dialog-content"]');
+    await dialog.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'settings-folders.png'),
+    });
+  });
+
+  test('settings — rulesets (classic)', async ({ page }) => {
+    await page.goto('/meta-editor');
+    await page.waitForLoadState('networkidle');
+    // Open settings dialog
+    await page.locator('button[title="Settings"]').click();
+    await page.locator('[data-slot="dialog-content"]').waitFor({ state: 'visible' });
+    // Navigate to Rulesets section
+    await page.getByText('Rulesets', { exact: true }).click();
+    await page.waitForTimeout(300);
+    // Screenshot just the dialog content
+    const dialog = page.locator('[data-slot="dialog-content"]');
+    await dialog.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'settings-rulesets.png'),
     });
   });
 
