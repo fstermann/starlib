@@ -27,7 +27,7 @@ Tauri watchdog retries 3x (2s delay). Look for `[backend] process exited` in ter
 
 ## Key Paths
 
-- Config/cache: `~/Library/Application Support/starlib/`
+- Config/cache: `~/Library/Application Support/com.starlib.Starlib/`
 - Sidecar binary: `/Applications/Starlib.app/Contents/MacOS/starlib-backend-aarch64-apple-darwin`
 - Run sidecar standalone: execute the binary directly (exits when stdin closes)
 

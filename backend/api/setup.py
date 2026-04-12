@@ -1,7 +1,7 @@
 """First-launch setup endpoint.
 
 Reads and writes the user config file at the platform-appropriate path
-(e.g. ~/Library/Application Support/starlib/config.env on macOS).
+(e.g. ~/Library/Application Support/com.starlib.Starlib/config.env on macOS).
 The soundcloud_tools Settings class is a pydantic-settings BaseSettings that picks up
 variables from a .env file. We point it at the user config file via _env_file.
 """
@@ -11,9 +11,8 @@ import os
 import stat
 
 from fastapi import APIRouter, HTTPException, status
-from platformdirs import user_config_path
 
-from backend.config import get_backend_settings
+from backend.config import _APP_CONFIG_DIR, get_backend_settings
 from backend.schemas.setup import SetupRequest, SetupResponse, SetupStatusResponse
 from soundcloud_tools.settings import get_settings
 
@@ -21,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/setup", tags=["setup"])
 
-# Config file location: platform-appropriate config dir
-_CONFIG_DIR = user_config_path("starlib", ensure_exists=True)
+# Config file location: platform-appropriate config dir (shared with backend.config)
+_CONFIG_DIR = _APP_CONFIG_DIR
 _CONFIG_FILE = _CONFIG_DIR / "config.env"
 
 
