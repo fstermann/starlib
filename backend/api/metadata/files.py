@@ -475,6 +475,7 @@ def finalize_file(
         success=result["success"],
         message=result["message"],
         new_file_path=result["output_path"],
+        steps=result.get("steps", []),
     )
 
 

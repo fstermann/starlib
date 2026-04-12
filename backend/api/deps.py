@@ -8,7 +8,8 @@ from pathlib import Path
 
 from fastapi import HTTPException, status
 
-from backend.config import get_backend_settings
+from backend.core.services import app_settings as app_settings_service
+from backend.core.services import cache_db
 
 
 def get_root_folder() -> Path:
@@ -20,8 +21,7 @@ def get_root_folder() -> Path:
     Path
         Root folder for music library
     """
-    settings = get_backend_settings()
-    return Path(settings.root_music_folder).expanduser()
+    return Path(app_settings_service.get_root_music_folder()).expanduser()
 
 
 def validate_file_path(file_path: str, root_folder: Path) -> Path:
@@ -66,8 +66,13 @@ def validate_file_path(file_path: str, root_folder: Path) -> Path:
             detail="File path is outside allowed directory",
         ) from e
 
-    # Check existence
+    # Check existence — evict from cache if the file has been deleted
     if not path.exists():
+        try:
+            cache_db.delete_track(path)
+            cache_db.delete_peaks(path)
+        except RuntimeError:
+            pass  # cache_db not yet initialized
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"File not found: {path.name}")
 
     return path
@@ -80,7 +85,9 @@ def validate_folder_mode(mode: str) -> str:
     Parameters
     ----------
     mode : str
-        Mode: "prepare", "collection", "cleaned", or ""
+        Subfolder name (e.g. ``"prepare"``) or empty string for the root.
+        Must contain only alphanumeric characters, hyphens, or underscores to
+        prevent directory traversal.
 
     Returns
     -------
@@ -90,11 +97,13 @@ def validate_folder_mode(mode: str) -> str:
     Raises
     ------
     HTTPException
-        If mode is invalid
+        If mode contains unsafe characters
     """
-    valid_modes = ["prepare", "collection", "cleaned", ""]
-    if mode not in valid_modes:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid mode. Must be one of: {', '.join(valid_modes)}"
-        )
-    return mode
+    import re
+
+    if mode == "" or re.fullmatch(r"[a-zA-Z0-9_-]+", mode):
+        return mode
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid mode: must be alphanumeric (hyphens and underscores allowed).",
+    )

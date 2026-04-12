@@ -50,13 +50,14 @@ class TestValidateFilePath:
 class TestValidateFolderMode:
     """Tests for the validate_folder_mode function."""
 
-    @pytest.mark.parametrize("mode", ["prepare", "collection", "cleaned", ""])
+    @pytest.mark.parametrize("mode", ["prepare", "collection", "cleaned", "inbox", "my-folder", "folder_2", ""])
     def test_valid_modes(self, mode: str) -> None:
-        """All valid modes are accepted."""
+        """Any alphanumeric/hyphen/underscore folder name is accepted."""
         assert validate_folder_mode(mode) == mode
 
-    def test_invalid_mode_rejected(self) -> None:
-        """Invalid mode is rejected with 400."""
+    @pytest.mark.parametrize("mode", ["../etc", "foo/bar", "a b", "folder!"])
+    def test_invalid_mode_rejected(self, mode: str) -> None:
+        """Folder names with unsafe characters are rejected with 400."""
         with pytest.raises(HTTPException) as exc_info:
-            validate_folder_mode("invalid")
+            validate_folder_mode(mode)
         assert exc_info.value.status_code == 400

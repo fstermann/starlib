@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, status
 from platformdirs import user_config_path
 
 from backend.config import get_backend_settings
+from backend.core.services import app_settings as app_settings_service
 from backend.schemas.setup import SetupRequest, SetupResponse, SetupStatusResponse
 from soundcloud_tools.settings import get_settings
 
@@ -91,7 +92,6 @@ def save_setup(body: SetupRequest) -> SetupResponse:
         existing = _read_config()
         existing["CLIENT_ID"] = body.client_id
         existing["CLIENT_SECRET"] = body.client_secret
-        existing["ROOT_MUSIC_FOLDER"] = body.root_music_folder
         _write_config(existing)
     except OSError as exc:
         logger.exception("Failed to write config file")
@@ -99,6 +99,10 @@ def save_setup(body: SetupRequest) -> SetupResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not write config",
         ) from exc
+
+    # Persist root music folder to settings.json (single source of truth).
+    if body.root_music_folder:
+        app_settings_service.set_root_music_folder(body.root_music_folder)
 
     # Invalidate the cached settings so the new values take effect immediately.
     get_settings.cache_clear()

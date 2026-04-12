@@ -42,6 +42,10 @@ export async function fetchApi<T>(
     );
   }
 
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    return undefined as T;
+  }
+
   return response.json();
 }
 
@@ -80,7 +84,73 @@ export type TrackInfoUpdateRequest = components['schemas']['TrackInfoUpdateReque
 
 export type OperationResponse = components['schemas']['OperationResponse'];
 
-export type FinalizeResponse = components['schemas']['FinalizeResponse'];
+export type FinalizeResponse = components['schemas']['FinalizeResponse'] & {
+  steps?: { id: string; type: RuleType; status: 'done' | 'skipped'; message: string }[];
+};
+
+// ==================== Ruleset Types ====================
+
+export type RuleType = 'move' | 'convert' | 'copy';
+
+/** Output names produced by each rule type. */
+export const RULE_OUTPUTS: Record<RuleType, readonly string[]> = {
+  move: ['moved'],
+  copy: ['original', 'copy'],
+  convert: ['original', 'converted', 'result'],
+} as const;
+
+export interface Rule {
+  /** Stable id within the ruleset; used as a prefix when referencing outputs. */
+  id: string;
+  type: RuleType;
+  /** The file the rule operates on. Either "source" or "<rule_id>.<output_name>". */
+  input: string;
+  /** Extra refs that must exist for the rule to fire (gates the rule on a sibling's success). */
+  requires: string[];
+  params: Record<string, unknown>;
+}
+
+export interface Ruleset {
+  id: string;
+  name: string;
+  is_builtin: boolean;
+  rules: Rule[];
+}
+
+export interface RulesetsResponse {
+  rulesets: Ruleset[];
+  active_ruleset_id: string;
+}
+
+export interface RulesetCreate {
+  name: string;
+  rules: Rule[];
+}
+
+export interface RulesetUpdate {
+  name?: string;
+  rules?: Rule[];
+}
+
+// ==================== App Settings Types ====================
+
+export interface AppSettings {
+  preferred_output_format: 'aiff' | 'mp3';
+}
+
+// ==================== Folder Config Types ====================
+
+export interface FolderConfig {
+  name: string;
+  label: string;
+  visible: boolean;
+  order: number;
+  ruleset_id: string | null;
+}
+
+export interface FoldersConfig {
+  folders: FolderConfig[];
+}
 
 // ==================== API Methods ====================
 
@@ -275,5 +345,76 @@ export const api = {
       '/api/metadata/collection/soundcloud-ids'
     );
     return data.soundcloud_ids;
+  },
+
+  // ==================== Rulesets ====================
+
+  async getRulesets(): Promise<RulesetsResponse> {
+    return fetchApi('/api/rulesets');
+  },
+
+  async getActiveRuleset(): Promise<Ruleset> {
+    return fetchApi('/api/rulesets/active');
+  },
+
+  async createRuleset(data: RulesetCreate): Promise<Ruleset> {
+    return fetchApi('/api/rulesets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateRuleset(id: string, data: RulesetUpdate): Promise<Ruleset> {
+    return fetchApi(`/api/rulesets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteRuleset(id: string): Promise<void> {
+    await fetchApi(`/api/rulesets/${id}`, { method: 'DELETE' });
+  },
+
+  async activateRuleset(id: string): Promise<Ruleset> {
+    return fetchApi(`/api/rulesets/${id}/activate`, { method: 'PUT' });
+  },
+
+  // ==================== Folder Config ====================
+
+  async getFoldersConfig(): Promise<FoldersConfig> {
+    return fetchApi('/api/folders/config');
+  },
+
+  async updateFoldersConfig(config: FoldersConfig): Promise<FoldersConfig> {
+    return fetchApi('/api/folders/config', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  },
+
+  // ==================== App Settings ====================
+
+  async getAppSettings(): Promise<AppSettings> {
+    return fetchApi('/api/settings');
+  },
+
+  async updateAppSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
+    return fetchApi('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  },
+
+  async getRootMusicFolder(): Promise<string> {
+    const data = await fetchApi<{ root_music_folder: string }>('/api/settings/root-folder');
+    return data.root_music_folder;
+  },
+
+  async updateRootMusicFolder(path: string): Promise<string> {
+    const data = await fetchApi<{ root_music_folder: string }>('/api/settings/root-folder', {
+      method: 'PUT',
+      body: JSON.stringify({ root_music_folder: path }),
+    });
+    return data.root_music_folder;
   },
 };

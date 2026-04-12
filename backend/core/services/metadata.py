@@ -14,7 +14,9 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
-from backend.core.services import cache_db
+from backend.core.services import cache_db, rule_engine
+from backend.core.services import folder_config as folder_config_service
+from backend.core.services import ruleset as ruleset_service
 from soundcloud_tools.handler.track import TrackHandler, TrackInfo
 from soundcloud_tools.utils.string import (
     remove_double_spaces,
@@ -227,14 +229,13 @@ def save_track_metadata(
 def finalize_track(
     file_path: Path,
     root_folder: Path,
-    target_format: Literal["mp3", "aiff"],
+    target_format: Literal["mp3", "aiff"] | None = None,
 ) -> dict[str, str | bool]:
-    """
-    Finalize a track: convert format if needed, move to cleaned folder.
+    """Finalize a track using the active ruleset.
 
-    This is the complete finalization workflow:
-    - If format matches target: move to cleaned
-    - If format differs: convert, copy metadata, archive original, move to cleaned
+    The active ruleset defines the ordered sequence of operations (convert,
+    archive, move).  ``target_format`` is accepted for backward-compatibility
+    but is ignored when the ruleset already contains a convert rule.
 
     Parameters
     ----------
@@ -242,70 +243,24 @@ def finalize_track(
         Path to the audio file
     root_folder : Path
         Root folder for the music library
-    target_format : Literal["mp3", "aiff"]
-        Target format for finalization
+    target_format : str | None
+        Ignored — kept for API compatibility.
 
     Returns
     -------
     dict
-        Result with keys:
-        - "success": bool
-        - "message": str
-        - "converted": bool
-        - "output_path": str (if successful)
+        Result with keys: ``success``, ``message``, ``converted``, ``output_path``.
     """
-    handler = TrackHandler(root_folder=root_folder, file=file_path)
+    # Resolve ruleset: use folder-specific one if configured, else global active
+    try:
+        relative = file_path.relative_to(root_folder)
+        folder_name: str | None = relative.parts[0] if len(relative.parts) > 1 else None
+    except ValueError:
+        folder_name = None
 
-    # Check if format matches target
-    if handler.file.suffix == f".{target_format}":
-        # No conversion needed, just move
-        handler.move_to_cleaned()
-        return {
-            "success": True,
-            "message": "Moved to cleaned folder",
-            "converted": False,
-            "output_path": str(handler.file),
-        }
-
-    # Need to convert
-    conversion_success = False
-
-    if target_format == "mp3":
-        conversion_success = handler.convert_to_mp3()
-        if conversion_success:
-            handler.add_mp3_info()
-            handler.archive()
-        else:
-            # Conversion failed, move anyway
-            handler.move_to_cleaned()
-            return {
-                "success": True,
-                "message": "Conversion failed, moved original to cleaned",
-                "converted": False,
-                "output_path": str(handler.file),
-            }
-
-    elif target_format == "aiff":
-        conversion_success = handler.convert_to_aiff()
-        if conversion_success:
-            handler.add_aiff_info()
-            handler.archive()
-        else:
-            # Conversion failed, move anyway
-            handler.move_to_cleaned()
-            return {
-                "success": True,
-                "message": "Conversion failed, moved original to cleaned",
-                "converted": False,
-                "output_path": str(handler.file),
-            }
-
-    return {
-        "success": True,
-        "message": "Converted and moved to cleaned",
-        "converted": True,
-        "output_path": str(handler.mp3_file if target_format == "mp3" else handler.file),
-    }
+    ruleset_id = folder_config_service.get_ruleset_id_for_folder(folder_name) if folder_name else None
+    active = ruleset_service.get_ruleset_by_id(ruleset_id) if ruleset_id else ruleset_service.get_active_ruleset()
+    return rule_engine.execute_ruleset(file_path, root_folder, active)
 
 
 def delete_track_file(file_path: Path, root_folder: Path) -> None:

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
-import { type FileInfo, type TrackBrowse } from '@/lib/api';
+import { api, type FileInfo, type FolderConfig, type TrackBrowse } from '@/lib/api';
 import { useQueryState } from 'nuqs';
 import { searchParams } from '@/lib/search-params';
 import { usePlayer } from '@/lib/player-context';
@@ -28,6 +28,27 @@ import { TrackEditor, type AutoActions } from './track-editor';
 
 function MetaEditorContent() {
   const [folderMode, setFolderMode] = useQueryState('mode', searchParams.mode);
+
+  // Folder tabs from config (falls back to defaults while loading)
+  const [folderTabs, setFolderTabs] = useState<FolderConfig[]>([
+    { name: 'prepare', label: 'Prepare', visible: true, order: 0, ruleset_id: null },
+    { name: 'collection', label: 'Collection', visible: true, order: 1, ruleset_id: null },
+    { name: 'cleaned', label: 'Cleaned', visible: true, order: 2, ruleset_id: null },
+  ]);
+
+  useEffect(() => {
+    function loadFolders() {
+      api.getFoldersConfig().then((c) => {
+        const visible = c.folders
+          .filter((f) => f.visible)
+          .sort((a, b) => a.order - b.order);
+        if (visible.length > 0) setFolderTabs(visible);
+      }).catch(() => { /* keep defaults */ });
+    }
+    loadFolders();
+    window.addEventListener("folders-config-changed", loadFolders);
+    return () => window.removeEventListener("folders-config-changed", loadFolders);
+  }, []);
 
   // Track selection
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
@@ -119,16 +140,16 @@ function MetaEditorContent() {
                 type="single"
                 variant="outline"
                 value={folderMode}
-                onValueChange={(v) => { if (v) setFolderMode(v as typeof folderMode); }}
+                onValueChange={(v) => { if (v) setFolderMode(v); }}
                 className="h-7"
               >
-                {(['prepare', 'collection', 'cleaned'] as const).map((mode) => (
+                {folderTabs.map((folder) => (
                   <ToggleGroupItem
-                    key={mode}
-                    value={mode}
+                    key={folder.name}
+                    value={folder.name}
                     className="h-7 px-3 text-[10px] font-medium tracking-widest uppercase cursor-pointer"
                   >
-                    {mode}
+                    {folder.label}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
@@ -208,6 +229,7 @@ function MetaEditorContent() {
             <TrackEditor
               selectedFile={selectedFile}
               folderMode={folderMode}
+              folderRulesetId={folderTabs.find((f) => f.name === folderMode)?.ruleset_id ?? null}
               autoActions={autoActions}
               onTableRefresh={() => setRefreshToken(t => t + 1)}
               onClose={() => setEditorOpen(false)}

@@ -144,6 +144,12 @@ def stop_watcher() -> None:
         logger.info("File watcher stopped")
 
 
+def restart_watcher(new_root: Path) -> None:
+    """Stop the current observer and start a new one on *new_root*."""
+    stop_watcher()
+    start_watcher(new_root)
+
+
 def _delete_artwork_cache(file_path: Path) -> None:
     """Remove the cached artwork file for *file_path*, if any."""
     from backend.config import get_backend_settings
