@@ -4,6 +4,8 @@ Backend configuration for FastAPI application.
 Environment variables and settings for the backend server.
 """
 
+import logging
+import shutil
 from functools import lru_cache
 from pathlib import Path
 
@@ -12,10 +14,44 @@ from pydantic import Field
 from pydantic.aliases import AliasChoices
 from pydantic_settings import BaseSettings
 
+_logger = logging.getLogger(__name__)
+
+_APP_NAME = "com.starlib.Starlib"
+
+# Directories used by previous versions that should be migrated.
+_OLD_DIRS = [
+    user_config_path("starlib"),  # Python backend (pre-rename)
+    user_config_path("com.fstermann.starlib"),  # Tauri store (old identifier)
+]
+
+
+def _migrate_old_dirs(new_dir: Path) -> None:
+    """Move files from legacy config directories into *new_dir*.
+
+    Only copies files that don't already exist at the destination.
+    Removes old directories after a successful migration.
+    """
+    for old_dir in _OLD_DIRS:
+        if not old_dir.is_dir() or old_dir == new_dir:
+            continue
+        _logger.info("Migrating data from %s to %s", old_dir, new_dir)
+        for src in old_dir.rglob("*"):
+            if not src.is_file():
+                continue
+            dest = new_dir / src.relative_to(old_dir)
+            if dest.exists():
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+        shutil.rmtree(old_dir, ignore_errors=True)
+
+
 # Platform-specific user config directory used when running as a bundled desktop app.
-# ~/.config/starlib/ on Linux, ~/Library/Application Support/starlib/ on macOS,
-# %LOCALAPPDATA%/starlib/ on Windows.
-_APP_CONFIG_DIR = user_config_path("starlib", ensure_exists=True)
+# ~/.config/com.starlib.Starlib/ on Linux,
+# ~/Library/Application Support/com.starlib.Starlib/ on macOS,
+# %LOCALAPPDATA%/com.starlib.Starlib/ on Windows.
+_APP_CONFIG_DIR = user_config_path(_APP_NAME, ensure_exists=True)
+_migrate_old_dirs(_APP_CONFIG_DIR)
 
 
 class BackendSettings(BaseSettings):
