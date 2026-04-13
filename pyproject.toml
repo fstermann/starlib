@@ -26,7 +26,7 @@ dependencies = [
 dev = [
     "ruff>=0.15.0",
     "pre-commit>=4.5.1",
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",
     "pytest-asyncio>=0.25.0",
     "zensical>=0.0.29",
     # pygments 2.20 added `filename` as a recognized HtmlFormatter option; pymdownx 10.21
