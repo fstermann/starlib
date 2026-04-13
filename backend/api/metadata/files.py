@@ -124,7 +124,7 @@ def browse_folder_files(
     bpm_max: int | None = Query(None, ge=0, description="Maximum BPM"),
     date_from: date | None = Query(None, description="Earliest release date (YYYY-MM-DD)"),
     date_to: date | None = Query(None, description="Latest release date (YYYY-MM-DD)"),
-    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name)$"),
+    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|mtime)$"),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
     """Browse tracks in a folder with filtering, sorting, and pagination.
@@ -170,6 +170,10 @@ def browse_folder_files(
         except (IndexError, KeyError):
             raw_remixers = None
         remixers = json.loads(raw_remixers) if raw_remixers else None
+        try:
+            sc_id = row["soundcloud_id"]
+        except (IndexError, KeyError):
+            sc_id = None
         return TrackBrowseResponse(
             file_path=row["file_path"],
             file_name=row["file_name"],
@@ -180,10 +184,12 @@ def browse_folder_files(
             genre=row["genre"],
             release_date=date.fromisoformat(row["release_date"]) if row["release_date"] else None,
             remixers=remixers,
+            soundcloud_id=sc_id,
             has_artwork=bool(row["has_artwork"]),
             file_format=row["file_format"],
             file_size=row["file_size"] or 0,
             duration=row["duration"],
+            mtime=row["mtime"],
         )
 
     if collection.is_indexing(folder_path):

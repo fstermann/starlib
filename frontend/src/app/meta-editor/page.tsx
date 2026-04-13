@@ -23,9 +23,9 @@ import {
   ArrowUp,
   XCircle,
   PencilLine,
-  ListChecks,
 } from 'lucide-react';
 import { TrackEditor, type AutoActions } from './track-editor';
+import { SoundCloudLogo } from '@/components/icons/soundcloud-logo';
 
 function MetaEditorContent() {
   const [folderMode, setFolderMode] = useQueryState('mode', searchParams.mode);
@@ -68,9 +68,6 @@ function MetaEditorContent() {
   const [tableTotal, setTableTotal] = useState(0);
   const [tableCacheLoading, setTableCacheLoading] = useState(false);
 
-  // Edit mode (table switches between view and inline-edit)
-  const [editMode, setEditMode] = useState(false);
-
   // Active ruleset for the current folder tab
   const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
   const currentRulesetId = folderTabs.find((f) => f.name === folderMode)?.ruleset_id ?? null;
@@ -91,6 +88,7 @@ function MetaEditorContent() {
     autoClean: true,
     autoTitelize: false,
     autoRemoveOriginalMix: true,
+    autoApplyScResults: true,
   });
 
   const player = usePlayer();
@@ -99,7 +97,6 @@ function MetaEditorContent() {
   useEffect(() => {
     setSelectedFile(null);
     setEditorOpen(false);
-    setEditMode(false);
     player.stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderMode]);
@@ -176,14 +173,6 @@ function MetaEditorContent() {
             }
             actions={
               <div className="flex items-center gap-1">
-                {/* Edit mode toggle */}
-                <button
-                  onClick={() => setEditMode(!editMode)}
-                  className={`cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 ${editMode ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-                  title={editMode ? 'Switch to view mode' : 'Switch to edit mode'}
-                >
-                  <ListChecks className="size-3.5" />
-                </button>
                 {selectedFile && !editorOpen && (
                   <button
                     onClick={() => setEditorOpen(true)}
@@ -193,54 +182,55 @@ function MetaEditorContent() {
                     <PencilLine className="size-3.5" />
                   </button>
                 )}
-                {(editorOpen || editMode) && (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 text-muted-foreground hover:text-foreground">
-                        <Settings2 className="size-3.5" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-52" align="end">
-                      <div className="space-y-3">
-                        <h4 className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Auto-Actions</h4>
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Checkbox id="auto-artwork" checked={autoActions.autoCopyArtwork} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyArtwork: v as boolean })} />
-                            <label htmlFor="auto-artwork" className="text-xs cursor-pointer flex items-center gap-1.5"><Image className="size-3 text-muted-foreground" />Artwork</label>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Checkbox id="auto-metadata" checked={autoActions.autoCopyMetadata} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyMetadata: v as boolean })} />
-                            <label htmlFor="auto-metadata" className="text-xs cursor-pointer flex items-center gap-1.5"><Download className="size-3 text-muted-foreground" />Metadata</label>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Checkbox id="auto-clean" checked={autoActions.autoClean} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoClean: v as boolean })} />
-                            <label htmlFor="auto-clean" className="text-xs cursor-pointer flex items-center gap-1.5"><Eraser className="size-3 text-muted-foreground" />Clean</label>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Checkbox id="auto-titelize" checked={autoActions.autoTitelize} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoTitelize: v as boolean })} />
-                            <label htmlFor="auto-titelize" className="text-xs cursor-pointer flex items-center gap-1.5"><ArrowUp className="size-3 text-muted-foreground" />Titelize</label>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Checkbox id="auto-remove-mix" checked={autoActions.autoRemoveOriginalMix} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoRemoveOriginalMix: v as boolean })} />
-                            <label htmlFor="auto-remove-mix" className="text-xs cursor-pointer flex items-center gap-1.5"><XCircle className="size-3 text-muted-foreground" />Remove &quot;Original Mix&quot;</label>
-                          </div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 text-muted-foreground hover:text-foreground">
+                      <Settings2 className="size-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-52" align="end">
+                    <div className="space-y-3">
+                      <h4 className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Auto-Actions</h4>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="auto-artwork" checked={autoActions.autoCopyArtwork} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyArtwork: v as boolean })} />
+                          <label htmlFor="auto-artwork" className="text-xs cursor-pointer flex items-center gap-1.5"><Image className="size-3 text-muted-foreground" />Artwork</label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="auto-metadata" checked={autoActions.autoCopyMetadata} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyMetadata: v as boolean })} />
+                          <label htmlFor="auto-metadata" className="text-xs cursor-pointer flex items-center gap-1.5"><Download className="size-3 text-muted-foreground" />Metadata</label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="auto-clean" checked={autoActions.autoClean} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoClean: v as boolean })} />
+                          <label htmlFor="auto-clean" className="text-xs cursor-pointer flex items-center gap-1.5"><Eraser className="size-3 text-muted-foreground" />Clean</label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="auto-titelize" checked={autoActions.autoTitelize} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoTitelize: v as boolean })} />
+                          <label htmlFor="auto-titelize" className="text-xs cursor-pointer flex items-center gap-1.5"><ArrowUp className="size-3 text-muted-foreground" />Titelize</label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="auto-remove-mix" checked={autoActions.autoRemoveOriginalMix} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoRemoveOriginalMix: v as boolean })} />
+                          <label htmlFor="auto-remove-mix" className="text-xs cursor-pointer flex items-center gap-1.5"><XCircle className="size-3 text-muted-foreground" />Remove &quot;Original Mix&quot;</label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="auto-sc-apply" checked={autoActions.autoApplyScResults} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoApplyScResults: v as boolean })} />
+                          <label htmlFor="auto-sc-apply" className="text-xs cursor-pointer flex items-center gap-1.5"><SoundCloudLogo className="size-3 text-muted-foreground" />Auto-apply SC results</label>
                         </div>
                       </div>
-                    </PopoverContent>
-                  </Popover>
-                )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             }
           />
 
-      {/* Horizontal split: table left, editor right (or full width in edit mode) */}
+      {/* Horizontal split: table left, editor right */}
       <div
         className="grid flex-1 min-h-0 transition-[grid-template-columns] duration-300 ease-out"
         style={{ gridTemplateColumns: showEditor ? '3fr 2fr' : '1fr 0fr' }}
       >
         {/* Left: filter + table */}
         <div className="flex flex-col min-w-0 overflow-hidden">
-          {/* Always-visible filter bar + browse table */}
           <CollectionFilterBar mode={folderMode} total={tableTotal} cacheLoading={tableCacheLoading} />
           <CollectionTable
             mode={folderMode}
@@ -249,13 +239,13 @@ function MetaEditorContent() {
             onItemsChange={useCallback((items: TrackBrowse[]) => { setTableItems(items); tableItemsRef.current = items; }, [])}
             onSelect={handleTableSelect}
             onTotalChange={(t, cl) => { setTableTotal(t); setTableCacheLoading(cl); }}
-            editMode={editMode}
             onEditSaved={() => setRefreshToken(t => t + 1)}
             activeRuleset={activeRuleset}
+            autoApplyScResults={autoActions.autoApplyScResults}
           />
         </div>
         {/* Right: editor panel */}
-        <div className={`overflow-hidden min-w-0 flex flex-col bg-card${showEditor ? ' border-l border-border/50' : ''}`}>
+        <div className={`min-w-0 flex flex-col bg-card${showEditor ? ' border-l border-border/50 shadow-[-6px_0_16px_-4px_rgba(0,0,0,0.15)] dark:shadow-[-6px_0_16px_-4px_rgba(0,0,0,0.4)] z-10' : ''}`} style={{ overflow: showEditor ? 'hidden' : undefined }}>
           {showEditor && (
             <TrackEditor
               selectedFile={selectedFile}

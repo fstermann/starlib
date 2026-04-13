@@ -197,10 +197,12 @@ class TrackBrowseResponse(BaseModel):
     genre: str | None = None
     release_date: date | None = None
     remixers: list[str] | None = None
+    soundcloud_id: int | None = None
     has_artwork: bool = False
     file_format: str
     file_size: int
     duration: float | None = None
+    mtime: float | None = None
 
 
 class PeaksResponse(BaseModel):

@@ -7,7 +7,7 @@ import {
 
 /** Legacy constant kept for reference; tabs are now driven by the folder config API. */
 export const FOLDER_MODES = ['prepare', 'collection', 'cleaned'] as const;
-export const SORT_FIELDS = ['title', 'artist', 'genre', 'bpm', 'key', 'release_date', 'file_name'] as const;
+export const SORT_FIELDS = ['title', 'artist', 'genre', 'bpm', 'key', 'release_date', 'file_name', 'mtime'] as const;
 export const SORT_ORDERS = ['asc', 'desc'] as const;
 
 export type FolderMode = string;
@@ -22,6 +22,6 @@ export const searchParams = {
   keys: parseAsArrayOf(parseAsString).withDefault([]),
   bpmMin: parseAsInteger,
   bpmMax: parseAsInteger,
-  sort: parseAsStringLiteral(SORT_FIELDS).withDefault('file_name'),
-  order: parseAsStringLiteral(SORT_ORDERS).withDefault('asc'),
+  sort: parseAsStringLiteral(SORT_FIELDS).withDefault('mtime'),
+  order: parseAsStringLiteral(SORT_ORDERS).withDefault('desc'),
 };

@@ -247,6 +247,7 @@ _SORT_COLS: dict[str, str] = {
     "key": "LOWER(COALESCE(key, ''))",
     "release_date": "release_date",
     "file_name": "LOWER(file_name)",
+    "mtime": "mtime",
 }
 _NULLABLE_SORT_COLS = {"bpm", "release_date"}
 

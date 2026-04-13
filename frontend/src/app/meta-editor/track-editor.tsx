@@ -55,6 +55,7 @@ export interface AutoActions {
   autoClean: boolean;
   autoTitelize: boolean;
   autoRemoveOriginalMix: boolean;
+  autoApplyScResults: boolean;
 }
 
 export interface TrackEditorProps {

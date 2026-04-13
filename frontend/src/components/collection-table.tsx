@@ -4,10 +4,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQueryState } from 'nuqs';
 import { searchParams } from '@/lib/search-params';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Play, Pause, ChevronUp, ChevronDown, ChevronsUpDown, Music, Save, PenLine, Eraser, Check, ArrowDown, Sparkles, MoveRight } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronsUpDown, Music, Save, PenLine, Eraser, Check, ArrowDown, Sparkles, MoveRight } from 'lucide-react';
 import { api, type TrackBrowse, type TrackInfoUpdateRequest, type BrowseParams, type BatchUpdateItem, type RuleType, type Ruleset } from '@/lib/api';
 import { StepBadge, RULE_ICONS, RULE_ICON_COLORS } from '@/components/rulesets/rule-card';
-import { usePlayer, type PlayerTrack } from '@/lib/player-context';
+import { usePlayer } from '@/lib/player-context';
 import { MiniWaveform } from '@/components/mini-waveform';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -31,7 +31,6 @@ import { serializeComment } from '@/app/meta-editor/utils';
 import { toast } from 'sonner';
 
 const PAGE_SIZE = 50;
-const VIEW_ROW_HEIGHT = 48;
 const EDIT_ROW_HEIGHT = 40;
 
 type SortBy = NonNullable<BrowseParams['sort_by']>;
@@ -49,7 +48,7 @@ const EDITABLE_FIELDS: { key: EditableField; label: string; width: string }[] = 
   { key: 'genre', label: 'Genre', width: 'w-24' },
   { key: 'bpm', label: 'BPM', width: 'w-14' },
   { key: 'key', label: 'Key', width: 'w-14' },
-  { key: 'release_date', label: 'Date', width: 'w-24' },
+  { key: 'release_date', label: 'Release', width: 'w-24' },
 ];
 
 /** Fields not stored in the API — remix composition helpers (not remixer itself, which is a real field) */
@@ -63,27 +62,20 @@ interface CollectionTableProps {
   onTotalChange?: (total: number, cacheLoading: boolean) => void;
   onItemsChange?: (items: TrackBrowse[]) => void;
   refreshToken?: number;
-  editMode?: boolean;
   onEditSaved?: () => void;
   activeRuleset?: Ruleset | null;
+  autoApplyScResults?: boolean;
 }
 
-interface Column {
-  key: SortBy;
-  label: string;
-  className: string;
-  sortable?: boolean;
-}
-
-const COLUMNS: Column[] = [
-  { key: 'title', label: 'Title', className: 'flex-[3] min-w-0', sortable: true },
-  { key: 'artist', label: 'Artist', className: 'flex-[2] min-w-0', sortable: true },
-  { key: 'genre', label: 'Genre', className: 'w-28 shrink-0', sortable: true },
-  { key: 'bpm', label: 'BPM', className: 'w-14 shrink-0 text-right', sortable: true },
-  { key: 'key', label: 'Key', className: 'w-14 shrink-0', sortable: true },
-  { key: 'release_date', label: 'Date', className: 'w-20 shrink-0', sortable: true },
-  { key: 'file_name', label: 'Length', className: 'w-14 shrink-0 text-right' },
-];
+/** Sortable fields mapped to EDITABLE_FIELDS keys where applicable */
+const SORTABLE_FIELDS: Partial<Record<EditableField, SortBy>> = {
+  title: 'title',
+  artist: 'artist',
+  genre: 'genre',
+  bpm: 'bpm',
+  key: 'key',
+  release_date: 'release_date',
+};
 
 function SortIcon({ col, sortBy, sortOrder }: { col: SortBy; sortBy: SortBy; sortOrder: SortOrder }) {
   if (col !== sortBy) return <ChevronsUpDown className="size-3 opacity-30" />;
@@ -92,105 +84,7 @@ function SortIcon({ col, sortBy, sortOrder }: { col: SortBy; sortBy: SortBy; sor
     : <ChevronDown className="size-3 text-primary" />;
 }
 
-/* ─── View-mode row ─── */
-
-interface ViewRowProps {
-  item: TrackBrowse;
-  isActive: boolean;
-  isPlaying: boolean;
-  onPlay: () => void;
-  onSelect: () => void;
-}
-
-function ViewRow({ item, isActive, isPlaying, onPlay, onSelect }: ViewRowProps) {
-  const artworkUrl = item.has_artwork ? api.getArtworkUrl(item.file_path) : null;
-  const [artworkReady, setArtworkReady] = useState(!item.has_artwork);
-  const track: PlayerTrack = {
-    filePath: item.file_path,
-    fileName: item.file_name,
-    title: item.title ?? undefined,
-    artist: item.artist ?? undefined,
-  };
-
-  return (
-    <div
-      role="row"
-      tabIndex={0}
-      data-file-path={item.file_path}
-      className={`flex items-center h-12 gap-2 px-3 border-b border-border/30 transition-colors select-none cursor-pointer
-        ${isActive ? 'bg-accent/40' : 'hover:bg-accent/20'}`}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') onSelect();
-        if (e.key === ' ') { e.preventDefault(); onPlay(); }
-      }}
-    >
-      {/* Play / Pause button */}
-      <button
-        className={`shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors cursor-pointer ${isActive ? 'text-primary hover:text-primary/80' : 'text-muted-foreground hover:text-foreground'}`}
-        onClick={(e) => { e.stopPropagation(); onPlay(); }}
-        aria-label={isActive && isPlaying ? 'Pause' : `Play ${item.title || item.file_name}`}
-      >
-        {isActive && isPlaying
-          ? <Pause className="size-3.5 fill-primary text-primary" />
-          : <Play className={`size-3.5 ${isActive ? 'fill-primary text-primary' : ''}`} />}
-      </button>
-
-      {/* Mini waveform */}
-      <div className="w-28 h-7 shrink-0">
-        <MiniWaveform track={track} artworkReady={artworkReady} />
-      </div>
-
-      {/* Artwork thumbnail */}
-      <div className="size-8 shrink-0 rounded overflow-hidden bg-muted flex items-center justify-center">
-        {artworkUrl
-          ? <img src={artworkUrl} alt="" className="size-8 object-cover" loading="lazy"
-              onLoad={() => setArtworkReady(true)}
-              onError={() => setArtworkReady(true)}
-            />
-          : <Music className="size-3.5 text-muted-foreground/50" />}
-      </div>
-
-      {/* Title */}
-      <div className="flex-[3] min-w-0 flex flex-col justify-center">
-        <span className={`text-xs font-medium truncate leading-tight ${isActive ? 'text-primary' : ''}`}>
-          {item.title || item.file_name}
-        </span>
-        {item.title && (
-          <span className="text-[10px] text-muted-foreground truncate leading-tight">{item.file_name}</span>
-        )}
-      </div>
-
-      {/* Artist */}
-      <span className="flex-[2] min-w-0 text-xs text-muted-foreground truncate">{item.artist || '—'}</span>
-
-      {/* Genre */}
-      <span className="w-28 shrink-0 text-xs text-muted-foreground truncate">{item.genre || '—'}</span>
-
-      {/* BPM */}
-      <span className="w-14 shrink-0 text-xs text-muted-foreground text-right tabular-nums">
-        {item.bpm ?? '—'}
-      </span>
-
-      {/* Key */}
-      <span className="w-14 shrink-0 text-xs text-muted-foreground">{item.key || '—'}</span>
-
-      {/* Date */}
-      <span className="w-20 shrink-0 text-xs text-muted-foreground">
-        {item.release_date ? item.release_date.slice(0, 7) : '—'}
-      </span>
-
-      {/* Duration */}
-      <span className="w-14 shrink-0 text-xs text-muted-foreground text-right tabular-nums">
-        {item.duration != null
-          ? `${Math.floor(item.duration / 60)}:${String(Math.floor(item.duration % 60)).padStart(2, '0')}`
-          : '—'}
-      </span>
-    </div>
-  );
-}
-
-/* ─── Edit-mode row ─── */
+/* ─── Row ─── */
 
 type ScStatus = 'idle' | 'searching' | 'found' | 'not-found';
 
@@ -218,6 +112,7 @@ interface EditRowProps {
   onFinalize: () => void;
   savingRow: boolean;
   pendingArtworkB64?: string;
+  hasScLink?: boolean;
   scLinkChanged?: boolean;
   activeRuleset?: Ruleset | null;
 }
@@ -238,7 +133,7 @@ function ScFieldRow({ label, scValue, currentValue, onApply }: { label: string; 
   );
 }
 
-function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onToggleSelect, onFieldChange, onApplyScField, onApplyAllScFields, onSelectScTrack, onSearchSc, onSelect, onSaveRow, onFinalize, savingRow, pendingArtworkB64, scLinkChanged, activeRuleset }: EditRowProps) {
+function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onToggleSelect, onFieldChange, onApplyScField, onApplyAllScFields, onSelectScTrack, onSearchSc, onSelect, onSaveRow, onFinalize, savingRow, pendingArtworkB64, hasScLink, scLinkChanged, activeRuleset }: EditRowProps) {
   const artworkUrl = item.has_artwork
     ? api.getArtworkUrl(item.file_path)
     : pendingArtworkB64
@@ -283,14 +178,16 @@ function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onTo
             onClick={(e) => { if (!scStatus) { e.preventDefault(); onSearchSc(); } }}
             title={
               scStatus === 'searching' ? 'Searching SoundCloud...' :
-              scStatus === 'found' ? 'SoundCloud match — click to view' :
+              hasScLink ? 'SoundCloud linked' :
+              scStatus === 'found' ? 'SoundCloud match found' :
               scStatus === 'not-found' ? 'No SoundCloud match' : 'Search SoundCloud'
             }
           >
             {scStatus === 'searching' && <LogoSpinner className="size-3" />}
-            {scStatus === 'found' && <SoundCloudLogo className="size-3 text-primary" />}
-            {scStatus === 'not-found' && <SoundCloudLogo className="size-3 text-muted-foreground/30" />}
-            {!scStatus && <SoundCloudLogo className="size-3 text-muted-foreground/40" />}
+            {scStatus !== 'searching' && hasScLink && <SoundCloudLogo className="size-3 text-primary" />}
+            {scStatus !== 'searching' && !hasScLink && scStatus === 'found' && <SoundCloudLogo className="size-3 text-primary" />}
+            {scStatus !== 'searching' && !hasScLink && scStatus === 'not-found' && <SoundCloudLogo className="size-3 text-muted-foreground/30" />}
+            {scStatus !== 'searching' && !hasScLink && !scStatus && <SoundCloudLogo className="size-3 text-muted-foreground/40" />}
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-72 p-3" align="start" side="right" collisionPadding={16}>
@@ -416,6 +313,11 @@ function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onTo
         </div>
       ))}
 
+      {/* Added date (read-only) */}
+      <span className="w-20 shrink-0 text-[11px] text-muted-foreground tabular-nums">
+        {item.mtime ? new Date(item.mtime * 1000).toISOString().slice(0, 10) : '—'}
+      </span>
+
       {/* Per-row save with tooltip */}
       <TooltipProvider>
         <Tooltip>
@@ -503,7 +405,7 @@ function SkeletonRow() {
   );
 }
 
-export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSelect, onTotalChange, onItemsChange, refreshToken, editMode, onEditSaved, activeRuleset }: CollectionTableProps) {
+export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSelect, onTotalChange, onItemsChange, refreshToken, onEditSaved, activeRuleset, autoApplyScResults }: CollectionTableProps) {
   const [sortBy, setSortBy] = useQueryState('sort', searchParams.sort);
   const [sortOrder, setSortOrder] = useQueryState('order', searchParams.order);
   const [search] = useQueryState('search', searchParams.search);
@@ -523,7 +425,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
   const abortRef = useRef<AbortController | null>(null);
   const itemsRef = useRef<TrackBrowse[]>([]);
 
-  const { currentTrack, isPlaying, toggle, load } = usePlayer();
+  const { load } = usePlayer();
 
   const scrollParentRef = useRef<HTMLDivElement>(null);
 
@@ -548,24 +450,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
   const [scDataMap, setScDataMap] = useState<Map<string, ScData>>(new Map());
   const scProcessedRef = useRef<Set<string>>(new Set());
 
-  // Clear edit state when leaving edit mode
-  useEffect(() => {
-    if (!editMode) {
-      setChanges(new Map());
-      setSelectedPaths(new Set());
-      setBatchField('');
-      setBatchValue('');
-      setPendingArtwork(new Map());
-      setPendingScLinks(new Map());
-      setScAutoFill(false);
-      setScStatuses(new Map());
-      setScDataMap(new Map());
-      scProcessedRef.current = new Set();
-      lastSelectedIndexRef.current = null;
-    }
-  }, [editMode]);
-
-  const rowHeight = editMode ? EDIT_ROW_HEIGHT : VIEW_ROW_HEIGHT;
+  const rowHeight = EDIT_ROW_HEIGHT;
 
   const virtualizer = useVirtualizer({
     count: total > 0 ? total : items.length,
@@ -682,10 +567,6 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
     }
   }
 
-  function handlePlay(item: TrackBrowse) {
-    toggle({ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: item.artist ?? undefined });
-  }
-
   function handleSelect(item: TrackBrowse) {
     load({ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: item.artist ?? undefined });
     onSelect?.(item);
@@ -756,8 +637,8 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
     });
   }, [items, selectedPaths]);
 
-  // Search SC for a single item, fill empty fields + remix fields + artwork
-  const searchScForItem = useCallback(async (item: TrackBrowse) => {
+  // Search SC for a single item. When applyResults=true, auto-fills empty fields + SC link.
+  const searchScForItem = useCallback(async (item: TrackBrowse, applyResults: boolean) => {
     setScStatuses(prev => new Map(prev).set(item.file_path, 'searching'));
 
     const query = removeMix(
@@ -784,6 +665,8 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
       const meta = soundCloudSource.extractMetadata(results[0]);
       setScStatuses(prev => new Map(prev).set(item.file_path, 'found'));
       setScDataMap(prev => new Map(prev).set(item.file_path, { results, selectedIndex: 0, meta }));
+
+      if (!applyResults) return;
 
       // Fill only empty fields
       setChanges(prev => {
@@ -824,6 +707,12 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
         return next;
       });
 
+      // Set SC link if not already set
+      if (!item.soundcloud_id && meta.source_id) {
+        const comment = serializeComment(meta.source_id, meta.source_permalink ?? '');
+        setPendingScLinks(prev => new Map(prev).set(item.file_path, comment));
+      }
+
       // Fetch artwork if track doesn't have one
       if (!item.has_artwork && meta.artwork_url) {
         try {
@@ -845,17 +734,17 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
     }
   }, []);
 
-  // Per-row SC search (manual trigger)
+  // Per-row SC search — respects autoApplyScResults config
   const handleSearchSc = useCallback((filePath: string) => {
     const item = items.find(i => i.file_path === filePath);
     if (!item) return;
     scProcessedRef.current.add(filePath);
-    searchScForItem(item);
-  }, [items, searchScForItem]);
+    searchScForItem(item, autoApplyScResults ?? false);
+  }, [items, searchScForItem, autoApplyScResults]);
 
   // Batch SC auto-fill: search for all items sequentially
   useEffect(() => {
-    if (!scAutoFill || !editMode || items.length === 0) return;
+    if (!scAutoFill || items.length === 0) return;
 
     let cancelled = false;
 
@@ -864,12 +753,12 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
         if (cancelled) break;
         if (scProcessedRef.current.has(item.file_path)) continue;
         scProcessedRef.current.add(item.file_path);
-        await searchScForItem(item);
+        await searchScForItem(item, true);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [scAutoFill, editMode, items, searchScForItem]);
+  }, [scAutoFill, items, searchScForItem]);
 
   // SC: select a different result for a row
   const handleSelectScTrack = useCallback((filePath: string, index: number) => {
@@ -1109,7 +998,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Edit-mode toolbar */}
-      {editMode && (
+      {/* Toolbar */}
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/20 shrink-0">
           <span className="text-xs text-muted-foreground">
             {selectedPaths.size > 0 ? `${selectedPaths.size} selected` : `${items.length} tracks`}
@@ -1249,68 +1138,74 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
             </TooltipProvider>
           ) : null}
         </div>
-      )}
+
+      {/* Scrollable table area */}
+      <div className="flex-1 min-h-0 overflow-x-auto">
+      <div className="min-w-[1100px] flex flex-col h-full">
 
       {/* Header row */}
-      <div role="row" className="flex items-center gap-2 px-3 h-9 shrink-0 border-b border-border bg-muted/30 text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
-        {editMode ? (
-          <>
-            {/* Select all checkbox */}
-            <div className="shrink-0 w-6 flex items-center justify-center">
-              <Checkbox
-                checked={items.length > 0 && items.every(i => selectedPaths.has(i.file_path))
-                  ? true
-                  : items.some(i => selectedPaths.has(i.file_path))
-                    ? 'indeterminate'
-                    : false}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    setSelectedPaths(new Set(items.map(i => i.file_path)));
-                  } else {
-                    setSelectedPaths(new Set());
-                  }
-                }}
-                aria-label="Select all"
-                className="cursor-pointer"
-              />
-            </div>
-            {/* SC popover spacer */}
-            <div className="shrink-0 w-5" />
-            {/* Artwork spacer */}
-            <div className="shrink-0 w-7" />
-            {/* Waveform spacer */}
-            <div className="shrink-0 w-20" />
-            {/* File name header */}
-            <span className="w-28 shrink-0">File</span>
-            {/* Edit field headers */}
-            {EDITABLE_FIELDS.map(f => (
-              <span key={f.key} className={`${f.width} min-w-0 shrink-0`}>
-                {f.label}
-              </span>
-            ))}
-            {/* Save (+ apply rules) column spacer */}
-            <div className={`shrink-0 ${activeRuleset?.rules.length ? 'w-12' : 'w-6'}`} />
-          </>
-        ) : (
-          <>
-            {/* Spacers for play + waveform + artwork */}
-            <div className="shrink-0 w-6" />
-            <div className="shrink-0 w-28" />
-            <div className="shrink-0 size-8" />
-
-            {COLUMNS.map((col) => (
-              <button
-                key={col.key}
-                className={`flex items-center gap-0.5 ${col.className} ${col.sortable ? 'hover:text-foreground transition-colors cursor-pointer' : 'cursor-default'}`}
-                onClick={() => col.sortable && handleSort(col.key)}
-                aria-sort={col.sortable && col.key === sortBy ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
-              >
-                {col.label}
-                {col.sortable && <SortIcon col={col.key} sortBy={sortBy} sortOrder={sortOrder} />}
-              </button>
-            ))}
-          </>
-        )}
+      <div role="row" className="flex items-center gap-1.5 px-3 h-9 shrink-0 border-b border-border bg-muted/30 text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
+        {/* Select all checkbox */}
+        <div className="shrink-0 w-6 flex items-center justify-center">
+          <Checkbox
+            checked={items.length > 0 && items.every(i => selectedPaths.has(i.file_path))
+              ? true
+              : items.some(i => selectedPaths.has(i.file_path))
+                ? 'indeterminate'
+                : false}
+            onCheckedChange={(checked) => {
+              if (checked) {
+                setSelectedPaths(new Set(items.map(i => i.file_path)));
+              } else {
+                setSelectedPaths(new Set());
+              }
+            }}
+            aria-label="Select all"
+            className="cursor-pointer"
+          />
+        </div>
+        {/* SC popover spacer */}
+        <div className="shrink-0 w-5" />
+        {/* Artwork spacer */}
+        <div className="shrink-0 w-7" />
+        {/* Waveform spacer */}
+        <div className="shrink-0 w-20" />
+        {/* File name header */}
+        <button
+          className="w-28 shrink-0 flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer"
+          onClick={() => handleSort('file_name')}
+        >
+          File
+          <SortIcon col="file_name" sortBy={sortBy} sortOrder={sortOrder} />
+        </button>
+        {/* Field headers — sortable where applicable */}
+        {EDITABLE_FIELDS.map(f => {
+          const sortKey = SORTABLE_FIELDS[f.key];
+          return sortKey ? (
+            <button
+              key={f.key}
+              className={`${f.width} min-w-0 shrink-0 flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer`}
+              onClick={() => handleSort(sortKey)}
+            >
+              {f.label}
+              <SortIcon col={sortKey} sortBy={sortBy} sortOrder={sortOrder} />
+            </button>
+          ) : (
+            <span key={f.key} className={`${f.width} min-w-0 shrink-0`}>
+              {f.label}
+            </span>
+          );
+        })}
+        {/* Added date header — sortable by mtime */}
+        <button
+          className="w-20 shrink-0 flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer"
+          onClick={() => handleSort('mtime')}
+        >
+          Added
+          <SortIcon col="mtime" sortBy={sortBy} sortOrder={sortOrder} />
+        </button>
+        {/* Save (+ apply rules) column spacer */}
+        <div className={`shrink-0 ${activeRuleset?.rules.length ? 'w-12' : 'w-6'}`} />
       </div>
 
       {/* Virtual scroll container */}
@@ -1334,7 +1229,6 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
                 }}
               >
                 {item ? (
-                  editMode ? (
                     <EditRow
                       item={item}
                       isSelected={selectedPaths.has(item.file_path)}
@@ -1353,18 +1247,10 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
                       onFinalize={() => handleFinalizeRow(item.file_path)}
                       savingRow={savingRows.has(item.file_path)}
                       pendingArtworkB64={pendingArtwork.get(item.file_path)}
+                      hasScLink={!!item.soundcloud_id || pendingScLinks.has(item.file_path)}
                       scLinkChanged={pendingScLinks.has(item.file_path)}
                       activeRuleset={activeRuleset}
                     />
-                  ) : (
-                    <ViewRow
-                      item={item}
-                      isActive={(currentTrack?.filePath === item.file_path) || (selectedFilePath === item.file_path)}
-                      isPlaying={(currentTrack?.filePath === item.file_path) && isPlaying}
-                      onPlay={() => handlePlay(item)}
-                      onSelect={() => handleSelect(item)}
-                    />
-                  )
                 ) : (
                   <SkeletonRow />
                 )}
@@ -1381,6 +1267,8 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
         )}
       </div>
 
+      </div>{/* min-w */}
+      </div>{/* overflow-x-auto */}
     </div>
   );
 }

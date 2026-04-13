@@ -55,6 +55,8 @@ export type TrackInfo = components['schemas']['TrackInfoResponse'];
 
 export type TrackBrowse = components['schemas']['TrackBrowseResponse'] & {
   remixers?: string[] | null;
+  soundcloud_id?: number | null;
+  mtime?: number | null;
 };
 
 export type BrowsePage = components['schemas']['Page_TrackBrowseResponse_'] & {
@@ -72,7 +74,7 @@ export interface BrowseParams {
   bpm_max?: number;
   date_from?: string;
   date_to?: string;
-  sort_by?: 'title' | 'artist' | 'genre' | 'bpm' | 'key' | 'release_date' | 'file_name';
+  sort_by?: 'title' | 'artist' | 'genre' | 'bpm' | 'key' | 'release_date' | 'file_name' | 'mtime';
   sort_order?: 'asc' | 'desc';
 }
 
