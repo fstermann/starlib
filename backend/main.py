@@ -17,12 +17,14 @@ from backend.api.app_settings import router as app_settings_router
 from backend.api.auth import router as auth_router
 from backend.api.folder_config import router as folder_config_router
 from backend.api.metadata import router as metadata_router
+from backend.api.ollama import router as ollama_router
 from backend.api.rulesets import router as rulesets_router
 from backend.api.setup import router as setup_router
 from backend.config import get_backend_settings
 from backend.core.services import app_settings as app_settings_service
 from backend.core.services import cache_db, watcher
 from backend.core.services import folder_config as folder_config_service
+from backend.core.services import ollama as ollama_service
 from backend.core.services.collection import ensure_folder_indexed
 
 # Log to stdout so the Tauri sidecar captures and writes everything to backend.log.
@@ -57,6 +59,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    ollama_service.shutdown()
     watcher.stop_watcher()
 
 
@@ -95,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(rulesets_router)
     app.include_router(folder_config_router)
     app.include_router(app_settings_router)
+    app.include_router(ollama_router)
 
     add_pagination(app)
 

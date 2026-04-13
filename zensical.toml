@@ -22,6 +22,7 @@ nav = [
     { "Installation" = "guide/installation.md" },
     { "Setup" = "guide/setup.md" },
     { "Features" = "guide/features.md" },
+    { "Ollama" = "guide/ollama.md" },
   ] },
   { "Technical" = [
     { "Overview" = "technical/index.md" },
