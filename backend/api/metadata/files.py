@@ -1,6 +1,7 @@
 """File and folder operations for the Meta Editor."""
 
 import base64
+import json
 import logging
 from datetime import date
 from pathlib import Path
@@ -13,6 +14,10 @@ from backend.api.deps import get_root_folder, validate_file_path, validate_folde
 from backend.api.metadata._helpers import resolve_folder
 from backend.core.services import cache_db, collection, metadata
 from backend.schemas.metadata import (
+    BatchInfoRequest,
+    BatchResultItem,
+    BatchUpdateRequest,
+    BatchUpdateResponse,
     FileInfoResponse,
     FileReadinessResponse,
     FilterValuesResponse,
@@ -119,7 +124,7 @@ def browse_folder_files(
     bpm_max: int | None = Query(None, ge=0, description="Maximum BPM"),
     date_from: date | None = Query(None, description="Earliest release date (YYYY-MM-DD)"),
     date_to: date | None = Query(None, description="Latest release date (YYYY-MM-DD)"),
-    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name)$"),
+    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|mtime)$"),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
     """Browse tracks in a folder with filtering, sorting, and pagination.
@@ -160,6 +165,15 @@ def browse_folder_files(
         ) from e
 
     def to_browse_response(row) -> TrackBrowseResponse:
+        try:
+            raw_remixers = row["remixers"]
+        except (IndexError, KeyError):
+            raw_remixers = None
+        remixers = json.loads(raw_remixers) if raw_remixers else None
+        try:
+            sc_id = row["soundcloud_id"]
+        except (IndexError, KeyError):
+            sc_id = None
         return TrackBrowseResponse(
             file_path=row["file_path"],
             file_name=row["file_name"],
@@ -169,10 +183,13 @@ def browse_folder_files(
             key=row["key"],
             genre=row["genre"],
             release_date=date.fromisoformat(row["release_date"]) if row["release_date"] else None,
+            remixers=remixers,
+            soundcloud_id=sc_id,
             has_artwork=bool(row["has_artwork"]),
             file_format=row["file_format"],
             file_size=row["file_size"] or 0,
             duration=row["duration"],
+            mtime=row["mtime"],
         )
 
     if collection.is_indexing(folder_path):
@@ -361,6 +378,96 @@ def update_file_info(
         message=f"Metadata updated for {new_path.name}",
         new_file_path=str(new_path),
     )
+
+
+@router.post("/files/batch-info", response_model=list[TrackInfoResponse])
+def batch_get_file_info(
+    request: BatchInfoRequest,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> list[TrackInfoResponse]:
+    """Get metadata for multiple audio files at once."""
+    results: list[TrackInfoResponse] = []
+    for fp in request.file_paths:
+        resolved_path = validate_file_path(fp, root_folder)
+        try:
+            track_info = metadata.get_track_info(resolved_path, root_folder)
+            readiness = metadata.check_file_readiness(resolved_path, root_folder)
+            results.append(
+                TrackInfoResponse(
+                    file_path=str(resolved_path),
+                    file_name=resolved_path.name,
+                    title=track_info.title,
+                    artist=track_info.artist_str,
+                    bpm=track_info.bpm,
+                    key=track_info.key,
+                    genre=track_info.genre,
+                    comment=track_info.comment.to_str() if track_info.comment else None,
+                    release_date=track_info.release_date,
+                    remixers=[track_info.remix.remixer_str] if track_info.remix else None,
+                    has_artwork=track_info.artwork is not None,
+                    is_ready=readiness["is_ready"],
+                    missing_fields=readiness["missing_fields"],
+                    issues=readiness["issues"],
+                )
+            )
+        except Exception:
+            logger.exception("Failed to read track metadata for %s", fp)
+    return results
+
+
+@router.post("/files/batch-update", response_model=BatchUpdateResponse)
+def batch_update_file_info(
+    request: BatchUpdateRequest,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> BatchUpdateResponse:
+    """Update metadata for multiple audio files at once.
+
+    Partial failures don't block other files.
+    """
+    results: list[BatchResultItem] = []
+    for item in request.items:
+        try:
+            resolved_path = validate_file_path(item.file_path, root_folder)
+            current_info = metadata.get_track_info(resolved_path, root_folder)
+            modified_info = metadata.build_modified_track_info(
+                original_info=current_info,
+                title=item.updates.title,
+                artist=item.updates.artist,
+                bpm=item.updates.bpm,
+                key=item.updates.key,
+                genre=item.updates.genre,
+                comment=item.updates.comment,
+                release_date=item.updates.release_date,
+                remixers=item.updates.remixers,
+            )
+            new_path = metadata.save_track_metadata(resolved_path, root_folder, modified_info)
+
+            if item.updates.artwork_data:
+                artwork_bytes = base64.b64decode(item.updates.artwork_data)
+                metadata.add_artwork_to_track(new_path, root_folder, artwork_bytes)
+
+            if new_path != resolved_path:
+                cache_db.delete_track(resolved_path)
+            collection.reindex_file(new_path.parent, new_path)
+
+            results.append(
+                BatchResultItem(
+                    file_path=item.file_path,
+                    success=True,
+                    message=f"Metadata updated for {new_path.name}",
+                    new_file_path=str(new_path),
+                )
+            )
+        except Exception as e:
+            logger.exception("Failed to update metadata for %s", item.file_path)
+            results.append(
+                BatchResultItem(
+                    file_path=item.file_path,
+                    success=False,
+                    message=str(e),
+                )
+            )
+    return BatchUpdateResponse(results=results)
 
 
 @router.get("/files/{file_path:path}/readiness", response_model=FileReadinessResponse)

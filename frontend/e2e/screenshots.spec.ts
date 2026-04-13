@@ -202,7 +202,7 @@ async function mockScreenshotApi(page: Page) {
   });
 
   // Browse endpoint — return the same tracks as the file listing with full TrackBrowse fields
-  const browseItems = MOCK_TRACKS.slice(0, 8).map((t) => {
+  const browseItems = MOCK_TRACKS.slice(0, 8).map((t, i) => {
     const filePath = `/music/${t.user.username} - ${t.title}.mp3`;
     return {
       file_path: filePath,
@@ -217,10 +217,10 @@ async function mockScreenshotApi(page: Page) {
       genre: t.genre ?? null,
       comment: null,
       release_date: t.created_at ? t.created_at.split('T')[0] : null,
-      remixers: [],
-      is_ready: true,
-      missing_fields: [],
-      issues: [],
+      remixers: null,
+      soundcloud_id: i < 4 ? t.id : null,
+      duration: t.duration ? t.duration / 1000 : null,
+      mtime: Date.now() / 1000 - i * 86400,
     };
   });
   await page.route('**/api/metadata/folders/*/browse*', (route) =>
@@ -232,11 +232,11 @@ async function mockScreenshotApi(page: Page) {
   );
 
   // Filter values
-  await page.route('**/api/metadata/folders/*/filters*', (route) =>
+  await page.route('**/api/metadata/folders/*/filter-values*', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ genres: ['House', 'Melodic Techno', 'Progressive House', 'Deep House'], keys: ['Cm', 'Am', 'Dm'], bpm_min: 118, bpm_max: 132 }),
+      body: JSON.stringify({ genres: ['House', 'Melodic Techno', 'Progressive House', 'Deep House'], genre_counts: {}, artists: [], keys: ['Cm', 'Am', 'Dm'], key_counts: {}, bpm_min: 118, bpm_max: 132 }),
     }),
   );
 
@@ -389,6 +389,16 @@ async function mockScreenshotApi(page: Page) {
     }),
   );
 
+  // Waveform peaks
+  await page.route(/\/api\/metadata\/files\/.+\/peaks/, (route) => {
+    const peaks = Array.from({ length: 60 }, () => 0.2 + Math.random() * 0.6);
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ peaks }),
+    });
+  });
+
   // Track info — used when a file is clicked in edit mode
   await page.route(/\/api\/metadata\/files\/.+\/info/, (route) => {
     const t = MOCK_TRACKS[0];
@@ -473,18 +483,33 @@ test.describe('Documentation screenshots', () => {
     });
   });
 
-  test('meta editor', async ({ page }) => {
+  test('meta editor — table view', async ({ page }) => {
     await page.goto('/meta-editor');
     await page.waitForLoadState('networkidle');
-    // Click the first file to open the edit panel
-    const firstFile = page.locator('[data-file-path]').first();
-    await firstFile.waitFor({ state: 'visible' });
-    await firstFile.click();
-    // Wait for the editor fields and artwork to settle
-    await page.locator('input[placeholder="Title"]').waitFor({ state: 'visible' });
-    await page.waitForTimeout(600);
+    // Wait for table rows to render
+    const firstRow = page.locator('[role="row"][class*="border-b"]').first();
+    await firstRow.waitFor({ state: 'visible' });
+    await page.waitForTimeout(400);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, 'meta-editor.png'),
+      fullPage: false,
+    });
+  });
+
+  test('meta editor — single file editor', async ({ page }) => {
+    await page.goto('/meta-editor');
+    await page.waitForLoadState('networkidle');
+    // Wait for editable rows (skip the header row)
+    const dataRow = page.locator('[data-index="0"]');
+    await dataRow.waitFor({ state: 'visible' });
+    // Click the filename span (has cursor-pointer + hover:text-foreground classes)
+    const fileName = dataRow.locator('span.cursor-pointer').first();
+    await fileName.click();
+    // Wait for the single-file editor panel to settle (uses data-slot="input" from shadcn Input component)
+    await page.locator('input[data-slot="input"][placeholder="Title"]').waitFor({ state: 'visible' });
+    await page.waitForTimeout(600);
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, 'meta-editor-single.png'),
       fullPage: false,
     });
   });

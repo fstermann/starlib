@@ -114,6 +114,7 @@ class _MusicFolderHandler(FileSystemEventHandler):
                 is_complete=track_info.complete,
                 missing_fields=missing,
                 mtime=stat.st_mtime,
+                remixers=[track_info.remix.remixer_str] if track_info.remix else None,
             )
             logger.info("Indexed: %s", path.name)
         except Exception as e:
