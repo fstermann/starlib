@@ -291,6 +291,7 @@ function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onTo
 
       {/* File name — click to open single editor */}
       <span
+        data-file-path={item.file_path}
         className="w-28 shrink-0 text-[11px] text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors"
         title={item.file_name}
         onClick={onSelect}
