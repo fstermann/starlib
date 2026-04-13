@@ -160,6 +160,30 @@ export interface AppSettings {
   preferred_output_format: 'aiff' | 'mp3';
 }
 
+// ==================== Ollama Types ====================
+
+export interface OllamaStatus {
+  available: boolean;
+  installed: boolean;
+  models: string[];
+  started_by_us: boolean;
+}
+
+export interface OllamaModel {
+  name: string;
+  size: number;
+  digest: string;
+}
+
+export interface OllamaModelsResponse {
+  models: OllamaModel[];
+}
+
+export interface OllamaSettings {
+  url: string;
+  model: string;
+}
+
 // ==================== Folder Config Types ====================
 
 export interface FolderConfig {
@@ -453,5 +477,34 @@ export const api = {
       body: JSON.stringify({ root_music_folder: path }),
     });
     return data.root_music_folder;
+  },
+
+  // ==================== Ollama ====================
+
+  async getOllamaStatus(): Promise<OllamaStatus> {
+    return fetchApi('/api/ollama/status');
+  },
+
+  async startOllama(): Promise<OllamaStatus> {
+    return fetchApi('/api/ollama/start', { method: 'POST' });
+  },
+
+  async stopOllama(): Promise<OllamaStatus> {
+    return fetchApi('/api/ollama/stop', { method: 'POST' });
+  },
+
+  async getOllamaModels(): Promise<OllamaModelsResponse> {
+    return fetchApi('/api/ollama/models');
+  },
+
+  async getOllamaSettings(): Promise<OllamaSettings> {
+    return fetchApi('/api/ollama/settings');
+  },
+
+  async updateOllamaSettings(settings: Partial<OllamaSettings>): Promise<OllamaSettings> {
+    return fetchApi('/api/ollama/settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    });
   },
 };

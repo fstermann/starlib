@@ -8,6 +8,7 @@ Persists all user configuration (app settings, rulesets, folders) in a single
 from pydantic import BaseModel, Field
 
 from backend.schemas.folder_config import FoldersConfig
+from backend.schemas.ollama import OllamaSettings
 from backend.schemas.ruleset import RulesetsConfig
 
 
@@ -24,3 +25,4 @@ class Settings(BaseModel):
     app: AppSettings = Field(default_factory=AppSettings)
     rulesets: RulesetsConfig = Field(default_factory=RulesetsConfig)
     folders: FoldersConfig = Field(default_factory=FoldersConfig)
+    ollama: OllamaSettings = Field(default_factory=OllamaSettings)

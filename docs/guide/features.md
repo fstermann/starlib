@@ -92,6 +92,10 @@ If the file is already in the target format, step 1 is a no-op, step 2 is skippe
 
 Under **Settings > Meta Editor**, choose the default format used by convert rules set to "preferred". This can be overridden per-rule.
 
+#### Ollama (LLM Integration)
+
+Under **Settings > Ollama**, connect a local Ollama instance for LLM-powered features. See the [Ollama setup guide](ollama.md) for installation and configuration.
+
 ## :material-heart: Like Explorer
 
 Browse and explore liked tracks, both yours and other users'.
