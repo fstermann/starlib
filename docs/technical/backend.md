@@ -45,6 +45,7 @@ backend/
 ├── api/              # FastAPI route handlers
 │   ├── auth.py       # OAuth 2.1 endpoints
 │   ├── deps.py       # Dependency injection
+│   ├── ollama.py     # Ollama LLM integration endpoints
 │   ├── setup.py      # Setup/config endpoints
 │   └── metadata/     # Metadata editing endpoints
 │       ├── artwork.py
@@ -57,11 +58,13 @@ backend/
 │       ├── cache_db.py     # Caching layer
 │       ├── collection.py   # Collection management
 │       ├── metadata.py     # Metadata operations
+│       ├── ollama.py       # Ollama API client
 │       ├── soundcloud.py   # SoundCloud API wrapper
 │       └── watcher.py      # File watcher
 ├── schemas/          # Pydantic models
 │   ├── auth.py
 │   ├── metadata.py
+│   ├── ollama.py
 │   └── setup.py
 ├── config.py         # Backend configuration
 └── main.py           # Application entry point
@@ -81,6 +84,13 @@ backend/
 - Metadata retrieval and updates
 - Artwork management
 - Audio file proxying
+
+### Ollama integration
+
+- Connects to a local [Ollama](https://ollama.com) instance for LLM-powered features
+- Health check, model listing, and chat completion via `httpx`
+- Configurable server URL and model selection, persisted in `settings.json`
+- See the [Ollama user guide](../guide/ollama.md) for setup instructions
 
 ## Development
 

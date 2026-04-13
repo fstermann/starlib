@@ -27,6 +27,7 @@ dev = [
     "ruff>=0.15.0",
     "pre-commit>=4.5.1",
     "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
     "zensical>=0.0.29",
     # pygments 2.20 added `filename` as a recognized HtmlFormatter option; pymdownx 10.21
     # passes filename=None when no code block title is given, which causes html.escape(None)
@@ -72,3 +73,5 @@ extend-immutable-calls = ["fastapi.Query", "fastapi.Depends", "Query", "Depends"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["integration: requires a running Ollama server"]
+addopts = "-m 'not integration'"

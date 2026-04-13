@@ -12,6 +12,9 @@ import {
   Moon,
   Sun,
   Monitor,
+  Bot,
+  Zap,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -24,7 +27,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { getSetting, setSetting } from "@/lib/settings";
-import { api } from "@/lib/api";
+import { api, type OllamaModel } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { checkForUpdate, type UpdateResult } from "@/lib/updater";
 import { isTauri } from "@/lib/tauri";
 import { useTheme } from "next-themes";
@@ -33,7 +44,7 @@ import { RulesetManager } from "@/components/rulesets/ruleset-manager";
 import { FolderConfigManager } from "@/components/rulesets/folder-config-manager";
 import { Clapperboard, FolderOpen, Workflow } from "lucide-react";
 
-type SectionId = "general" | "appearance" | "meta-editor" | "folders" | "rulesets" | "updates";
+type SectionId = "general" | "appearance" | "meta-editor" | "folders" | "rulesets" | "ollama" | "updates";
 
 interface NavItem {
   id: SectionId;
@@ -67,6 +78,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "System",
     items: [
+      { id: "ollama", label: "Ollama", icon: Bot },
       { id: "updates", label: "Updates", icon: RefreshCw },
     ],
   },
@@ -94,6 +106,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [rootFolderSaving, setRootFolderSaving] = useState(false);
   const [rootFolderError, setRootFolderError] = useState<string | null>(null);
 
+  // Ollama state
+  const [ollamaAvailable, setOllamaAvailable] = useState<boolean | null>(null);
+  const [ollamaInstalled, setOllamaInstalled] = useState<boolean | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
+  const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
+  const [ollamaUrlDraft, setOllamaUrlDraft] = useState("http://localhost:11434");
+  const [ollamaModel, setOllamaModel] = useState("");
+  const [ollamaStartedByUs, setOllamaStartedByUs] = useState(false);
+  const [ollamaChecking, setOllamaChecking] = useState(false);
+  const [ollamaStopping, setOllamaStopping] = useState(false);
+  const [ollamaSaving, setOllamaSaving] = useState(false);
+
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
@@ -113,11 +137,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       getSetting("autoUpdate"),
       getSetting("preferredOutputFormat"),
       api.getRootMusicFolder(),
-    ]).then(([autoUpdate, outputFormat, rootPath]) => {
+      api.getOllamaSettings(),
+      api.getOllamaStatus(),
+    ]).then(([autoUpdate, outputFormat, rootPath, ollamaSettings, ollamaStatus]) => {
       setAutoUpdate(autoUpdate);
       setPreferredOutputFormat(outputFormat);
       setRootFolder(rootPath);
       setRootFolderDraft(rootPath);
+      setOllamaUrl(ollamaSettings.url);
+      setOllamaUrlDraft(ollamaSettings.url);
+      setOllamaModel(ollamaSettings.model);
+      setOllamaAvailable(ollamaStatus.available);
+      setOllamaInstalled(ollamaStatus.installed);
+      setOllamaStartedByUs(ollamaStatus.started_by_us);
+      if (ollamaStatus.available && ollamaStatus.models.length > 0) {
+        api.getOllamaModels().then(({ models }) => setOllamaModels(models));
+      }
       setLoaded(true);
     });
   }, [open]);
@@ -172,6 +207,67 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       console.error("[updater] install failed:", err);
       setInstalling(false);
     }
+  }
+
+  async function handleOllamaTestConnection() {
+    setOllamaChecking(true);
+    try {
+      // Uses POST /start which auto-starts Ollama if installed but not running
+      const status = await api.startOllama();
+      setOllamaAvailable(status.available);
+      setOllamaInstalled(status.installed);
+      setOllamaStartedByUs(status.started_by_us);
+      if (status.available) {
+        const { models } = await api.getOllamaModels();
+        setOllamaModels(models);
+      } else {
+        setOllamaModels([]);
+      }
+    } catch {
+      setOllamaAvailable(false);
+      setOllamaModels([]);
+    } finally {
+      setOllamaChecking(false);
+    }
+  }
+
+  async function handleOllamaStop() {
+    setOllamaStopping(true);
+    try {
+      const status = await api.stopOllama();
+      setOllamaAvailable(status.available);
+      setOllamaStartedByUs(status.started_by_us);
+      setOllamaModels([]);
+    } finally {
+      setOllamaStopping(false);
+    }
+  }
+
+  async function handleOllamaSaveUrl() {
+    if (ollamaUrlDraft === ollamaUrl) return;
+    setOllamaSaving(true);
+    try {
+      const updated = await api.updateOllamaSettings({ url: ollamaUrlDraft });
+      setOllamaUrl(updated.url);
+      setOllamaUrlDraft(updated.url);
+      // Re-check connection with new URL
+      setOllamaAvailable(null);
+      setOllamaModels([]);
+    } finally {
+      setOllamaSaving(false);
+    }
+  }
+
+  async function handleOllamaModelChange(model: string) {
+    setOllamaModel(model);
+    await api.updateOllamaSettings({ model });
+  }
+
+  function formatModelSize(bytes: number): string {
+    if (bytes === 0) return "";
+    const gb = bytes / 1e9;
+    if (gb >= 1) return `${gb.toFixed(1)} GB`;
+    return `${(bytes / 1e6).toFixed(0)} MB`;
   }
 
   const inTauri = isTauri();
@@ -362,6 +458,190 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   Steps under <span className="font-medium">if converted</span> only run when the conversion actually produced a new file — useful for archiving the original.
                 </p>
                 <RulesetManager />
+              </div>
+            )}
+
+            {section === "ollama" && loaded && (
+              <div className="flex flex-col gap-6">
+                <h2 className="text-base font-semibold">Ollama</h2>
+                <p className="text-sm text-muted-foreground">
+                  Connect to a local Ollama instance for LLM-powered features.
+                </p>
+
+                {/* Connection status */}
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "size-2.5 rounded-full shrink-0",
+                      ollamaAvailable === null
+                        ? "bg-muted-foreground/30"
+                        : ollamaAvailable
+                          ? "bg-green-500"
+                          : ollamaInstalled
+                            ? "bg-yellow-500"
+                            : "bg-red-500"
+                    )}
+                  />
+                  <span className="text-sm">
+                    {ollamaAvailable === null
+                      ? "Checking…"
+                      : ollamaAvailable
+                        ? "Connected"
+                        : ollamaInstalled
+                          ? "Installed but not running"
+                          : "Not installed"}
+                  </span>
+                  {ollamaAvailable && (
+                    <span className="text-xs text-muted-foreground/50">
+                      {ollamaStartedByUs ? "managed by Starlib" : "external"}
+                    </span>
+                  )}
+                  {ollamaAvailable && ollamaStartedByUs && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-1.5 text-muted-foreground hover:text-destructive"
+                          onClick={handleOllamaStop}
+                          disabled={ollamaStopping}
+                        >
+                          {ollamaStopping ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <Square className="size-3" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Stop Ollama</TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+
+                {/* Installed but not running — offer to start */}
+                {ollamaAvailable === false && ollamaInstalled && (
+                  <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3 flex flex-col gap-2">
+                    <p className="text-sm">
+                      Ollama is installed but not running. You can start it manually
+                      with <code className="bg-muted px-1 py-0.5 rounded text-xs">ollama serve</code>,
+                      or let Starlib start it for you.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-fit"
+                      onClick={handleOllamaTestConnection}
+                      disabled={ollamaChecking}
+                    >
+                      {ollamaChecking ? (
+                        <>
+                          <Loader2 data-icon="inline-start" className="animate-spin" />
+                          Starting…
+                        </>
+                      ) : (
+                        <>
+                          <Zap data-icon="inline-start" className="size-3.5" />
+                          Start Ollama
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+
+                {/* Not installed — show install instructions */}
+                {ollamaAvailable === false && ollamaInstalled === false && (
+                  <div className="rounded-md border border-border/50 bg-muted/30 p-4 flex flex-col gap-3">
+                    <p className="text-sm font-medium">Install Ollama</p>
+                    <div className="flex flex-col gap-2 text-xs text-muted-foreground">
+                      <p>
+                        <span className="font-medium text-foreground/80">macOS:</span>{" "}
+                        <code className="bg-muted px-1 py-0.5 rounded">brew install ollama</code>
+                      </p>
+                      <p>
+                        <span className="font-medium text-foreground/80">Linux:</span>{" "}
+                        <code className="bg-muted px-1 py-0.5 rounded">curl -fsSL https://ollama.com/install.sh | sh</code>
+                      </p>
+                      <p>
+                        <span className="font-medium text-foreground/80">Windows:</span>{" "}
+                        Download from <span className="font-mono">ollama.com/download</span>
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      After installing, pull a model:
+                    </p>
+                    <code className="text-xs bg-muted px-2 py-1 rounded w-fit">
+                      ollama pull gemma4:e2b
+                    </code>
+                    <p className="text-xs text-muted-foreground">
+                      Then re-open this page to connect.
+                    </p>
+                  </div>
+                )}
+
+                {/* URL configuration */}
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">Server URL</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={ollamaUrlDraft}
+                      onChange={(e) => setOllamaUrlDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleOllamaSaveUrl(); }}
+                      placeholder="http://localhost:11434"
+                      className="h-8 font-mono text-xs flex-1"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 shrink-0"
+                      disabled={ollamaSaving || ollamaUrlDraft === ollamaUrl}
+                      onClick={handleOllamaSaveUrl}
+                    >
+                      {ollamaSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 shrink-0 px-2"
+                          onClick={handleOllamaTestConnection}
+                          disabled={ollamaChecking}
+                        >
+                          {ollamaChecking ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Zap className="size-3.5" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Test connection</TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+
+                {/* Model selection */}
+                {ollamaModels.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-sm">Model</Label>
+                    <Select value={ollamaModel} onValueChange={handleOllamaModelChange}>
+                      <SelectTrigger className="h-8 w-fit min-w-48 font-mono text-xs">
+                        <SelectValue placeholder="Select a model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ollamaModels.map((m) => (
+                          <SelectItem key={m.name} value={m.name} className="font-mono text-xs">
+                            {m.name}
+                            {m.size > 0 && (
+                              <span className="text-muted-foreground ml-2">
+                                ({formatModelSize(m.size)})
+                              </span>
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             )}
 

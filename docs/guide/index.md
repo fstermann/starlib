@@ -34,4 +34,14 @@ Explore the Meta Editor, Like Explorer, and Weekly Favorites.
 [Features :material-arrow-right:](features.md){ .md-button }
 </div>
 
+<div class="hero-card" markdown>
+:material-robot:{ .hero-icon }
+
+### Ollama
+
+Set up a local LLM for AI-powered features.
+
+[Ollama :material-arrow-right:](ollama.md){ .md-button }
+</div>
+
 </div>
