@@ -49,7 +49,7 @@ def _index_one(folder: Path, file: Path) -> None:
             missing.append("release_date")
         if not track_info.artwork:
             missing.append("artwork")
-        sc_id = track_info.comment.soundcloud_id if track_info.comment else None
+        sc_id = track_info.starlib_meta.soundcloud_id if track_info.starlib_meta else None
         cache_db.upsert_track(
             file_path=file,
             folder=folder.resolve(),
@@ -67,7 +67,11 @@ def _index_one(folder: Path, file: Path) -> None:
             missing_fields=missing,
             mtime=mtime,
             soundcloud_id=sc_id,
-            remixers=[track_info.remix.remixer_str] if track_info.remix else None,
+            original_artist=track_info.original_artist_str or None,
+            remixer=track_info.remixer_str or None,
+            mix_name=track_info.mix_name,
+            release_year=track_info.release_year,
+            user_comment=track_info.user_comment,
         )
     except Exception as e:
         logger.warning("Skipping unreadable file %s: %s", file, e)
@@ -327,9 +331,9 @@ def load_all_track_infos(folder: Path) -> list[TrackInfo]:
         try:
             result.append(
                 TrackInfo(
-                    title=row["title"] or "",
-                    artist=row["artist_str"] or "",
-                    genre=row["genre"] or "",
+                    title=row["title"],
+                    artist=row["artist_str"],
+                    genre=row["genre"],
                     key=row["key"],
                     bpm=row["bpm"],
                     release_date=date.fromisoformat(row["release_date"]) if row["release_date"] else None,
@@ -422,9 +426,9 @@ def filter_tracks_by_metadata(  # noqa: C901
         if search_query:
             search_lower = search_query.lower()
             searchable = [
-                track.genre.lower(),
+                (track.genre or "").lower(),
                 track.artist_str.lower(),
-                track.title.lower(),
+                (track.title or "").lower(),
             ]
             if not any(search_lower in field for field in searchable):
                 continue

@@ -3,7 +3,8 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Self
@@ -12,7 +13,7 @@ import mutagen
 import requests
 from mutagen.aiff import AIFF
 from mutagen.easyid3 import EasyID3
-from mutagen.id3 import APIC, COMM, ID3, TCON, TDRC, TDRL, TIT2, TIT3, TOPE, TPE1, TPE4
+from mutagen.id3 import APIC, COMM, ID3, TBPM, TCON, TDRC, TDRL, TIT2, TIT3, TKEY, TOPE, TPE1, TPE4, TXXX
 from mutagen.mp3 import MP3
 from mutagen.wave import WAVE
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -52,7 +53,14 @@ FILETYPE_MAP = {
 }
 
 
-class Comment(BaseModel):
+class StarlibMeta(BaseModel):
+    """App-managed origin/sync metadata stored in ``TXXX:starlib``.
+
+    Was previously called ``Comment`` and stored in ``COMM::XXX`` — that slot
+    is the standard user-comment slot, so writing app data there clobbered the
+    user's plain-text comment in every other player.
+    """
+
     version: str | None = None
     soundcloud_id: int | None = None
     soundcloud_permalink: str | None = None
@@ -69,12 +77,15 @@ class Comment(BaseModel):
     def from_str(cls, string: str) -> Self:
         if not string:
             return cls()
-        pairs = [pair.split("=", 1) for pair in re.split(r"(?<!\\);\s*", string)]
+        pairs = [pair.split("=", 1) for pair in re.split(r"(?<!\\);\s*", string) if pair.strip()]
         try:
-            data = {k: cls.unescape_value(str(v)) for k, v in pairs}
+            data = {k.strip(): cls.unescape_value(str(v)) for k, v in pairs if k.strip()}
         except ValueError as e:
-            logger.error(f"Error parsing comment: {string}, {e}")
+            logger.error(f"Error parsing starlib meta: {string}, {e}")
             data = {}
+        # Drop unknown keys so legacy/foreign blobs don't blow up validation.
+        known = set(cls.model_fields)
+        data = {k: v for k, v in data.items() if k in known}
         return cls(**data)
 
     @classmethod
@@ -88,19 +99,9 @@ class Comment(BaseModel):
     def to_str(self) -> str:
         return "; \n".join(f"{k}={self.escape_value(str(v))}" for k, v in self.model_dump().items() if v is not None)
 
-
-class Remix(BaseModel):
-    original_artist: str | list[str]
-    remixer: str | list[str]
-    mix_name: str | None
-
     @property
-    def original_artist_str(self) -> str:
-        return TrackInfo._join_artists(self.original_artist)
-
-    @property
-    def remixer_str(self) -> str:
-        return TrackInfo._join_artists(self.remixer)
+    def is_empty(self) -> bool:
+        return not (self.version or self.soundcloud_id or self.soundcloud_permalink)
 
 
 def unescape_list_value(value: str):
@@ -119,21 +120,96 @@ def deserialize_list(values: str) -> list[str]:
     return [unescape_list_value(artist) for artist in values.split(", ")]
 
 
+@dataclass(frozen=True)
+class TagField:
+    """Single source of truth for one ID3 tag <-> TrackInfo field mapping."""
+
+    name: str
+    frame: type
+    frame_id: str
+    is_list: bool = False
+    label: str = ""
+    sortable: bool = True
+    searchable: bool = False
+    to_str: Callable[[Any], str] | None = None
+    from_str: Callable[[str], Any] | None = None
+    frame_kwargs: dict = field(default_factory=dict)
+    tag_key: str | None = None
+
+    @property
+    def key(self) -> str:
+        return self.tag_key or self.frame_id
+
+
+def _bpm_from_str(s: str) -> int | None:
+    return convert_to_int(s) or None
+
+
+def _date_to_str(d: date) -> str:
+    return d.strftime("%Y-%m-%d")
+
+
+def _year_to_str(y: int) -> str:
+    return str(y)
+
+
+def _starlib_to_str(m: "StarlibMeta") -> str:
+    return m.to_str()
+
+
+SIMPLE_TAG_FIELDS: tuple[TagField, ...] = (
+    TagField("title", TIT2, "TIT2", label="Title", searchable=True),
+    TagField("artist", TPE1, "TPE1", is_list=True, label="Artist", searchable=True),
+    TagField("genre", TCON, "TCON", label="Genre", searchable=True),
+    TagField("bpm", TBPM, "TBPM", label="BPM", to_str=str, from_str=_bpm_from_str),
+    TagField("key", TKEY, "TKEY", label="Key"),
+    TagField("original_artist", TOPE, "TOPE", is_list=True, label="Original Artist", searchable=True),
+    TagField("remixer", TPE4, "TPE4", is_list=True, label="Remixer", searchable=True),
+    TagField("mix_name", TIT3, "TIT3", label="Mix"),
+    TagField("release_date", TDRL, "TDRL", label="Release Date", to_str=_date_to_str, from_str=parse_date),
+    TagField("release_year", TDRC, "TDRC", label="Release Year", to_str=_year_to_str, from_str=_bpm_from_str),
+    TagField(
+        "user_comment",
+        COMM,
+        "COMM",
+        label="Comment",
+        tag_key="COMM::eng",
+        frame_kwargs={"desc": "", "lang": "eng"},
+    ),
+    TagField(
+        "starlib_meta",
+        TXXX,
+        "TXXX",
+        label="Starlib Meta",
+        tag_key="TXXX:starlib",
+        frame_kwargs={"desc": "starlib"},
+        to_str=_starlib_to_str,
+        from_str=StarlibMeta.from_str,
+        sortable=False,
+    ),
+)
+SIMPLE_TAG_FIELDS_BY_NAME: dict[str, TagField] = {f.name: f for f in SIMPLE_TAG_FIELDS}
+
+
 class TrackInfo(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
-    title: str
-    artist: str | list[str]
-    genre: str
-    release_date: date | None = None
-    artwork: bytes | None = None
-    artwork_url: str | None = None
-
-    remix: Remix | None = None
-    comment: Comment | None = None
-
+    # All ID3 tags are optional on disk — none of the flat fields are required.
+    title: str | None = None
+    artist: str | list[str] | None = None
+    genre: str | None = None
     bpm: int | None = None
     key: str | None = None
+    original_artist: str | list[str] | None = None
+    remixer: str | list[str] | None = None
+    mix_name: str | None = None
+    release_date: date | None = None
+    release_year: int | None = None
+    user_comment: str | None = None
+    starlib_meta: StarlibMeta | None = None
+
+    artwork: bytes | None = None
+    artwork_url: str | None = None
     length: float | None = None
 
     artist_options: set[str] = Field(default_factory=set)
@@ -147,12 +223,18 @@ class TrackInfo(BaseModel):
         return self
 
     @staticmethod
-    def _join_artists(artists: str | list[str]) -> str:
+    def _join_artists(artists: str | list[str] | None) -> str:
+        if artists is None:
+            return ""
         return serialize_list(artists) if isinstance(artists, list) else artists
 
     @property
     def filename(self) -> str:
-        return self.title if self.artist_str in self.title else f"{self.artist_str} - {self.title}"
+        title = self.title or ""
+        artist_str = self.artist_str
+        if not artist_str:
+            return title
+        return title if artist_str in title else f"{artist_str} - {title}"
 
     @property
     def complete(self) -> bool:
@@ -161,6 +243,14 @@ class TrackInfo(BaseModel):
     @property
     def artist_str(self) -> str:
         return self._join_artists(self.artist)
+
+    @property
+    def original_artist_str(self) -> str:
+        return self._join_artists(self.original_artist)
+
+    @property
+    def remixer_str(self) -> str:
+        return self._join_artists(self.remixer)
 
     @staticmethod
     def _get_artist_sorter(title: str, type: Literal["artist", "original_artist", "remixer"]) -> Callable[[str], int]:
@@ -211,19 +301,19 @@ class TrackInfo(BaseModel):
 
         mix_name = get_mix_name(track.title)
 
+        release_date = track.display_date.date()
         return cls(
             title=track.title,
             artist=next(iter(most_likely_artists), ""),
             genre=track.genre or "",
-            release_date=track.display_date.date(),
+            release_date=release_date,
+            release_year=release_date.year,
             artwork_url=track.hq_artwork_url or track.user.hq_avatar_url,
             artist_options=artist_options,
-            remix=Remix(
-                original_artist=next(iter(most_likely_original_artists), ""),
-                remixer=next(iter(most_likely_remixers), ""),
-                mix_name=mix_name,
-            ),
-            comment=Comment.from_sc_track(track),
+            original_artist=next(iter(most_likely_original_artists), ""),
+            remixer=next(iter(most_likely_remixers), ""),
+            mix_name=mix_name,
+            starlib_meta=StarlibMeta.from_sc_track(track),
         )
 
 
@@ -294,28 +384,44 @@ class TrackHandler(BaseModel):
         value = TrackHandler._get_tag_value(track, tag, default=default)
         return value.split("\u0000") if "\u0000" in value else deserialize_list(value)
 
+    def _read_simple(self, track) -> dict[str, Any]:
+        """Read every registry-driven tag off *track* into a TrackInfo-ready dict."""
+        out: dict[str, Any] = {}
+        for f in SIMPLE_TAG_FIELDS:
+            if f.is_list:
+                values = self._get_tag_list_value(track, f.key)
+                cleaned = [v for v in values if v]
+                out[f.name] = cleaned or None
+            else:
+                raw = self._get_tag_value(track, f.key)
+                if not raw:
+                    out[f.name] = None
+                    continue
+                out[f.name] = f.from_str(raw) if f.from_str else raw
+
+        # Legacy fallback: starlib data used to live in COMM::XXX.
+        # If TXXX:starlib is empty, try the old slot. If it parses to something
+        # meaningful, treat it as starlib data; otherwise route it to user_comment.
+        if not out.get("starlib_meta"):
+            legacy = self._get_tag_value(track, "COMM::XXX")
+            if legacy:
+                try:
+                    parsed = StarlibMeta.from_str(legacy)
+                except Exception:
+                    parsed = StarlibMeta()
+                if not parsed.is_empty:
+                    out["starlib_meta"] = parsed
+                elif not out.get("user_comment"):
+                    out["user_comment"] = legacy
+        return out
+
     @property
     def track_info(self):
         track = self.track
-        remix_data = {
-            "original_artist": self._get_tag_list_value(track, "TOPE"),
-            "remixer": self._get_tag_list_value(track, "TPE4"),
-            "mix_name": self._get_tag_value(track, "TIT3"),
-        }
-        if not any(any(item != "" for item in v) if isinstance(v, list) else v for v in remix_data.values()):
-            remix = None
-        else:
-            remix = Remix(**remix_data)
+        data = self._read_simple(track)
         return TrackInfo(
-            title=self._get_tag_value(track, "TIT2"),
-            artist=self._get_tag_list_value(track, "TPE1"),
-            genre=self._get_tag_value(track, "TCON"),
-            release_date=parse_date(self._get_tag_value(track, "TDRL")),
+            **data,
             artwork=self.get_single_cover(raise_error=False),
-            remix=remix,
-            comment=Comment.from_str(self._get_tag_value(track, "COMM::XXX")),
-            bpm=convert_to_int(self._get_tag_value(track, "TBPM")) or None,
-            key=self._get_tag_value(track, "TKEY"),
             length=track.info.length if hasattr(track, "info") else None,
         )
 
@@ -435,40 +541,49 @@ class TrackHandler(BaseModel):
         track.tags.add(TCON(encoding=3, text=genre))
         track.save()
 
-    def remove_remix(self):
+    def clear_tags(self, field_names: Iterable[str]) -> None:
+        """Delete the given registry fields from the track and save."""
         track = self.track
-        track.tags.delall("TOPE")
-        track.tags.delall("TPE4")
-        track.tags.delall("TIT3")
+        for name in field_names:
+            field_def = SIMPLE_TAG_FIELDS_BY_NAME.get(name)
+            if field_def is None:
+                raise KeyError(f"Unknown tag field: {name}")
+            track.tags.delall(field_def.key)
         track.save()
 
+    def _write_simple(self, track, info: TrackInfo) -> None:
+        """Write every registry-driven tag from *info* onto *track*."""
+        for f in SIMPLE_TAG_FIELDS:
+            value = getattr(info, f.name)
+            if f.is_list:
+                text = TrackInfo._join_artists(value) if value else ""
+            elif value in (None, ""):
+                text = ""
+            else:
+                text = f.to_str(value) if f.to_str else str(value)
+
+            track.delall(f.key)
+            if not text:
+                continue
+            track.add(f.frame(encoding=3, text=text, **f.frame_kwargs))
+
+        # One-shot migration: evict legacy COMM::XXX so it doesn't shadow our
+        # new TXXX:starlib payload or the user's COMM::eng comment.
+        track.delall("COMM::XXX")
+
     def _add_info(self, track, info: TrackInfo, artwork: bytes | None = None):
-        track.add(TIT2(encoding=3, text=info.title))
-        track.add(TPE1(encoding=3, text=info.artist_str))
-        track.add(TCON(encoding=3, text=info.genre))
-        track.add(TDRC(encoding=3, text=str(info.release_date.year) if info.release_date else ""))
-        track.add(TDRL(encoding=3, text=info.release_date.strftime("%Y-%m-%d") if info.release_date else ""))
+        self._write_simple(track, info)
         if artwork:
             track.delall("APIC")
             track.add(
                 APIC(
                     encoding=3,
-                    mime="image/jpeg",
+                    mime="image/png",
                     type=3,
                     desc="Cover",
                     data=artwork,
                 )
             )
-        if info.remix:
-            if info.remix.original_artist_str:
-                track.add(TOPE(encoding=3, text=info.remix.original_artist_str))
-            if info.remix.remixer_str:
-                track.add(TPE4(encoding=3, text=info.remix.remixer_str))
-            if info.remix.mix_name:
-                track.add(TIT3(encoding=3, text=info.remix.mix_name))
-        if info.comment:
-            track.delall("COMM")
-            track.add(COMM(encoding=3, text=info.comment.to_str()))
 
     def add_info(self, info: TrackInfo, artwork: bytes | None = None):
         track = self.track

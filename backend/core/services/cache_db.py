@@ -83,6 +83,27 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # column already exists
 
+    # Migrate to the flat-tag schema (issue #285).  Adding any of these columns
+    # invalidates the cache so the next scan repopulates them from disk.
+    new_columns = (
+        ("original_artist", "TEXT"),
+        ("remixer", "TEXT"),
+        ("mix_name", "TEXT"),
+        ("release_year", "INTEGER"),
+        ("user_comment", "TEXT"),
+    )
+    added_any = False
+    for col, sqltype in new_columns:
+        try:
+            conn.execute(f"ALTER TABLE tracks ADD COLUMN {col} {sqltype}")
+            conn.commit()
+            added_any = True
+        except sqlite3.OperationalError:
+            pass
+    if added_any:
+        conn.execute("DELETE FROM tracks")
+        conn.commit()
+
     # Migrate peaks table from single-column PK to composite PK (file_path, num_peaks)
     try:
         cur = conn.execute("PRAGMA table_info(peaks)")
@@ -154,7 +175,11 @@ def upsert_track(
     missing_fields: list[str],
     mtime: float,
     soundcloud_id: int | None = None,
-    remixers: list[str] | None = None,
+    original_artist: str | None = None,
+    remixer: str | None = None,
+    mix_name: str | None = None,
+    release_year: int | None = None,
+    user_comment: str | None = None,
 ) -> None:
     """Insert or replace a track row."""
     conn = _get_conn()
@@ -163,8 +188,9 @@ def upsert_track(
         INSERT OR REPLACE INTO tracks
             (file_path, file_name, folder, title, artist_str, genre, key, bpm,
              release_date, has_artwork, file_size, file_format, duration, is_complete,
-             missing_fields, mtime, soundcloud_id, remixers)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             missing_fields, mtime, soundcloud_id,
+             original_artist, remixer, mix_name, release_year, user_comment)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(file_path),
@@ -184,7 +210,11 @@ def upsert_track(
             json.dumps(missing_fields),
             mtime,
             soundcloud_id,
-            json.dumps(remixers) if remixers else None,
+            original_artist or None,
+            remixer or None,
+            mix_name or None,
+            release_year,
+            user_comment or None,
         ),
     )
     conn.commit()
@@ -246,10 +276,26 @@ _SORT_COLS: dict[str, str] = {
     "bpm": "bpm",
     "key": "LOWER(COALESCE(key, ''))",
     "release_date": "release_date",
+    "release_year": "release_year",
+    "original_artist": "LOWER(COALESCE(original_artist, ''))",
+    "remixer": "LOWER(COALESCE(remixer, ''))",
+    "mix_name": "LOWER(COALESCE(mix_name, ''))",
     "file_name": "LOWER(file_name)",
     "mtime": "mtime",
 }
-_NULLABLE_SORT_COLS = {"bpm", "release_date"}
+_NULLABLE_SORT_COLS = {"bpm", "release_date", "release_year"}
+
+# Columns to LIKE-match for search_query.  Mirrors the registry's `searchable`
+# fields plus the persisted `artist_str` joined form.
+_SEARCH_COLS: tuple[str, ...] = ("title", "artist_str", "genre", "original_artist", "remixer")
+
+
+def _search_clause(query: str | None) -> tuple[list[str], list]:
+    if not query:
+        return [], []
+    q = f"%{query}%"
+    cond = "(" + " OR ".join(f"{c} LIKE ?" for c in _SEARCH_COLS) + ")"
+    return [cond], [q] * len(_SEARCH_COLS)
 
 
 def get_tracks(
@@ -292,10 +338,9 @@ def get_tracks(
         artist_conds = " OR ".join("artist_str LIKE ?" for _ in artists)
         conds.append(f"({artist_conds})")
         params.extend(f"%{a}%" for a in artists)
-    if search_query:
-        q = f"%{search_query}%"
-        conds.append("(title LIKE ? OR artist_str LIKE ? OR genre LIKE ?)")
-        params.extend([q, q, q])
+    search_conds, search_params = _search_clause(search_query)
+    conds.extend(search_conds)
+    params.extend(search_params)
 
     where = " AND ".join(conds)
     col = _SORT_COLS.get(sort_by, "LOWER(file_name)")
@@ -345,10 +390,9 @@ def _build_filter_conds(
     if bpm_max is not None:
         conds.append("bpm <= ?")
         params.append(bpm_max)
-    if search_query:
-        q = f"%{search_query}%"
-        conds.append("(title LIKE ? OR artist_str LIKE ? OR genre LIKE ?)")
-        params.extend([q, q, q])
+    search_conds, search_params = _search_clause(search_query)
+    conds.extend(search_conds)
+    params.extend(search_params)
     return conds, params
 
 

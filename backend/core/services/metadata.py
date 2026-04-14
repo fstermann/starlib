@@ -10,14 +10,15 @@ import shutil
 import struct
 import subprocess
 import sys
-from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+
+from pydantic import BaseModel
 
 from backend.core.services import cache_db, rule_engine
 from backend.core.services import folder_config as folder_config_service
 from backend.core.services import ruleset as ruleset_service
-from soundcloud_tools.handler.track import TrackHandler, TrackInfo
+from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, StarlibMeta, TrackHandler, TrackInfo
 from soundcloud_tools.utils.string import (
     remove_double_spaces,
     remove_free_dl,
@@ -81,149 +82,69 @@ def prepare_search_query(filename: str) -> str:
     return remove_double_spaces(remove_mix(remove_remix(replace_underscores(remove_free_dl(filename)))))
 
 
+_REGISTRY_NAMES = {f.name for f in SIMPLE_TAG_FIELDS}
+
+
+def _coerce_artist_field(value: Any) -> Any:
+    """Split a comma-separated artist string into a list when appropriate."""
+    if isinstance(value, str) and "," in value:
+        parts = [a.strip() for a in value.split(",") if a.strip()]
+        return parts[0] if len(parts) == 1 else parts
+    return value
+
+
 def build_modified_track_info(
     original_info: TrackInfo,
-    title: str | None = None,
-    artist: str | None = None,
-    bpm: int | None = None,
-    key: str | None = None,
-    genre: str | None = None,
-    comment: str | None = None,
-    release_date: date | None = None,
-    remixers: list[str] | None = None,
+    updates: BaseModel | dict[str, Any] | None = None,
+    *,
     artwork_url: str | None = None,
 ) -> TrackInfo:
+    """Apply *updates* (a request model or dict) on top of *original_info*.
+
+    Only registry-driven fields are applied here; ``artwork`` and the ``artwork_data``
+    base64 payload are handled separately by the API layer.
     """
-    Build a modified TrackInfo object from individual field values.
-
-    This is the core transformation that takes user-edited fields and
-    produces a complete TrackInfo object ready for writing to file.
-
-    Parameters
-    ----------
-    original_info : TrackInfo
-        Original track information
-    title : str | None
-        Modified title (or None to keep original)
-    artist : str | None
-        Modified artist(s) (or None to keep original)
-    bpm : int | None
-        Modified BPM (or None to keep original)
-    key : str | None
-        Modified key (or None to keep original)
-    genre : str | None
-        Modified genre (or None to keep original)
-    comment : str | None
-        Modified comment (or None to keep original)
-    release_date : date | None
-        Modified release date (or None to keep original)
-    remixers : list[str] | None
-        List of remixer names (or None to keep original)
-    artwork_url : str | None
-        URL to fetch artwork from (or None to keep original)
-
-    Returns
-    -------
-    TrackInfo
-        Complete track info ready for writing
-    """
-    from soundcloud_tools.handler.track import Comment as CommentModel
-    from soundcloud_tools.handler.track import Remix
-
-    # Use original values if not provided
-    final_title = title if title is not None else original_info.title
-    final_bpm = bpm if bpm is not None else original_info.bpm
-    final_key = key if key is not None else original_info.key
-    final_genre = genre if genre is not None else original_info.genre
-    final_release_date = release_date if release_date is not None else original_info.release_date
-    final_artwork_url = artwork_url if artwork_url is not None else original_info.artwork_url
-
-    # Parse artist
-    if artist is not None:
-        # Parse artists if comma-separated string
-        if isinstance(artist, str) and "," in artist:
-            artists = [a.strip() for a in artist.split(",")]
-            final_artist = artists[0] if len(artists) == 1 else artists
-        else:
-            final_artist = artist
+    if isinstance(updates, BaseModel):
+        patch = updates.model_dump(exclude_unset=True)
     else:
-        final_artist = original_info.artist
+        patch = dict(updates or {})
 
-    # Handle remix - convert list of remixers to Remix object
-    final_remix = None
-    if remixers is not None and len(remixers) > 0:
-        # Use first remixer if multiple provided
-        final_remix = Remix(
-            remixer=remixers[0],
-            original_artist=original_info.artist_str if original_info.artist_str else "",
-            mix_name=None,
-        )
+    data = original_info.model_dump()
+    for name in _REGISTRY_NAMES:
+        if name not in patch:
+            continue
+        value = patch[name]
+        if name in {"artist", "original_artist", "remixer"}:
+            value = _coerce_artist_field(value)
+        elif name == "starlib_meta" and isinstance(value, str):
+            # Frontend sends the serialised "key=value; ..." form; parse it
+            # back into a StarlibMeta so TrackInfo validation passes.
+            value = StarlibMeta.from_str(value) if value else None
+        data[name] = value
+
+    # Drop binary artwork (handled separately by the API layer) and the URL
+    # field (avoids re-triggering the network-fetching validator on every save).
+    data.pop("artwork", None)
+    if artwork_url is not None:
+        data["artwork_url"] = artwork_url
     else:
-        final_remix = original_info.remix
-
-    # Handle comment - parse from string to Comment object if provided
-    final_comment = None
-    if comment is not None:
-        final_comment = CommentModel.from_str(comment)
-    else:
-        final_comment = original_info.comment
-
-    return TrackInfo(
-        title=final_title,
-        artist=final_artist,
-        bpm=final_bpm,
-        key=final_key,
-        genre=final_genre,
-        release_date=final_release_date,
-        artwork_url=final_artwork_url,
-        remix=final_remix,
-        comment=final_comment,
-    )
+        data.pop("artwork_url", None)
+    return TrackInfo(**data)
 
 
 def save_track_metadata(
     file_path: Path,
     root_folder: Path,
     track_info: TrackInfo,
-    remove_remix: bool = False,
 ) -> Path:
-    """
-    Save metadata to an audio file and rename it.
+    """Write metadata to *file_path* and rename it to match the new title.
 
-    This performs the core "save" operation:
-    1. Write metadata to file
-    2. Remove remix tags if requested
-    3. Rename file based on new metadata
-
-    Parameters
-    ----------
-    file_path : Path
-        Path to the audio file
-    root_folder : Path
-        Root folder for the music library
-    track_info : TrackInfo
-        Track information to write
-    remove_remix : bool
-        Whether to remove remix tags from the file
-
-    Returns
-    -------
-    Path
-        New file path after renaming
+    Callers that want to clear remix tags should set ``original_artist``,
+    ``remixer`` and ``mix_name`` to ``None`` on ``track_info`` before saving.
     """
     handler = TrackHandler(root_folder=root_folder, file=file_path)
-
-    # Write metadata
     handler.add_info(track_info, artwork=track_info.artwork)
-
-    # Remove remix tags if not a remix
-    if remove_remix:
-        handler.remove_remix()
-
-    # Rename file based on metadata
-    new_path = handler.rename(track_info.filename)
-
-    return new_path
+    return handler.rename(track_info.filename)
 
 
 def finalize_track(

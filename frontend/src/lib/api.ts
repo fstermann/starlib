@@ -53,11 +53,7 @@ export async function fetchApi<T>(
 
 export type TrackInfo = components['schemas']['TrackInfoResponse'];
 
-export type TrackBrowse = components['schemas']['TrackBrowseResponse'] & {
-  remixers?: string[] | null;
-  soundcloud_id?: number | null;
-  mtime?: number | null;
-};
+export type TrackBrowse = components['schemas']['TrackBrowseResponse'];
 
 export type BrowsePage = components['schemas']['Page_TrackBrowseResponse_'] & {
   cacheLoading?: boolean;

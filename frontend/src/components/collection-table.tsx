@@ -39,20 +39,21 @@ type SortOrder = 'asc' | 'desc';
 type EditableField = 'title' | 'artist' | 'genre' | 'bpm' | 'key' | 'release_date' | 'remixer' | 'original_artist' | 'mix_name';
 
 /** Fields shown in edit mode. `virtual` fields are not API fields — they're used for title composition. */
+// Fixed widths so columns keep their shape when the left grid cell narrows
+// (e.g. editor panel open) — horizontal scroll handles overflow instead.
 const EDITABLE_FIELDS: { key: EditableField; label: string; width: string }[] = [
-  { key: 'title', label: 'Title', width: 'flex-[3]' },
-  { key: 'artist', label: 'Artist', width: 'flex-[2]' },
-  { key: 'remixer', label: 'Remixer', width: 'w-24' },
-  { key: 'original_artist', label: 'Orig. Artist', width: 'w-24' },
-  { key: 'mix_name', label: 'Mix', width: 'w-20' },
-  { key: 'genre', label: 'Genre', width: 'w-24' },
+  { key: 'title', label: 'Title', width: 'w-96' },
+  { key: 'artist', label: 'Artist', width: 'w-64' },
+  { key: 'remixer', label: 'Remixer', width: 'w-32' },
+  { key: 'original_artist', label: 'Orig. Artist', width: 'w-32' },
+  { key: 'mix_name', label: 'Mix', width: 'w-24' },
+  { key: 'genre', label: 'Genre', width: 'w-32' },
   { key: 'bpm', label: 'BPM', width: 'w-14' },
   { key: 'key', label: 'Key', width: 'w-14' },
-  { key: 'release_date', label: 'Release', width: 'w-24' },
+  { key: 'release_date', label: 'Release', width: 'w-28' },
 ];
 
 /** Fields not stored in the API — remix composition helpers (not remixer itself, which is a real field) */
-const VIRTUAL_FIELDS = new Set<EditableField>(['original_artist', 'mix_name']);
 
 interface CollectionTableProps {
   mode: string;
@@ -65,6 +66,10 @@ interface CollectionTableProps {
   onEditSaved?: () => void;
   activeRuleset?: Ruleset | null;
   autoApplyScResults?: boolean;
+  /** Shared pending field edits per file (keyed by file_path). Lifted to the
+   * page so the single-track editor and the batch table stay in sync. */
+  pendingFieldEdits: Map<string, Record<string, string>>;
+  setPendingFieldEdits: React.Dispatch<React.SetStateAction<Map<string, Record<string, string>>>>;
 }
 
 /** Sortable fields mapped to EDITABLE_FIELDS keys where applicable */
@@ -97,6 +102,7 @@ interface ScData {
 interface EditRowProps {
   item: TrackBrowse;
   isSelected: boolean;
+  isCurrent: boolean;
   changes: Partial<Record<EditableField, string>>;
   hasChanges: boolean;
   scStatus?: ScStatus;
@@ -133,35 +139,44 @@ function ScFieldRow({ label, scValue, currentValue, onApply }: { label: string; 
   );
 }
 
-function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onToggleSelect, onFieldChange, onApplyScField, onApplyAllScFields, onSelectScTrack, onSearchSc, onSelect, onSaveRow, onFinalize, savingRow, pendingArtworkB64, hasScLink, scLinkChanged, activeRuleset }: EditRowProps) {
+function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, scData, onToggleSelect, onFieldChange, onApplyScField, onApplyAllScFields, onSelectScTrack, onSearchSc, onSelect, onSaveRow, onFinalize, savingRow, pendingArtworkB64, hasScLink, scLinkChanged, activeRuleset }: EditRowProps) {
   const artworkUrl = item.has_artwork
     ? api.getArtworkUrl(item.file_path)
     : pendingArtworkB64
       ? `data:image/jpeg;base64,${pendingArtworkB64}`
       : null;
 
-  // Derive original_artist and mix_name from existing data
-  const hasRemixer = !!(item.remixers?.[0] || (changes.remixer));
-  const detectedMix = item.title ? parseRemix(item.title) : null;
-
   const getValue = (field: EditableField): string => {
     if (field in changes) return changes[field] ?? '';
-    if (field === 'remixer') return item.remixers?.[0] ?? '';
-    if (field === 'original_artist') return hasRemixer ? (item.artist ?? '') : '';
-    if (field === 'mix_name') return detectedMix?.mixName ?? (hasRemixer ? 'Remix' : '');
     const val = item[field as keyof TrackBrowse];
-    return val == null ? '' : String(val);
+    if (val == null) return '';
+    if (Array.isArray(val)) return val.join(', ');
+    return String(val);
   };
 
   const isChanged = (field: EditableField): boolean => field in changes;
 
-  const remixerValue = getValue('remixer');
+  // Backend readiness check mirror (see `check_file_readiness` in
+  // backend/core/services/metadata.py). Pending edits aren't persisted yet,
+  // so we evaluate against the on-disk item snapshot only.
+  const missingForFinalize: string[] = [];
+  if (!item.title) missingForFinalize.push('title');
+  if (!item.artist) missingForFinalize.push('artist');
+  if (!item.genre) missingForFinalize.push('genre');
+  if (!item.release_date) missingForFinalize.push('release_date');
+  if (!item.has_artwork) missingForFinalize.push('artwork');
+  const canFinalize = missingForFinalize.length === 0;
 
   return (
     <div
       role="row"
-      className={`flex items-center h-10 gap-1.5 px-3 border-b border-border/30 ${isSelected ? 'bg-accent/30' : ''}`}
+      aria-current={isCurrent ? 'true' : undefined}
+      className={`relative flex items-center h-10 gap-1.5 pl-3 pr-0 border-b border-border/30
+        ${isCurrent ? 'bg-primary/10' : isSelected ? 'bg-accent/30' : ''}`}
     >
+      {isCurrent && (
+        <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-primary" />
+      )}
       {/* Checkbox */}
       <div
         className="shrink-0 w-6 self-stretch flex items-center justify-center cursor-pointer"
@@ -284,7 +299,7 @@ function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onTo
       {/* Mini waveform (top-half) */}
       <div className="w-20 h-6 shrink-0">
         <MiniWaveform
-          track={{ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: item.artist ?? undefined }}
+          track={{ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: Array.isArray(item.artist) ? item.artist.join(', ') : (item.artist ?? undefined) }}
           halfHeight
         />
       </div>
@@ -301,15 +316,14 @@ function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onTo
 
       {/* Editable fields */}
       {EDITABLE_FIELDS.map(f => (
-        <div key={f.key} className={`${f.width} min-w-0 shrink-0 ${f.key === 'original_artist' || f.key === 'mix_name' ? (remixerValue ? '' : 'opacity-30') : ''}`}>
+        <div key={f.key} className={`${f.width} min-w-0 shrink-0`}>
           <input
             className={`w-full h-7 px-1.5 text-xs rounded border bg-transparent outline-none transition-colors
-              ${isChanged(f.key) ? 'border-primary/40 bg-primary/5' : 'border-transparent hover:border-border'}
+              ${isChanged(f.key) ? 'border-amber-400/70 bg-amber-400/5' : 'border-transparent hover:border-border'}
               focus:border-ring focus:ring-1 focus:ring-ring/50`}
             value={getValue(f.key)}
             onChange={(e) => onFieldChange(f.key, e.target.value)}
             placeholder={f.label}
-            disabled={!remixerValue && (f.key === 'original_artist' || f.key === 'mix_name')}
           />
         </div>
       ))}
@@ -319,69 +333,85 @@ function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onTo
         {item.mtime ? new Date(item.mtime * 1000).toISOString().slice(0, 10) : '—'}
       </span>
 
-      {/* Per-row save with tooltip */}
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              className={`shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors
-                ${hasChanges ? 'text-primary hover:bg-primary/10 cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}
-              disabled={!hasChanges || savingRow}
-              onClick={onSaveRow}
-            >
-              {savingRow ? <LogoSpinner className="size-3" /> : <Check className="size-3.5" />}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="left">
-            {hasChanges ? 'Save this track' : 'No changes'}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-
-      {/* Per-row apply rules — only when folder has a ruleset */}
-      {activeRuleset?.rules.length ? (
-        <TooltipProvider delayDuration={400} disableHoverableContent>
+      {/* Pinned action column — stays at the right edge when the row scrolls
+          horizontally so Save / Apply Rules are always reachable. */}
+      <div
+        className={`sticky right-0 ml-auto shrink-0 flex items-center gap-1 pl-2 pr-3 h-full
+          shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.2)]
+          ${isCurrent ? 'bg-primary/10' : isSelected ? 'bg-accent/30' : 'bg-card'}`}
+      >
+        {/* Per-row save */}
+        <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                className="shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors text-emerald-600 hover:bg-emerald-600/10 cursor-pointer"
-                onClick={onFinalize}
+                className={`shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors
+                  ${hasChanges ? 'text-primary hover:bg-primary/10 cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}
+                disabled={!hasChanges || savingRow}
+                onClick={onSaveRow}
               >
-                <Sparkles className="size-3.5" />
+                {savingRow ? <LogoSpinner className="size-3" /> : <Check className="size-3.5" />}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="left" sideOffset={6} showArrow={false} className="p-0 max-w-64 bg-popover text-popover-foreground border">
-              <div className="px-3 py-2 border-b border-border">
-                <p className="text-xs font-medium">{activeRuleset.name}</p>
-              </div>
-              <div className="py-1.5 flex flex-col gap-0.5 px-1.5">
-                {activeRuleset.rules.map((rule, i) => {
-                  const Icon = RULE_ICONS[rule.type];
-                  const folderParam = rule.params.folder as string | undefined;
-                  const formatParam = rule.params.format as string | undefined;
-                  const detail = rule.type === 'convert'
-                    ? formatParam ? formatParam.toUpperCase() : 'preferred'
-                    : folderParam ? `${folderParam}/` : '';
-                  const isConditional = rule.requires.length > 0;
-                  return (
-                    <div key={i} className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${isConditional ? 'ml-4 border-l-2 border-blue-400/30 pl-2.5' : ''}`}>
-                      <StepBadge step={i + 1} type={rule.type} />
-                      <Icon className={`size-3.5 shrink-0 ${RULE_ICON_COLORS[rule.type]}`} />
-                      <span className="capitalize">{rule.type}</span>
-                      {detail && <span className="font-mono text-[10px] opacity-70">{detail}</span>}
-                      {isConditional && (
-                        <span className="text-[9px] rounded bg-blue-400/20 text-blue-300 px-1 font-medium">
-                          if converted
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+            <TooltipContent side="left">
+              {hasChanges ? 'Save this track' : 'No changes'}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
-      ) : null}
+
+        {/* Per-row apply rules — only when folder has a ruleset */}
+        {activeRuleset?.rules.length ? (
+          <TooltipProvider delayDuration={400} disableHoverableContent>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className={`shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors
+                    ${canFinalize ? 'text-emerald-600 hover:bg-emerald-600/10 cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}
+                  disabled={!canFinalize}
+                  onClick={onFinalize}
+                >
+                  <Sparkles className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="left" sideOffset={6} showArrow={false} className="p-0 max-w-64 bg-popover text-popover-foreground border">
+                {!canFinalize && (
+                  <div className="px-3 py-2 border-b border-border">
+                    <p className="text-xs font-medium text-amber-400">Not ready</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Missing: {missingForFinalize.join(', ')}</p>
+                  </div>
+                )}
+                <div className="px-3 py-2 border-b border-border">
+                  <p className="text-xs font-medium">{activeRuleset.name}</p>
+                </div>
+                <div className="py-1.5 flex flex-col gap-0.5 px-1.5">
+                  {activeRuleset.rules.map((rule, i) => {
+                    const Icon = RULE_ICONS[rule.type];
+                    const folderParam = rule.params.folder as string | undefined;
+                    const formatParam = rule.params.format as string | undefined;
+                    const detail = rule.type === 'convert'
+                      ? formatParam ? formatParam.toUpperCase() : 'preferred'
+                      : folderParam ? `${folderParam}/` : '';
+                    const isConditional = rule.requires.length > 0;
+                    return (
+                      <div key={i} className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${isConditional ? 'ml-4 border-l-2 border-blue-400/30 pl-2.5' : ''}`}>
+                        <StepBadge step={i + 1} type={rule.type} />
+                        <Icon className={`size-3.5 shrink-0 ${RULE_ICON_COLORS[rule.type]}`} />
+                        <span className="capitalize">{rule.type}</span>
+                        {detail && <span className="font-mono text-[10px] opacity-70">{detail}</span>}
+                        {isConditional && (
+                          <span className="text-[9px] rounded bg-blue-400/20 text-blue-300 px-1 font-medium">
+                            if converted
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -406,7 +436,7 @@ function SkeletonRow() {
   );
 }
 
-export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSelect, onTotalChange, onItemsChange, refreshToken, onEditSaved, activeRuleset, autoApplyScResults }: CollectionTableProps) {
+export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSelect, onTotalChange, onItemsChange, refreshToken, onEditSaved, activeRuleset, autoApplyScResults, pendingFieldEdits, setPendingFieldEdits }: CollectionTableProps) {
   const [sortBy, setSortBy] = useQueryState('sort', searchParams.sort);
   const [sortOrder, setSortOrder] = useQueryState('order', searchParams.order);
   const [search] = useQueryState('search', searchParams.search);
@@ -430,8 +460,13 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
 
   const scrollParentRef = useRef<HTMLDivElement>(null);
 
-  // Edit-mode state
-  const [changes, setChanges] = useState<Map<string, Partial<Record<EditableField, string>>>>(new Map());
+  // Pending field edits live on the parent (page.tsx) so the single-track
+  // editor and the table share state.  Aliased here so the rest of the file
+  // keeps its existing `changes` / `setChanges` vocabulary.
+  const changes = pendingFieldEdits as Map<string, Partial<Record<EditableField, string>>>;
+  const setChanges = setPendingFieldEdits as unknown as React.Dispatch<
+    React.SetStateAction<Map<string, Partial<Record<EditableField, string>>>>
+  >;
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [savingRows, setSavingRows] = useState<Set<string>>(new Set());
@@ -569,24 +604,17 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
   }
 
   function handleSelect(item: TrackBrowse) {
-    load({ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: item.artist ?? undefined });
+    load({ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: Array.isArray(item.artist) ? item.artist.join(', ') : (item.artist ?? undefined) });
     onSelect?.(item);
   }
 
   // Get the "original" value for a field — used for change detection
   const getOriginal = useCallback((item: TrackBrowse | undefined, field: EditableField): string => {
     if (!item) return '';
-    if (field === 'remixer') return item.remixers?.[0] ?? '';
-    if (field === 'original_artist') {
-      const hasRemix = !!(item.remixers?.[0]);
-      return hasRemix ? (item.artist ?? '') : '';
-    }
-    if (field === 'mix_name') {
-      const detected = item.title ? parseRemix(item.title) : null;
-      const hasRemix = !!(item.remixers?.[0]);
-      return detected?.mixName ?? (hasRemix ? 'Remix' : '');
-    }
-    return String(item[field as keyof TrackBrowse] ?? '');
+    const val = item[field as keyof TrackBrowse];
+    if (val == null) return '';
+    if (Array.isArray(val)) return val.join(', ');
+    return String(val);
   }, []);
 
   // Edit-mode helpers
@@ -814,17 +842,14 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
     }
   }, [scDataMap, updateField]);
 
-  // Build TrackInfoUpdateRequest from field changes + optional artwork/comment
-  const buildUpdates = useCallback((fileChanges: Partial<Record<EditableField, string>>, artworkB64?: string, scComment?: string): TrackInfoUpdateRequest => {
+  // Build TrackInfoUpdateRequest from field changes + optional artwork/starlib link
+  const buildUpdates = useCallback((fileChanges: Partial<Record<EditableField, string>>, artworkB64?: string, scStarlib?: string): TrackInfoUpdateRequest => {
     const updates: TrackInfoUpdateRequest = {};
     for (const [field, value] of Object.entries(fileChanges)) {
-      if (VIRTUAL_FIELDS.has(field as EditableField)) continue;
       if (field === 'bpm') {
         updates.bpm = value ? parseInt(value, 10) : undefined;
       } else if (field === 'release_date') {
         updates.release_date = value || undefined;
-      } else if (field === 'remixer') {
-        updates.remixers = value ? [value] : [];
       } else {
         (updates as Record<string, unknown>)[field] = value || undefined;
       }
@@ -832,8 +857,8 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
     if (artworkB64) {
       updates.artwork_data = artworkB64;
     }
-    if (scComment) {
-      updates.comment = scComment;
+    if (scStarlib) {
+      updates.starlib_meta = scStarlib;
     }
     return updates;
   }, []);
@@ -1140,12 +1165,17 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
           ) : null}
         </div>
 
-      {/* Scrollable table area */}
-      <div className="flex-1 min-h-0 overflow-x-auto">
-      <div className="min-w-[1100px] flex flex-col h-full">
+      {/* Scrollable table area — single container owns both axes so the
+          vertical scrollbar stays on the viewport edge even when the row
+          content is wider than the viewport. */}
+      <div
+        ref={scrollParentRef}
+        className={`flex-1 min-h-0 overflow-auto overscroll-contain transition-opacity duration-150 ${reloading ? 'opacity-40' : 'opacity-100'}`}
+      >
+      <div className="w-max min-w-full">
 
-      {/* Header row */}
-      <div role="row" className="flex items-center gap-1.5 px-3 h-9 shrink-0 border-b border-border bg-muted/30 text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
+      {/* Header row — sticky to the top of the scroll container */}
+      <div role="row" className="sticky top-0 z-20 flex items-center gap-1.5 pl-3 pr-0 h-9 border-b border-border bg-muted/30 text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
         {/* Select all checkbox */}
         <div className="shrink-0 w-6 flex items-center justify-center">
           <Checkbox
@@ -1205,12 +1235,16 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
           Added
           <SortIcon col="mtime" sortBy={sortBy} sortOrder={sortOrder} />
         </button>
-        {/* Save (+ apply rules) column spacer */}
-        <div className={`shrink-0 ${activeRuleset?.rules.length ? 'w-12' : 'w-6'}`} />
+        {/* Pinned action column spacer — matches the sticky block in the row */}
+        <div
+          className={`sticky right-0 ml-auto shrink-0 flex items-center gap-1 pl-2 pr-3 h-full bg-muted/30
+            shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.2)]
+            ${activeRuleset?.rules.length ? 'w-[calc(3rem+0.75rem)]' : 'w-[calc(1.5rem+0.75rem)]'}`}
+        />
       </div>
 
-      {/* Virtual scroll container */}
-      <div ref={scrollParentRef} className={`flex-1 overflow-y-auto overscroll-contain min-h-0 transition-opacity duration-150 ${reloading ? 'opacity-40' : 'opacity-100'}`}>
+      {/* Virtualized row surface */}
+      <div>
         {/* Total height for virtual scroll */}
         <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
           {virtualItems.map((virtualRow) => {
@@ -1233,6 +1267,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
                     <EditRow
                       item={item}
                       isSelected={selectedPaths.has(item.file_path)}
+                      isCurrent={selectedFilePath === item.file_path}
                       changes={changes.get(item.file_path) ?? {}}
                       hasChanges={changes.has(item.file_path) || pendingArtwork.has(item.file_path) || pendingScLinks.has(item.file_path)}
                       scStatus={scStatuses.get(item.file_path)}

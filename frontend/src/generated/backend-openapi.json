@@ -564,7 +564,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|mtime)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -850,6 +850,94 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OperationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/files/batch-info": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Batch Get File Info",
+        "description": "Get metadata for multiple audio files at once.",
+        "operationId": "batch_get_file_info_api_metadata_files_batch_info_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchInfoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TrackInfoResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Batch Get File Info Api Metadata Files Batch Info Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/files/batch-update": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Batch Update File Info",
+        "description": "Update metadata for multiple audio files at once.\n\nPartial failures don't block other files.",
+        "operationId": "batch_update_file_info_api_metadata_files_batch_update_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchUpdateResponse"
                 }
               }
             }
@@ -1202,7 +1290,7 @@
           "metadata"
         ],
         "summary": "Stream Audio",
-        "description": "Stream an audio file.\n\nFormats not natively supported by browsers (e.g. AIFF) are\ntranscoded to WAV on the fly via ffmpeg.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nStreamingResponse\n    Audio file bytes\n\nRaises\n------\nHTTPException\n    If the file doesn't exist",
+        "description": "Stream an audio file.\n\nFormats not natively supported by browsers (e.g. AIFF) are transcoded to\nWAV via ffmpeg and cached.  Transcoding is awaited before responding so\nthat the browser always receives a real file with Content-Length and range\nsupport, which is required for seeking to work.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFileResponse\n    Audio file bytes\n\nRaises\n------\nHTTPException\n    If the file doesn't exist or transcoding fails",
         "operationId": "stream_audio_api_metadata_files__file_path__audio_get",
         "parameters": [
           {
@@ -1321,6 +1409,566 @@
           }
         }
       }
+    },
+    "/api/rulesets": {
+      "get": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "List Rulesets",
+        "description": "Return all rulesets and the active ruleset id.",
+        "operationId": "list_rulesets_api_rulesets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RulesetsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "Create Ruleset",
+        "description": "Create a new user ruleset.",
+        "operationId": "create_ruleset_api_rulesets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RulesetCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ruleset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rulesets/active": {
+      "get": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "Get Active Ruleset",
+        "description": "Return the currently active ruleset.",
+        "operationId": "get_active_ruleset_api_rulesets_active_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ruleset"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rulesets/{ruleset_id}": {
+      "put": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "Update Ruleset",
+        "description": "Update a ruleset's name and/or rules.\n\nRaises\n------\nHTTPException\n    404 if not found, 403 if built-in.",
+        "operationId": "update_ruleset_api_rulesets__ruleset_id__put",
+        "parameters": [
+          {
+            "name": "ruleset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ruleset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RulesetUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ruleset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "Delete Ruleset",
+        "description": "Delete a user ruleset.\n\nRaises\n------\nHTTPException\n    404 if not found, 403 if built-in.",
+        "operationId": "delete_ruleset_api_rulesets__ruleset_id__delete",
+        "parameters": [
+          {
+            "name": "ruleset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ruleset Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rulesets/{ruleset_id}/activate": {
+      "put": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "Activate Ruleset",
+        "description": "Set the active ruleset.\n\nRaises\n------\nHTTPException\n    404 if not found.",
+        "operationId": "activate_ruleset_api_rulesets__ruleset_id__activate_put",
+        "parameters": [
+          {
+            "name": "ruleset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ruleset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ruleset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/folders/config": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Get Folders Config",
+        "description": "Return the folder display and ruleset configuration.",
+        "operationId": "get_folders_config_api_folders_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoldersConfig"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Update Folders Config",
+        "description": "Replace the folder display and ruleset configuration.",
+        "operationId": "update_folders_config_api_folders_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FoldersConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoldersConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Get Settings",
+        "description": "Return application settings.",
+        "operationId": "get_settings_api_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Settings Api Settings Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Update Settings",
+        "description": "Update application settings (partial merge allowed).",
+        "operationId": "update_settings_api_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Settings Api Settings Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/root-folder": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Get Root Folder",
+        "description": "Return the current root music folder path.",
+        "operationId": "get_root_folder_api_settings_root_folder_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootFolderResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Update Root Folder",
+        "description": "Update the root music folder path and hot-reload the file watcher.",
+        "operationId": "update_root_folder_api_settings_root_folder_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RootFolderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootFolderResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ollama/status": {
+      "get": {
+        "tags": [
+          "ollama"
+        ],
+        "summary": "Get Status",
+        "description": "Check if Ollama is reachable and return available model names.",
+        "operationId": "get_status_api_ollama_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ollama/start": {
+      "post": {
+        "tags": [
+          "ollama"
+        ],
+        "summary": "Start Ollama",
+        "description": "Ensure Ollama is running, auto-starting it if necessary.",
+        "operationId": "start_ollama_api_ollama_start_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ollama/stop": {
+      "post": {
+        "tags": [
+          "ollama"
+        ],
+        "summary": "Stop Ollama",
+        "description": "Stop Ollama if we started it.",
+        "operationId": "stop_ollama_api_ollama_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ollama/models": {
+      "get": {
+        "tags": [
+          "ollama"
+        ],
+        "summary": "Get Models",
+        "description": "Return installed models with details (name, size, digest).",
+        "operationId": "get_models_api_ollama_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ollama/settings": {
+      "get": {
+        "tags": [
+          "ollama"
+        ],
+        "summary": "Get Settings",
+        "description": "Return current Ollama settings.",
+        "operationId": "get_settings_api_ollama_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Settings Api Ollama Settings Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ollama"
+        ],
+        "summary": "Update Settings",
+        "description": "Update Ollama URL and/or selected model.",
+        "operationId": "update_settings_api_ollama_settings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OllamaSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Settings Api Ollama Settings Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1343,6 +1991,110 @@
         ],
         "title": "AuthorizeResponse",
         "description": "Authorization URL response."
+      },
+      "BatchInfoRequest": {
+        "properties": {
+          "file_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "File Paths"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_paths"
+        ],
+        "title": "BatchInfoRequest",
+        "description": "Request to get metadata for multiple files at once."
+      },
+      "BatchResultItem": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "new_file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New File Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path",
+          "success",
+          "message"
+        ],
+        "title": "BatchResultItem",
+        "description": "Result of a single file update within a batch."
+      },
+      "BatchUpdateItem": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "updates": {
+            "$ref": "#/components/schemas/TrackInfoUpdateRequest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path",
+          "updates"
+        ],
+        "title": "BatchUpdateItem",
+        "description": "A single file update within a batch."
+      },
+      "BatchUpdateRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchUpdateItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "BatchUpdateRequest",
+        "description": "Request to update metadata for multiple files at once."
+      },
+      "BatchUpdateResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BatchResultItem"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "title": "BatchUpdateResponse",
+        "description": "Response from a batch update operation."
       },
       "Body_update_file_artwork_api_metadata_files__file_path__artwork_post": {
         "properties": {
@@ -1709,6 +2461,14 @@
           "new_file_path": {
             "type": "string",
             "title": "New File Path"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/FinalizeStep"
+            },
+            "type": "array",
+            "title": "Steps",
+            "default": []
           }
         },
         "type": "object",
@@ -1719,6 +2479,89 @@
         ],
         "title": "FinalizeResponse",
         "description": "Response from finalization operation."
+      },
+      "FinalizeStep": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "status",
+          "message"
+        ],
+        "title": "FinalizeStep",
+        "description": "A single rule execution result."
+      },
+      "FolderConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "visible": {
+            "type": "boolean",
+            "title": "Visible",
+            "default": true
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order",
+            "default": 0
+          },
+          "ruleset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleset Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "FolderConfig",
+        "description": "Configuration for a single music folder tab."
+      },
+      "FoldersConfig": {
+        "properties": {
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/FolderConfig"
+            },
+            "type": "array",
+            "title": "Folders"
+          }
+        },
+        "type": "object",
+        "title": "FoldersConfig",
+        "description": "Top-level container for all folder configs."
       },
       "HTTPValidationError": {
         "properties": {
@@ -1732,6 +2575,104 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "OllamaModel": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size",
+            "default": 0
+          },
+          "digest": {
+            "type": "string",
+            "title": "Digest",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "OllamaModel",
+        "description": "Single model from Ollama's /api/tags response."
+      },
+      "OllamaModelsResponse": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/OllamaModel"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "title": "OllamaModelsResponse",
+        "description": "Response for GET /ollama/models."
+      },
+      "OllamaSettingsRequest": {
+        "properties": {
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "title": "OllamaSettingsRequest",
+        "description": "Request body for POST /ollama/settings."
+      },
+      "OllamaStatusResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "installed": {
+            "type": "boolean",
+            "title": "Installed",
+            "default": false
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "started_by_us": {
+            "type": "boolean",
+            "title": "Started By Us",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "OllamaStatusResponse",
+        "description": "Response for GET /ollama/status."
       },
       "OperationResponse": {
         "properties": {
@@ -1911,6 +2852,177 @@
         "title": "RefreshResponse",
         "description": "Token refresh response."
       },
+      "RootFolderRequest": {
+        "properties": {
+          "root_music_folder": {
+            "type": "string",
+            "title": "Root Music Folder"
+          }
+        },
+        "type": "object",
+        "required": [
+          "root_music_folder"
+        ],
+        "title": "RootFolderRequest"
+      },
+      "RootFolderResponse": {
+        "properties": {
+          "root_music_folder": {
+            "type": "string",
+            "title": "Root Music Folder"
+          }
+        },
+        "type": "object",
+        "required": [
+          "root_music_folder"
+        ],
+        "title": "RootFolderResponse"
+      },
+      "Rule": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "move",
+              "convert",
+              "copy"
+            ],
+            "title": "Type"
+          },
+          "input": {
+            "type": "string",
+            "title": "Input",
+            "default": "source"
+          },
+          "requires": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requires"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "Rule",
+        "description": "A single step in a finalization pipeline."
+      },
+      "Ruleset": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_builtin": {
+            "type": "boolean",
+            "title": "Is Builtin",
+            "default": false
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/Rule"
+            },
+            "type": "array",
+            "title": "Rules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "Ruleset",
+        "description": "A named, ordered collection of rules."
+      },
+      "RulesetCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/Rule"
+            },
+            "type": "array",
+            "title": "Rules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "RulesetCreate",
+        "description": "Payload for creating a new ruleset."
+      },
+      "RulesetUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Rule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules"
+          }
+        },
+        "type": "object",
+        "title": "RulesetUpdate",
+        "description": "Payload for updating an existing ruleset."
+      },
+      "RulesetsResponse": {
+        "properties": {
+          "rulesets": {
+            "items": {
+              "$ref": "#/components/schemas/Ruleset"
+            },
+            "type": "array",
+            "title": "Rulesets"
+          },
+          "active_ruleset_id": {
+            "type": "string",
+            "title": "Active Ruleset Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rulesets",
+          "active_ruleset_id"
+        ],
+        "title": "RulesetsResponse",
+        "description": "Response listing all rulesets."
+      },
       "SetupRequest": {
         "properties": {
           "client_id": {
@@ -1970,14 +3082,6 @@
       },
       "TrackBrowseResponse": {
         "properties": {
-          "file_path": {
-            "type": "string",
-            "title": "File Path"
-          },
-          "file_name": {
-            "type": "string",
-            "title": "File Name"
-          },
           "title": {
             "anyOf": [
               {
@@ -1995,10 +3099,27 @@
                 "type": "string"
               },
               {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
                 "type": "null"
               }
             ],
             "title": "Artist"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
           },
           "bpm": {
             "anyOf": [
@@ -2022,7 +3143,41 @@
             ],
             "title": "Key"
           },
-          "genre": {
+          "original_artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Artist"
+          },
+          "remixer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remixer"
+          },
+          "mix_name": {
             "anyOf": [
               {
                 "type": "string"
@@ -2031,7 +3186,7 @@
                 "type": "null"
               }
             ],
-            "title": "Genre"
+            "title": "Mix Name"
           },
           "release_date": {
             "anyOf": [
@@ -2044,6 +3199,58 @@
               }
             ],
             "title": "Release Date"
+          },
+          "release_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Year"
+          },
+          "user_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Comment"
+          },
+          "starlib_meta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starlib Meta"
+          },
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "soundcloud_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Soundcloud Id"
           },
           "has_artwork": {
             "type": "boolean",
@@ -2068,6 +3275,17 @@
               }
             ],
             "title": "Duration"
+          },
+          "mtime": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mtime"
           }
         },
         "type": "object",
@@ -2082,14 +3300,6 @@
       },
       "TrackInfoResponse": {
         "properties": {
-          "file_path": {
-            "type": "string",
-            "title": "File Path"
-          },
-          "file_name": {
-            "type": "string",
-            "title": "File Name"
-          },
           "title": {
             "anyOf": [
               {
@@ -2107,10 +3317,27 @@
                 "type": "string"
               },
               {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
                 "type": "null"
               }
             ],
             "title": "Artist"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
           },
           "bpm": {
             "anyOf": [
@@ -2134,18 +3361,41 @@
             ],
             "title": "Key"
           },
-          "genre": {
+          "original_artist": {
             "anyOf": [
               {
                 "type": "string"
               },
               {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
                 "type": "null"
               }
             ],
-            "title": "Genre"
+            "title": "Original Artist"
           },
-          "comment": {
+          "remixer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remixer"
+          },
+          "mix_name": {
             "anyOf": [
               {
                 "type": "string"
@@ -2154,7 +3404,7 @@
                 "type": "null"
               }
             ],
-            "title": "Comment"
+            "title": "Mix Name"
           },
           "release_date": {
             "anyOf": [
@@ -2168,19 +3418,46 @@
             ],
             "title": "Release Date"
           },
-          "remixers": {
+          "release_year": {
             "anyOf": [
               {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Remixers"
+            "title": "Release Year"
+          },
+          "user_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Comment"
+          },
+          "starlib_meta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starlib Meta"
+          },
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
           },
           "has_artwork": {
             "type": "boolean",
@@ -2215,7 +3492,7 @@
           "is_ready"
         ],
         "title": "TrackInfoResponse",
-        "description": "Response containing track metadata."
+        "description": "Response containing track metadata. Tag fields are flat per the registry."
       },
       "TrackInfoUpdateRequest": {
         "properties": {
@@ -2236,10 +3513,27 @@
                 "type": "string"
               },
               {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
                 "type": "null"
               }
             ],
             "title": "Artist"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
           },
           "bpm": {
             "anyOf": [
@@ -2263,18 +3557,41 @@
             ],
             "title": "Key"
           },
-          "genre": {
+          "original_artist": {
             "anyOf": [
               {
                 "type": "string"
               },
               {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
                 "type": "null"
               }
             ],
-            "title": "Genre"
+            "title": "Original Artist"
           },
-          "comment": {
+          "remixer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remixer"
+          },
+          "mix_name": {
             "anyOf": [
               {
                 "type": "string"
@@ -2283,7 +3600,7 @@
                 "type": "null"
               }
             ],
-            "title": "Comment"
+            "title": "Mix Name"
           },
           "release_date": {
             "anyOf": [
@@ -2297,19 +3614,38 @@
             ],
             "title": "Release Date"
           },
-          "remixers": {
+          "release_year": {
             "anyOf": [
               {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Remixers"
+            "title": "Release Year"
+          },
+          "user_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Comment"
+          },
+          "starlib_meta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starlib Meta"
           },
           "artwork_data": {
             "anyOf": [
@@ -2325,7 +3661,7 @@
         },
         "type": "object",
         "title": "TrackInfoUpdateRequest",
-        "description": "Request to update track metadata."
+        "description": "Request to update track metadata. All fields optional."
       },
       "UserInfo": {
         "properties": {

@@ -2,6 +2,11 @@
 Pydantic schemas for metadata operations (Meta Editor).
 
 Request and response models for all metadata-related API endpoints.
+
+The flat tag fields are declared once on `_TagFieldsMixin` and reused by every
+schema below so that adding a new tag means: registry entry in track.py,
+field on `TrackInfo`, and one line on the mixin (and a DB column).  A
+parity test (`test_schemas_include_every_registry_field`) catches drift.
 """
 
 from datetime import date
@@ -10,38 +15,36 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 # ============================================================================
+# Tag-field mixin (mirrors SIMPLE_TAG_FIELDS in soundcloud_tools.handler.track)
+# ============================================================================
+
+
+class _TagFieldsMixin(BaseModel):
+    """Flat optional fields mirroring SIMPLE_TAG_FIELDS at the API boundary."""
+
+    title: str | None = None
+    artist: str | list[str] | None = None
+    genre: str | None = None
+    bpm: int | None = None
+    key: str | None = None
+    original_artist: str | list[str] | None = None
+    remixer: str | list[str] | None = None
+    mix_name: str | None = None
+    release_date: date | None = None
+    release_year: int | None = None
+    user_comment: str | None = None
+    starlib_meta: str | None = None  # serialised "key=value; ..." form
+
+
+# ============================================================================
 # Request Schemas
 # ============================================================================
 
 
-class TrackInfoUpdateRequest(BaseModel):
-    """Request to update track metadata."""
+class TrackInfoUpdateRequest(_TagFieldsMixin):
+    """Request to update track metadata. All fields optional."""
 
-    title: str | None = None
-    artist: str | None = None
-    bpm: int | None = None
-    key: str | None = None
-    genre: str | None = None
-    comment: str | None = None
-    release_date: date | None = None
-    remixers: list[str] | None = None
     artwork_data: str | None = None  # base64-encoded image bytes
-
-
-class RemixInfo(BaseModel):
-    """Remix information."""
-
-    remixer: str
-    original_artist: str
-    mix_name: str | None = None
-
-
-class CommentInfo(BaseModel):
-    """Comment information."""
-
-    version: str | None = None
-    soundcloud_id: int | None = None
-    soundcloud_permalink: str | None = None
 
 
 class FinalizeRequest(BaseModel):
@@ -96,19 +99,11 @@ class BatchUpdateRequest(BaseModel):
 # ============================================================================
 
 
-class TrackInfoResponse(BaseModel):
-    """Response containing track metadata."""
+class TrackInfoResponse(_TagFieldsMixin):
+    """Response containing track metadata. Tag fields are flat per the registry."""
 
     file_path: str
     file_name: str
-    title: str | None = None
-    artist: str | None = None
-    bpm: int | None = None
-    key: str | None = None
-    genre: str | None = None
-    comment: str | None = None
-    release_date: date | None = None
-    remixers: list[str] | None = None
     has_artwork: bool
     is_ready: bool
     missing_fields: list[str] = []
@@ -185,18 +180,11 @@ class BatchUpdateResponse(BaseModel):
     results: list[BatchResultItem]
 
 
-class TrackBrowseResponse(BaseModel):
+class TrackBrowseResponse(_TagFieldsMixin):
     """Lightweight response for collection browse/table view."""
 
     file_path: str
     file_name: str
-    title: str | None = None
-    artist: str | None = None
-    bpm: int | None = None
-    key: str | None = None
-    genre: str | None = None
-    release_date: date | None = None
-    remixers: list[str] | None = None
     soundcloud_id: int | None = None
     has_artwork: bool = False
     file_format: str

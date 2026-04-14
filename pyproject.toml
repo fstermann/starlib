@@ -71,6 +71,10 @@ extend-select = [
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Query", "fastapi.Depends", "Query", "Depends"]
 
+[tool.ruff.lint.per-file-ignores]
+# CLI scripts intentionally print to stdout/stderr.
+"scripts/*" = ["T201"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["integration: requires a running Ollama server"]
