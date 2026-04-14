@@ -25,11 +25,28 @@ def _make_silent_mp3(path: Path) -> None:
     import shutil
     import subprocess
 
-    ffmpeg = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg not available")
+    assert ffmpeg is not None  # narrow for mypy after pytest.skip
     subprocess.run(
-        [ffmpeg, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "0.2",
-         "-c:a", "libmp3lame", "-b:a", "64k", "-y", str(path)],
-        check=True, capture_output=True,
+        [
+            ffmpeg,
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=44100:cl=mono",
+            "-t",
+            "0.2",
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "64k",
+            "-y",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
@@ -90,9 +107,7 @@ def test_round_trip_empty_optional_fields(handler: TrackHandler) -> None:
 
 def test_clearing_remix_fields_via_none(handler: TrackHandler) -> None:
     """Setting remix-style fields to None deletes the underlying ID3 frames."""
-    handler.add_info(
-        TrackInfo(title="X", original_artist="A", remixer="B", mix_name="VIP")
-    )
+    handler.add_info(TrackInfo(title="X", original_artist="A", remixer="B", mix_name="VIP"))
     cleared = TrackInfo(title="X")
     handler.add_info(cleared)
     read = handler.track_info
@@ -202,6 +217,5 @@ def test_schemas_include_every_registry_field() -> None:
     expected = {f.name for f in SIMPLE_TAG_FIELDS}
     for schema in (TrackInfoUpdateRequest, TrackInfoResponse, TrackBrowseResponse):
         assert expected <= set(schema.model_fields), (
-            f"{schema.__name__} is missing registry fields: "
-            f"{expected - set(schema.model_fields)}"
+            f"{schema.__name__} is missing registry fields: {expected - set(schema.model_fields)}"
         )

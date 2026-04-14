@@ -3,7 +3,7 @@
 import { useState, useEffect, useLayoutEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { api, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest, type Ruleset, type RuleType } from '@/lib/api';
-import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, parseRemix, removeMix } from '@/lib/string-utils';
+import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, removeMix } from '@/lib/string-utils';
 import { soundCloudSource } from '@/lib/sources/soundcloud';
 import type { SourceTrack } from '@/lib/sources/types';
 import { format, parse, isValid } from 'date-fns';
@@ -90,34 +90,32 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
           selectedTrack: selectedScTrack, setSelectedTrack: setSelectedScTrack,
           handleSearch: handleScSearch, handleTrackSelect: handleScTrackSelect } = sc;
 
-  // Remix state
-  const [isRemix, setIsRemix] = useState(false);
-  const [remixData, setRemixData] = useState({ original_artist: '', remixer: '', mix_name: 'Remix' });
-
   // Artwork state
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
   const [pendingArtworkData, setPendingArtworkData] = useState<string | null>(null);
   const [artworkPreviewOpen, setArtworkPreviewOpen] = useState(false);
 
-  // Metadata form state
-  const [formData, setFormData] = useState({
+  // Metadata form state — flat fields, no remix composite.
+  const emptyFormData = {
     title: '',
     artist: '',
     bpm: '',
     key: '',
     genre: '',
     release_date: '',
-  });
+    release_year: '',
+    original_artist: '',
+    remixer: '',
+    mix_name: '',
+    user_comment: '',
+  };
+  type FormFieldKey = keyof typeof emptyFormData;
+  const [formData, setFormData] = useState({ ...emptyFormData });
+  const [originalFormData, setOriginalFormData] = useState({ ...emptyFormData });
 
-  // Original values for change detection
-  const [originalFormData, setOriginalFormData] = useState({
-    title: '',
-    artist: '',
-    bpm: '',
-    key: '',
-    genre: '',
-    release_date: '',
-  });
+  // Track whether the user has manually edited release_year this session;
+  // when false, editing release_date auto-syncs the year.
+  const [releaseYearTouched, setReleaseYearTouched] = useState(false);
 
   // Structured comment state (SC ID + permalink)
   const [commentData, setCommentData] = useState({ soundcloud_id: '', soundcloud_permalink: '' });
@@ -135,9 +133,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
     }
   }, [folderRulesetId]);
 
-  // Original values for remix/SC-link change detection
-  const [originalIsRemix, setOriginalIsRemix] = useState(false);
-  const [originalRemixData, setOriginalRemixData] = useState({ original_artist: '', remixer: '', mix_name: 'Remix' });
+  // Original values for SC-link change detection
   const [originalScLinkEnabled, setOriginalScLinkEnabled] = useState(true);
   const [originalCommentData, setOriginalCommentData] = useState({ soundcloud_id: '', soundcloud_permalink: '' });
 
@@ -214,45 +210,28 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
     if (!trackInfo) return;
 
     const parsed = parseFilename(trackInfo.file_name);
-    const artistStr = Array.isArray(trackInfo.artist) ? trackInfo.artist.join(', ') : (trackInfo.artist ?? '');
-    const remixerStr = Array.isArray(trackInfo.remixer) ? trackInfo.remixer.join(', ') : (trackInfo.remixer ?? '');
-    const originalArtistStr = Array.isArray(trackInfo.original_artist) ? trackInfo.original_artist.join(', ') : (trackInfo.original_artist ?? '');
-    const newFormData = {
+    const joinList = (v: string | string[] | null | undefined): string =>
+      Array.isArray(v) ? v.join(', ') : (v ?? '');
+    const newFormData: typeof emptyFormData = {
       title: trackInfo.title || parsed.title || '',
-      artist: artistStr || parsed.artist || '',
+      artist: joinList(trackInfo.artist) || parsed.artist || '',
       bpm: trackInfo.bpm?.toString() || '',
       key: trackInfo.key || '',
       genre: trackInfo.genre || '',
       release_date: trackInfo.release_date || '',
+      release_year: trackInfo.release_year?.toString() || '',
+      original_artist: joinList(trackInfo.original_artist),
+      remixer: joinList(trackInfo.remixer),
+      mix_name: trackInfo.mix_name || '',
+      user_comment: trackInfo.user_comment || '',
     };
     setFormData(newFormData);
     setOriginalFormData(newFormData);
+    setReleaseYearTouched(false);
     const parsedComment = parseComment(trackInfo.starlib_meta);
     setCommentData(parsedComment);
     setScLinkEnabled(!!(parsedComment.soundcloud_id || parsedComment.soundcloud_permalink));
 
-    if (remixerStr) {
-      setIsRemix(true);
-      setRemixData({ original_artist: originalArtistStr || artistStr, remixer: remixerStr, mix_name: trackInfo.mix_name || 'Remix' });
-    } else {
-      const titleToCheck = trackInfo.title || parsed.title || '';
-      const detected = titleToCheck ? parseRemix(titleToCheck) : null;
-      if (detected) {
-        setIsRemix(true);
-        setRemixData({ original_artist: originalArtistStr || artistStr || parsed.artist || '', remixer: detected.remixer, mix_name: trackInfo.mix_name || detected.mixName });
-      } else {
-        setIsRemix(false);
-        setRemixData({ original_artist: '', remixer: '', mix_name: 'Remix' });
-      }
-    }
-
-    const initialIsRemix = !!remixerStr || !!(trackInfo.title && parseRemix(trackInfo.title));
-    setOriginalIsRemix(initialIsRemix);
-    setOriginalRemixData(
-      remixerStr
-        ? { original_artist: originalArtistStr || artistStr, remixer: remixerStr, mix_name: trackInfo.mix_name || 'Remix' }
-        : { original_artist: '', remixer: '', mix_name: 'Remix' }
-    );
     const initialScLinkEnabled = !!(parsedComment.soundcloud_id || parsedComment.soundcloud_permalink);
     setOriginalScLinkEnabled(initialScLinkEnabled);
     setOriginalCommentData(parsedComment);
@@ -327,10 +306,6 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
     });
   };
 
-  const handleRemixChange = (field: string, value: string) => {
-    setRemixData(prev => ({ ...prev, [field]: value }));
-  };
-
   const handleCleanTitle = () => {
     if (!formData.title) return;
     const transformed = cleanTitle(formData.title);
@@ -366,11 +341,14 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
   const scArtistOptions = selectedScTrack?.artist_options ?? [];
 
   const handleBuildTitleFromRemix = () => {
-    if (!isRemix || !remixData.original_artist || !remixData.remixer) return;
+    if (!formData.original_artist || !formData.remixer) return;
     const rawTitle = formData.title.replace(/\(.*?\)/g, '').trim();
-    const newTitle = `${remixData.original_artist} - ${rawTitle} (${remixData.remixer} ${remixData.mix_name})`;
+    const mix = formData.mix_name || 'Remix';
+    const newTitle = `${formData.original_artist} - ${rawTitle} (${formData.remixer} ${mix})`;
     setFormData({ ...formData, title: newTitle });
   };
+
+  const canBuildTitleFromRemix = !!formData.original_artist && !!formData.remixer;
 
   const handleIsolateTitle = () => {
     if (!formData.title) return;
@@ -380,24 +358,38 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
     }
   };
 
-  const isChanged = (field: keyof typeof formData) => formData[field] !== originalFormData[field];
+  const isChanged = (field: FormFieldKey) => formData[field] !== originalFormData[field];
 
   const scBusy = (scSearching || scQueryPending) && !commentData.soundcloud_id && !commentData.soundcloud_permalink;
   const hasChanges = scBusy || pendingArtworkData !== null ||
-    (Object.keys(formData) as (keyof typeof formData)[]).some(k => formData[k] !== originalFormData[k]) ||
-    isRemix !== originalIsRemix ||
-    remixData.original_artist !== originalRemixData.original_artist ||
-    remixData.remixer !== originalRemixData.remixer ||
-    remixData.mix_name !== originalRemixData.mix_name ||
+    (Object.keys(formData) as FormFieldKey[]).some(k => formData[k] !== originalFormData[k]) ||
     scLinkEnabled !== originalScLinkEnabled ||
     commentData.soundcloud_id !== originalCommentData.soundcloud_id ||
     commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink;
 
+  // Show a hint when release_year and the year part of release_date disagree.
+  const releaseDateYear = formData.release_date && isValid(parse(formData.release_date, 'yyyy-MM-dd', new Date()))
+    ? parse(formData.release_date, 'yyyy-MM-dd', new Date()).getFullYear().toString()
+    : '';
+  const yearMismatch = !!formData.release_date && !!formData.release_year && releaseDateYear !== formData.release_year;
+
   const formComplete =
     !!formData.title && !!formData.artist && !!formData.genre && !!formData.release_date && !!artworkUrl;
 
-  const handleFormChange = (field: string, value: string | number) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const handleFormChange = (field: FormFieldKey, value: string) => {
+    setFormData(prev => {
+      const next = { ...prev, [field]: value };
+      // Auto-sync release_year from release_date when the user hasn't manually
+      // overridden the year (issue #285: year ← date on edit, both stay editable).
+      if (field === 'release_date' && !releaseYearTouched) {
+        const parsed = value && isValid(parse(value, 'yyyy-MM-dd', new Date()))
+          ? parse(value, 'yyyy-MM-dd', new Date())
+          : null;
+        next.release_year = parsed ? parsed.getFullYear().toString() : '';
+      }
+      return next;
+    });
+    if (field === 'release_year') setReleaseYearTouched(true);
   };
 
   const handleSave = async () => {
@@ -407,14 +399,16 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
       setLoading(true);
       setError(null);
 
+      // Always send every flat field — empty strings become `null` to clear
+      // tags rather than carry stale data (the backend treats `None` as
+      // delete).
       const updates: Record<string, string | number | string[] | null> = {};
-      Object.entries(formData).forEach(([key, value]) => {
-        if (value !== '') {
-          if (key === 'bpm') {
-            updates[key] = parseInt(value as string);
-          } else {
-            updates[key] = value;
-          }
+      (Object.keys(formData) as FormFieldKey[]).forEach((key) => {
+        const value = formData[key];
+        if (key === 'bpm' || key === 'release_year') {
+          updates[key] = value ? parseInt(value, 10) : null;
+        } else {
+          updates[key] = value === '' ? null : value;
         }
       });
 
@@ -422,17 +416,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
         scLinkEnabled ? commentData.soundcloud_id : '',
         scLinkEnabled ? commentData.soundcloud_permalink : '',
       );
-      if (starlibStr) updates.starlib_meta = starlibStr;
-
-      if (isRemix && remixData.remixer) {
-        updates.remixer = remixData.remixer;
-        updates.original_artist = remixData.original_artist || null;
-        updates.mix_name = remixData.mix_name || null;
-      } else {
-        updates.remixer = null;
-        updates.original_artist = null;
-        updates.mix_name = null;
-      }
+      updates.starlib_meta = starlibStr || null;
 
       if (pendingArtworkData) {
         updates.artwork_data = pendingArtworkData;
@@ -703,7 +687,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                       <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('title')} disabled={!selectedScTrack} title="Copy from SoundCloud"><activeSource.Icon className="size-3"  /></Button>
                       <Button variant="ghost" size="icon-xs" onClick={handleCleanTitle} title="Clean"><Sparkles /></Button>
                       <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.title) return; const t = titelize(formData.title); if (t !== formData.title) setFormData({...formData, title: t}); }} title="Titelize"><CaseSensitive /></Button>
-                      <Button variant="ghost" size="icon-xs" onClick={handleBuildTitleFromRemix} disabled={!isRemix} title="Build from remix"><Wand2 /></Button>
+                      <Button variant="ghost" size="icon-xs" onClick={handleBuildTitleFromRemix} disabled={!canBuildTitleFromRemix} title="Build from remix"><Wand2 /></Button>
                       <Button variant="ghost" size="icon-xs" onClick={handleRemoveParenthesis} title="Remove brackets"><Brackets /></Button>
                       <Button variant="ghost" size="icon-xs" onClick={handleIsolateTitle} title="Isolate"><Trash2 /></Button>
                       {isChanged('title') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('title', originalFormData.title)} title="Reset"><RotateCcw /></Button>}
@@ -767,12 +751,12 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
               </div>
             </div>
 
-            {/* 2-col: Release | Key */}
-            <div className="grid grid-cols-2 gap-2">
-              {/* Release */}
+            {/* 3-col: Release Date | Release Year | Key */}
+            <div className="grid grid-cols-[1fr_auto_1fr] gap-2">
+              {/* Release Date */}
               <div className="group flex flex-col gap-0.5">
                 <div className="flex items-center justify-between h-4">
-                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Release</span>
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Release Date</span>
                   <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                     <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('release_date')} disabled={!selectedScTrack} title="Copy from SC"><activeSource.Icon className="size-3"  /></Button>
                     {isChanged('release_date') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('release_date', originalFormData.release_date)} title="Reset"><RotateCcw /></Button>}
@@ -802,6 +786,25 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                 </Popover>
               </div>
 
+              {/* Release Year */}
+              <div className="group flex flex-col gap-0.5 w-20">
+                <div className="flex items-center justify-between h-4">
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium" title={yearMismatch ? `Year doesn't match release date (${releaseDateYear})` : undefined}>
+                    Year{yearMismatch && <span className="ml-0.5 text-amber-400/90">*</span>}
+                  </span>
+                  <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                    {isChanged('release_year') && <Button variant="ghost" size="icon-xs" onClick={() => { setReleaseYearTouched(false); handleFormChange('release_year', originalFormData.release_year); }} title="Reset"><RotateCcw /></Button>}
+                  </div>
+                </div>
+                <Input
+                  type="number"
+                  value={formData.release_year}
+                  onChange={(e) => handleFormChange('release_year', e.target.value)}
+                  className={`h-8 text-xs${isChanged('release_year') || yearMismatch ? ' border-amber-400/70' : ''}`}
+                  placeholder="—"
+                />
+              </div>
+
               {/* Key */}
               <div className="group flex flex-col gap-0.5">
                 <div className="flex items-center justify-between h-4">
@@ -814,94 +817,96 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
               </div>
             </div>
 
-            {/* Remix section */}
-            <div className="pt-3">
-              <div className={`relative rounded-lg border transition-colors duration-200 ${isRemix ? 'border-border/50 bg-accent/20' : 'border-border/30'}`}>
-                <button
-                  onClick={() => setIsRemix(!isRemix)}
-                  className={`cursor-pointer absolute -top-2.75 left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
-                    isRemix
-                      ? 'bg-card border text-primary shadow-sm'
-                      : 'bg-card border border-dashed text-muted-foreground hover:text-foreground'
-                  } ${isRemix !== originalIsRemix ? 'border-amber-400/70' : isRemix ? 'border-border/50' : 'border-border/60 hover:border-border'}`}
-                >
-                  <Wand2 className="size-2.5" />
-                  Remix
-                </button>
-                <div className={`flex flex-col gap-3 px-3 pb-3 pt-5 transition-opacity duration-150 ${isRemix ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                  {/* Row 1: Original Artist | Remixer */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="group flex flex-col gap-0.5">
-                      <div className="flex items-center justify-between h-4">
-                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Original Artist</span>
-                        <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
-                          <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.original_artist) return; const t = cleanArtist(remixData.original_artist); if (t !== remixData.original_artist) setRemixData({...remixData, original_artist: t}); }} title="Clean"><Sparkles /></Button>
-                          <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.original_artist) return; const t = titelize(remixData.original_artist); if (t !== remixData.original_artist) setRemixData({...remixData, original_artist: t}); }} title="Titelize"><CaseSensitive /></Button>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length}><Users /></Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-48 p-2">
-                              <div className="space-y-1">
-                                {scArtistOptions.map((artist) => (
-                                  <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setRemixData({ ...remixData, original_artist: artist })}>{artist}</Button>
-                                ))}
-                              </div>
-                            </PopoverContent>
-                          </Popover>
-                          {remixData.original_artist !== originalRemixData.original_artist && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, original_artist: originalRemixData.original_artist })} title="Reset"><RotateCcw /></Button>}
+            {/* Remix fields — flat, always editable. */}
+            <div className="grid grid-cols-2 gap-2">
+              {/* Original Artist */}
+              <div className="group flex flex-col gap-0.5">
+                <div className="flex items-center justify-between h-4">
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Original Artist</span>
+                  <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                    <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.original_artist) return; const t = cleanArtist(formData.original_artist); if (t !== formData.original_artist) handleFormChange('original_artist', t); }} title="Clean"><Sparkles /></Button>
+                    <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.original_artist) return; const t = titelize(formData.original_artist); if (t !== formData.original_artist) handleFormChange('original_artist', t); }} title="Titelize"><CaseSensitive /></Button>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length} title="Artist options"><Users /></Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-48 p-2">
+                        <div className="space-y-1">
+                          {scArtistOptions.map((artist) => (
+                            <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => handleFormChange('original_artist', artist)}>{artist}</Button>
+                          ))}
                         </div>
-                      </div>
-                      <Input value={remixData.original_artist} onChange={(e) => handleRemixChange('original_artist', e.target.value)} className={`h-8 text-xs${remixData.original_artist !== originalRemixData.original_artist ? ' border-amber-400/70' : ''}`} placeholder="Original artist" />
-                    </div>
-                    <div className="group flex flex-col gap-0.5">
-                      <div className="flex items-center justify-between h-4">
-                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Remixer</span>
-                        <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
-                          <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.remixer) return; const t = cleanArtist(remixData.remixer); if (t !== remixData.remixer) setRemixData({...remixData, remixer: t}); }} title="Clean"><Sparkles /></Button>
-                          <Button variant="ghost" size="icon-xs" onClick={() => { if (!remixData.remixer) return; const t = titelize(remixData.remixer); if (t !== remixData.remixer) setRemixData({...remixData, remixer: t}); }} title="Titelize"><CaseSensitive /></Button>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length}><Users /></Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-48 p-2">
-                              <div className="space-y-1">
-                                {scArtistOptions.map((artist) => (
-                                  <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => setRemixData({ ...remixData, remixer: artist })}>{artist}</Button>
-                                ))}
-                              </div>
-                            </PopoverContent>
-                          </Popover>
-                          {remixData.remixer !== originalRemixData.remixer && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, remixer: originalRemixData.remixer })} title="Reset"><RotateCcw /></Button>}
-                        </div>
-                      </div>
-                      <Input value={remixData.remixer} onChange={(e) => handleRemixChange('remixer', e.target.value)} className={`h-8 text-xs${remixData.remixer !== originalRemixData.remixer ? ' border-amber-400/70' : ''}`} placeholder="Remixer" />
-                    </div>
-                  </div>
-                  {/* Row 2: Mix Type (full width) */}
-                  <div className="group flex flex-col gap-0.5">
-                    <div className="flex items-center justify-between h-4">
-                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Mix Type</span>
-                      <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out">
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="ghost" size="icon-xs" title="Predefined mix types"><ChevronDown /></Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-36 p-1" align="end">
-                            <div className="space-y-0.5">
-                              {['Remix', 'VIP Mix', 'Extended Mix', 'Radio Edit', 'Club Mix', 'Dub Mix'].map((opt) => (
-                                <Button key={opt} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => handleRemixChange('mix_name', opt)}>{opt}</Button>
-                              ))}
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                        {remixData.mix_name !== originalRemixData.mix_name && <Button variant="ghost" size="icon-xs" onClick={() => setRemixData({ ...remixData, mix_name: originalRemixData.mix_name })} title="Reset"><RotateCcw /></Button>}
-                      </div>
-                    </div>
-                    <Input value={remixData.mix_name} onChange={(e) => handleRemixChange('mix_name', e.target.value)} className={`h-8 text-xs${remixData.mix_name !== originalRemixData.mix_name ? ' border-amber-400/70' : ''}`} placeholder="Mix type" />
+                      </PopoverContent>
+                    </Popover>
+                    {isChanged('original_artist') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('original_artist', originalFormData.original_artist)} title="Reset"><RotateCcw /></Button>}
                   </div>
                 </div>
+                <Input value={formData.original_artist} onChange={(e) => handleFormChange('original_artist', e.target.value)} className={`h-8 text-xs${isChanged('original_artist') ? ' border-amber-400/70' : ''}`} placeholder="—" />
               </div>
+
+              {/* Remixer */}
+              <div className="group flex flex-col gap-0.5">
+                <div className="flex items-center justify-between h-4">
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Remixer</span>
+                  <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                    <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.remixer) return; const t = cleanArtist(formData.remixer); if (t !== formData.remixer) handleFormChange('remixer', t); }} title="Clean"><Sparkles /></Button>
+                    <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.remixer) return; const t = titelize(formData.remixer); if (t !== formData.remixer) handleFormChange('remixer', t); }} title="Titelize"><CaseSensitive /></Button>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="ghost" size="icon-xs" disabled={!selectedScTrack || !scArtistOptions.length} title="Artist options"><Users /></Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-48 p-2">
+                        <div className="space-y-1">
+                          {scArtistOptions.map((artist) => (
+                            <Button key={artist} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => handleFormChange('remixer', artist)}>{artist}</Button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    {isChanged('remixer') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('remixer', originalFormData.remixer)} title="Reset"><RotateCcw /></Button>}
+                  </div>
+                </div>
+                <Input value={formData.remixer} onChange={(e) => handleFormChange('remixer', e.target.value)} className={`h-8 text-xs${isChanged('remixer') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+              </div>
+            </div>
+
+            {/* Mix name (full width) */}
+            <div className="group flex flex-col gap-0.5">
+              <div className="flex items-center justify-between h-4">
+                <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Mix</span>
+                <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon-xs" title="Predefined mix types"><ChevronDown /></Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-36 p-1" align="end">
+                      <div className="space-y-0.5">
+                        {['Remix', 'VIP Mix', 'Extended Mix', 'Radio Edit', 'Club Mix', 'Dub Mix'].map((opt) => (
+                          <Button key={opt} variant="ghost" size="sm" className="w-full justify-start text-xs" onClick={() => handleFormChange('mix_name', opt)}>{opt}</Button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  {isChanged('mix_name') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('mix_name', originalFormData.mix_name)} title="Reset"><RotateCcw /></Button>}
+                </div>
+              </div>
+              <Input value={formData.mix_name} onChange={(e) => handleFormChange('mix_name', e.target.value)} className={`h-8 text-xs${isChanged('mix_name') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+            </div>
+
+            {/* User comment — plain text in COMM::eng, separate from StarlibMeta. */}
+            <div className="group flex flex-col gap-0.5">
+              <div className="flex items-center justify-between h-4">
+                <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Comment</span>
+                <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
+                  {isChanged('user_comment') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('user_comment', originalFormData.user_comment)} title="Reset"><RotateCcw /></Button>}
+                </div>
+              </div>
+              <textarea
+                value={formData.user_comment}
+                onChange={(e) => handleFormChange('user_comment', e.target.value)}
+                className={`min-h-16 px-2.5 py-2 text-xs rounded-md border bg-transparent dark:bg-input/30 outline-none resize-y focus:border-ring focus:ring-1 focus:ring-ring/50${isChanged('user_comment') ? ' border-amber-400/70' : ' border-input dark:border-input'}`}
+                placeholder="—"
+              />
             </div>
 
             {/* SC link + search */}

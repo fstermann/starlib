@@ -1605,6 +1605,30 @@ export interface components {
          * @description Lightweight response for collection browse/table view.
          */
         TrackBrowseResponse: {
+            /** Title */
+            title?: string | null;
+            /** Artist */
+            artist?: string | string[] | null;
+            /** Genre */
+            genre?: string | null;
+            /** Bpm */
+            bpm?: number | null;
+            /** Key */
+            key?: string | null;
+            /** Original Artist */
+            original_artist?: string | string[] | null;
+            /** Remixer */
+            remixer?: string | string[] | null;
+            /** Mix Name */
+            mix_name?: string | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Release Year */
+            release_year?: number | null;
+            /** User Comment */
+            user_comment?: string | null;
+            /** Starlib Meta */
+            starlib_meta?: string | null;
             /** File Path */
             file_path: string;
             /** File Name */
@@ -1624,6 +1648,12 @@ export interface components {
             duration?: number | null;
             /** Mtime */
             mtime?: number | null;
+        };
+        /**
+         * TrackInfoResponse
+         * @description Response containing track metadata. Tag fields are flat per the registry.
+         */
+        TrackInfoResponse: {
             /** Title */
             title?: string | null;
             /** Artist */
@@ -1648,12 +1678,6 @@ export interface components {
             user_comment?: string | null;
             /** Starlib Meta */
             starlib_meta?: string | null;
-        };
-        /**
-         * TrackInfoResponse
-         * @description Response containing track metadata. Tag fields are flat per the registry.
-         */
-        TrackInfoResponse: {
             /** File Path */
             file_path: string;
             /** File Name */
@@ -1672,30 +1696,6 @@ export interface components {
              * @default []
              */
             issues: string[];
-            /** Title */
-            title?: string | null;
-            /** Artist */
-            artist?: string | string[] | null;
-            /** Genre */
-            genre?: string | null;
-            /** Bpm */
-            bpm?: number | null;
-            /** Key */
-            key?: string | null;
-            /** Original Artist */
-            original_artist?: string | string[] | null;
-            /** Remixer */
-            remixer?: string | string[] | null;
-            /** Mix Name */
-            mix_name?: string | null;
-            /** Release Date */
-            release_date?: string | null;
-            /** Release Year */
-            release_year?: number | null;
-            /** User Comment */
-            user_comment?: string | null;
-            /** Starlib Meta */
-            starlib_meta?: string | null;
         };
         /**
          * TrackInfoUpdateRequest

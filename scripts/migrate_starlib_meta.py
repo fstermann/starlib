@@ -63,8 +63,9 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     counts = migrate_folder(args.folder, dry_run=args.dry_run)
     print(
-        "migrated={migrated} skipped={skipped} failed={failed} "
-        "recovered_user_comment={recovered_user_comment}".format(**counts)
+        "migrated={migrated} skipped={skipped} failed={failed} recovered_user_comment={recovered_user_comment}".format(
+            **counts
+        )
     )
     return 1 if counts["failed"] else 0
 
