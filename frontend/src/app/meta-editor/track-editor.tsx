@@ -36,6 +36,7 @@ import { SoundCloudLogo } from '@/components/icons/soundcloud-logo';
 import {
   Sparkles,
   CaseSensitive,
+  Check,
   Trash2,
   Brackets,
   Wand2,
@@ -69,9 +70,13 @@ export interface TrackEditorProps {
   onFileChange: (file: FileInfo) => void;
   /** Called after finalize — selects the next track in the list. */
   onSelectNext: (currentFilePath: string) => void;
+  /** Shared pending field edits — lifted to the page so this editor and the
+   * batch table stay in sync while typing. */
+  pendingFieldEdits: Map<string, Record<string, string>>;
+  setPendingFieldEdits: React.Dispatch<React.SetStateAction<Map<string, Record<string, string>>>>;
 }
 
-export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoActions, onTableRefresh, onClose, onFileChange, onSelectNext }: TrackEditorProps) {
+export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoActions, onTableRefresh, onClose, onFileChange, onSelectNext, pendingFieldEdits, setPendingFieldEdits }: TrackEditorProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
 
@@ -212,7 +217,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
     const parsed = parseFilename(trackInfo.file_name);
     const joinList = (v: string | string[] | null | undefined): string =>
       Array.isArray(v) ? v.join(', ') : (v ?? '');
-    const newFormData: typeof emptyFormData = {
+    const originalData: typeof emptyFormData = {
       title: trackInfo.title || parsed.title || '',
       artist: joinList(trackInfo.artist) || parsed.artist || '',
       bpm: trackInfo.bpm?.toString() || '',
@@ -225,8 +230,12 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
       mix_name: trackInfo.mix_name || '',
       user_comment: trackInfo.user_comment || '',
     };
+    // Overlay any pending edits the user made in the batch table before
+    // opening the editor, so both surfaces show the same values.
+    const existingPending = pendingFieldEdits.get(trackInfo.file_path) ?? {};
+    const newFormData: typeof emptyFormData = { ...originalData, ...existingPending } as typeof emptyFormData;
     setFormData(newFormData);
-    setOriginalFormData(newFormData);
+    setOriginalFormData(originalData);
     setReleaseYearTouched(false);
     const parsedComment = parseComment(trackInfo.starlib_meta);
     setCommentData(parsedComment);
@@ -376,6 +385,22 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
   const formComplete =
     !!formData.title && !!formData.artist && !!formData.genre && !!formData.release_date && !!artworkUrl;
 
+  const mirrorToPending = (field: FormFieldKey, value: string) => {
+    if (!trackInfo) return;
+    const filePath = trackInfo.file_path;
+    const original = originalFormData[field];
+    setPendingFieldEdits(prev => {
+      const existing = prev.get(filePath) ?? {};
+      const isDirty = value !== (original ?? '');
+      const { [field]: _omit, ...rest } = existing;
+      const nextEntry: Record<string, string> = isDirty ? { ...rest, [field]: value } : rest;
+      const next = new Map(prev);
+      if (Object.keys(nextEntry).length === 0) next.delete(filePath);
+      else next.set(filePath, nextEntry);
+      return next;
+    });
+  };
+
   const handleFormChange = (field: FormFieldKey, value: string) => {
     setFormData(prev => {
       const next = { ...prev, [field]: value };
@@ -386,11 +411,35 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
           ? parse(value, 'yyyy-MM-dd', new Date())
           : null;
         next.release_year = parsed ? parsed.getFullYear().toString() : '';
+        mirrorToPending('release_year', next.release_year);
       }
       return next;
     });
     if (field === 'release_year') setReleaseYearTouched(true);
+    mirrorToPending(field, value);
   };
+
+  // React to external edits to the same file (e.g. user changed a cell in
+  // the batch table while the editor was open).
+  useEffect(() => {
+    if (!trackInfo) return;
+    const external = pendingFieldEdits.get(trackInfo.file_path) ?? {};
+    setFormData(prev => {
+      const merged: typeof emptyFormData = { ...originalFormData };
+      for (const [k, v] of Object.entries(external)) {
+        if (k in merged) (merged as Record<string, string>)[k] = v;
+      }
+      // Preserve any keys the user hasn't touched externally but has changed
+      // locally (e.g. a field edit in flight).
+      for (const key of Object.keys(prev) as FormFieldKey[]) {
+        if (!(key in external) && prev[key] !== originalFormData[key]) merged[key] = prev[key];
+      }
+      // Only return a new object when something actually changed to avoid
+      // render loops.
+      const changed = (Object.keys(merged) as FormFieldKey[]).some(k => merged[k] !== prev[k]);
+      return changed ? merged : prev;
+    });
+  }, [pendingFieldEdits, trackInfo, originalFormData]);
 
   const handleSave = async () => {
     if (!trackInfo) return;
@@ -429,6 +478,14 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
         file_path: newFilePath,
         file_name: newFilePath.split('/').pop() ?? selectedFile.file_name,
       };
+      // Persisted — drop the shared pending entry for both old and new paths.
+      setPendingFieldEdits(prev => {
+        if (!prev.has(trackInfo.file_path) && !prev.has(newFilePath)) return prev;
+        const next = new Map(prev);
+        next.delete(trackInfo.file_path);
+        next.delete(newFilePath);
+        return next;
+      });
       onTableRefresh();
       onFileChange(newFileInfo);
       await reloadTrackInfo(newFileInfo);
@@ -1107,34 +1164,46 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
 
           {/* Actions */}
           <div className="shrink-0 border-t border-border/50 px-3 py-2.5 flex items-center gap-1">
-            {(hasChanges || !activeRuleset?.rules.length) ? (
-              <>
-                <div
-                  className={`size-2 rounded-full shrink-0 ${trackInfo.is_ready ? 'bg-chart-1' : 'bg-amber-400'}`}
-                  title={[
-                    ...(trackInfo.missing_fields.length ? [`Missing: ${trackInfo.missing_fields.join(', ')}`] : []),
-                    ...(trackInfo.issues.length ? [trackInfo.issues.join(' · ')] : []),
-                  ].join('\n') || 'Ready'}
-                />
-                <Button onClick={handleSave} disabled={loading || !hasChanges} size="sm" className="h-7 text-xs px-2.5">Save</Button>
-              </>
-            ) : (
+            <div
+              className={`size-2 rounded-full shrink-0 ${trackInfo.is_ready ? 'bg-chart-1' : 'bg-amber-400'}`}
+              title={[
+                ...(trackInfo.missing_fields.length ? [`Missing: ${trackInfo.missing_fields.join(', ')}`] : []),
+                ...(trackInfo.issues.length ? [trackInfo.issues.join(' · ')] : []),
+              ].join('\n') || 'Ready'}
+            />
+
+            {/* Save */}
+            <Button
+              onClick={handleSave}
+              disabled={!hasChanges || loading}
+              size="sm"
+              className="h-7 text-xs px-2.5 gap-1.5"
+            >
+              {loading ? <LogoSpinner className="size-3" /> : <Check className="size-3" />}
+              Save
+            </Button>
+
+            {/* Apply Rules — shown only when folder has a ruleset */}
+            {activeRuleset?.rules.length ? (
               <TooltipProvider delayDuration={400} disableHoverableContent>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       onClick={handleFinalize}
-                      disabled={!trackInfo.is_ready || !formComplete || loading}
+                      disabled={loading}
                       size="sm"
-                      className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold animate-in fade-in slide-in-from-right-2 duration-200"
-                    >Apply Rules</Button>
+                      className="h-7 text-xs px-2.5 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                    >
+                      <Sparkles className="size-3" />
+                      Apply Rules
+                    </Button>
                   </TooltipTrigger>
                   <TooltipContent side="top" sideOffset={6} showArrow={false} className="p-0 max-w-64 bg-popover text-popover-foreground border">
                     <div className="px-3 py-2 border-b border-border">
-                      <p className="text-xs font-medium">{activeRuleset?.name ?? 'Rules'}</p>
+                      <p className="text-xs font-medium">{activeRuleset.name}</p>
                     </div>
                     <div className="py-1.5 flex flex-col gap-0.5 px-1.5">
-                      {activeRuleset?.rules.map((rule, i) => {
+                      {activeRuleset.rules.map((rule, i) => {
                         const Icon = RULE_ICONS[rule.type];
                         const folderParam = rule.params.folder as string | undefined;
                         const formatParam = rule.params.format as string | undefined;
@@ -1160,8 +1229,9 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-            )}
-            <Button onClick={handleDelete} disabled={loading} variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive animate-in fade-in slide-in-from-right-2 duration-200"><Trash2 /></Button>
+            ) : null}
+            <div className="flex-1" />
+            <Button onClick={handleDelete} disabled={loading} variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive"><Trash2 /></Button>
           </div>
         </div>
       )}

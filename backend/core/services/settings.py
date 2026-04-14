@@ -122,6 +122,16 @@ def load() -> Settings:
     if not settings.rulesets.active_ruleset_id:
         settings.rulesets.active_ruleset_id = CLASSIC_RULESET_ID
 
+    # Re-seed default folder configs when the list is empty.  The bundled
+    # "prepare / cleaned / collection" layout is effectively built-in — users
+    # can rename, reorder, or hide entries, but an empty list means the
+    # settings file landed in a half-initialised state (legacy migration,
+    # first-boot race, or an older version writing an empty default).  Mirror
+    # the Classic-ruleset heal: re-inject in memory without persisting so a
+    # user who genuinely wants zero folders can still delete-and-save.
+    if not settings.folders.folders:
+        settings.folders.folders = [fc.model_copy() for fc in _DEFAULT_FOLDERS]
+
     # One-time migration: move ROOT_MUSIC_FOLDER from config.env → settings.json
     if not settings.app.root_music_folder:
         migrated = _migrate_root_folder_from_config_env()
