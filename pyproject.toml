@@ -20,6 +20,8 @@ dependencies = [
     "fastapi-pagination>=0.12.0",
     "watchdog>=4.0.0",
     "platformdirs>=4.9.6",
+    "sqlmodel>=0.0.22",
+    "alembic>=1.13",
 ]
 
 [dependency-groups]
@@ -74,6 +76,17 @@ extend-immutable-calls = ["fastapi.Query", "fastapi.Depends", "Query", "Depends"
 [tool.ruff.lint.per-file-ignores]
 # CLI scripts intentionally print to stdout/stderr.
 "scripts/*" = ["T201"]
+
+# SQLModel attribute access (Track.col.is_not, Track.col.in_, etc.) is correct
+# at runtime but mypy sees the column as the bare Python type because of how
+# SQLModel declares Field(). Suppress the resulting noise in the cache layer
+# only — application code still gets full mypy coverage.
+[tool.mypy]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["backend.core.services.cache_db", "backend.core.db.*"]
+disable_error_code = ["attr-defined", "union-attr", "arg-type", "operator", "call-arg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

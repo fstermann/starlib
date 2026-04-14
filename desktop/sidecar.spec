@@ -42,11 +42,22 @@ for pkg in [
     "httpx",
     "anyio",
     "mutagen",
+    "sqlalchemy",
+    "sqlmodel",
+    "alembic",
 ]:
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
     hiddenimports += h
+
+# Alembic's scripts directory lives inside the backend package, but
+# collect_all("backend") does not pick up non-.py files (like script.py.mako
+# or the generated revision modules). Bundle it explicitly so
+# importlib.resources.files("backend.alembic") finds versions/ at runtime.
+_alembic_dir = root / "backend" / "alembic"
+if _alembic_dir.exists():
+    datas.append((str(_alembic_dir), "backend/alembic"))
 
 # ── Entry-point analysis ───────────────────────────────────────────────────
 a = Analysis(

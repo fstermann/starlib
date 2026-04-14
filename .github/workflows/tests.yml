@@ -51,6 +51,14 @@ jobs:
             - name: Install dependencies
               run: uv sync --group dev
 
+            - name: Alembic check (models vs migrations)
+              # `alembic check` compares ORM metadata against the live DB, so
+              # the scratch DB must be at head first.
+              run: |
+                  rm -f .alembic-scratch.db
+                  uv run alembic upgrade head
+                  uv run alembic check
+
             - name: Run tests
               run: uv run pytest
 
