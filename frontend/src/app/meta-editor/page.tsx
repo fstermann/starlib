@@ -54,6 +54,10 @@ function MetaEditorContent() {
   // Track selection
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
 
+  // Shared pending field edits per file: editor and table both read + write
+  // this map so edits in one surface are reflected live in the other.
+  const [pendingFieldEdits, setPendingFieldEdits] = useState<Map<string, Record<string, string>>>(new Map());
+
   // Editor panel visibility
   const [editorOpen, setEditorOpen] = useState(false);
 
@@ -242,6 +246,8 @@ function MetaEditorContent() {
             onEditSaved={() => setRefreshToken(t => t + 1)}
             activeRuleset={activeRuleset}
             autoApplyScResults={autoActions.autoApplyScResults}
+            pendingFieldEdits={pendingFieldEdits}
+            setPendingFieldEdits={setPendingFieldEdits}
           />
         </div>
         {/* Right: editor panel */}
@@ -256,6 +262,8 @@ function MetaEditorContent() {
               onClose={() => setEditorOpen(false)}
               onFileChange={setSelectedFile}
               onSelectNext={selectNextTrack}
+              pendingFieldEdits={pendingFieldEdits}
+              setPendingFieldEdits={setPendingFieldEdits}
             />
           )}
         </div>
