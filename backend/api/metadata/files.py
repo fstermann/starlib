@@ -1,7 +1,6 @@
 """File and folder operations for the Meta Editor."""
 
 import base64
-import json
 import logging
 from datetime import date
 from pathlib import Path
@@ -29,11 +28,60 @@ from backend.schemas.metadata import (
     TrackInfoUpdateRequest,
 )
 from soundcloud_tools.handler.folder import FolderHandler
-from soundcloud_tools.handler.track import TrackHandler
+from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _row_value(row, key, default=None):
+    """sqlite3.Row doesn't support .get(); guard column-missing safely."""
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return default
+
+
+def _track_info_to_response_dict(track_info: TrackInfo) -> dict:
+    """Project a TrackInfo into the flat dict used by TrackInfoResponse.
+
+    artist/original_artist/remixer are surfaced as their joined-string form so
+    the API stays a stable shape regardless of the underlying list-vs-scalar.
+    """
+    out: dict = {}
+    for f in SIMPLE_TAG_FIELDS:
+        value = getattr(track_info, f.name)
+        if f.name == "artist":
+            out["artist"] = track_info.artist_str or None
+        elif f.name == "original_artist":
+            out["original_artist"] = track_info.original_artist_str or None
+        elif f.name == "remixer":
+            out["remixer"] = track_info.remixer_str or None
+        elif f.name == "starlib_meta":
+            out["starlib_meta"] = value.to_str() if value else None
+        else:
+            out[f.name] = value
+    return out
+
+
+def _row_to_browse_dict(row) -> dict:
+    """Project a cache_db row into the flat dict used by TrackBrowseResponse."""
+    out = {
+        "title": row["title"],
+        "artist": row["artist_str"],
+        "genre": row["genre"],
+        "bpm": row["bpm"],
+        "key": row["key"],
+        "release_date": date.fromisoformat(row["release_date"]) if row["release_date"] else None,
+        "release_year": _row_value(row, "release_year"),
+        "original_artist": _row_value(row, "original_artist"),
+        "remixer": _row_value(row, "remixer"),
+        "mix_name": _row_value(row, "mix_name"),
+        "user_comment": _row_value(row, "user_comment"),
+        "starlib_meta": None,  # not cached; live read would be required
+    }
+    return out
 
 
 @router.post("/folders/initialize", response_model=OperationResponse)
@@ -165,31 +213,16 @@ def browse_folder_files(
         ) from e
 
     def to_browse_response(row) -> TrackBrowseResponse:
-        try:
-            raw_remixers = row["remixers"]
-        except (IndexError, KeyError):
-            raw_remixers = None
-        remixers = json.loads(raw_remixers) if raw_remixers else None
-        try:
-            sc_id = row["soundcloud_id"]
-        except (IndexError, KeyError):
-            sc_id = None
         return TrackBrowseResponse(
             file_path=row["file_path"],
             file_name=row["file_name"],
-            title=row["title"],
-            artist=row["artist_str"],
-            bpm=row["bpm"],
-            key=row["key"],
-            genre=row["genre"],
-            release_date=date.fromisoformat(row["release_date"]) if row["release_date"] else None,
-            remixers=remixers,
-            soundcloud_id=sc_id,
+            soundcloud_id=_row_value(row, "soundcloud_id"),
             has_artwork=bool(row["has_artwork"]),
             file_format=row["file_format"],
             file_size=row["file_size"] or 0,
             duration=row["duration"],
             mtime=row["mtime"],
+            **_row_to_browse_dict(row),
         )
 
     if collection.is_indexing(folder_path):
@@ -282,18 +315,11 @@ def get_file_info(
     return TrackInfoResponse(
         file_path=str(resolved_path),
         file_name=resolved_path.name,
-        title=track_info.title,
-        artist=track_info.artist_str,
-        bpm=track_info.bpm,
-        key=track_info.key,
-        genre=track_info.genre,
-        comment=track_info.comment.to_str() if track_info.comment else None,
-        release_date=track_info.release_date,
-        remixers=[track_info.remix.remixer_str] if track_info.remix else None,
         has_artwork=track_info.artwork is not None,
         is_ready=readiness["is_ready"],
         missing_fields=readiness["missing_fields"],
         issues=readiness["issues"],
+        **_track_info_to_response_dict(track_info),
     )
 
 
@@ -334,17 +360,7 @@ def update_file_info(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to read current metadata"
         ) from e
 
-    modified_info = metadata.build_modified_track_info(
-        original_info=current_info,
-        title=updates.title,
-        artist=updates.artist,
-        bpm=updates.bpm,
-        key=updates.key,
-        genre=updates.genre,
-        comment=updates.comment,
-        release_date=updates.release_date,
-        remixers=updates.remixers,
-    )
+    modified_info = metadata.build_modified_track_info(current_info, updates)
 
     try:
         new_path = metadata.save_track_metadata(resolved_path, root_folder, modified_info)
@@ -396,18 +412,11 @@ def batch_get_file_info(
                 TrackInfoResponse(
                     file_path=str(resolved_path),
                     file_name=resolved_path.name,
-                    title=track_info.title,
-                    artist=track_info.artist_str,
-                    bpm=track_info.bpm,
-                    key=track_info.key,
-                    genre=track_info.genre,
-                    comment=track_info.comment.to_str() if track_info.comment else None,
-                    release_date=track_info.release_date,
-                    remixers=[track_info.remix.remixer_str] if track_info.remix else None,
                     has_artwork=track_info.artwork is not None,
                     is_ready=readiness["is_ready"],
                     missing_fields=readiness["missing_fields"],
                     issues=readiness["issues"],
+                    **_track_info_to_response_dict(track_info),
                 )
             )
         except Exception:
@@ -429,17 +438,7 @@ def batch_update_file_info(
         try:
             resolved_path = validate_file_path(item.file_path, root_folder)
             current_info = metadata.get_track_info(resolved_path, root_folder)
-            modified_info = metadata.build_modified_track_info(
-                original_info=current_info,
-                title=item.updates.title,
-                artist=item.updates.artist,
-                bpm=item.updates.bpm,
-                key=item.updates.key,
-                genre=item.updates.genre,
-                comment=item.updates.comment,
-                release_date=item.updates.release_date,
-                remixers=item.updates.remixers,
-            )
+            modified_info = metadata.build_modified_track_info(current_info, item.updates)
             new_path = metadata.save_track_metadata(resolved_path, root_folder, modified_info)
 
             if item.updates.artwork_data:

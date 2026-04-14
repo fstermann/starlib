@@ -52,7 +52,6 @@ const EDITABLE_FIELDS: { key: EditableField; label: string; width: string }[] = 
 ];
 
 /** Fields not stored in the API — remix composition helpers (not remixer itself, which is a real field) */
-const VIRTUAL_FIELDS = new Set<EditableField>(['original_artist', 'mix_name']);
 
 interface CollectionTableProps {
   mode: string;
@@ -140,22 +139,15 @@ function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onTo
       ? `data:image/jpeg;base64,${pendingArtworkB64}`
       : null;
 
-  // Derive original_artist and mix_name from existing data
-  const hasRemixer = !!(item.remixers?.[0] || (changes.remixer));
-  const detectedMix = item.title ? parseRemix(item.title) : null;
-
   const getValue = (field: EditableField): string => {
     if (field in changes) return changes[field] ?? '';
-    if (field === 'remixer') return item.remixers?.[0] ?? '';
-    if (field === 'original_artist') return hasRemixer ? (item.artist ?? '') : '';
-    if (field === 'mix_name') return detectedMix?.mixName ?? (hasRemixer ? 'Remix' : '');
     const val = item[field as keyof TrackBrowse];
-    return val == null ? '' : String(val);
+    if (val == null) return '';
+    if (Array.isArray(val)) return val.join(', ');
+    return String(val);
   };
 
   const isChanged = (field: EditableField): boolean => field in changes;
-
-  const remixerValue = getValue('remixer');
 
   return (
     <div
@@ -284,7 +276,7 @@ function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onTo
       {/* Mini waveform (top-half) */}
       <div className="w-20 h-6 shrink-0">
         <MiniWaveform
-          track={{ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: item.artist ?? undefined }}
+          track={{ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: Array.isArray(item.artist) ? item.artist.join(', ') : (item.artist ?? undefined) }}
           halfHeight
         />
       </div>
@@ -301,7 +293,7 @@ function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onTo
 
       {/* Editable fields */}
       {EDITABLE_FIELDS.map(f => (
-        <div key={f.key} className={`${f.width} min-w-0 shrink-0 ${f.key === 'original_artist' || f.key === 'mix_name' ? (remixerValue ? '' : 'opacity-30') : ''}`}>
+        <div key={f.key} className={`${f.width} min-w-0 shrink-0`}>
           <input
             className={`w-full h-7 px-1.5 text-xs rounded border bg-transparent outline-none transition-colors
               ${isChanged(f.key) ? 'border-primary/40 bg-primary/5' : 'border-transparent hover:border-border'}
@@ -309,7 +301,6 @@ function EditRow({ item, isSelected, changes, hasChanges, scStatus, scData, onTo
             value={getValue(f.key)}
             onChange={(e) => onFieldChange(f.key, e.target.value)}
             placeholder={f.label}
-            disabled={!remixerValue && (f.key === 'original_artist' || f.key === 'mix_name')}
           />
         </div>
       ))}
@@ -569,24 +560,17 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
   }
 
   function handleSelect(item: TrackBrowse) {
-    load({ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: item.artist ?? undefined });
+    load({ filePath: item.file_path, fileName: item.file_name, title: item.title ?? undefined, artist: Array.isArray(item.artist) ? item.artist.join(', ') : (item.artist ?? undefined) });
     onSelect?.(item);
   }
 
   // Get the "original" value for a field — used for change detection
   const getOriginal = useCallback((item: TrackBrowse | undefined, field: EditableField): string => {
     if (!item) return '';
-    if (field === 'remixer') return item.remixers?.[0] ?? '';
-    if (field === 'original_artist') {
-      const hasRemix = !!(item.remixers?.[0]);
-      return hasRemix ? (item.artist ?? '') : '';
-    }
-    if (field === 'mix_name') {
-      const detected = item.title ? parseRemix(item.title) : null;
-      const hasRemix = !!(item.remixers?.[0]);
-      return detected?.mixName ?? (hasRemix ? 'Remix' : '');
-    }
-    return String(item[field as keyof TrackBrowse] ?? '');
+    const val = item[field as keyof TrackBrowse];
+    if (val == null) return '';
+    if (Array.isArray(val)) return val.join(', ');
+    return String(val);
   }, []);
 
   // Edit-mode helpers
@@ -814,17 +798,14 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
     }
   }, [scDataMap, updateField]);
 
-  // Build TrackInfoUpdateRequest from field changes + optional artwork/comment
-  const buildUpdates = useCallback((fileChanges: Partial<Record<EditableField, string>>, artworkB64?: string, scComment?: string): TrackInfoUpdateRequest => {
+  // Build TrackInfoUpdateRequest from field changes + optional artwork/starlib link
+  const buildUpdates = useCallback((fileChanges: Partial<Record<EditableField, string>>, artworkB64?: string, scStarlib?: string): TrackInfoUpdateRequest => {
     const updates: TrackInfoUpdateRequest = {};
     for (const [field, value] of Object.entries(fileChanges)) {
-      if (VIRTUAL_FIELDS.has(field as EditableField)) continue;
       if (field === 'bpm') {
         updates.bpm = value ? parseInt(value, 10) : undefined;
       } else if (field === 'release_date') {
         updates.release_date = value || undefined;
-      } else if (field === 'remixer') {
-        updates.remixers = value ? [value] : [];
       } else {
         (updates as Record<string, unknown>)[field] = value || undefined;
       }
@@ -832,8 +813,8 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
     if (artworkB64) {
       updates.artwork_data = artworkB64;
     }
-    if (scComment) {
-      updates.comment = scComment;
+    if (scStarlib) {
+      updates.starlib_meta = scStarlib;
     }
     return updates;
   }, []);

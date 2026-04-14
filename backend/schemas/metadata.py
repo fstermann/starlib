@@ -7,41 +7,49 @@ Request and response models for all metadata-related API endpoints.
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
+
+from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, TrackInfo
+
+# ============================================================================
+# Registry-driven field map
+# ============================================================================
+#
+# Every field in SIMPLE_TAG_FIELDS becomes an optional column on the request
+# and response schemas.  Adding a tag to the registry automatically flows
+# through to the API surface — no per-field edits needed here.
+#
+# starlib_meta is the one structured value we serialise as a string at the API
+# boundary (the on-disk format is "key=value; key=value"), so we override its
+# annotation to `str | None` rather than the StarlibMeta object.
+
+_SCALAR_OVERRIDES: dict[str, type] = {"starlib_meta": str | None}
+
+
+def _tag_fields() -> dict[str, tuple[type, object]]:
+    fields: dict[str, tuple[type, object]] = {}
+    for f in SIMPLE_TAG_FIELDS:
+        annotation = _SCALAR_OVERRIDES.get(
+            f.name, TrackInfo.model_fields[f.name].annotation | None
+        )
+        fields[f.name] = (annotation, None)
+    return fields
+
+
+_TAG_FIELDS = _tag_fields()
+
 
 # ============================================================================
 # Request Schemas
 # ============================================================================
 
 
-class TrackInfoUpdateRequest(BaseModel):
-    """Request to update track metadata."""
-
-    title: str | None = None
-    artist: str | None = None
-    bpm: int | None = None
-    key: str | None = None
-    genre: str | None = None
-    comment: str | None = None
-    release_date: date | None = None
-    remixers: list[str] | None = None
-    artwork_data: str | None = None  # base64-encoded image bytes
-
-
-class RemixInfo(BaseModel):
-    """Remix information."""
-
-    remixer: str
-    original_artist: str
-    mix_name: str | None = None
-
-
-class CommentInfo(BaseModel):
-    """Comment information."""
-
-    version: str | None = None
-    soundcloud_id: int | None = None
-    soundcloud_permalink: str | None = None
+TrackInfoUpdateRequest = create_model(
+    "TrackInfoUpdateRequest",
+    **_TAG_FIELDS,
+    artwork_data=(str | None, None),  # base64-encoded image bytes
+    __doc__="Request to update track metadata. All fields optional.",
+)
 
 
 class FinalizeRequest(BaseModel):
@@ -96,23 +104,17 @@ class BatchUpdateRequest(BaseModel):
 # ============================================================================
 
 
-class TrackInfoResponse(BaseModel):
-    """Response containing track metadata."""
-
-    file_path: str
-    file_name: str
-    title: str | None = None
-    artist: str | None = None
-    bpm: int | None = None
-    key: str | None = None
-    genre: str | None = None
-    comment: str | None = None
-    release_date: date | None = None
-    remixers: list[str] | None = None
-    has_artwork: bool
-    is_ready: bool
-    missing_fields: list[str] = []
-    issues: list[str] = []
+TrackInfoResponse = create_model(
+    "TrackInfoResponse",
+    file_path=(str, ...),
+    file_name=(str, ...),
+    has_artwork=(bool, ...),
+    is_ready=(bool, ...),
+    missing_fields=(list[str], []),
+    issues=(list[str], []),
+    **_TAG_FIELDS,
+    __doc__="Response containing track metadata. Tag fields are flat per the registry.",
+)
 
 
 class FileInfoResponse(BaseModel):
@@ -185,24 +187,19 @@ class BatchUpdateResponse(BaseModel):
     results: list[BatchResultItem]
 
 
-class TrackBrowseResponse(BaseModel):
-    """Lightweight response for collection browse/table view."""
-
-    file_path: str
-    file_name: str
-    title: str | None = None
-    artist: str | None = None
-    bpm: int | None = None
-    key: str | None = None
-    genre: str | None = None
-    release_date: date | None = None
-    remixers: list[str] | None = None
-    soundcloud_id: int | None = None
-    has_artwork: bool = False
-    file_format: str
-    file_size: int
-    duration: float | None = None
-    mtime: float | None = None
+TrackBrowseResponse = create_model(
+    "TrackBrowseResponse",
+    file_path=(str, ...),
+    file_name=(str, ...),
+    soundcloud_id=(int | None, None),
+    has_artwork=(bool, False),
+    file_format=(str, ...),
+    file_size=(int, ...),
+    duration=(float | None, None),
+    mtime=(float | None, None),
+    **_TAG_FIELDS,
+    __doc__="Lightweight response for collection browse/table view.",
+)
 
 
 class PeaksResponse(BaseModel):

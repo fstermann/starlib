@@ -214,9 +214,12 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
     if (!trackInfo) return;
 
     const parsed = parseFilename(trackInfo.file_name);
+    const artistStr = Array.isArray(trackInfo.artist) ? trackInfo.artist.join(', ') : (trackInfo.artist ?? '');
+    const remixerStr = Array.isArray(trackInfo.remixer) ? trackInfo.remixer.join(', ') : (trackInfo.remixer ?? '');
+    const originalArtistStr = Array.isArray(trackInfo.original_artist) ? trackInfo.original_artist.join(', ') : (trackInfo.original_artist ?? '');
     const newFormData = {
       title: trackInfo.title || parsed.title || '',
-      artist: trackInfo.artist || parsed.artist || '',
+      artist: artistStr || parsed.artist || '',
       bpm: trackInfo.bpm?.toString() || '',
       key: trackInfo.key || '',
       genre: trackInfo.genre || '',
@@ -224,30 +227,30 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
     };
     setFormData(newFormData);
     setOriginalFormData(newFormData);
-    const parsedComment = parseComment(trackInfo.comment);
+    const parsedComment = parseComment(trackInfo.starlib_meta);
     setCommentData(parsedComment);
     setScLinkEnabled(!!(parsedComment.soundcloud_id || parsedComment.soundcloud_permalink));
 
-    if (trackInfo.remixers && trackInfo.remixers.length > 0) {
+    if (remixerStr) {
       setIsRemix(true);
-      setRemixData({ original_artist: trackInfo.artist || '', remixer: trackInfo.remixers[0], mix_name: 'Remix' });
+      setRemixData({ original_artist: originalArtistStr || artistStr, remixer: remixerStr, mix_name: trackInfo.mix_name || 'Remix' });
     } else {
       const titleToCheck = trackInfo.title || parsed.title || '';
       const detected = titleToCheck ? parseRemix(titleToCheck) : null;
       if (detected) {
         setIsRemix(true);
-        setRemixData({ original_artist: trackInfo.artist || parsed.artist || '', remixer: detected.remixer, mix_name: detected.mixName });
+        setRemixData({ original_artist: originalArtistStr || artistStr || parsed.artist || '', remixer: detected.remixer, mix_name: trackInfo.mix_name || detected.mixName });
       } else {
         setIsRemix(false);
         setRemixData({ original_artist: '', remixer: '', mix_name: 'Remix' });
       }
     }
 
-    const initialIsRemix = !!(trackInfo.remixers && trackInfo.remixers.length > 0) || !!(trackInfo.title && parseRemix(trackInfo.title));
+    const initialIsRemix = !!remixerStr || !!(trackInfo.title && parseRemix(trackInfo.title));
     setOriginalIsRemix(initialIsRemix);
     setOriginalRemixData(
-      trackInfo.remixers && trackInfo.remixers.length > 0
-        ? { original_artist: trackInfo.artist || '', remixer: trackInfo.remixers[0], mix_name: 'Remix' }
+      remixerStr
+        ? { original_artist: originalArtistStr || artistStr, remixer: remixerStr, mix_name: trackInfo.mix_name || 'Remix' }
         : { original_artist: '', remixer: '', mix_name: 'Remix' }
     );
     const initialScLinkEnabled = !!(parsedComment.soundcloud_id || parsedComment.soundcloud_permalink);
@@ -415,16 +418,20 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
         }
       });
 
-      const commentStr = serializeComment(
+      const starlibStr = serializeComment(
         scLinkEnabled ? commentData.soundcloud_id : '',
         scLinkEnabled ? commentData.soundcloud_permalink : '',
       );
-      if (commentStr) updates.comment = commentStr;
+      if (starlibStr) updates.starlib_meta = starlibStr;
 
       if (isRemix && remixData.remixer) {
-        updates.remixers = [remixData.remixer];
+        updates.remixer = remixData.remixer;
+        updates.original_artist = remixData.original_artist || null;
+        updates.mix_name = remixData.mix_name || null;
       } else {
-        updates.remixers = [];
+        updates.remixer = null;
+        updates.original_artist = null;
+        updates.mix_name = null;
       }
 
       if (pendingArtworkData) {

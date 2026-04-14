@@ -98,6 +98,7 @@ class _MusicFolderHandler(FileSystemEventHandler):
                 missing.append("release_date")
             if not track_info.artwork:
                 missing.append("artwork")
+            sc_id = track_info.starlib_meta.soundcloud_id if track_info.starlib_meta else None
             cache_db.upsert_track(
                 file_path=path,
                 folder=path.parent.resolve(),
@@ -114,7 +115,12 @@ class _MusicFolderHandler(FileSystemEventHandler):
                 is_complete=track_info.complete,
                 missing_fields=missing,
                 mtime=stat.st_mtime,
-                remixers=[track_info.remix.remixer_str] if track_info.remix else None,
+                soundcloud_id=sc_id,
+                original_artist=track_info.original_artist_str or None,
+                remixer=track_info.remixer_str or None,
+                mix_name=track_info.mix_name,
+                release_year=track_info.release_year,
+                user_comment=track_info.user_comment,
             )
             logger.info("Indexed: %s", path.name)
         except Exception as e:

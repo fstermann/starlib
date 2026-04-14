@@ -393,6 +393,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metadata/files/batch-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Get File Info
+         * @description Get metadata for multiple audio files at once.
+         */
+        post: operations["batch_get_file_info_api_metadata_files_batch_info_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metadata/files/batch-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Update File Info
+         * @description Update metadata for multiple audio files at once.
+         *
+         *     Partial failures don't block other files.
+         */
+        post: operations["batch_update_file_info_api_metadata_files_batch_update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metadata/files/{file_path}/readiness": {
         parameters: {
             query?: never;
@@ -639,8 +681,10 @@ export interface paths {
          * Stream Audio
          * @description Stream an audio file.
          *
-         *     Formats not natively supported by browsers (e.g. AIFF) are
-         *     transcoded to WAV on the fly via ffmpeg.
+         *     Formats not natively supported by browsers (e.g. AIFF) are transcoded to
+         *     WAV via ffmpeg and cached.  Transcoding is awaited before responding so
+         *     that the browser always receives a real file with Content-Length and range
+         *     support, which is required for seeking to work.
          *
          *     Parameters
          *     ----------
@@ -651,13 +695,13 @@ export interface paths {
          *
          *     Returns
          *     -------
-         *     StreamingResponse
+         *     FileResponse
          *         Audio file bytes
          *
          *     Raises
          *     ------
          *     HTTPException
-         *         If the file doesn't exist
+         *         If the file doesn't exist or transcoding fails
          */
         get: operations["stream_audio_api_metadata_files__file_path__audio_get"];
         put?: never;
@@ -743,6 +787,285 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rulesets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rulesets
+         * @description Return all rulesets and the active ruleset id.
+         */
+        get: operations["list_rulesets_api_rulesets_get"];
+        put?: never;
+        /**
+         * Create Ruleset
+         * @description Create a new user ruleset.
+         */
+        post: operations["create_ruleset_api_rulesets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rulesets/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Active Ruleset
+         * @description Return the currently active ruleset.
+         */
+        get: operations["get_active_ruleset_api_rulesets_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rulesets/{ruleset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Ruleset
+         * @description Update a ruleset's name and/or rules.
+         *
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         404 if not found, 403 if built-in.
+         */
+        put: operations["update_ruleset_api_rulesets__ruleset_id__put"];
+        post?: never;
+        /**
+         * Delete Ruleset
+         * @description Delete a user ruleset.
+         *
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         404 if not found, 403 if built-in.
+         */
+        delete: operations["delete_ruleset_api_rulesets__ruleset_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rulesets/{ruleset_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Activate Ruleset
+         * @description Set the active ruleset.
+         *
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         404 if not found.
+         */
+        put: operations["activate_ruleset_api_rulesets__ruleset_id__activate_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/folders/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Folders Config
+         * @description Return the folder display and ruleset configuration.
+         */
+        get: operations["get_folders_config_api_folders_config_get"];
+        /**
+         * Update Folders Config
+         * @description Replace the folder display and ruleset configuration.
+         */
+        put: operations["update_folders_config_api_folders_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Settings
+         * @description Return application settings.
+         */
+        get: operations["get_settings_api_settings_get"];
+        /**
+         * Update Settings
+         * @description Update application settings (partial merge allowed).
+         */
+        put: operations["update_settings_api_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/root-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Root Folder
+         * @description Return the current root music folder path.
+         */
+        get: operations["get_root_folder_api_settings_root_folder_get"];
+        /**
+         * Update Root Folder
+         * @description Update the root music folder path and hot-reload the file watcher.
+         */
+        put: operations["update_root_folder_api_settings_root_folder_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ollama/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Status
+         * @description Check if Ollama is reachable and return available model names.
+         */
+        get: operations["get_status_api_ollama_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ollama/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Ollama
+         * @description Ensure Ollama is running, auto-starting it if necessary.
+         */
+        post: operations["start_ollama_api_ollama_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ollama/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop Ollama
+         * @description Stop Ollama if we started it.
+         */
+        post: operations["stop_ollama_api_ollama_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ollama/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Models
+         * @description Return installed models with details (name, size, digest).
+         */
+        get: operations["get_models_api_ollama_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ollama/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Settings
+         * @description Return current Ollama settings.
+         */
+        get: operations["get_settings_api_ollama_settings_get"];
+        put?: never;
+        /**
+         * Update Settings
+         * @description Update Ollama URL and/or selected model.
+         */
+        post: operations["update_settings_api_ollama_settings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -756,6 +1079,53 @@ export interface components {
             authorization_url: string;
             /** State */
             state: string;
+        };
+        /**
+         * BatchInfoRequest
+         * @description Request to get metadata for multiple files at once.
+         */
+        BatchInfoRequest: {
+            /** File Paths */
+            file_paths: string[];
+        };
+        /**
+         * BatchResultItem
+         * @description Result of a single file update within a batch.
+         */
+        BatchResultItem: {
+            /** File Path */
+            file_path: string;
+            /** Success */
+            success: boolean;
+            /** Message */
+            message: string;
+            /** New File Path */
+            new_file_path?: string | null;
+        };
+        /**
+         * BatchUpdateItem
+         * @description A single file update within a batch.
+         */
+        BatchUpdateItem: {
+            /** File Path */
+            file_path: string;
+            updates: components["schemas"]["TrackInfoUpdateRequest"];
+        };
+        /**
+         * BatchUpdateRequest
+         * @description Request to update metadata for multiple files at once.
+         */
+        BatchUpdateRequest: {
+            /** Items */
+            items: components["schemas"]["BatchUpdateItem"][];
+        };
+        /**
+         * BatchUpdateResponse
+         * @description Response from a batch update operation.
+         */
+        BatchUpdateResponse: {
+            /** Results */
+            results: components["schemas"]["BatchResultItem"][];
         };
         /** Body_update_file_artwork_api_metadata_files__file_path__artwork_post */
         Body_update_file_artwork_api_metadata_files__file_path__artwork_post: {
@@ -939,11 +1309,116 @@ export interface components {
             message: string;
             /** New File Path */
             new_file_path: string;
+            /**
+             * Steps
+             * @default []
+             */
+            steps: components["schemas"]["FinalizeStep"][];
+        };
+        /**
+         * FinalizeStep
+         * @description A single rule execution result.
+         */
+        FinalizeStep: {
+            /** Id */
+            id: string;
+            /** Type */
+            type: string;
+            /** Status */
+            status: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * FolderConfig
+         * @description Configuration for a single music folder tab.
+         */
+        FolderConfig: {
+            /** Name */
+            name: string;
+            /** Label */
+            label: string;
+            /**
+             * Visible
+             * @default true
+             */
+            visible: boolean;
+            /**
+             * Order
+             * @default 0
+             */
+            order: number;
+            /** Ruleset Id */
+            ruleset_id?: string | null;
+        };
+        /**
+         * FoldersConfig
+         * @description Top-level container for all folder configs.
+         */
+        FoldersConfig: {
+            /** Folders */
+            folders?: components["schemas"]["FolderConfig"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * OllamaModel
+         * @description Single model from Ollama's /api/tags response.
+         */
+        OllamaModel: {
+            /** Name */
+            name: string;
+            /**
+             * Size
+             * @default 0
+             */
+            size: number;
+            /**
+             * Digest
+             * @default
+             */
+            digest: string;
+        };
+        /**
+         * OllamaModelsResponse
+         * @description Response for GET /ollama/models.
+         */
+        OllamaModelsResponse: {
+            /** Models */
+            models?: components["schemas"]["OllamaModel"][];
+        };
+        /**
+         * OllamaSettingsRequest
+         * @description Request body for POST /ollama/settings.
+         */
+        OllamaSettingsRequest: {
+            /** Url */
+            url?: string | null;
+            /** Model */
+            model?: string | null;
+        };
+        /**
+         * OllamaStatusResponse
+         * @description Response for GET /ollama/status.
+         */
+        OllamaStatusResponse: {
+            /** Available */
+            available: boolean;
+            /**
+             * Installed
+             * @default false
+             */
+            installed: boolean;
+            /** Models */
+            models?: string[];
+            /**
+             * Started By Us
+             * @default false
+             */
+            started_by_us: boolean;
         };
         /**
          * OperationResponse
@@ -1011,6 +1486,87 @@ export interface components {
             /** Expires In */
             expires_in?: number | null;
         };
+        /** RootFolderRequest */
+        RootFolderRequest: {
+            /** Root Music Folder */
+            root_music_folder: string;
+        };
+        /** RootFolderResponse */
+        RootFolderResponse: {
+            /** Root Music Folder */
+            root_music_folder: string;
+        };
+        /**
+         * Rule
+         * @description A single step in a finalization pipeline.
+         */
+        Rule: {
+            /** Id */
+            id?: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "move" | "convert" | "copy";
+            /**
+             * Input
+             * @default source
+             */
+            input: string;
+            /** Requires */
+            requires?: string[];
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * Ruleset
+         * @description A named, ordered collection of rules.
+         */
+        Ruleset: {
+            /** Id */
+            id?: string;
+            /** Name */
+            name: string;
+            /**
+             * Is Builtin
+             * @default false
+             */
+            is_builtin: boolean;
+            /** Rules */
+            rules?: components["schemas"]["Rule"][];
+        };
+        /**
+         * RulesetCreate
+         * @description Payload for creating a new ruleset.
+         */
+        RulesetCreate: {
+            /** Name */
+            name: string;
+            /** Rules */
+            rules?: components["schemas"]["Rule"][];
+        };
+        /**
+         * RulesetUpdate
+         * @description Payload for updating an existing ruleset.
+         */
+        RulesetUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Rules */
+            rules?: components["schemas"]["Rule"][] | null;
+        };
+        /**
+         * RulesetsResponse
+         * @description Response listing all rulesets.
+         */
+        RulesetsResponse: {
+            /** Rulesets */
+            rulesets: components["schemas"]["Ruleset"][];
+            /** Active Ruleset Id */
+            active_ruleset_id: string;
+        };
         /**
          * SetupRequest
          * @description Payload from the first-launch setup form.
@@ -1053,18 +1609,8 @@ export interface components {
             file_path: string;
             /** File Name */
             file_name: string;
-            /** Title */
-            title?: string | null;
-            /** Artist */
-            artist?: string | null;
-            /** Bpm */
-            bpm?: number | null;
-            /** Key */
-            key?: string | null;
-            /** Genre */
-            genre?: string | null;
-            /** Release Date */
-            release_date?: string | null;
+            /** Soundcloud Id */
+            soundcloud_id?: number | null;
             /**
              * Has Artwork
              * @default false
@@ -1076,32 +1622,42 @@ export interface components {
             file_size: number;
             /** Duration */
             duration?: number | null;
+            /** Mtime */
+            mtime?: number | null;
+            /** Title */
+            title?: string | null;
+            /** Artist */
+            artist?: string | string[] | null;
+            /** Genre */
+            genre?: string | null;
+            /** Bpm */
+            bpm?: number | null;
+            /** Key */
+            key?: string | null;
+            /** Original Artist */
+            original_artist?: string | string[] | null;
+            /** Remixer */
+            remixer?: string | string[] | null;
+            /** Mix Name */
+            mix_name?: string | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Release Year */
+            release_year?: number | null;
+            /** User Comment */
+            user_comment?: string | null;
+            /** Starlib Meta */
+            starlib_meta?: string | null;
         };
         /**
          * TrackInfoResponse
-         * @description Response containing track metadata.
+         * @description Response containing track metadata. Tag fields are flat per the registry.
          */
         TrackInfoResponse: {
             /** File Path */
             file_path: string;
             /** File Name */
             file_name: string;
-            /** Title */
-            title?: string | null;
-            /** Artist */
-            artist?: string | null;
-            /** Bpm */
-            bpm?: number | null;
-            /** Key */
-            key?: string | null;
-            /** Genre */
-            genre?: string | null;
-            /** Comment */
-            comment?: string | null;
-            /** Release Date */
-            release_date?: string | null;
-            /** Remixers */
-            remixers?: string[] | null;
             /** Has Artwork */
             has_artwork: boolean;
             /** Is Ready */
@@ -1116,28 +1672,60 @@ export interface components {
              * @default []
              */
             issues: string[];
+            /** Title */
+            title?: string | null;
+            /** Artist */
+            artist?: string | string[] | null;
+            /** Genre */
+            genre?: string | null;
+            /** Bpm */
+            bpm?: number | null;
+            /** Key */
+            key?: string | null;
+            /** Original Artist */
+            original_artist?: string | string[] | null;
+            /** Remixer */
+            remixer?: string | string[] | null;
+            /** Mix Name */
+            mix_name?: string | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Release Year */
+            release_year?: number | null;
+            /** User Comment */
+            user_comment?: string | null;
+            /** Starlib Meta */
+            starlib_meta?: string | null;
         };
         /**
          * TrackInfoUpdateRequest
-         * @description Request to update track metadata.
+         * @description Request to update track metadata. All fields optional.
          */
         TrackInfoUpdateRequest: {
             /** Title */
             title?: string | null;
             /** Artist */
-            artist?: string | null;
+            artist?: string | string[] | null;
+            /** Genre */
+            genre?: string | null;
             /** Bpm */
             bpm?: number | null;
             /** Key */
             key?: string | null;
-            /** Genre */
-            genre?: string | null;
-            /** Comment */
-            comment?: string | null;
+            /** Original Artist */
+            original_artist?: string | string[] | null;
+            /** Remixer */
+            remixer?: string | string[] | null;
+            /** Mix Name */
+            mix_name?: string | null;
             /** Release Date */
             release_date?: string | null;
-            /** Remixers */
-            remixers?: string[] | null;
+            /** Release Year */
+            release_year?: number | null;
+            /** User Comment */
+            user_comment?: string | null;
+            /** Starlib Meta */
+            starlib_meta?: string | null;
             /** Artwork Data */
             artwork_data?: string | null;
         };
@@ -1608,6 +2196,72 @@ export interface operations {
             };
         };
     };
+    batch_get_file_info_api_metadata_files_batch_info_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchInfoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackInfoResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_update_file_info_api_metadata_files_batch_update_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchUpdateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     check_file_readiness_api_metadata_files__file_path__readiness_get: {
         parameters: {
             query?: never;
@@ -1925,6 +2579,476 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rulesets_api_rulesets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RulesetsResponse"];
+                };
+            };
+        };
+    };
+    create_ruleset_api_rulesets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RulesetCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ruleset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_ruleset_api_rulesets_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ruleset"];
+                };
+            };
+        };
+    };
+    update_ruleset_api_rulesets__ruleset_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ruleset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RulesetUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ruleset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_ruleset_api_rulesets__ruleset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ruleset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_ruleset_api_rulesets__ruleset_id__activate_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ruleset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ruleset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_folders_config_api_folders_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoldersConfig"];
+                };
+            };
+        };
+    };
+    update_folders_config_api_folders_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FoldersConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoldersConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_settings_api_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    update_settings_api_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_root_folder_api_settings_root_folder_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RootFolderResponse"];
+                };
+            };
+        };
+    };
+    update_root_folder_api_settings_root_folder_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RootFolderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RootFolderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_ollama_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OllamaStatusResponse"];
+                };
+            };
+        };
+    };
+    start_ollama_api_ollama_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OllamaStatusResponse"];
+                };
+            };
+        };
+    };
+    stop_ollama_api_ollama_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OllamaStatusResponse"];
+                };
+            };
+        };
+    };
+    get_models_api_ollama_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OllamaModelsResponse"];
+                };
+            };
+        };
+    };
+    get_settings_api_ollama_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    update_settings_api_ollama_settings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OllamaSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
