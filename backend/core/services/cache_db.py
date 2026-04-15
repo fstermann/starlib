@@ -62,9 +62,7 @@ _SORT_COLS: dict[str, str] = {
 _NULLABLE_SORT_COLS = {"bpm", "release_date", "release_year"}
 
 # Columns matched by search_query LIKE clauses — derived from registry.
-_SEARCH_COLS: tuple[str, ...] = tuple(
-    _REGISTRY_COL.get(f.name, f.name) for f in SIMPLE_TAG_FIELDS if f.searchable
-)
+_SEARCH_COLS: tuple[str, ...] = tuple(_REGISTRY_COL.get(f.name, f.name) for f in SIMPLE_TAG_FIELDS if f.searchable)
 
 
 # ---------------------------------------------------------------------------
@@ -139,9 +137,7 @@ def upsert_track(
 
     stmt = sqlite_insert(Track.__table__).values(row)
     update_cols = {c: stmt.excluded[c] for c in row if c != "file_path"}
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[Track.__table__.c.file_path], set_=update_cols
-    )
+    stmt = stmt.on_conflict_do_update(index_elements=[Track.__table__.c.file_path], set_=update_cols)
     with engine.begin() as conn:
         conn.execute(stmt)
 
@@ -153,9 +149,7 @@ def delete_track(file_path: Path) -> None:
 
 def get_track_mtime(file_path: Path) -> float | None:
     with get_engine().connect() as conn:
-        row = conn.execute(
-            select(Track.mtime).where(Track.file_path == str(file_path))
-        ).first()
+        row = conn.execute(select(Track.mtime).where(Track.file_path == str(file_path))).first()
     return float(row[0]) if row else None
 
 
@@ -177,9 +171,7 @@ def invalidate_file(file_path: Path) -> None:
 def get_soundcloud_ids(folder: Path) -> list[int]:
     with get_engine().connect() as conn:
         rows = conn.execute(
-            select(Track.soundcloud_id).where(
-                Track.folder == str(folder), Track.soundcloud_id.is_not(None)
-            )
+            select(Track.soundcloud_id).where(Track.folder == str(folder), Track.soundcloud_id.is_not(None))
         ).all()
     return [int(r[0]) for r in rows]
 
@@ -311,9 +303,7 @@ def get_filter_values(
             r[0]
             for r in conn.execute(
                 select(Track.key)
-                .where(
-                    Track.folder == folder_str, Track.key.is_not(None), Track.key != ""
-                )
+                .where(Track.folder == folder_str, Track.key.is_not(None), Track.key != "")
                 .group_by(Track.key)
                 .order_by(Track.key)
             ).all()
@@ -334,9 +324,7 @@ def get_filter_values(
 
     # Key counts: apply all filters EXCEPT keys.
     key_stmt = _apply_filters(
-        select(Track.key, func.count()).where(
-            Track.folder == folder_str, Track.key.is_not(None), Track.key != ""
-        ),
+        select(Track.key, func.count()).where(Track.folder == folder_str, Track.key.is_not(None), Track.key != ""),
         search_query=search_query,
         genres=genres,
         bpm_min=bpm_min,
@@ -347,9 +335,7 @@ def get_filter_values(
 
     with engine.connect() as conn:
         bpm_row = conn.execute(
-            select(func.min(Track.bpm), func.max(Track.bpm)).where(
-                Track.folder == folder_str, Track.bpm.is_not(None)
-            )
+            select(func.min(Track.bpm), func.max(Track.bpm)).where(Track.folder == folder_str, Track.bpm.is_not(None))
         ).first()
         artists_rows = conn.execute(
             select(Track.artist_str)
@@ -377,25 +363,17 @@ def get_stats(folder: Path) -> dict:
     engine = get_engine()
     folder_str = str(folder)
     with engine.connect() as conn:
-        total = conn.execute(
-            select(func.count()).select_from(Track).where(Track.folder == folder_str)
-        ).scalar_one()
+        total = conn.execute(select(func.count()).select_from(Track).where(Track.folder == folder_str)).scalar_one()
         complete = conn.execute(
-            select(func.count())
-            .select_from(Track)
-            .where(Track.folder == folder_str, Track.is_complete.is_(True))
+            select(func.count()).select_from(Track).where(Track.folder == folder_str, Track.is_complete.is_(True))
         ).scalar_one()
         bpm_row = conn.execute(
-            select(func.min(Track.bpm), func.max(Track.bpm)).where(
-                Track.folder == folder_str, Track.bpm.is_not(None)
-            )
+            select(func.min(Track.bpm), func.max(Track.bpm)).where(Track.folder == folder_str, Track.bpm.is_not(None))
         ).first()
 
         def _missing(where) -> int:
             return conn.execute(
-                select(func.count())
-                .select_from(Track)
-                .where(Track.folder == folder_str, where)
+                select(func.count()).select_from(Track).where(Track.folder == folder_str, where)
             ).scalar_one()
 
         missing_artwork = _missing(Track.has_artwork.is_(False))
@@ -433,9 +411,7 @@ def get_stats(folder: Path) -> dict:
             r[0]
             for r in conn.execute(
                 select(Track.key)
-                .where(
-                    Track.folder == folder_str, Track.key.is_not(None), Track.key != ""
-                )
+                .where(Track.folder == folder_str, Track.key.is_not(None), Track.key != "")
                 .distinct()
                 .order_by(Track.key)
             ).all()
@@ -466,12 +442,8 @@ def get_stats(folder: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def get_peaks(
-    file_path: Path, mtime: float, num_peaks: int | None = None
-) -> list[float] | None:
-    stmt = select(Peaks.peaks).where(
-        Peaks.file_path == str(file_path), Peaks.mtime == mtime
-    )
+def get_peaks(file_path: Path, mtime: float, num_peaks: int | None = None) -> list[float] | None:
+    stmt = select(Peaks.peaks).where(Peaks.file_path == str(file_path), Peaks.mtime == mtime)
     if num_peaks is not None:
         stmt = stmt.where(Peaks.num_peaks == num_peaks)
     with get_engine().connect() as conn:

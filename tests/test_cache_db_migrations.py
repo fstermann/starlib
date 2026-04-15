@@ -37,10 +37,7 @@ def _rev(db: Path) -> str | None:
 
 
 def _tables(db: Path) -> set[str]:
-    return {
-        r[0]
-        for r in _connect(db).execute("SELECT name FROM sqlite_master WHERE type='table'")
-    }
+    return {r[0] for r in _connect(db).execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
 
 def _cols(db: Path, table: str) -> set[str]:
@@ -102,8 +99,13 @@ def test_legacy_db_bootstrap_then_head(tmp_path: Path) -> None:
     # All post-#285 flat columns must have landed.
     tracks_cols = _cols(db, "tracks")
     for col in (
-        "original_artist", "remixer", "mix_name",
-        "release_year", "user_comment", "soundcloud_id", "duration",
+        "original_artist",
+        "remixer",
+        "mix_name",
+        "release_year",
+        "user_comment",
+        "soundcloud_id",
+        "duration",
     ):
         assert col in tracks_cols, f"missing column after bootstrap: {col}"
     assert _rev(db) == "0001"
@@ -170,16 +172,44 @@ def test_search_filter_hits_flat_tag_columns(tmp_path: Path) -> None:
     (folder / "b.mp3").write_bytes(b"")
 
     cache_db.upsert_track(
-        file_path=folder / "a.mp3", folder=folder, title="One", artist_str="Alice",
-        genre="House", key=None, bpm=None, release_date=None, has_artwork=False,
-        file_size=1, file_format=".mp3", duration=None, is_complete=False,
-        missing_fields=[], mtime=1.0, original_artist="Needle", remixer="x", mix_name=None,
+        file_path=folder / "a.mp3",
+        folder=folder,
+        title="One",
+        artist_str="Alice",
+        genre="House",
+        key=None,
+        bpm=None,
+        release_date=None,
+        has_artwork=False,
+        file_size=1,
+        file_format=".mp3",
+        duration=None,
+        is_complete=False,
+        missing_fields=[],
+        mtime=1.0,
+        original_artist="Needle",
+        remixer="x",
+        mix_name=None,
     )
     cache_db.upsert_track(
-        file_path=folder / "b.mp3", folder=folder, title="Two", artist_str="Bob",
-        genre="House", key=None, bpm=None, release_date=None, has_artwork=False,
-        file_size=1, file_format=".mp3", duration=None, is_complete=False,
-        missing_fields=[], mtime=1.0, original_artist="x", remixer="Haystack", mix_name=None,
+        file_path=folder / "b.mp3",
+        folder=folder,
+        title="Two",
+        artist_str="Bob",
+        genre="House",
+        key=None,
+        bpm=None,
+        release_date=None,
+        has_artwork=False,
+        file_size=1,
+        file_format=".mp3",
+        duration=None,
+        is_complete=False,
+        missing_fields=[],
+        mtime=1.0,
+        original_artist="x",
+        remixer="Haystack",
+        mix_name=None,
     )
 
     # original_artist is in _SEARCH_COLS (registry.searchable = True)

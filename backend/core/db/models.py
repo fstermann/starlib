@@ -57,9 +57,7 @@ class Track(SQLModel, table=True):
     # rebuild.  No reader writes to it any more.
     remixers: str | None = None
 
-    __table_args__ = (
-        Index("idx_tracks_folder", "folder"),
-    )
+    __table_args__ = (Index("idx_tracks_folder", "folder"),)
 
 
 class Peaks(SQLModel, table=True):

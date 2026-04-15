@@ -79,9 +79,7 @@ def prepare_search_query(filename: str) -> str:
     >>> prepare_search_query("Artist_Name_-_Track_Title_(Free_DL)_Remix")
     'Artist Name - Track Title'
     """
-    return remove_double_spaces(
-        remove_mix(remove_remix(replace_underscores(remove_free_dl(filename))))
-    )
+    return remove_double_spaces(remove_mix(remove_remix(replace_underscores(remove_free_dl(filename)))))
 
 
 _REGISTRY_NAMES = {f.name for f in SIMPLE_TAG_FIELDS}
@@ -177,16 +175,8 @@ def finalize_track(
     except ValueError:
         folder_name = None
 
-    ruleset_id = (
-        folder_config_service.get_ruleset_id_for_folder(folder_name)
-        if folder_name
-        else None
-    )
-    active = (
-        ruleset_service.get_ruleset_by_id(ruleset_id)
-        if ruleset_id
-        else ruleset_service.get_active_ruleset()
-    )
+    ruleset_id = folder_config_service.get_ruleset_id_for_folder(folder_name) if folder_name else None
+    active = ruleset_service.get_ruleset_by_id(ruleset_id) if ruleset_id else ruleset_service.get_active_ruleset()
     return rule_engine.execute_ruleset(file_path, root_folder, active)
 
 
@@ -255,9 +245,7 @@ def get_track_info(file_path: Path, root_folder: Path) -> TrackInfo:
     return handler.track_info
 
 
-def check_file_readiness(
-    file_path: Path, root_folder: Path
-) -> dict[str, bool | list[str] | int]:
+def check_file_readiness(file_path: Path, root_folder: Path) -> dict[str, bool | list[str] | int]:
     """
     Check if a file is ready for finalization.
 
@@ -395,9 +383,7 @@ def remove_all_artwork_from_track(
     track.save()
 
 
-def extract_artwork(
-    file_path: Path, root_folder: Path, cache_dir: Path | None = None
-) -> Path | None:
+def extract_artwork(file_path: Path, root_folder: Path, cache_dir: Path | None = None) -> Path | None:
     """
     Extract artwork from an audio file, caching it to disk.
 
@@ -483,9 +469,7 @@ def remove_artwork(file_path: Path, root_folder: Path) -> None:
     remove_all_artwork_from_track(file_path, root_folder)
 
 
-def get_waveform_peaks(
-    file_path: Path, cache_dir: Path, num_peaks: int = 200
-) -> list[float]:
+def get_waveform_peaks(file_path: Path, cache_dir: Path, num_peaks: int = 200) -> list[float]:
     """
     Compute amplitude peak data for waveform visualization.
 
