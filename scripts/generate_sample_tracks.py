@@ -165,22 +165,82 @@ def _tiny_png(rgb: tuple[int, int, int]) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-_FILENAME_STYLES = ("underscore", "freedl", "numbered", "plain", "noisy_brackets")
+_FILENAME_STYLES = (
+    "underscore",
+    "freedl",
+    "numbered",
+    "plain",
+    "noisy_brackets",
+    "premiere_prefix",
+    "ds_premiere_prefix",
+    "catalog_number",
+    "aka_alias",
+    "collab_ampersand",
+    "collab_comma",
+    "collab_x",
+    "censored",
+    "free_download_suffix",
+    "extended_suffix",
+    "remix_parens",
+    "edit_parens",
+)
+
+_LABELS = ("Body 'N Deep", "Berg Audio", "PIV", "Mau Mau Records", "Moxy Edits")
+_CATALOG_NUMBERS = ("ORGVA06", "TV004", "PIV012", "BA003", "MMR015")
+_AKA_ALIASES = ("DJ Daddy Trance", "Beat Forger", "Night Owl", "The Architect")
+_CENSOR_WORDS = (("F***", "Fuck"), ("S**t", "Shit"), ("B***h", "Bitch"))
 
 
-def _messy_filename(i: int, artist: str, title: str) -> str:
-    """Produce a scraped-download-style filename that doesn't match tags perfectly."""
+def _messy_filename(i: int, artist: str, title: str) -> str:  # noqa: C901
+    """Produce a scraped-download-style filename that doesn't match tags perfectly.
+
+    Styles exercise the quirks the LLM autoedit pipeline must normalize: promo
+    prefixes, FREE DL markers, catalog numbers, aka aliases, multi-artist
+    separators, censored glyphs, and parenthetical mix/remix tails.
+    """
     style = _FILENAME_STYLES[i % len(_FILENAME_STYLES)]
     base = f"{artist} - {title}"
-    if style == "underscore":
-        return base.replace(" ", "_")
-    if style == "freedl":
-        return f"{base} (Free DL)"
-    if style == "numbered":
-        return f"{i + 1:02d}. {base}"
-    if style == "noisy_brackets":
-        return f"{base} [{_GENRES[i % len(_GENRES)]}]"
-    return base  # plain
+    match style:
+        case "underscore":
+            return base.replace(" ", "_")
+        case "freedl":
+            return f"{base} (Free DL)"
+        case "numbered":
+            return f"{i + 1:02d}. {base}"
+        case "noisy_brackets":
+            return f"{base} [{_GENRES[i % len(_GENRES)]}]"
+        case "premiere_prefix":
+            return f"PREMIERE: {base} [{_LABELS[i % len(_LABELS)]}]"
+        case "ds_premiere_prefix":
+            return f"DS Premiere: {base}"
+        case "catalog_number":
+            return f"{base} [{_CATALOG_NUMBERS[i % len(_CATALOG_NUMBERS)]}]"
+        case "aka_alias":
+            return f"{artist} aka {_AKA_ALIASES[i % len(_AKA_ALIASES)]} - {title}"
+        case "collab_ampersand":
+            collab = _REAL_TRACKS[(i + 1) % len(_REAL_TRACKS)][0]
+            return f"{artist} & {collab} - {title}"
+        case "collab_comma":
+            a2 = _REAL_TRACKS[(i + 1) % len(_REAL_TRACKS)][0]
+            a3 = _REAL_TRACKS[(i + 2) % len(_REAL_TRACKS)][0]
+            return f"{artist}, {a2}, {a3} - {title}"
+        case "collab_x":
+            collab = _REAL_TRACKS[(i + 1) % len(_REAL_TRACKS)][0]
+            return f"{artist} X {collab} - {title}"
+        case "censored":
+            glyph, _word = _CENSOR_WORDS[i % len(_CENSOR_WORDS)]
+            return f"{base} (Don't {glyph} With My Energy)"
+        case "free_download_suffix":
+            return f"{base} FREE DL"
+        case "extended_suffix":
+            return f"{base} (Extended)"
+        case "remix_parens":
+            remixer = _REMIXERS[i % len(_REMIXERS)]
+            return f"{base} ({remixer} Remix)"
+        case "edit_parens":
+            return f"{base} (the dare edit) FREE DL"
+        case _:
+            return base  # plain
 
 
 def _build_info(i: int, profile: Profile, *, with_remix: bool) -> TrackInfo:
