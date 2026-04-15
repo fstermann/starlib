@@ -13,6 +13,7 @@ module. Centralising the file lets us load and persist all sections atomically.
 [3]: backend/core/services/folder_config.py
 """
 
+import json
 import os
 import stat
 from collections.abc import Callable
@@ -101,6 +102,20 @@ def _cleanup_legacy_files() -> None:
                 pass
 
 
+def _migrate_legacy_ollama_block(raw: dict) -> dict:
+    """Move a top-level ``ollama`` block under ``ai.ollama``.
+
+    First versions of the settings file stored Ollama config as a top-level
+    key. The grouped ``ai.*`` layout now houses both Ollama and Anthropic.
+    """
+    if "ollama" not in raw:
+        return raw
+    legacy = raw.pop("ollama")
+    ai_block = raw.setdefault("ai", {})
+    ai_block.setdefault("ollama", legacy)
+    return raw
+
+
 def load() -> Settings:
     """Read settings from disk, creating defaults on first run."""
     if not _SETTINGS_FILE.exists():
@@ -109,7 +124,12 @@ def load() -> Settings:
         save(defaults)
         return defaults
 
-    settings = Settings.model_validate_json(_SETTINGS_FILE.read_text())
+    raw = json.loads(_SETTINGS_FILE.read_text())
+    needs_persist = "ollama" in raw
+    raw = _migrate_legacy_ollama_block(raw)
+    settings = Settings.model_validate(raw)
+    if needs_persist:
+        save(settings)
 
     # Always ensure Classic is present and in sync with the built-in definition
     items = settings.rulesets.items

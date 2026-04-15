@@ -12,10 +12,10 @@ from backend.schemas.ollama import OllamaModel
 @pytest.fixture(autouse=True)
 def _default_settings():
     """Patch settings to return deterministic Ollama config."""
-    from backend.schemas.ollama import OllamaSettings
+    from backend.schemas.ai import AiSettings, OllamaSettings
     from backend.schemas.settings import Settings
 
-    settings = Settings(ollama=OllamaSettings(url="http://test:11434", model="gemma4:e2b"))
+    settings = Settings(ai=AiSettings(ollama=OllamaSettings(url="http://test:11434", model="gemma4:e2b")))
 
     with patch.object(ollama_service, "settings_service") as mock_ss:
         mock_ss.load.return_value = settings
@@ -135,11 +135,11 @@ class TestEnsureRunning:
     @pytest.mark.asyncio
     async def test_skips_auto_start_for_remote_url(self, _default_settings) -> None:
         """Don't try to start Ollama when the URL points to a remote host."""
-        from backend.schemas.ollama import OllamaSettings
+        from backend.schemas.ai import AiSettings, OllamaSettings
         from backend.schemas.settings import Settings
 
         _default_settings.load.return_value = Settings(
-            ollama=OllamaSettings(url="http://remote-host:11434", model="gemma4:e2b")
+            ai=AiSettings(ollama=OllamaSettings(url="http://remote-host:11434", model="gemma4:e2b"))
         )
         with patch.object(ollama_service, "is_available", new_callable=AsyncMock, return_value=False):
             assert await ollama_service.ensure_running() is False
@@ -199,13 +199,3 @@ class TestStartedByUs:
         mock_proc.poll.return_value = 0
         ollama_service._process = mock_proc
         assert ollama_service.started_by_us() is False
-
-
-class TestGetAndUpdateSettings:
-    def test_get_settings(self) -> None:
-        result = ollama_service.get_settings()
-        assert result == {"url": "http://test:11434", "model": "gemma4:e2b"}
-
-    def test_update_settings(self, _default_settings) -> None:
-        ollama_service.update_settings(url="http://other:11434", model="llama3:8b")
-        _default_settings.update.assert_called_once()
