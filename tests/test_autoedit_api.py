@@ -8,33 +8,33 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.api.ollama import router as ollama_router
+from backend.api.ai import router as ai_router
 from backend.schemas.metadata import TrackInfoUpdateRequest
 from soundcloud_tools.handler.track import TrackInfo
 
 
 @pytest.fixture
-def ollama_client() -> TestClient:
+def ai_client() -> TestClient:
     app = FastAPI()
-    app.include_router(ollama_router)
+    app.include_router(ai_router)
     return TestClient(app)
 
 
 class TestPullModel:
-    def test_pull_succeeds(self, ollama_client: TestClient) -> None:
-        with patch("backend.api.ollama.ollama_service.pull_model", new_callable=AsyncMock) as mock_pull:
-            resp = ollama_client.post("/api/ollama/pull-model", json={"name": "gemma4:e2b"})
+    def test_pull_succeeds(self, ai_client: TestClient) -> None:
+        with patch("backend.api.ai.ollama_service.pull_model", new_callable=AsyncMock) as mock_pull:
+            resp = ai_client.post("/api/ai/ollama/pull-model", json={"name": "gemma4:e2b"})
         assert resp.status_code == 200
         assert resp.json() == {"success": True, "name": "gemma4:e2b", "message": None}
         mock_pull.assert_awaited_once_with("gemma4:e2b")
 
-    def test_pull_returns_502_on_http_error(self, ollama_client: TestClient) -> None:
+    def test_pull_returns_502_on_http_error(self, ai_client: TestClient) -> None:
         with patch(
-            "backend.api.ollama.ollama_service.pull_model",
+            "backend.api.ai.ollama_service.pull_model",
             new_callable=AsyncMock,
             side_effect=httpx.HTTPError("nope"),
         ):
-            resp = ollama_client.post("/api/ollama/pull-model", json={"name": "gemma4:e2b"})
+            resp = ai_client.post("/api/ai/ollama/pull-model", json={"name": "gemma4:e2b"})
         assert resp.status_code == 502
 
 

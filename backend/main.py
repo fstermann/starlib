@@ -13,11 +13,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_pagination import add_pagination
 
+from backend.api.ai import router as ai_router
 from backend.api.app_settings import router as app_settings_router
 from backend.api.auth import router as auth_router
 from backend.api.folder_config import router as folder_config_router
 from backend.api.metadata import router as metadata_router
-from backend.api.ollama import router as ollama_router
 from backend.api.rulesets import router as rulesets_router
 from backend.api.setup import router as setup_router
 from backend.config import get_backend_settings
@@ -101,7 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(rulesets_router)
     app.include_router(folder_config_router)
     app.include_router(app_settings_router)
-    app.include_router(ollama_router)
+    app.include_router(ai_router)
 
     add_pagination(app)
 

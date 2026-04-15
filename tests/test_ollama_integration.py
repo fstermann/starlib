@@ -8,10 +8,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.api.ollama import router
+from backend.api.ai import router
 from backend.core.services import ollama as ollama_service
 from backend.core.services import settings as settings_service
-from backend.schemas.ollama import OllamaSettings
+from backend.schemas.ai import AiSettings, OllamaSettings
 from backend.schemas.settings import Settings
 
 pytestmark = pytest.mark.integration
@@ -20,7 +20,7 @@ pytestmark = pytest.mark.integration
 @pytest.fixture(autouse=True)
 def _use_default_url(tmp_path):
     """Point settings at the real local Ollama and use a temp settings file."""
-    settings = Settings(ollama=OllamaSettings(url="http://localhost:11434", model="gemma4:e2b"))
+    settings = Settings(ai=AiSettings(ollama=OllamaSettings(url="http://localhost:11434", model="gemma4:e2b")))
     original_load = settings_service.load
 
     def patched_load():
@@ -47,27 +47,27 @@ class TestOllamaServerReachable:
     async def test_list_models_returns_list(self) -> None:
         models = await ollama_service.list_models()
         assert isinstance(models, list)
-        # CI has no models pulled, so expect empty
-        # (locally you might have models installed — that's fine too)
 
 
-class TestOllamaApiEndpoints:
+class TestAiApiEndpoints:
     def test_status_shows_available(self, client: TestClient) -> None:
-        resp = client.get("/api/ollama/status")
+        resp = client.get("/api/ai/status")
         assert resp.status_code == 200
         data = resp.json()
+        assert data["provider"] == "ollama"
         assert data["available"] is True
         assert isinstance(data["models"], list)
 
     def test_models_returns_list(self, client: TestClient) -> None:
-        resp = client.get("/api/ollama/models")
+        resp = client.get("/api/ai/models")
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data["models"], list)
 
     def test_settings_roundtrip(self, client: TestClient) -> None:
-        resp = client.get("/api/ollama/settings")
+        resp = client.get("/api/ai/settings")
         assert resp.status_code == 200
         data = resp.json()
-        assert "url" in data
-        assert "model" in data
+        assert data["provider"] in {"ollama", "anthropic"}
+        assert "ollama" in data
+        assert "anthropic" in data

@@ -156,29 +156,60 @@ export interface AppSettings {
   preferred_output_format: 'aiff' | 'mp3';
 }
 
-// ==================== Ollama Types ====================
+// ==================== AI Types ====================
 
-export interface OllamaStatus {
-  available: boolean;
-  installed: boolean;
-  models: string[];
-  started_by_us: boolean;
-}
+export type AiProvider = 'ollama' | 'anthropic' | 'claude_code';
 
-export interface OllamaModel {
-  name: string;
-  size: number;
-  digest: string;
-}
-
-export interface OllamaModelsResponse {
-  models: OllamaModel[];
-}
-
-export interface OllamaSettings {
+export interface AiOllamaSettings {
   url: string;
   model: string;
 }
+
+export interface AiAnthropicSettings {
+  model: string;
+}
+
+export interface AiClaudeCodeSettings {
+  model: string;
+}
+
+export interface AiSettings {
+  provider: AiProvider;
+  ollama: AiOllamaSettings;
+  anthropic: AiAnthropicSettings;
+  claude_code: AiClaudeCodeSettings;
+  anthropic_has_api_key: boolean;
+}
+
+export interface AiSettingsUpdate {
+  provider?: AiProvider;
+  ollama?: Partial<AiOllamaSettings>;
+  anthropic?: Partial<AiAnthropicSettings>;
+  claude_code?: Partial<AiClaudeCodeSettings>;
+}
+
+export interface AiStatus {
+  provider: AiProvider;
+  available: boolean;
+  installed: boolean;
+  started_by_us: boolean;
+  models: string[];
+  has_api_key: boolean;
+  claude_cli_installed: boolean;
+}
+
+export interface AiModel {
+  id: string;
+  display_name?: string | null;
+  size?: number | null;
+}
+
+export interface AiModelsResponse {
+  provider: AiProvider;
+  models: AiModel[];
+}
+
+// ==================== Autoedit Types ====================
 
 export interface AutoeditSoundcloudMatch {
   id: number;
@@ -488,41 +519,54 @@ export const api = {
     return data.root_music_folder;
   },
 
-  // ==================== Ollama ====================
+  // ==================== AI ====================
 
-  async getOllamaStatus(): Promise<OllamaStatus> {
-    return fetchApi('/api/ollama/status');
+  async getAiSettings(): Promise<AiSettings> {
+    return fetchApi('/api/ai/settings');
   },
 
-  async startOllama(): Promise<OllamaStatus> {
-    return fetchApi('/api/ollama/start', { method: 'POST' });
-  },
-
-  async stopOllama(): Promise<OllamaStatus> {
-    return fetchApi('/api/ollama/stop', { method: 'POST' });
-  },
-
-  async getOllamaModels(): Promise<OllamaModelsResponse> {
-    return fetchApi('/api/ollama/models');
-  },
-
-  async getOllamaSettings(): Promise<OllamaSettings> {
-    return fetchApi('/api/ollama/settings');
-  },
-
-  async updateOllamaSettings(settings: Partial<OllamaSettings>): Promise<OllamaSettings> {
-    return fetchApi('/api/ollama/settings', {
+  async updateAiSettings(update: AiSettingsUpdate): Promise<AiSettings> {
+    return fetchApi('/api/ai/settings', {
       method: 'POST',
-      body: JSON.stringify(settings),
+      body: JSON.stringify(update),
     });
   },
 
+  async getAiStatus(): Promise<AiStatus> {
+    return fetchApi('/api/ai/status');
+  },
+
+  async getAiModels(): Promise<AiModelsResponse> {
+    return fetchApi('/api/ai/models');
+  },
+
+  async startOllama(): Promise<AiStatus> {
+    return fetchApi('/api/ai/ollama/start', { method: 'POST' });
+  },
+
+  async stopOllama(): Promise<AiStatus> {
+    return fetchApi('/api/ai/ollama/stop', { method: 'POST' });
+  },
+
   async pullOllamaModel(name: string): Promise<{ success: boolean; name: string; message?: string | null }> {
-    return fetchApi('/api/ollama/pull-model', {
+    return fetchApi('/api/ai/ollama/pull-model', {
       method: 'POST',
       body: JSON.stringify({ name }),
     });
   },
+
+  async setAnthropicApiKey(apiKey: string): Promise<AiSettings> {
+    return fetchApi('/api/ai/anthropic/credentials', {
+      method: 'POST',
+      body: JSON.stringify({ api_key: apiKey }),
+    });
+  },
+
+  async deleteAnthropicApiKey(): Promise<AiSettings> {
+    return fetchApi('/api/ai/anthropic/credentials', { method: 'DELETE' });
+  },
+
+  // ==================== Autoedit ====================
 
   async autoeditTrackInfo(filePath: string): Promise<AutoeditResponse> {
     const encoded = encodeURIComponent(filePath);

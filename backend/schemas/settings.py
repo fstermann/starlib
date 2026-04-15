@@ -1,14 +1,13 @@
 """Top-level settings schema.
 
-Persists all user configuration (app settings, rulesets, folders) in a single
-``settings.json`` file. Replaces the previous ``app_settings.json``,
-``rulesets.json``, and ``folders.json`` files.
+Persists all user configuration (app settings, rulesets, folders, AI) in a
+single ``settings.json`` file.
 """
 
 from pydantic import BaseModel, Field
 
+from backend.schemas.ai import AiSettings
 from backend.schemas.folder_config import FoldersConfig
-from backend.schemas.ollama import OllamaSettings
 from backend.schemas.ruleset import RulesetsConfig
 
 
@@ -25,4 +24,4 @@ class Settings(BaseModel):
     app: AppSettings = Field(default_factory=AppSettings)
     rulesets: RulesetsConfig = Field(default_factory=RulesetsConfig)
     folders: FoldersConfig = Field(default_factory=FoldersConfig)
-    ollama: OllamaSettings = Field(default_factory=OllamaSettings)
+    ai: AiSettings = Field(default_factory=AiSettings)

@@ -144,7 +144,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
   const [originalCommentData, setOriginalCommentData] = useState({ soundcloud_id: '', soundcloud_permalink: '' });
 
   // Autoedit state
-  const [ollamaAvailable, setOllamaAvailable] = useState(false);
+  const [aiAvailable, setAiAvailable] = useState(false);
   const [autoeditOpen, setAutoeditOpen] = useState(false);
   const [autoeditLoading, setAutoeditLoading] = useState(false);
   const [autoeditResult, setAutoeditResult] = useState<AutoeditResponse | null>(null);
@@ -153,9 +153,9 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
   useEffect(() => {
     let cancelled = false;
     const refresh = () =>
-      api.getOllamaStatus()
-        .then((s) => { if (!cancelled) setOllamaAvailable(s.available && s.models.length > 0); })
-        .catch(() => { if (!cancelled) setOllamaAvailable(false); });
+      api.getAiStatus()
+        .then((s) => { if (!cancelled) setAiAvailable(s.available); })
+        .catch(() => { if (!cancelled) setAiAvailable(false); });
     refresh();
     const id = window.setInterval(refresh, 30_000);
     return () => { cancelled = true; window.clearInterval(id); };
@@ -680,7 +680,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
       <div className="px-3 h-10 flex items-center justify-between border-b border-border/50 shrink-0 gap-2">
         <span className="text-xs text-muted-foreground truncate min-w-0 mr-2">{trackInfo?.file_name ?? selectedFile.file_name}</span>
         <div className="flex items-center gap-1 shrink-0">
-          {ollamaAvailable && (
+          {aiAvailable && (
             <Button
               variant="ghost"
               size="sm"

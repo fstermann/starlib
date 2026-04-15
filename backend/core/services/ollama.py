@@ -34,7 +34,7 @@ _process: subprocess.Popen | None = None
 
 
 def _base_url() -> str:
-    return settings_service.load().ollama.url.rstrip("/")
+    return settings_service.load().ai.ollama.url.rstrip("/")
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +201,7 @@ async def chat(
     await ensure_running()
 
     url = f"{_base_url()}/api/chat"
-    model = model or settings_service.load().ollama.model
+    model = model or settings_service.load().ai.ollama.model
 
     body: dict = {
         "model": model,
@@ -216,26 +216,3 @@ async def chat(
         resp.raise_for_status()
         data = resp.json()
         return data["message"]["content"]
-
-
-# ---------------------------------------------------------------------------
-# Settings
-# ---------------------------------------------------------------------------
-
-
-def get_settings() -> dict:
-    """Return current Ollama settings as a dict."""
-    return settings_service.load().ollama.model_dump()
-
-
-def update_settings(*, url: str | None = None, model: str | None = None) -> dict:
-    """Update persisted Ollama settings."""
-
-    def _mutate(s):
-        if url is not None:
-            s.ollama.url = url
-        if model is not None:
-            s.ollama.model = model
-
-    settings_service.update(_mutate)
-    return settings_service.load().ollama.model_dump()
