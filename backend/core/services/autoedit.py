@@ -127,18 +127,27 @@ async def _chat_with_active_provider(messages: list[dict[str, str]]) -> str:
 
 
 def _parse_llm_output(raw: str) -> dict[str, Any]:
-    """Best-effort JSON extraction; strips accidental prose around the object."""
+    """Best-effort JSON extraction; strips code fences and surrounding prose."""
+    text = raw.strip()
+    # Strip markdown code fences like ```json ... ``` or plain ``` ... ```.
+    if text.startswith("```"):
+        first_newline = text.find("\n")
+        if first_newline != -1:
+            text = text[first_newline + 1 :]
+        if text.endswith("```"):
+            text = text[: -len("```")]
+        text = text.strip()
     try:
-        return json.loads(raw)
+        return json.loads(text)
     except json.JSONDecodeError:
         pass
-    start = raw.find("{")
-    end = raw.rfind("}")
+    start = text.find("{")
+    end = text.rfind("}")
     if start != -1 and end > start:
         try:
-            return json.loads(raw[start : end + 1])
+            return json.loads(text[start : end + 1])
         except json.JSONDecodeError:
-            logger.warning("Failed to recover JSON from LLM output: %r", raw[:200])
+            logger.warning("Failed to recover JSON from LLM output: %r", text[:200])
     return {}
 
 
@@ -167,11 +176,28 @@ async def autoedit(
         except Exception:
             logger.exception("SoundCloud search failed for autoedit; continuing without it")
 
+    provider = settings_service.load().ai.provider
+    logger.info(
+        "Autoedit ▶ file=%s provider=%s current=%s sc_results=%d",
+        filename,
+        provider,
+        current,
+        len(sc_results),
+    )
+    if sc_results:
+        logger.info("Autoedit ▶ soundcloud candidates: %s", json.dumps(sc_results, ensure_ascii=False))
+
     messages = _build_messages(current, filename, sc_results)
+    logger.debug("Autoedit ▶ prompt payload: %s", messages[-1]["content"])
+
     raw = await _chat_with_active_provider(messages)
+    logger.info("Autoedit ◀ raw LLM output (%d chars): %s", len(raw), raw)
+
     parsed = _parse_llm_output(raw)
+    logger.info("Autoedit ◀ parsed JSON: %s", json.dumps(parsed, ensure_ascii=False))
 
     filtered = {k: v for k, v in parsed.items() if k in _ALLOWED_FIELDS and v not in (None, "", [])}
+    logger.info("Autoedit ◀ filtered suggestions: %s", json.dumps(filtered, ensure_ascii=False))
     suggestions = TrackInfoUpdateRequest.model_validate(filtered)
 
     return {

@@ -10,6 +10,19 @@ from backend.core.services import autoedit
 from soundcloud_tools.handler.track import TrackInfo
 
 
+@pytest.fixture(autouse=True)
+def _default_provider_ollama():
+    """Force the autoedit pipeline to dispatch to Ollama unless a test overrides it."""
+    from backend.schemas.ai import AiSettings
+    from backend.schemas.settings import Settings
+
+    with patch(
+        "backend.core.services.autoedit.settings_service.load",
+        return_value=Settings(ai=AiSettings(provider="ollama")),
+    ):
+        yield
+
+
 @pytest.fixture
 def track_info() -> TrackInfo:
     return TrackInfo(
@@ -116,6 +129,11 @@ async def test_autoedit_continues_when_soundcloud_search_fails(track_info: Track
 
 def test_parse_llm_output_handles_raw_json() -> None:
     assert autoedit._parse_llm_output('{"a": 1}') == {"a": 1}
+
+
+def test_parse_llm_output_strips_markdown_fences() -> None:
+    assert autoedit._parse_llm_output('```json\n{"a": 1}\n```') == {"a": 1}
+    assert autoedit._parse_llm_output('```\n{"a": 1}\n```') == {"a": 1}
 
 
 def test_parse_llm_output_returns_empty_on_garbage() -> None:

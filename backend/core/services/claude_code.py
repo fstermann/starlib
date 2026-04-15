@@ -31,7 +31,7 @@ def is_installed() -> bool:
     return shutil.which("claude") is not None
 
 
-async def chat(
+async def chat(  # noqa: C901
     messages: list[dict[str, str]],
     *,
     model: str | None = None,
@@ -49,23 +49,43 @@ async def chat(
     model = model or settings_service.load().ai.claude_code.model
 
     system_prompt = ""
-    folded: list[str] = []
+    turns: list[tuple[str, str]] = []
     for m in messages:
-        role = m.get("role")
+        role = m.get("role", "")
         content = m.get("content", "")
         if role == "system":
             system_prompt = content
-        elif role == "user":
-            folded.append(f"<user>\n{content}\n</user>")
-        elif role == "assistant":
-            folded.append(f"<assistant>\n{content}\n</assistant>")
-    prompt = "\n\n".join(folded)
-    if format == "json":
-        prompt += "\n\nRespond with a single JSON object and nothing else."
+        else:
+            turns.append((role, content))
 
+    # Fold the few-shot pairs into labeled examples, with the final user turn
+    # as the live input. Claude treats this as regular text (not turns) since
+    # `claude -p` is single-shot, so labels are what make the structure legible.
+    example_pairs: list[str] = []
+    i = 0
+    while i < len(turns) - 1:
+        u_role, u_content = turns[i]
+        a_role, a_content = turns[i + 1]
+        if u_role == "user" and a_role == "assistant":
+            example_pairs.append(f"Example input:\n{u_content}\n\nExample output:\n{a_content}")
+            i += 2
+        else:
+            break
+    live_input = turns[-1][1] if turns and turns[-1][0] == "user" else ""
+
+    parts: list[str] = []
+    if example_pairs:
+        parts.append("Here are examples of the task:\n\n" + "\n\n---\n\n".join(example_pairs))
+    parts.append(f"Now apply the same task to this input:\n{live_input}")
+    if format == "json":
+        parts.append("Respond with only a single JSON object. No prose, no code fences.")
+    prompt = "\n\n".join(parts)
+
+    # `--system-prompt` replaces Claude Code's default agentic prompt, so the
+    # model treats this as a pure instruction-following task.
     args = ["claude", "-p", prompt, "--model", model]
     if system_prompt:
-        args += ["--append-system-prompt", system_prompt]
+        args += ["--system-prompt", system_prompt]
 
     proc = await asyncio.create_subprocess_exec(
         *args,
