@@ -23,7 +23,10 @@ The OAuth flow supports two modes depending on the environment:
 - **Backend-redirect flow** (desktop app): SoundCloud redirects to the backend (`/auth/soundcloud/redirect`), which exchanges the code server-side and redirects the browser to the frontend callback with only the `state` parameter. The frontend then fetches the result via `GET /auth/soundcloud/result?state=…`.
 - **Direct callback flow** (dev/web): SoundCloud redirects directly to the frontend with `code` and `state`. The frontend sends both to `POST /auth/soundcloud/callback`, which exchanges the code server-side.
 
-The `return_to` query parameter on `/authorize` controls which flow is used. The frontend passes `window.location.origin + "/auth/soundcloud/callback"` so the backend knows where to redirect after exchange.
+The `return_to` query parameter on `/authorize` controls which flow is used:
+
+- Web dev: `window.location.origin + "/auth/soundcloud/callback"` (e.g. `http://localhost:3000/...`).
+- Desktop (Tauri): `starlib://localhost/auth/soundcloud/callback`. The app registers `starlib://` as a custom URL scheme and opens the SoundCloud authorization URL in the **system browser** via `@tauri-apps/plugin-shell`. This is what makes "Log in with Google" (and similar popup-based providers) work — popups fail inside the Tauri webview but work fine in a real browser. After the backend exchanges the code, it redirects the browser to `starlib://…`; the OS hands the URL back to the app, `tauri-plugin-deep-link` emits it, and a global listener routes to the frontend callback page.
 
 ### Backend-redirect flow (default)
 
@@ -67,7 +70,7 @@ Browser                  Frontend               Backend                  SoundCl
 
 **Why the backend handles token exchange:** SoundCloud treats all clients as confidential: a `client_secret` is required for every token exchange and refresh. Keeping this in the backend ensures the secret is never exposed to the browser.
 
-**Why the backend-redirect flow exists:** In the desktop app (Tauri), SoundCloud cannot redirect to `tauri://` URLs. Instead, the `redirect_uri` points to the backend, which exchanges the code and then redirects the browser to the frontend callback via the `return_to` parameter.
+**Why the backend-redirect flow exists:** In the desktop app (Tauri), SoundCloud cannot redirect to `tauri://` or `starlib://` URLs directly (its dashboard only accepts `http(s)://` redirect URIs). Instead, the registered `redirect_uri` points to the backend, which exchanges the code and then redirects the browser to `return_to` — which for the desktop app is the `starlib://` deep link that re-enters the app.
 
 ## Token storage
 

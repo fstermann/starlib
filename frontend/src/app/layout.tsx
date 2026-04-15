@@ -10,6 +10,7 @@ import { LayoutShell } from "@/components/layout-shell";
 import { WaveformPlayer } from "@/components/waveform-player";
 import { UpdateBanner } from "@/components/update-banner";
 import { LogInit } from "@/components/log-init";
+import { DeepLinkListener } from "@/components/deep-link-listener";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { ThemeProvider } from "next-themes";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -43,6 +44,7 @@ export default function RootLayout({
         className={`${inter.variable} ${geistMono.variable} antialiased h-screen flex flex-row bg-background text-foreground overflow-hidden`}
       >
         <LogInit />
+        <DeepLinkListener />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <TooltipProvider>
           <BackendGate>
