@@ -67,10 +67,8 @@ class BackendSettings(BaseSettings):
     # reloader spawns a subprocess, which breaks inside a frozen binary.
     reload: bool = False
 
-    # CORS Settings — backend binds to 127.0.0.1 only, so a permissive regex
-    # is applied in backend/main.py (covers the Tauri webview origin across
-    # platforms).
-    cors_credentials: bool = True
+    # CORS Settings — the origin allowlist is a regex defined in
+    # backend/main.py; see the comment there.
     cors_methods: list[str] = ["*"]
     cors_headers: list[str] = ["*"]
 

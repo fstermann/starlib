@@ -81,13 +81,14 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Configure CORS. Backend binds to 127.0.0.1 only, so permissive origin
-    # matching is safe — covers the Tauri webview origin across platforms
-    # (tauri://localhost, http(s)://tauri.localhost, http://localhost:3000 in dev).
+    # Configure CORS. Explicitly allow only the Tauri webview origins (across
+    # platforms) and the Next.js dev server. Without this, any site the user
+    # visits could issue requests to the loopback backend.
+    # allow_credentials is False — we use Bearer tokens, never cookies.
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r".*",
-        allow_credentials=settings.cors_credentials,
+        allow_origin_regex=r"^(tauri://localhost|https?://tauri\.localhost|http://localhost:\d+)$",
+        allow_credentials=False,
         allow_methods=settings.cors_methods,
         allow_headers=settings.cors_headers,
         expose_headers=["X-Cache-Loading"],
