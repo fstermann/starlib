@@ -6,12 +6,56 @@ No UI framework dependencies.
 """
 
 import logging
+from typing import Any
+
+import httpx
 
 from soundcloud_tools.client import Client
 from soundcloud_tools.handler.track import TrackInfo
 from soundcloud_tools.models import Track
 
 logger = logging.getLogger(__name__)
+
+_SC_API_BASE = "https://api.soundcloud.com"
+
+
+def _summarize_api_track(t: dict[str, Any]) -> dict[str, Any]:
+    """Project an api.soundcloud.com track dict down to the fields we care about."""
+    pm = t.get("publisher_metadata") or {}
+    user = t.get("user") or {}
+    artist = pm.get("artist") or user.get("username")
+    artwork = t.get("artwork_url")
+    if artwork:
+        artwork = artwork.replace("-large.", "-t500x500.")
+    release_date = t.get("release_date") or t.get("created_at") or ""
+    return {
+        "id": t.get("id"),
+        "title": t.get("title"),
+        "artist": artist,
+        "genre": t.get("genre") or None,
+        "release_date": release_date[:10] or None,
+        "permalink_url": t.get("permalink_url"),
+        "artwork_url": artwork,
+    }
+
+
+async def search_tracks_with_token(access_token: str, query: str, limit: int = 20) -> list[dict[str, Any]]:
+    """Search tracks via ``api.soundcloud.com`` with the user's OAuth token.
+
+    Matches the frontend pattern: ``GET /tracks?q=...&limit=...`` with
+    ``Authorization: OAuth <token>``. Returns summarized track dicts.
+    """
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"{_SC_API_BASE}/tracks",
+            params={"q": query, "limit": limit},
+            headers={"Authorization": f"OAuth {access_token}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    if not isinstance(data, list):
+        return []
+    return [_summarize_api_track(t) for t in data]
 
 
 async def search_tracks(query: str, client: Client | None = None) -> list[Track]:

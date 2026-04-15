@@ -169,6 +169,18 @@ async def list_models() -> list[OllamaModel]:
         return []
 
 
+async def pull_model(name: str) -> None:
+    """Download a model via Ollama's ``/api/pull`` endpoint.
+
+    Blocks until the pull finishes. Raises ``httpx.HTTPError`` on failure.
+    """
+    await ensure_running()
+    url = f"{_base_url()}/api/pull"
+    async with httpx.AsyncClient(timeout=None) as client:
+        resp = await client.post(url, json={"name": name, "stream": False})
+        resp.raise_for_status()
+
+
 async def chat(
     messages: list[dict[str, str]],
     *,

@@ -158,21 +158,17 @@ async def stop_ollama() -> AiStatusResponse:
 
 @router.post("/ollama/pull-model")
 async def pull_ollama_model(body: OllamaPullRequest) -> dict:
-    """Pull an Ollama model by name via ``ollama pull``."""
+    """Pull an Ollama model by name via ``POST /api/pull``."""
     import httpx
 
-    await ollama_service.ensure_running()
-    url = f"{ollama_service._base_url()}/api/pull"
     try:
-        async with httpx.AsyncClient(timeout=None) as client:
-            resp = await client.post(url, json={"name": body.name, "stream": False})
-            resp.raise_for_status()
+        await ollama_service.pull_model(body.name)
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to pull model: {exc}",
         ) from exc
-    return {"success": True, "name": body.name}
+    return {"success": True, "name": body.name, "message": None}
 
 
 # ---------------------------------------------------------------------------

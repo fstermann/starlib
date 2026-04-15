@@ -209,6 +209,21 @@ export interface AiModelsResponse {
   models: AiModel[];
 }
 
+// ==================== Autoedit Types ====================
+
+export interface AutoeditSoundcloudMatch {
+  id: number;
+  title: string;
+  artist: string;
+  permalink_url: string;
+  artwork_url?: string | null;
+}
+
+export interface AutoeditResponse {
+  suggestions: TrackInfoUpdateRequest;
+  soundcloud_match?: AutoeditSoundcloudMatch | null;
+}
+
 // ==================== Folder Config Types ====================
 
 export interface FolderConfig {
@@ -533,6 +548,13 @@ export const api = {
     return fetchApi('/api/ai/ollama/stop', { method: 'POST' });
   },
 
+  async pullOllamaModel(name: string): Promise<{ success: boolean; name: string; message?: string | null }> {
+    return fetchApi('/api/ai/ollama/pull-model', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  },
+
   async setAnthropicApiKey(apiKey: string): Promise<AiSettings> {
     return fetchApi('/api/ai/anthropic/credentials', {
       method: 'POST',
@@ -542,5 +564,17 @@ export const api = {
 
   async deleteAnthropicApiKey(): Promise<AiSettings> {
     return fetchApi('/api/ai/anthropic/credentials', { method: 'DELETE' });
+  },
+
+  // ==================== Autoedit ====================
+
+  async autoeditTrackInfo(filePath: string): Promise<AutoeditResponse> {
+    const encoded = encodeURIComponent(filePath);
+    const { ensureValidToken } = await import('./auth');
+    const token = await ensureValidToken().catch(() => null);
+    return fetchApi(`/api/metadata/files/${encoded}/autoedit`, {
+      method: 'POST',
+      headers: token ? { Authorization: `OAuth ${token}` } : {},
+    });
   },
 };

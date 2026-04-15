@@ -6,13 +6,17 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from fastapi_pagination import Page, paginate
 
 from backend.api.deps import get_root_folder, validate_file_path, validate_folder_mode
 from backend.api.metadata._helpers import resolve_folder
+from backend.core.services import ai_provider as ai_provider_service
+from backend.core.services import autoedit as autoedit_service
 from backend.core.services import cache_db, collection, metadata
 from backend.schemas.metadata import (
+    AutoeditResponse,
+    AutoeditSoundcloudMatch,
     BatchInfoRequest,
     BatchResultItem,
     BatchUpdateRequest,
@@ -320,6 +324,56 @@ def get_file_info(
         missing_fields=readiness["missing_fields"],
         issues=readiness["issues"],
         **_track_info_to_response_dict(track_info),
+    )
+
+
+@router.post("/files/{file_path:path}/autoedit", response_model=AutoeditResponse)
+async def autoedit_file(
+    file_path: str,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> AutoeditResponse:
+    """Suggest metadata edits for a single file using the configured AI provider.
+
+    Uses the current metadata, filename, and top SoundCloud search results as
+    context. Returns suggested field updates for the user to review.
+    """
+    resolved_path = validate_file_path(file_path, root_folder)
+
+    ready, reason = await ai_provider_service.active_provider_ready()
+    if not ready:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=reason)
+
+    try:
+        track_info = metadata.get_track_info(resolved_path, root_folder)
+    except Exception as e:
+        logger.exception("Failed to read track metadata for autoedit")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to read track metadata"
+        ) from e
+
+    access_token: str | None = None
+    if authorization and authorization.lower().startswith("oauth "):
+        access_token = authorization.split(" ", 1)[1].strip() or None
+
+    try:
+        result = await autoedit_service.autoedit(track_info, resolved_path.name, access_token)
+    except Exception as e:
+        logger.exception("Autoedit pipeline failed")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Autoedit failed") from e
+
+    match = result["soundcloud_match"]
+    return AutoeditResponse(
+        suggestions=result["suggestions"],
+        soundcloud_match=AutoeditSoundcloudMatch(
+            id=match["id"],
+            title=match["title"],
+            artist=match["artist"],
+            permalink_url=match["permalink_url"],
+            artwork_url=match.get("artwork_url"),
+        )
+        if match
+        else None,
     )
 
 
