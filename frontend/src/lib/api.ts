@@ -526,6 +526,11 @@ export const api = {
 
   async autoeditTrackInfo(filePath: string): Promise<AutoeditResponse> {
     const encoded = encodeURIComponent(filePath);
-    return fetchApi(`/api/metadata/files/${encoded}/autoedit`, { method: 'POST' });
+    const { ensureValidToken } = await import('./auth');
+    const token = await ensureValidToken().catch(() => null);
+    return fetchApi(`/api/metadata/files/${encoded}/autoedit`, {
+      method: 'POST',
+      headers: token ? { Authorization: `OAuth ${token}` } : {},
+    });
   },
 };

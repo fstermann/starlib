@@ -93,23 +93,9 @@ _ALLOWED_FIELDS = {
 }
 
 
-def _summarize_sc_track(track: Any) -> dict[str, Any]:
-    """Project a SoundCloud ``Track`` down to the fields the LLM needs."""
-    meta = soundcloud_service.extract_metadata_from_sc_track(track)
-    return {
-        "id": track.id,
-        "title": meta["title"],
-        "artist": meta["artist"],
-        "genre": meta["genre"] or None,
-        "release_date": meta["release_date"].isoformat() if meta["release_date"] else None,
-        "permalink_url": meta["permalink_url"],
-        "artwork_url": meta["artwork_url"],
-    }
-
-
 def _current_metadata_for_prompt(track_info: TrackInfo) -> dict[str, Any]:
     """Flatten the current metadata to plain JSON-safe values for the prompt."""
-    data = track_info.model_dump(mode="json", exclude_none=True)
+    data = track_info.model_dump(mode="json", exclude_none=True, include=_ALLOWED_FIELDS)
     return {k: v for k, v in data.items() if k in _ALLOWED_FIELDS}
 
 
@@ -143,23 +129,28 @@ def _parse_llm_output(raw: str) -> dict[str, Any]:
     return {}
 
 
-async def autoedit(track_info: TrackInfo, filename: str) -> dict[str, Any]:
+async def autoedit(
+    track_info: TrackInfo,
+    filename: str,
+    access_token: str | None = None,
+) -> dict[str, Any]:
     """Run the autoedit pipeline for a single file.
 
     Returns a dict with ``suggestions`` (validated ``TrackInfoUpdateRequest``)
     and ``soundcloud_match`` (top SoundCloud candidate, if any).
+
+    ``access_token`` is the user's SoundCloud OAuth token; if omitted, the
+    SoundCloud search is skipped.
     """
     current = _current_metadata_for_prompt(track_info)
 
     query_seed = " ".join(filter(None, [str(track_info.artist or ""), track_info.title or ""])).strip()
     query = metadata_service.prepare_search_query(query_seed or filename)
 
-    sc_tracks = []
     sc_results: list[dict[str, Any]] = []
-    if query:
+    if query and access_token:
         try:
-            sc_tracks = (await soundcloud_service.search_tracks(query))[:_MAX_SC_RESULTS]
-            sc_results = [_summarize_sc_track(t) for t in sc_tracks]
+            sc_results = (await soundcloud_service.search_tracks_with_token(access_token, query))[:_MAX_SC_RESULTS]
         except Exception:
             logger.exception("SoundCloud search failed for autoedit; continuing without it")
 

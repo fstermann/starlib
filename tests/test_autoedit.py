@@ -25,7 +25,7 @@ async def test_autoedit_returns_validated_suggestions(track_info: TrackInfo) -> 
 
     with (
         patch(
-            "backend.core.services.autoedit.soundcloud_service.search_tracks",
+            "backend.core.services.autoedit.soundcloud_service.search_tracks_with_token",
             new_callable=AsyncMock,
             return_value=[],
         ),
@@ -57,7 +57,7 @@ async def test_autoedit_drops_unknown_fields_and_empty_values(track_info: TrackI
 
     with (
         patch(
-            "backend.core.services.autoedit.soundcloud_service.search_tracks",
+            "backend.core.services.autoedit.soundcloud_service.search_tracks_with_token",
             new_callable=AsyncMock,
             return_value=[],
         ),
@@ -79,7 +79,7 @@ async def test_autoedit_recovers_from_junk_around_json(track_info: TrackInfo) ->
 
     with (
         patch(
-            "backend.core.services.autoedit.soundcloud_service.search_tracks",
+            "backend.core.services.autoedit.soundcloud_service.search_tracks_with_token",
             new_callable=AsyncMock,
             return_value=[],
         ),
@@ -98,7 +98,7 @@ async def test_autoedit_recovers_from_junk_around_json(track_info: TrackInfo) ->
 async def test_autoedit_continues_when_soundcloud_search_fails(track_info: TrackInfo) -> None:
     with (
         patch(
-            "backend.core.services.autoedit.soundcloud_service.search_tracks",
+            "backend.core.services.autoedit.soundcloud_service.search_tracks_with_token",
             new_callable=AsyncMock,
             side_effect=RuntimeError("SC down"),
         ),
@@ -108,7 +108,7 @@ async def test_autoedit_continues_when_soundcloud_search_fails(track_info: Track
             return_value="{}",
         ),
     ):
-        result = await autoedit.autoedit(track_info, "file.mp3")
+        result = await autoedit.autoedit(track_info, "file.mp3", access_token="tok")
 
     assert result["soundcloud_match"] is None
     assert result["suggestions"].model_dump(exclude_unset=True) == {}

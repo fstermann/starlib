@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from fastapi_pagination import Page, paginate
 
 from backend.api.deps import get_root_folder, validate_file_path, validate_folder_mode
@@ -331,6 +331,7 @@ def get_file_info(
 async def autoedit_file(
     file_path: str,
     root_folder: Annotated[Path, Depends(get_root_folder)],
+    authorization: Annotated[str | None, Header()] = None,
 ) -> AutoeditResponse:
     """Suggest metadata edits for a single file using the local Ollama model.
 
@@ -353,8 +354,12 @@ async def autoedit_file(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to read track metadata"
         ) from e
 
+    access_token: str | None = None
+    if authorization and authorization.lower().startswith("oauth "):
+        access_token = authorization.split(" ", 1)[1].strip() or None
+
     try:
-        result = await autoedit_service.autoedit(track_info, resolved_path.name)
+        result = await autoedit_service.autoedit(track_info, resolved_path.name, access_token)
     except Exception as e:
         logger.exception("Autoedit pipeline failed")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Autoedit failed") from e
