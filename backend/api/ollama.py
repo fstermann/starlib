@@ -1,13 +1,20 @@
 """REST API for Ollama integration."""
 
-from fastapi import APIRouter
+import logging
+
+import httpx
+from fastapi import APIRouter, HTTPException, status
 
 from backend.core.services import ollama as ollama_service
 from backend.schemas.ollama import (
     OllamaModelsResponse,
+    OllamaPullModelRequest,
+    OllamaPullModelResponse,
     OllamaSettingsRequest,
     OllamaStatusResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ollama", tags=["ollama"])
 
@@ -56,6 +63,20 @@ async def get_models() -> OllamaModelsResponse:
     """Return installed models with details (name, size, digest)."""
     models = await ollama_service.list_models()
     return OllamaModelsResponse(models=models)
+
+
+@router.post("/pull-model", response_model=OllamaPullModelResponse)
+async def pull_model(body: OllamaPullModelRequest) -> OllamaPullModelResponse:
+    """Download an Ollama model by name. Blocks until the pull finishes."""
+    try:
+        await ollama_service.pull_model(body.name)
+    except httpx.HTTPError as exc:
+        logger.warning("Ollama pull failed for %s: %s", body.name, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to pull model {body.name!r}: {exc}",
+        ) from exc
+    return OllamaPullModelResponse(success=True, name=body.name)
 
 
 @router.get("/settings")

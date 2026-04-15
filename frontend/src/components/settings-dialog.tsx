@@ -84,6 +84,19 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+const RECOMMENDED_MODELS: { name: string; tier: string; description: string }[] = [
+  {
+    name: "gemma4:e2b",
+    tier: "Minimal",
+    description: "~2 GB, fast on any laptop CPU. Good for basic casing and tag cleanups.",
+  },
+  {
+    name: "gemma4:26b",
+    tier: "Advanced",
+    description: "~16 GB, higher-quality suggestions. Recommended on machines with >=32 GB RAM or a GPU.",
+  },
+];
+
 interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -228,6 +241,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       setOllamaModels([]);
     } finally {
       setOllamaChecking(false);
+    }
+  }
+
+  const [pullingModel, setPullingModel] = useState<string | null>(null);
+  const [pullError, setPullError] = useState<string | null>(null);
+
+  async function handleOllamaPullModel(name: string) {
+    setPullingModel(name);
+    setPullError(null);
+    try {
+      await api.pullOllamaModel(name);
+      const { models } = await api.getOllamaModels();
+      setOllamaModels(models);
+      // Auto-select the newly pulled model if none is selected yet.
+      if (!ollamaModel) {
+        await api.updateOllamaSettings({ model: name });
+        setOllamaModel(name);
+      }
+    } catch (err) {
+      setPullError(err instanceof Error ? err.message : "Failed to pull model");
+    } finally {
+      setPullingModel(null);
     }
   }
 
@@ -618,6 +653,66 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Tooltip>
                   </div>
                 </div>
+
+                {/* Recommended models */}
+                {ollamaAvailable && (
+                  <div className="flex flex-col gap-2">
+                    <Label className="text-sm">Recommended models</Label>
+                    <p className="text-xs text-muted-foreground">
+                      One-click install. Pulling a model can take several minutes the first time.
+                    </p>
+                    {pullError && (
+                      <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1">
+                        {pullError}
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-2">
+                      {RECOMMENDED_MODELS.map((rec) => {
+                        const installed = ollamaModels.some((m) => m.name === rec.name);
+                        const isPulling = pullingModel === rec.name;
+                        return (
+                          <div
+                            key={rec.name}
+                            className="flex items-center gap-3 rounded-md border border-border/50 bg-muted/20 px-3 py-2"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <code className="text-xs font-mono font-medium">{rec.name}</code>
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                                  {rec.tier}
+                                </span>
+                                {installed && (
+                                  <span className="text-[10px] uppercase tracking-wider text-green-500/90">
+                                    installed
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5">{rec.description}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 shrink-0"
+                              onClick={() => handleOllamaPullModel(rec.name)}
+                              disabled={installed || isPulling || pullingModel !== null}
+                            >
+                              {isPulling ? (
+                                <>
+                                  <Loader2 className="size-3 animate-spin" />
+                                  Pulling…
+                                </>
+                              ) : installed ? (
+                                "Installed"
+                              ) : (
+                                "Install"
+                              )}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Model selection */}
                 {ollamaModels.length > 0 && (

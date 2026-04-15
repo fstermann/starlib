@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useLayoutEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { api, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest, type Ruleset, type RuleType } from '@/lib/api';
+import { api, type AutoeditResponse, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest, type Ruleset, type RuleType } from '@/lib/api';
+import { AutoeditDialog } from './autoedit-dialog';
 import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, removeMix } from '@/lib/string-utils';
 import { soundCloudSource } from '@/lib/sources/soundcloud';
 import type { SourceTrack } from '@/lib/sources/types';
@@ -141,6 +142,60 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
   // Original values for SC-link change detection
   const [originalScLinkEnabled, setOriginalScLinkEnabled] = useState(true);
   const [originalCommentData, setOriginalCommentData] = useState({ soundcloud_id: '', soundcloud_permalink: '' });
+
+  // Autoedit state
+  const [ollamaAvailable, setOllamaAvailable] = useState(false);
+  const [autoeditOpen, setAutoeditOpen] = useState(false);
+  const [autoeditLoading, setAutoeditLoading] = useState(false);
+  const [autoeditResult, setAutoeditResult] = useState<AutoeditResponse | null>(null);
+  const [autoeditError, setAutoeditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () =>
+      api.getOllamaStatus()
+        .then((s) => { if (!cancelled) setOllamaAvailable(s.available && s.models.length > 0); })
+        .catch(() => { if (!cancelled) setOllamaAvailable(false); });
+    refresh();
+    const id = window.setInterval(refresh, 30_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, []);
+
+  const handleAutoedit = async () => {
+    if (!trackInfo) return;
+    setAutoeditOpen(true);
+    setAutoeditLoading(true);
+    setAutoeditError(null);
+    setAutoeditResult(null);
+    try {
+      const res = await api.autoeditTrackInfo(trackInfo.file_path);
+      setAutoeditResult(res);
+    } catch (err) {
+      setAutoeditError(err instanceof Error ? err.message : 'Autoedit failed');
+    } finally {
+      setAutoeditLoading(false);
+    }
+  };
+
+  const handleApplyAutoedit = (accepted: Partial<TrackInfoUpdateRequest>) => {
+    setFormData((prev) => {
+      const next = { ...prev };
+      (Object.keys(accepted) as Array<keyof TrackInfoUpdateRequest>).forEach((key) => {
+        const value = accepted[key];
+        if (key in next) {
+          if (Array.isArray(value)) {
+            (next as Record<string, string>)[key] = value.join(', ');
+          } else if (value === null || value === undefined) {
+            (next as Record<string, string>)[key] = '';
+          } else {
+            (next as Record<string, string>)[key] = String(value);
+          }
+        }
+      });
+      return next;
+    });
+    toast.success('Autoedit suggestions applied — review and save.');
+  };
 
   // Confirm dialog
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; message: string; onConfirm: () => void }>({
@@ -621,17 +676,42 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Panel header: filename + close */}
-      <div className="px-3 h-10 flex items-center justify-between border-b border-border/50 shrink-0">
+      {/* Panel header: filename + autoedit + close */}
+      <div className="px-3 h-10 flex items-center justify-between border-b border-border/50 shrink-0 gap-2">
         <span className="text-xs text-muted-foreground truncate min-w-0 mr-2">{trackInfo?.file_name ?? selectedFile.file_name}</span>
-        <button
-          onClick={onClose}
-          className="cursor-pointer shrink-0 size-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-          title="Close editor"
-        >
-          <X className="size-3" />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {ollamaAvailable && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={handleAutoedit}
+              disabled={!trackInfo || autoeditLoading}
+              title="Suggest metadata cleanups via the local LLM"
+            >
+              <Sparkles className="size-3 text-amber-400" />
+              Autoedit
+            </Button>
+          )}
+          <button
+            onClick={onClose}
+            className="cursor-pointer shrink-0 size-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+            title="Close editor"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
       </div>
+
+      <AutoeditDialog
+        open={autoeditOpen}
+        onOpenChange={setAutoeditOpen}
+        loading={autoeditLoading}
+        error={autoeditError}
+        result={autoeditResult}
+        currentValues={formData}
+        onApply={handleApplyAutoedit}
+      />
 
       {/* Error */}
       {error && (

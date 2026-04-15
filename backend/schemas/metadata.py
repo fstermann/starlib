@@ -47,6 +47,23 @@ class TrackInfoUpdateRequest(_TagFieldsMixin):
     artwork_data: str | None = None  # base64-encoded image bytes
 
 
+class AutoeditSoundcloudMatch(BaseModel):
+    """Reference info for the top SoundCloud match used by autoedit."""
+
+    id: int
+    title: str
+    artist: str
+    permalink_url: str
+    artwork_url: str | None = None
+
+
+class AutoeditResponse(BaseModel):
+    """Response from the LLM autoedit pipeline."""
+
+    suggestions: TrackInfoUpdateRequest
+    soundcloud_match: AutoeditSoundcloudMatch | None = None
+
+
 class FinalizeRequest(BaseModel):
     """Request to finalize a track (convert and move)."""
 

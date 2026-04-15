@@ -180,6 +180,19 @@ export interface OllamaSettings {
   model: string;
 }
 
+export interface AutoeditSoundcloudMatch {
+  id: number;
+  title: string;
+  artist: string;
+  permalink_url: string;
+  artwork_url?: string | null;
+}
+
+export interface AutoeditResponse {
+  suggestions: TrackInfoUpdateRequest;
+  soundcloud_match?: AutoeditSoundcloudMatch | null;
+}
+
 // ==================== Folder Config Types ====================
 
 export interface FolderConfig {
@@ -502,5 +515,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(settings),
     });
+  },
+
+  async pullOllamaModel(name: string): Promise<{ success: boolean; name: string; message?: string | null }> {
+    return fetchApi('/api/ollama/pull-model', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  async autoeditTrackInfo(filePath: string): Promise<AutoeditResponse> {
+    const encoded = encodeURIComponent(filePath);
+    return fetchApi(`/api/metadata/files/${encoded}/autoedit`, { method: 'POST' });
   },
 };

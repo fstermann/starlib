@@ -38,3 +38,17 @@ class OllamaSettingsRequest(BaseModel):
 
     url: str | None = None
     model: str | None = None
+
+
+class OllamaPullModelRequest(BaseModel):
+    """Request body for POST /ollama/pull-model."""
+
+    name: str
+
+
+class OllamaPullModelResponse(BaseModel):
+    """Response for POST /ollama/pull-model."""
+
+    success: bool
+    name: str
+    message: str | None = None
