@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { fetchApi } from "@/lib/api";
@@ -24,8 +24,12 @@ function CallbackHandler() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const exchanged = useRef(false);
 
   useEffect(() => {
+    if (exchanged.current) return;
+    exchanged.current = true;
+
     const code = searchParams.get("code");
     const state = searchParams.get("state");
     const errorParam = searchParams.get("error");
@@ -44,6 +48,7 @@ function CallbackHandler() {
       storeTokens(data.access_token, data.refresh_token, data.expires_in);
       localStorage.setItem("sc_user", JSON.stringify(data.user));
       sessionStorage.removeItem("oauth_state");
+      window.dispatchEvent(new Event("auth-changed"));
       router.push("/meta-editor");
     };
 

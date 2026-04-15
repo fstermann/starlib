@@ -81,10 +81,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Configure CORS
+    # Configure CORS. Backend binds to 127.0.0.1 only, so permissive origin
+    # matching is safe — covers the Tauri webview origin across platforms
+    # (tauri://localhost, http(s)://tauri.localhost, http://localhost:3000 in dev).
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origin_regex=r".*",
         allow_credentials=settings.cors_credentials,
         allow_methods=settings.cors_methods,
         allow_headers=settings.cors_headers,

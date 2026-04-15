@@ -1,6 +1,7 @@
 .venv
 .env
 .cache
+.app-support
 .oauth_cache.json
 *.py[co]
 ca.crt

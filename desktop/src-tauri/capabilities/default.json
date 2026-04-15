@@ -23,6 +23,7 @@
     "store:default",
     "process:allow-restart",
     "process:allow-exit",
+    "deep-link:default",
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [

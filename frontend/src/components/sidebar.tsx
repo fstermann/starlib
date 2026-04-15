@@ -28,12 +28,17 @@ export function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("sc_user");
-      if (stored) setUser(JSON.parse(stored));
-    } catch {
-      // ignore malformed data
-    }
+    const readUser = () => {
+      try {
+        const stored = localStorage.getItem("sc_user");
+        setUser(stored ? JSON.parse(stored) : null);
+      } catch {
+        // ignore malformed data
+      }
+    };
+    readUser();
+    window.addEventListener("auth-changed", readUser);
+    return () => window.removeEventListener("auth-changed", readUser);
   }, []);
 
   function handleDisconnect() {

@@ -11,6 +11,7 @@ fn app_config_dir() -> PathBuf {
 
 use tauri::Emitter;
 use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_shell::ShellExt;
 
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
@@ -164,7 +165,18 @@ fn start_backend(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -185,8 +197,20 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             start_backend(&app.handle());
+
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    log::info!("[deep-link] received: {url}");
+                    let _ = handle.emit("deep-link", url.to_string());
+                    if let Some(window) = handle.get_webview_window("main") {
+                        let _ = window.set_focus();
+                    }
+                }
+            });
 
             Ok(())
         })
