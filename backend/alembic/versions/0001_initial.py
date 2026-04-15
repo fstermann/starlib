@@ -7,7 +7,7 @@ Create Date: 2026-04-14 15:37:49.615652+00:00
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 import sqlmodel

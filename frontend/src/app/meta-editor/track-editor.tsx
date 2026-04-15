@@ -217,7 +217,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
     const parsed = parseFilename(trackInfo.file_name);
     const joinList = (v: string | string[] | null | undefined): string =>
       Array.isArray(v) ? v.join(', ') : (v ?? '');
-    const newFormData: typeof emptyFormData = {
+    const originalData: typeof emptyFormData = {
       title: trackInfo.title || parsed.title || '',
       artist: joinList(trackInfo.artist) || parsed.artist || '',
       bpm: trackInfo.bpm?.toString() || '',
@@ -235,7 +235,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
     const existingPending = pendingFieldEdits.get(trackInfo.file_path) ?? {};
     const newFormData: typeof emptyFormData = { ...originalData, ...existingPending } as typeof emptyFormData;
     setFormData(newFormData);
-    setOriginalFormData(newFormData);
+    setOriginalFormData(originalData);
     setReleaseYearTouched(false);
     const parsedComment = parseComment(trackInfo.starlib_meta);
     setCommentData(parsedComment);
@@ -385,20 +385,20 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
   const formComplete =
     !!formData.title && !!formData.artist && !!formData.genre && !!formData.release_date && !!artworkUrl;
 
-  const handleFormChange = (field: FormFieldKey, value: string) => {
-    setFormData(prev => {
-      const next = { ...prev, [field]: value };
-      // Auto-sync release_year from release_date when the user hasn't manually
-      // overridden the year (issue #285: year ← date on edit, both stay editable).
-      if (field === 'release_date' && !releaseYearTouched) {
-        const parsed = value && isValid(parse(value, 'yyyy-MM-dd', new Date()))
-          ? parse(value, 'yyyy-MM-dd', new Date())
-          : null;
-        next.release_year = parsed ? parsed.getFullYear().toString() : '';
-      }
+  const mirrorToPending = (field: FormFieldKey, value: string) => {
+    if (!trackInfo) return;
+    const filePath = trackInfo.file_path;
+    const original = originalFormData[field];
+    setPendingFieldEdits(prev => {
+      const existing = prev.get(filePath) ?? {};
+      const isDirty = value !== (original ?? '');
+      const { [field]: _omit, ...rest } = existing;
+      const nextEntry: Record<string, string> = isDirty ? { ...rest, [field]: value } : rest;
+      const next = new Map(prev);
+      if (Object.keys(nextEntry).length === 0) next.delete(filePath);
+      else next.set(filePath, nextEntry);
       return next;
     });
-    if (field === 'release_year') setReleaseYearTouched(true);
   };
 
   const handleFormChange = (field: FormFieldKey, value: string) => {

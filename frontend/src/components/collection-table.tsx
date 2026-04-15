@@ -156,6 +156,14 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
 
   const isChanged = (field: EditableField): boolean => field in changes;
 
+  const missingForFinalize: string[] = [];
+  if (!item.title) missingForFinalize.push('title');
+  if (!item.artist) missingForFinalize.push('artist');
+  if (!item.genre) missingForFinalize.push('genre');
+  if (!item.release_date) missingForFinalize.push('release_date');
+  if (!item.has_artwork) missingForFinalize.push('artwork');
+  const canFinalize = missingForFinalize.length === 0;
+
   return (
     <div
       role="row"
