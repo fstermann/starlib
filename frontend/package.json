@@ -1,6 +1,6 @@
 {
     "name": "frontend",
-    "version": "0.3.7",
+    "version": "0.3.8",
     "private": true,
     "scripts": {
         "dev": "next dev",
@@ -19,9 +19,11 @@
         "@dnd-kit/utilities": "^3.2.2",
         "@tanstack/react-virtual": "^3.13.23",
         "@tauri-apps/api": "^2.10.1",
+        "@tauri-apps/plugin-deep-link": "^2.4.8",
         "@tauri-apps/plugin-dialog": "^2.7.0",
         "@tauri-apps/plugin-log": "^2.8.0",
         "@tauri-apps/plugin-process": "^2.3.1",
+        "@tauri-apps/plugin-shell": "^2.3.5",
         "@tauri-apps/plugin-store": "^2.4.2",
         "@tauri-apps/plugin-updater": "^2.10.1",
         "@xyflow/react": "^12.10.2",

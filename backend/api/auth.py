@@ -30,6 +30,7 @@ _ALLOWED_RETURN_ORIGINS = frozenset(
         "http://localhost:3000",
         "https://tauri.localhost",
         "tauri://localhost",
+        "starlib://localhost",
     }
 )
 

@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { fetchApi } from "@/lib/api";
+import { isTauri } from "@/lib/tauri";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 
 interface AuthorizeResponse {
   authorization_url: string;
@@ -19,12 +21,20 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const returnTo = `${window.location.origin}/auth/soundcloud/callback`;
+      const inTauri = isTauri();
+      const returnTo = inTauri
+        ? "starlib://localhost/auth/soundcloud/callback"
+        : `${window.location.origin}/auth/soundcloud/callback`;
       const data = await fetchApi<AuthorizeResponse>(
         `/auth/soundcloud/authorize?return_to=${encodeURIComponent(returnTo)}`
       );
       sessionStorage.setItem("oauth_state", data.state);
-      window.location.href = data.authorization_url;
+      if (inTauri) {
+        await openExternal(data.authorization_url);
+        setLoading(false);
+      } else {
+        window.location.href = data.authorization_url;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to initiate login");
       setLoading(false);
@@ -48,7 +58,7 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full"
           >
-            {loading ? "Redirecting…" : "Connect with SoundCloud"}
+            {loading ? "Opening…" : "Connect with SoundCloud"}
           </Button>
 
           {error && (
