@@ -27,7 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { getSetting, setSetting } from "@/lib/settings";
-import { api, type OllamaModel } from "@/lib/api";
+import { api, type AiModel, type AiProvider, type AiSettings } from "@/lib/api";
 import {
   Select,
   SelectContent,
@@ -44,7 +44,7 @@ import { RulesetManager } from "@/components/rulesets/ruleset-manager";
 import { FolderConfigManager } from "@/components/rulesets/folder-config-manager";
 import { Clapperboard, FolderOpen, Workflow } from "lucide-react";
 
-type SectionId = "general" | "appearance" | "meta-editor" | "folders" | "rulesets" | "ollama" | "updates";
+type SectionId = "general" | "appearance" | "meta-editor" | "folders" | "rulesets" | "ai" | "updates";
 
 interface NavItem {
   id: SectionId;
@@ -78,7 +78,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "System",
     items: [
-      { id: "ollama", label: "Ollama", icon: Bot },
+      { id: "ai", label: "AI", icon: Bot },
       { id: "updates", label: "Updates", icon: RefreshCw },
     ],
   },
@@ -106,17 +106,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [rootFolderSaving, setRootFolderSaving] = useState(false);
   const [rootFolderError, setRootFolderError] = useState<string | null>(null);
 
-  // Ollama state
-  const [ollamaAvailable, setOllamaAvailable] = useState<boolean | null>(null);
-  const [ollamaInstalled, setOllamaInstalled] = useState<boolean | null>(null);
-  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
-  const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
+  // AI state
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
+  const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
+  const [aiInstalled, setAiInstalled] = useState<boolean | null>(null);
+  const [aiStartedByUs, setAiStartedByUs] = useState(false);
+  const [aiModels, setAiModels] = useState<AiModel[]>([]);
   const [ollamaUrlDraft, setOllamaUrlDraft] = useState("http://localhost:11434");
-  const [ollamaModel, setOllamaModel] = useState("");
-  const [ollamaStartedByUs, setOllamaStartedByUs] = useState(false);
   const [ollamaChecking, setOllamaChecking] = useState(false);
   const [ollamaStopping, setOllamaStopping] = useState(false);
   const [ollamaSaving, setOllamaSaving] = useState(false);
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -137,21 +139,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       getSetting("autoUpdate"),
       getSetting("preferredOutputFormat"),
       api.getRootMusicFolder(),
-      api.getOllamaSettings(),
-      api.getOllamaStatus(),
-    ]).then(([autoUpdate, outputFormat, rootPath, ollamaSettings, ollamaStatus]) => {
+      api.getAiSettings(),
+      api.getAiStatus(),
+    ]).then(([autoUpdate, outputFormat, rootPath, settings, status]) => {
       setAutoUpdate(autoUpdate);
       setPreferredOutputFormat(outputFormat);
       setRootFolder(rootPath);
       setRootFolderDraft(rootPath);
-      setOllamaUrl(ollamaSettings.url);
-      setOllamaUrlDraft(ollamaSettings.url);
-      setOllamaModel(ollamaSettings.model);
-      setOllamaAvailable(ollamaStatus.available);
-      setOllamaInstalled(ollamaStatus.installed);
-      setOllamaStartedByUs(ollamaStatus.started_by_us);
-      if (ollamaStatus.available && ollamaStatus.models.length > 0) {
-        api.getOllamaModels().then(({ models }) => setOllamaModels(models));
+      setAiSettings(settings);
+      setOllamaUrlDraft(settings.ollama.url);
+      setAiAvailable(status.available);
+      setAiInstalled(status.installed);
+      setAiStartedByUs(status.started_by_us);
+      if (status.available) {
+        api.getAiModels().then(({ models }) => setAiModels(models));
       }
       setLoaded(true);
     });
@@ -209,23 +210,41 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }
 
+  async function refreshAiStatus() {
+    const status = await api.getAiStatus();
+    setAiAvailable(status.available);
+    setAiInstalled(status.installed);
+    setAiStartedByUs(status.started_by_us);
+    if (status.available) {
+      const { models } = await api.getAiModels();
+      setAiModels(models);
+    } else {
+      setAiModels([]);
+    }
+  }
+
+  async function handleProviderChange(provider: AiProvider) {
+    const next = await api.updateAiSettings({ provider });
+    setAiSettings(next);
+    await refreshAiStatus();
+  }
+
   async function handleOllamaTestConnection() {
     setOllamaChecking(true);
     try {
-      // Uses POST /start which auto-starts Ollama if installed but not running
       const status = await api.startOllama();
-      setOllamaAvailable(status.available);
-      setOllamaInstalled(status.installed);
-      setOllamaStartedByUs(status.started_by_us);
+      setAiAvailable(status.available);
+      setAiInstalled(status.installed);
+      setAiStartedByUs(status.started_by_us);
       if (status.available) {
-        const { models } = await api.getOllamaModels();
-        setOllamaModels(models);
+        const { models } = await api.getAiModels();
+        setAiModels(models);
       } else {
-        setOllamaModels([]);
+        setAiModels([]);
       }
     } catch {
-      setOllamaAvailable(false);
-      setOllamaModels([]);
+      setAiAvailable(false);
+      setAiModels([]);
     } finally {
       setOllamaChecking(false);
     }
@@ -235,32 +254,60 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setOllamaStopping(true);
     try {
       const status = await api.stopOllama();
-      setOllamaAvailable(status.available);
-      setOllamaStartedByUs(status.started_by_us);
-      setOllamaModels([]);
+      setAiAvailable(status.available);
+      setAiStartedByUs(status.started_by_us);
+      setAiModels([]);
     } finally {
       setOllamaStopping(false);
     }
   }
 
   async function handleOllamaSaveUrl() {
-    if (ollamaUrlDraft === ollamaUrl) return;
+    if (!aiSettings || ollamaUrlDraft === aiSettings.ollama.url) return;
     setOllamaSaving(true);
     try {
-      const updated = await api.updateOllamaSettings({ url: ollamaUrlDraft });
-      setOllamaUrl(updated.url);
-      setOllamaUrlDraft(updated.url);
-      // Re-check connection with new URL
-      setOllamaAvailable(null);
-      setOllamaModels([]);
+      const next = await api.updateAiSettings({ ollama: { url: ollamaUrlDraft } });
+      setAiSettings(next);
+      setOllamaUrlDraft(next.ollama.url);
+      setAiAvailable(null);
+      setAiModels([]);
     } finally {
       setOllamaSaving(false);
     }
   }
 
   async function handleOllamaModelChange(model: string) {
-    setOllamaModel(model);
-    await api.updateOllamaSettings({ model });
+    if (!aiSettings) return;
+    const next = await api.updateAiSettings({ ollama: { model } });
+    setAiSettings(next);
+  }
+
+  async function handleAnthropicModelChange(model: string) {
+    if (!aiSettings) return;
+    const next = await api.updateAiSettings({ anthropic: { model } });
+    setAiSettings(next);
+  }
+
+  async function handleSaveApiKey() {
+    if (!apiKeyDraft.trim()) return;
+    setApiKeySaving(true);
+    setApiKeyError(null);
+    try {
+      const next = await api.setAnthropicApiKey(apiKeyDraft.trim());
+      setAiSettings(next);
+      setApiKeyDraft("");
+      await refreshAiStatus();
+    } catch (err) {
+      setApiKeyError(err instanceof Error ? err.message : "Failed to save key");
+    } finally {
+      setApiKeySaving(false);
+    }
+  }
+
+  async function handleDeleteApiKey() {
+    const next = await api.deleteAnthropicApiKey();
+    setAiSettings(next);
+    await refreshAiStatus();
   }
 
   function formatModelSize(bytes: number): string {
@@ -461,185 +508,344 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </div>
             )}
 
-            {section === "ollama" && loaded && (
+            {section === "ai" && loaded && aiSettings && (
               <div className="flex flex-col gap-6">
-                <h2 className="text-base font-semibold">Ollama</h2>
+                <h2 className="text-base font-semibold">AI</h2>
                 <p className="text-sm text-muted-foreground">
-                  Connect to a local Ollama instance for LLM-powered features.
+                  Pick a provider for LLM-powered features. Use local Ollama for offline inference,
+                  or Claude for higher quality via the Anthropic API.
                 </p>
 
-                {/* Connection status */}
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "size-2.5 rounded-full shrink-0",
-                      ollamaAvailable === null
-                        ? "bg-muted-foreground/30"
-                        : ollamaAvailable
-                          ? "bg-green-500"
-                          : ollamaInstalled
-                            ? "bg-yellow-500"
-                            : "bg-red-500"
-                    )}
-                  />
-                  <span className="text-sm">
-                    {ollamaAvailable === null
-                      ? "Checking…"
-                      : ollamaAvailable
-                        ? "Connected"
-                        : ollamaInstalled
-                          ? "Installed but not running"
-                          : "Not installed"}
-                  </span>
-                  {ollamaAvailable && (
-                    <span className="text-xs text-muted-foreground/50">
-                      {ollamaStartedByUs ? "managed by Starlib" : "external"}
-                    </span>
-                  )}
-                  {ollamaAvailable && ollamaStartedByUs && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 px-1.5 text-muted-foreground hover:text-destructive"
-                          onClick={handleOllamaStop}
-                          disabled={ollamaStopping}
-                        >
-                          {ollamaStopping ? (
-                            <Loader2 className="size-3 animate-spin" />
-                          ) : (
-                            <Square className="size-3" />
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Stop Ollama</TooltipContent>
-                    </Tooltip>
-                  )}
+                {/* Provider selector */}
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-sm">Provider</Label>
+                  <ToggleGroup
+                    type="single"
+                    value={aiSettings.provider}
+                    onValueChange={(v) => v && handleProviderChange(v as AiProvider)}
+                    className="w-fit"
+                  >
+                    <ToggleGroupItem value="ollama" className="gap-2 text-xs">
+                      <img src="/icons/ollama.svg" alt="" className="size-4 dark:invert" />
+                      Ollama
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="claude_code" className="gap-2 text-xs">
+                      <img src="/icons/claude-color.svg" alt="" className="size-4" />
+                      Claude Code
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="anthropic" className="gap-2 text-xs">
+                      <img src="/icons/anthropic.svg" alt="" className="size-4 dark:invert" />
+                      Anthropic API
+                    </ToggleGroupItem>
+                  </ToggleGroup>
                 </div>
 
-                {/* Installed but not running — offer to start */}
-                {ollamaAvailable === false && ollamaInstalled && (
-                  <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3 flex flex-col gap-2">
-                    <p className="text-sm">
-                      Ollama is installed but not running. You can start it manually
-                      with <code className="bg-muted px-1 py-0.5 rounded text-xs">ollama serve</code>,
-                      or let Starlib start it for you.
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-fit"
-                      onClick={handleOllamaTestConnection}
-                      disabled={ollamaChecking}
-                    >
-                      {ollamaChecking ? (
-                        <>
-                          <Loader2 data-icon="inline-start" className="animate-spin" />
-                          Starting…
-                        </>
-                      ) : (
-                        <>
-                          <Zap data-icon="inline-start" className="size-3.5" />
-                          Start Ollama
-                        </>
+                {aiSettings.provider === "ollama" && (
+                  <div className="flex flex-col gap-6 border-t border-border/50 pt-6">
+                    {/* Connection status */}
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "size-2.5 rounded-full shrink-0",
+                          aiAvailable === null
+                            ? "bg-muted-foreground/30"
+                            : aiAvailable
+                              ? "bg-green-500"
+                              : aiInstalled
+                                ? "bg-yellow-500"
+                                : "bg-red-500"
+                        )}
+                      />
+                      <span className="text-sm">
+                        {aiAvailable === null
+                          ? "Checking…"
+                          : aiAvailable
+                            ? "Connected"
+                            : aiInstalled
+                              ? "Installed but not running"
+                              : "Not installed"}
+                      </span>
+                      {aiAvailable && (
+                        <span className="text-xs text-muted-foreground/50">
+                          {aiStartedByUs ? "managed by Starlib" : "external"}
+                        </span>
                       )}
-                    </Button>
-                  </div>
-                )}
-
-                {/* Not installed — show install instructions */}
-                {ollamaAvailable === false && ollamaInstalled === false && (
-                  <div className="rounded-md border border-border/50 bg-muted/30 p-4 flex flex-col gap-3">
-                    <p className="text-sm font-medium">Install Ollama</p>
-                    <div className="flex flex-col gap-2 text-xs text-muted-foreground">
-                      <p>
-                        <span className="font-medium text-foreground/80">macOS:</span>{" "}
-                        <code className="bg-muted px-1 py-0.5 rounded">brew install ollama</code>
-                      </p>
-                      <p>
-                        <span className="font-medium text-foreground/80">Linux:</span>{" "}
-                        <code className="bg-muted px-1 py-0.5 rounded">curl -fsSL https://ollama.com/install.sh | sh</code>
-                      </p>
-                      <p>
-                        <span className="font-medium text-foreground/80">Windows:</span>{" "}
-                        Download from <span className="font-mono">ollama.com/download</span>
-                      </p>
+                      {aiAvailable && aiStartedByUs && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-1.5 text-muted-foreground hover:text-destructive"
+                              onClick={handleOllamaStop}
+                              disabled={ollamaStopping}
+                            >
+                              {ollamaStopping ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <Square className="size-3" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Stop Ollama</TooltipContent>
+                        </Tooltip>
+                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      After installing, pull a model:
-                    </p>
-                    <code className="text-xs bg-muted px-2 py-1 rounded w-fit">
-                      ollama pull gemma4:e2b
-                    </code>
-                    <p className="text-xs text-muted-foreground">
-                      Then re-open this page to connect.
-                    </p>
-                  </div>
-                )}
 
-                {/* URL configuration */}
-                <div className="flex flex-col gap-1.5">
-                  <Label className="text-sm">Server URL</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={ollamaUrlDraft}
-                      onChange={(e) => setOllamaUrlDraft(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleOllamaSaveUrl(); }}
-                      placeholder="http://localhost:11434"
-                      className="h-8 font-mono text-xs flex-1"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 shrink-0"
-                      disabled={ollamaSaving || ollamaUrlDraft === ollamaUrl}
-                      onClick={handleOllamaSaveUrl}
-                    >
-                      {ollamaSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
-                    </Button>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
+                    {/* Installed but not running — offer to start */}
+                    {aiAvailable === false && aiInstalled && (
+                      <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3 flex flex-col gap-2">
+                        <p className="text-sm">
+                          Ollama is installed but not running. You can start it manually
+                          with <code className="bg-muted px-1 py-0.5 rounded text-xs">ollama serve</code>,
+                          or let Starlib start it for you.
+                        </p>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-8 shrink-0 px-2"
+                          className="w-fit"
                           onClick={handleOllamaTestConnection}
                           disabled={ollamaChecking}
                         >
                           {ollamaChecking ? (
-                            <Loader2 className="size-3.5 animate-spin" />
+                            <>
+                              <Loader2 data-icon="inline-start" className="animate-spin" />
+                              Starting…
+                            </>
                           ) : (
-                            <Zap className="size-3.5" />
+                            <>
+                              <Zap data-icon="inline-start" className="size-3.5" />
+                              Start Ollama
+                            </>
                           )}
                         </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Test connection</TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
+                      </div>
+                    )}
 
-                {/* Model selection */}
-                {ollamaModels.length > 0 && (
-                  <div className="flex flex-col gap-1.5">
-                    <Label className="text-sm">Model</Label>
-                    <Select value={ollamaModel} onValueChange={handleOllamaModelChange}>
-                      <SelectTrigger className="h-8 w-fit min-w-48 font-mono text-xs">
-                        <SelectValue placeholder="Select a model" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ollamaModels.map((m) => (
-                          <SelectItem key={m.name} value={m.name} className="font-mono text-xs">
-                            {m.name}
-                            {m.size > 0 && (
-                              <span className="text-muted-foreground ml-2">
-                                ({formatModelSize(m.size)})
-                              </span>
-                            )}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {/* Not installed — show install instructions */}
+                    {aiAvailable === false && aiInstalled === false && (
+                      <div className="rounded-md border border-border/50 bg-muted/30 p-4 flex flex-col gap-3">
+                        <p className="text-sm font-medium">Install Ollama</p>
+                        <div className="flex flex-col gap-2 text-xs text-muted-foreground">
+                          <p>
+                            <span className="font-medium text-foreground/80">macOS:</span>{" "}
+                            <code className="bg-muted px-1 py-0.5 rounded">brew install ollama</code>
+                          </p>
+                          <p>
+                            <span className="font-medium text-foreground/80">Linux:</span>{" "}
+                            <code className="bg-muted px-1 py-0.5 rounded">curl -fsSL https://ollama.com/install.sh | sh</code>
+                          </p>
+                          <p>
+                            <span className="font-medium text-foreground/80">Windows:</span>{" "}
+                            Download from <span className="font-mono">ollama.com/download</span>
+                          </p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">After installing, pull a model:</p>
+                        <code className="text-xs bg-muted px-2 py-1 rounded w-fit">ollama pull gemma4:e2b</code>
+                      </div>
+                    )}
+
+                    {/* URL configuration */}
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Server URL</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={ollamaUrlDraft}
+                          onChange={(e) => setOllamaUrlDraft(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleOllamaSaveUrl(); }}
+                          placeholder="http://localhost:11434"
+                          className="h-8 font-mono text-xs flex-1"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 shrink-0"
+                          disabled={ollamaSaving || ollamaUrlDraft === aiSettings.ollama.url}
+                          onClick={handleOllamaSaveUrl}
+                        >
+                          {ollamaSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 shrink-0 px-2"
+                              onClick={handleOllamaTestConnection}
+                              disabled={ollamaChecking}
+                            >
+                              {ollamaChecking ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <Zap className="size-3.5" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Test connection</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </div>
+
+                    {/* Model selection */}
+                    {aiModels.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        <Label className="text-sm">Model</Label>
+                        <Select value={aiSettings.ollama.model} onValueChange={handleOllamaModelChange}>
+                          <SelectTrigger className="h-8 w-fit min-w-48 font-mono text-xs">
+                            <SelectValue placeholder="Select a model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {aiModels.map((m) => (
+                              <SelectItem key={m.id} value={m.id} className="font-mono text-xs">
+                                {m.id}
+                                {m.size && m.size > 0 && (
+                                  <span className="text-muted-foreground ml-2">
+                                    ({formatModelSize(m.size)})
+                                  </span>
+                                )}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {aiSettings.provider === "claude_code" && (
+                  <div className="flex flex-col gap-6 border-t border-border/50 pt-6">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "size-2.5 rounded-full shrink-0",
+                          aiAvailable === null ? "bg-muted-foreground/30" : aiAvailable ? "bg-green-500" : "bg-red-500",
+                        )}
+                      />
+                      <span className="text-sm">
+                        {aiAvailable === null
+                          ? "Checking…"
+                          : aiAvailable
+                            ? "Claude Code CLI detected"
+                            : "Claude Code CLI not installed"}
+                      </span>
+                    </div>
+
+                    {aiAvailable === false && (
+                      <div className="rounded-md border border-border/50 bg-muted/30 p-4 flex flex-col gap-2">
+                        <p className="text-sm font-medium">Install Claude Code</p>
+                        <p className="text-xs text-muted-foreground">
+                          Uses your existing Claude subscription login — no separate API key required.
+                          Install at <span className="font-mono">claude.com/code</span>.
+                        </p>
+                      </div>
+                    )}
+
+                    {aiAvailable && aiModels.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        <Label className="text-sm">Model</Label>
+                        <Select
+                          value={aiSettings.claude_code.model}
+                          onValueChange={async (model) => {
+                            const next = await api.updateAiSettings({ claude_code: { model } });
+                            setAiSettings(next);
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-fit min-w-48 font-mono text-xs">
+                            <SelectValue placeholder="Select a model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {aiModels.map((m) => (
+                              <SelectItem key={m.id} value={m.id} className="font-mono text-xs">
+                                {m.display_name ?? m.id}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {aiSettings.provider === "anthropic" && (
+                  <div className="flex flex-col gap-6 border-t border-border/50 pt-6">
+                    {/* Key status */}
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "size-2.5 rounded-full shrink-0",
+                          aiSettings.anthropic_has_api_key
+                            ? aiAvailable
+                              ? "bg-green-500"
+                              : "bg-yellow-500"
+                            : "bg-red-500"
+                        )}
+                      />
+                      <span className="text-sm">
+                        {!aiSettings.anthropic_has_api_key
+                          ? "No API key set"
+                          : aiAvailable
+                            ? "Connected"
+                            : "Key set but unreachable"}
+                      </span>
+                    </div>
+
+                    {/* API key form */}
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-sm">Anthropic API key</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Stored in your OS keychain — never written to disk in plain text.
+                        Get one at <span className="font-mono">console.anthropic.com</span>.
+                      </p>
+                      <div className="flex gap-2">
+                        <Input
+                          type="password"
+                          value={apiKeyDraft}
+                          onChange={(e) => setApiKeyDraft(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleSaveApiKey(); }}
+                          placeholder={aiSettings.anthropic_has_api_key ? "••••••••" : "sk-ant-…"}
+                          className="h-8 font-mono text-xs flex-1"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 shrink-0"
+                          disabled={apiKeySaving || !apiKeyDraft.trim()}
+                          onClick={handleSaveApiKey}
+                        >
+                          {apiKeySaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+                        </Button>
+                        {aiSettings.anthropic_has_api_key && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 shrink-0"
+                            onClick={handleDeleteApiKey}
+                          >
+                            Clear
+                          </Button>
+                        )}
+                      </div>
+                      {apiKeyError && <p className="text-xs text-destructive">{apiKeyError}</p>}
+                    </div>
+
+                    {/* Model selection */}
+                    {aiSettings.anthropic_has_api_key && aiModels.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        <Label className="text-sm">Model</Label>
+                        <Select value={aiSettings.anthropic.model} onValueChange={handleAnthropicModelChange}>
+                          <SelectTrigger className="h-8 w-fit min-w-64 font-mono text-xs">
+                            <SelectValue placeholder="Select a model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {aiModels.map((m) => (
+                              <SelectItem key={m.id} value={m.id} className="font-mono text-xs">
+                                {m.display_name ?? m.id}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

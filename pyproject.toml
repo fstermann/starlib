@@ -22,6 +22,8 @@ dependencies = [
     "platformdirs>=4.9.6",
     "sqlmodel>=0.0.22",
     "alembic>=1.13",
+    "anthropic>=0.40.0",
+    "keyring>=25.0.0",
 ]
 
 [dependency-groups]
