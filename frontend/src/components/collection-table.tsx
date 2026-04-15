@@ -156,9 +156,6 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
 
   const isChanged = (field: EditableField): boolean => field in changes;
 
-  // Backend readiness check mirror (see `check_file_readiness` in
-  // backend/core/services/metadata.py). Pending edits aren't persisted yet,
-  // so we evaluate against the on-disk item snapshot only.
   const missingForFinalize: string[] = [];
   if (!item.title) missingForFinalize.push('title');
   if (!item.artist) missingForFinalize.push('artist');

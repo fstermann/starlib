@@ -29,3 +29,6 @@ target/
 
 # Zensical docs build output
 site/
+
+# Alembic dev scratch DB (used by `alembic check` / `revision --autogenerate`)
+.alembic-scratch.db

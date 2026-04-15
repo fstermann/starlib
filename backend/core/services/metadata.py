@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from backend.core.services import cache_db, rule_engine
 from backend.core.services import folder_config as folder_config_service
 from backend.core.services import ruleset as ruleset_service
-from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, StarlibMeta, TrackHandler, TrackInfo
+from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
 from soundcloud_tools.utils.string import (
     remove_double_spaces,
     remove_free_dl,
@@ -116,10 +116,6 @@ def build_modified_track_info(
         value = patch[name]
         if name in {"artist", "original_artist", "remixer"}:
             value = _coerce_artist_field(value)
-        elif name == "starlib_meta" and isinstance(value, str):
-            # Frontend sends the serialised "key=value; ..." form; parse it
-            # back into a StarlibMeta so TrackInfo validation passes.
-            value = StarlibMeta.from_str(value) if value else None
         data[name] = value
 
     # Drop binary artwork (handled separately by the API layer) and the URL
