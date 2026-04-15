@@ -46,15 +46,16 @@ class TestAutoeditEndpoint:
         file.write_bytes(b"fake")
         return file
 
-    def test_returns_503_when_ollama_unavailable(self, client: TestClient, tmp_music_folder: Path) -> None:
+    def test_returns_503_when_provider_not_ready(self, client: TestClient, tmp_music_folder: Path) -> None:
         file_path = self._make_file(tmp_music_folder)
         with patch(
-            "backend.api.metadata.files.ollama_service.is_available",
+            "backend.api.metadata.files.ai_provider_service.active_provider_ready",
             new_callable=AsyncMock,
-            return_value=False,
+            return_value=(False, "provider down"),
         ):
             resp = client.post(f"/api/metadata/files/{file_path}/autoedit")
         assert resp.status_code == 503
+        assert resp.json()["detail"] == "provider down"
 
     def test_returns_suggestions(self, client: TestClient, tmp_music_folder: Path) -> None:
         file_path = self._make_file(tmp_music_folder)
@@ -63,9 +64,9 @@ class TestAutoeditEndpoint:
 
         with (
             patch(
-                "backend.api.metadata.files.ollama_service.is_available",
+                "backend.api.metadata.files.ai_provider_service.active_provider_ready",
                 new_callable=AsyncMock,
-                return_value=True,
+                return_value=(True, ""),
             ),
             patch("backend.api.metadata.files.metadata.get_track_info", return_value=track),
             patch(

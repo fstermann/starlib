@@ -11,9 +11,9 @@ from fastapi_pagination import Page, paginate
 
 from backend.api.deps import get_root_folder, validate_file_path, validate_folder_mode
 from backend.api.metadata._helpers import resolve_folder
+from backend.core.services import ai_provider as ai_provider_service
 from backend.core.services import autoedit as autoedit_service
 from backend.core.services import cache_db, collection, metadata
-from backend.core.services import ollama as ollama_service
 from backend.schemas.metadata import (
     AutoeditResponse,
     AutoeditSoundcloudMatch,
@@ -333,18 +333,16 @@ async def autoedit_file(
     root_folder: Annotated[Path, Depends(get_root_folder)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> AutoeditResponse:
-    """Suggest metadata edits for a single file using the local Ollama model.
+    """Suggest metadata edits for a single file using the configured AI provider.
 
     Uses the current metadata, filename, and top SoundCloud search results as
     context. Returns suggested field updates for the user to review.
     """
     resolved_path = validate_file_path(file_path, root_folder)
 
-    if not await ollama_service.is_available():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Ollama is not available. Start it from settings and make sure a model is installed.",
-        )
+    ready, reason = await ai_provider_service.active_provider_ready()
+    if not ready:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=reason)
 
     try:
         track_info = metadata.get_track_info(resolved_path, root_folder)

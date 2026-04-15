@@ -127,3 +127,39 @@ def test_current_metadata_for_prompt_serializes_dates() -> None:
     out = autoedit._current_metadata_for_prompt(info)
     assert out["title"] == "T"
     assert out["release_date"] == "2024-01-02"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "patched"),
+    [
+        ("ollama", "backend.core.services.autoedit.ollama_service.chat"),
+        ("anthropic", "backend.core.services.autoedit.anthropic_service.chat"),
+        ("claude_code", "backend.core.services.autoedit.claude_code_service.chat"),
+    ],
+)
+async def test_autoedit_dispatches_to_configured_provider(
+    track_info: TrackInfo,
+    provider: str,
+    patched: str,
+) -> None:
+    from backend.schemas.ai import AiSettings
+    from backend.schemas.settings import Settings
+
+    settings = Settings(ai=AiSettings(provider=provider))  # type: ignore[arg-type]
+
+    with (
+        patch(
+            "backend.core.services.autoedit.settings_service.load",
+            return_value=settings,
+        ),
+        patch(
+            "backend.core.services.autoedit.soundcloud_service.search_tracks_with_token",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(patched, new_callable=AsyncMock, return_value="{}") as mock_chat,
+    ):
+        await autoedit.autoedit(track_info, "file.mp3")
+
+    mock_chat.assert_awaited_once()

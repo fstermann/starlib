@@ -1,15 +1,19 @@
 """LLM-driven metadata autoedit pipeline.
 
-Uses the local Ollama model to suggest metadata cleanups for tracks based on
-the current metadata, the filename, and the top SoundCloud search results.
+Dispatches to the configured AI provider (Ollama, Anthropic, or Claude
+Code) to suggest metadata cleanups for tracks based on the current
+metadata, the filename, and the top SoundCloud search results.
 """
 
 import json
 import logging
 from typing import Any
 
+from backend.core.services import anthropic as anthropic_service
+from backend.core.services import claude_code as claude_code_service
 from backend.core.services import metadata as metadata_service
 from backend.core.services import ollama as ollama_service
+from backend.core.services import settings as settings_service
 from backend.core.services import soundcloud as soundcloud_service
 from backend.schemas.metadata import TrackInfoUpdateRequest
 from soundcloud_tools.handler.track import TrackInfo
@@ -113,6 +117,15 @@ def _build_messages(
     return messages
 
 
+async def _chat_with_active_provider(messages: list[dict[str, str]]) -> str:
+    provider = settings_service.load().ai.provider
+    if provider == "anthropic":
+        return await anthropic_service.chat(messages, format="json")
+    if provider == "claude_code":
+        return await claude_code_service.chat(messages, format="json")
+    return await ollama_service.chat(messages, format="json")
+
+
 def _parse_llm_output(raw: str) -> dict[str, Any]:
     """Best-effort JSON extraction; strips accidental prose around the object."""
     try:
@@ -155,7 +168,7 @@ async def autoedit(
             logger.exception("SoundCloud search failed for autoedit; continuing without it")
 
     messages = _build_messages(current, filename, sc_results)
-    raw = await ollama_service.chat(messages, format="json")
+    raw = await _chat_with_active_provider(messages)
     parsed = _parse_llm_output(raw)
 
     filtered = {k: v for k, v in parsed.items() if k in _ALLOWED_FIELDS and v not in (None, "", [])}
