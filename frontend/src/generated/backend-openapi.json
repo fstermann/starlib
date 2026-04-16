@@ -313,6 +313,418 @@
         }
       }
     },
+    "/api/metadata/folders/tree": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Get Folder Tree",
+        "description": "Return the folder tree built from indexed tracks.\n\nOnly folders that contain at least one track (directly or in a\ndescendant) are included \u2014 empty directories are omitted.",
+        "operationId": "get_folder_tree_api_metadata_folders_tree_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreeNode"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/folders/browse-path": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Browse By Path",
+        "description": "Browse tracks by absolute folder path with optional recursion.",
+        "operationId": "browse_by_path_api_metadata_folders_browse_path_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Absolute folder path to browse",
+              "title": "Path"
+            },
+            "description": "Absolute folder path to browse"
+          },
+          {
+            "name": "recursive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include tracks in subfolders",
+              "default": true,
+              "title": "Recursive"
+            },
+            "description": "Include tracks in subfolders"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "genres",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Genres"
+            }
+          },
+          {
+            "name": "artists",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Artists"
+            }
+          },
+          {
+            "name": "keys",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keys"
+            }
+          },
+          {
+            "name": "bpm_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bpm Min"
+            }
+          },
+          {
+            "name": "bpm_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bpm Max"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|mtime)$",
+              "default": "file_name",
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(asc|desc)$",
+              "default": "asc",
+              "title": "Sort Order"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Page size",
+              "default": 50,
+              "title": "Size"
+            },
+            "description": "Page size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_TrackBrowseResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/folders/browse-path/filter-values": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Browse Path Filter Values",
+        "description": "Get available filter values for a folder path.",
+        "operationId": "browse_path_filter_values_api_metadata_folders_browse_path_filter_values_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Absolute folder path",
+              "title": "Path"
+            },
+            "description": "Absolute folder path"
+          },
+          {
+            "name": "recursive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Recursive"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "genres",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Genres"
+            }
+          },
+          {
+            "name": "keys",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keys"
+            }
+          },
+          {
+            "name": "bpm_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bpm Min"
+            }
+          },
+          {
+            "name": "bpm_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bpm Max"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilterValuesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metadata/folders/{mode}/files": {
       "get": {
         "tags": [
@@ -1686,6 +2098,169 @@
         }
       }
     },
+    "/api/folders/rulesets-by-path": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Get All Folder Rulesets",
+        "description": "Return all direct path\u2192binding mappings (no inheritance applied).",
+        "operationId": "get_all_folder_rulesets_api_folders_rulesets_by_path_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderRulesetsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/folders/ruleset": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Get Folder Ruleset",
+        "description": "Return the resolved ruleset binding for an absolute folder path.",
+        "operationId": "get_folder_ruleset_api_folders_ruleset_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Absolute folder path",
+              "title": "Path"
+            },
+            "description": "Absolute folder path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderRulesetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Set Folder Ruleset",
+        "description": "Bind a ruleset to an absolute folder path.",
+        "operationId": "set_folder_ruleset_api_folders_ruleset_put",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Absolute folder path",
+              "title": "Path"
+            },
+            "description": "Absolute folder path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderRulesetUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderRulesetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Delete Folder Ruleset",
+        "description": "Remove the ruleset binding for a folder path.",
+        "operationId": "delete_folder_ruleset_api_folders_ruleset_delete",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Absolute folder path",
+              "title": "Path"
+            },
+            "description": "Absolute folder path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderRulesetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings": {
       "get": {
         "tags": [
@@ -1816,111 +2391,21 @@
         }
       }
     },
-    "/api/ollama/status": {
+    "/api/ai/settings": {
       "get": {
         "tags": [
-          "ollama"
-        ],
-        "summary": "Get Status",
-        "description": "Check if Ollama is reachable and return available model names.",
-        "operationId": "get_status_api_ollama_status_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OllamaStatusResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ollama/start": {
-      "post": {
-        "tags": [
-          "ollama"
-        ],
-        "summary": "Start Ollama",
-        "description": "Ensure Ollama is running, auto-starting it if necessary.",
-        "operationId": "start_ollama_api_ollama_start_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OllamaStatusResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ollama/stop": {
-      "post": {
-        "tags": [
-          "ollama"
-        ],
-        "summary": "Stop Ollama",
-        "description": "Stop Ollama if we started it.",
-        "operationId": "stop_ollama_api_ollama_stop_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OllamaStatusResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ollama/models": {
-      "get": {
-        "tags": [
-          "ollama"
-        ],
-        "summary": "Get Models",
-        "description": "Return installed models with details (name, size, digest).",
-        "operationId": "get_models_api_ollama_models_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OllamaModelsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ollama/settings": {
-      "get": {
-        "tags": [
-          "ollama"
+          "ai"
         ],
         "summary": "Get Settings",
-        "description": "Return current Ollama settings.",
-        "operationId": "get_settings_api_ollama_settings_get",
+        "description": "Return the active provider and per-provider configuration.",
+        "operationId": "get_settings_api_ai_settings_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Settings Api Ollama Settings Get"
+                  "$ref": "#/components/schemas/AiSettingsResponse"
                 }
               }
             }
@@ -1929,16 +2414,16 @@
       },
       "post": {
         "tags": [
-          "ollama"
+          "ai"
         ],
         "summary": "Update Settings",
-        "description": "Update Ollama URL and/or selected model.",
-        "operationId": "update_settings_api_ollama_settings_post",
+        "description": "Patch the AI settings; only provided fields are persisted.",
+        "operationId": "update_settings_api_ai_settings_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OllamaSettingsRequest"
+                "$ref": "#/components/schemas/AiSettingsRequest"
               }
             }
           },
@@ -1950,9 +2435,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Update Settings Api Ollama Settings Post"
+                  "$ref": "#/components/schemas/AiSettingsResponse"
                 }
               }
             }
@@ -1969,10 +2452,429 @@
           }
         }
       }
+    },
+    "/api/ai/status": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get Status",
+        "description": "Return readiness for the currently selected provider.",
+        "operationId": "get_status_api_ai_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/models": {
+      "get": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Get Models",
+        "description": "List models offered by the currently selected provider.",
+        "operationId": "get_models_api_ai_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/ollama/start": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Start Ollama",
+        "description": "Ensure the Ollama server is running (auto-starting if installed).",
+        "operationId": "start_ollama_api_ai_ollama_start_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/ollama/stop": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Stop Ollama",
+        "description": "Stop the Ollama server if we started it.",
+        "operationId": "stop_ollama_api_ai_ollama_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/ollama/pull-model": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Pull Ollama Model",
+        "description": "Pull an Ollama model by name via ``ollama pull``.",
+        "operationId": "pull_ollama_model_api_ai_ollama_pull_model_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OllamaPullRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Pull Ollama Model Api Ai Ollama Pull Model Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/anthropic/credentials": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Set Anthropic Credentials",
+        "description": "Store the Anthropic API key in the OS keychain.",
+        "operationId": "set_anthropic_credentials_api_ai_anthropic_credentials_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiCredentialsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Delete Anthropic Credentials",
+        "description": "Remove the Anthropic API key from the OS keychain.",
+        "operationId": "delete_anthropic_credentials_api_ai_anthropic_credentials_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AiCredentialsRequest": {
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "title": "Api Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "api_key"
+        ],
+        "title": "AiCredentialsRequest"
+      },
+      "AiModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "AiModel",
+        "description": "A single model offered by the active provider."
+      },
+      "AiModelsResponse": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ollama",
+              "anthropic",
+              "claude_code"
+            ],
+            "title": "Provider"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/AiModel"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider"
+        ],
+        "title": "AiModelsResponse"
+      },
+      "AiSettingsRequest": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ollama",
+                  "anthropic",
+                  "claude_code"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "ollama": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OllamaSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "anthropic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnthropicSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "claude_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaudeCodeSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "AiSettingsRequest",
+        "description": "Partial update; only provided fields are persisted."
+      },
+      "AiSettingsResponse": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ollama",
+              "anthropic",
+              "claude_code"
+            ],
+            "title": "Provider"
+          },
+          "ollama": {
+            "$ref": "#/components/schemas/OllamaSettings"
+          },
+          "anthropic": {
+            "$ref": "#/components/schemas/AnthropicSettings"
+          },
+          "claude_code": {
+            "$ref": "#/components/schemas/ClaudeCodeSettings"
+          },
+          "anthropic_has_api_key": {
+            "type": "boolean",
+            "title": "Anthropic Has Api Key",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "ollama",
+          "anthropic",
+          "claude_code"
+        ],
+        "title": "AiSettingsResponse",
+        "description": "Full AI settings payload (API key is never included)."
+      },
+      "AiStatusResponse": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ollama",
+              "anthropic",
+              "claude_code"
+            ],
+            "title": "Provider"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "installed": {
+            "type": "boolean",
+            "title": "Installed",
+            "default": false
+          },
+          "started_by_us": {
+            "type": "boolean",
+            "title": "Started By Us",
+            "default": false
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "has_api_key": {
+            "type": "boolean",
+            "title": "Has Api Key",
+            "default": false
+          },
+          "claude_cli_installed": {
+            "type": "boolean",
+            "title": "Claude Cli Installed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "available"
+        ],
+        "title": "AiStatusResponse",
+        "description": "Per-provider readiness. Shape mirrors the previous Ollama status."
+      },
+      "AnthropicSettings": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": "claude-haiku-4-5-20251001"
+          }
+        },
+        "type": "object",
+        "title": "AnthropicSettings"
+      },
       "AuthorizeResponse": {
         "properties": {
           "authorization_url": {
@@ -2169,6 +3071,17 @@
         ],
         "title": "CallbackResponse",
         "description": "OAuth callback response with tokens and user info."
+      },
+      "ClaudeCodeSettings": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": "haiku"
+          }
+        },
+        "type": "object",
+        "title": "ClaudeCodeSettings"
       },
       "CollectionSoundcloudIdsResponse": {
         "properties": {
@@ -2528,6 +3441,44 @@
             "type": "integer",
             "title": "Order",
             "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "FolderConfig",
+        "description": "Configuration for a single music folder shortcut."
+      },
+      "FolderRulesetBinding": {
+        "properties": {
+          "ruleset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleset Id"
+          },
+          "recursive": {
+            "type": "boolean",
+            "title": "Recursive",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "FolderRulesetBinding",
+        "description": "A per-folder ruleset assignment.\n\n``recursive=True`` means the binding also applies to descendant folders\nthat have no explicit binding of their own."
+      },
+      "FolderRulesetResponse": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
           },
           "ruleset_id": {
             "anyOf": [
@@ -2539,15 +3490,72 @@
               }
             ],
             "title": "Ruleset Id"
+          },
+          "recursive": {
+            "type": "boolean",
+            "title": "Recursive",
+            "default": false
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
           }
         },
         "type": "object",
         "required": [
-          "name",
-          "label"
+          "path",
+          "ruleset_id"
         ],
-        "title": "FolderConfig",
-        "description": "Configuration for a single music folder tab."
+        "title": "FolderRulesetResponse",
+        "description": "A resolved folder ruleset binding.\n\nWhen the ``source_path`` differs from the requested path, the binding\nwas inherited from a recursive ancestor."
+      },
+      "FolderRulesetUpdate": {
+        "properties": {
+          "ruleset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleset Id"
+          },
+          "recursive": {
+            "type": "boolean",
+            "title": "Recursive",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "ruleset_id"
+        ],
+        "title": "FolderRulesetUpdate"
+      },
+      "FolderRulesetsResponse": {
+        "properties": {
+          "folder_rulesets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FolderRulesetBinding"
+            },
+            "type": "object",
+            "title": "Folder Rulesets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "folder_rulesets"
+        ],
+        "title": "FolderRulesetsResponse"
       },
       "FoldersConfig": {
         "properties": {
@@ -2576,103 +3584,34 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
-      "OllamaModel": {
+      "OllamaPullRequest": {
         "properties": {
           "name": {
             "type": "string",
             "title": "Name"
-          },
-          "size": {
-            "type": "integer",
-            "title": "Size",
-            "default": 0
-          },
-          "digest": {
-            "type": "string",
-            "title": "Digest",
-            "default": ""
           }
         },
         "type": "object",
         "required": [
           "name"
         ],
-        "title": "OllamaModel",
-        "description": "Single model from Ollama's /api/tags response."
+        "title": "OllamaPullRequest"
       },
-      "OllamaModelsResponse": {
-        "properties": {
-          "models": {
-            "items": {
-              "$ref": "#/components/schemas/OllamaModel"
-            },
-            "type": "array",
-            "title": "Models"
-          }
-        },
-        "type": "object",
-        "title": "OllamaModelsResponse",
-        "description": "Response for GET /ollama/models."
-      },
-      "OllamaSettingsRequest": {
+      "OllamaSettings": {
         "properties": {
           "url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Url"
+            "type": "string",
+            "title": "Url",
+            "default": "http://localhost:11434"
           },
           "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model"
+            "type": "string",
+            "title": "Model",
+            "default": "gemma4:e2b"
           }
         },
         "type": "object",
-        "title": "OllamaSettingsRequest",
-        "description": "Request body for POST /ollama/settings."
-      },
-      "OllamaStatusResponse": {
-        "properties": {
-          "available": {
-            "type": "boolean",
-            "title": "Available"
-          },
-          "installed": {
-            "type": "boolean",
-            "title": "Installed",
-            "default": false
-          },
-          "models": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Models"
-          },
-          "started_by_us": {
-            "type": "boolean",
-            "title": "Started By Us",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "available"
-        ],
-        "title": "OllamaStatusResponse",
-        "description": "Response for GET /ollama/status."
+        "title": "OllamaSettings"
       },
       "OperationResponse": {
         "properties": {
@@ -2939,6 +3878,24 @@
             },
             "type": "array",
             "title": "Rules"
+          },
+          "required_attributes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "title",
+                "artist",
+                "genre",
+                "bpm",
+                "key",
+                "release_date",
+                "remixer",
+                "comment",
+                "artwork"
+              ]
+            },
+            "type": "array",
+            "title": "Required Attributes"
           }
         },
         "type": "object",
@@ -2960,6 +3917,24 @@
             },
             "type": "array",
             "title": "Rules"
+          },
+          "required_attributes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "title",
+                "artist",
+                "genre",
+                "bpm",
+                "key",
+                "release_date",
+                "remixer",
+                "comment",
+                "artwork"
+              ]
+            },
+            "type": "array",
+            "title": "Required Attributes"
           }
         },
         "type": "object",
@@ -2995,6 +3970,31 @@
               }
             ],
             "title": "Rules"
+          },
+          "required_attributes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "title",
+                    "artist",
+                    "genre",
+                    "bpm",
+                    "key",
+                    "release_date",
+                    "remixer",
+                    "comment",
+                    "artwork"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Attributes"
           }
         },
         "type": "object",
@@ -3240,6 +4240,17 @@
           "file_name": {
             "type": "string",
             "title": "File Name"
+          },
+          "folder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder"
           },
           "soundcloud_id": {
             "anyOf": [
@@ -3662,6 +4673,38 @@
         "type": "object",
         "title": "TrackInfoUpdateRequest",
         "description": "Request to update track metadata. All fields optional."
+      },
+      "TreeNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/TreeNode"
+            },
+            "type": "array",
+            "title": "Children",
+            "default": []
+          },
+          "track_count": {
+            "type": "integer",
+            "title": "Track Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "TreeNode",
+        "description": "A node in the folder tree."
       },
       "UserInfo": {
         "properties": {

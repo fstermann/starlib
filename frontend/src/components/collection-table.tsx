@@ -4,8 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQueryState } from 'nuqs';
 import { searchParams } from '@/lib/search-params';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronUp, ChevronDown, ChevronsUpDown, Music, Save, PenLine, Eraser, Check, ArrowDown, Sparkles, MoveRight } from 'lucide-react';
-import { api, type TrackBrowse, type TrackInfoUpdateRequest, type BrowseParams, type BatchUpdateItem, type RuleType, type Ruleset } from '@/lib/api';
+import { ChevronUp, ChevronDown, ChevronsUpDown, Music, Check, PencilLine, Eraser, ArrowDown, Workflow, MoveRight } from 'lucide-react';
+import { api, type TrackBrowse, type TrackInfoUpdateRequest, type BrowseParams, type BatchUpdateItem, type RuleType, type Ruleset, type RequiredAttribute } from '@/lib/api';
 import { StepBadge, RULE_ICONS, RULE_ICON_COLORS } from '@/components/rulesets/rule-card';
 import { usePlayer } from '@/lib/player-context';
 import { MiniWaveform } from '@/components/mini-waveform';
@@ -20,6 +20,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LogoSpinner } from '@/components/logo-spinner';
@@ -29,6 +39,7 @@ import type { SourceTrack, SourceMetadata } from '@/lib/sources/types';
 import { removeMix, parseRemix } from '@/lib/string-utils';
 import { serializeComment } from '@/app/meta-editor/utils';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
 const EDIT_ROW_HEIGHT = 40;
@@ -42,21 +53,23 @@ type EditableField = 'title' | 'artist' | 'genre' | 'bpm' | 'key' | 'release_dat
 // Fixed widths so columns keep their shape when the left grid cell narrows
 // (e.g. editor panel open) — horizontal scroll handles overflow instead.
 const EDITABLE_FIELDS: { key: EditableField; label: string; width: string }[] = [
-  { key: 'title', label: 'Title', width: 'w-96' },
-  { key: 'artist', label: 'Artist', width: 'w-64' },
-  { key: 'remixer', label: 'Remixer', width: 'w-32' },
-  { key: 'original_artist', label: 'Orig. Artist', width: 'w-32' },
-  { key: 'mix_name', label: 'Mix', width: 'w-24' },
-  { key: 'genre', label: 'Genre', width: 'w-32' },
+  { key: 'title', label: 'Title', width: 'w-64' },
+  { key: 'artist', label: 'Artist', width: 'w-48' },
+  { key: 'genre', label: 'Genre', width: 'w-28' },
   { key: 'bpm', label: 'BPM', width: 'w-14' },
   { key: 'key', label: 'Key', width: 'w-14' },
-  { key: 'release_date', label: 'Release', width: 'w-28' },
+  { key: 'remixer', label: 'Remixer', width: 'w-32' },
+  { key: 'original_artist', label: 'Orig. Artist', width: 'w-28' },
+  { key: 'mix_name', label: 'Mix', width: 'w-20' },
+  { key: 'release_date', label: 'Release', width: 'w-24' },
 ];
 
 /** Fields not stored in the API — remix composition helpers (not remixer itself, which is a real field) */
 
 interface CollectionTableProps {
   mode: string;
+  /** When set, browse by absolute folder path (recursive) instead of mode. */
+  folderPath?: string;
   scrollToFilePath?: string;
   selectedFilePath?: string;
   onSelect?: (item: TrackBrowse) => void;
@@ -81,6 +94,71 @@ const SORTABLE_FIELDS: Partial<Record<EditableField, SortBy>> = {
   key: 'key',
   release_date: 'release_date',
 };
+
+function getMissingAttributes(item: TrackBrowse, required: RequiredAttribute[]): RequiredAttribute[] {
+  return required.filter((attr) => {
+    if (attr === 'artwork') return !item.has_artwork;
+    const val = item[attr as keyof TrackBrowse];
+    if (Array.isArray(val)) return val.length === 0;
+    return val == null || val === '';
+  });
+}
+
+function canFinalizeItem(item: TrackBrowse, required: RequiredAttribute[]): boolean {
+  return getMissingAttributes(item, required).length === 0;
+}
+
+function RulesetPreview({ ruleset }: { ruleset: Ruleset }) {
+  return (
+    <>
+      <div className="px-3 py-2 border-b border-border">
+        <p className="text-xs font-medium">{ruleset.name}</p>
+      </div>
+      <div className="py-1.5 flex flex-col gap-0.5 px-1.5">
+        {ruleset.rules.map((rule, i) => {
+          const Icon = RULE_ICONS[rule.type];
+          const folderParam = rule.params.folder as string | undefined;
+          const formatParam = rule.params.format as string | undefined;
+          const detail = rule.type === 'convert'
+            ? formatParam ? formatParam.toUpperCase() : 'preferred'
+            : folderParam ? `${folderParam}/` : '';
+          const isConditional = rule.requires.length > 0;
+          return (
+            <div key={i} className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${isConditional ? 'ml-4 border-l-2 border-blue-400/30 pl-2.5' : ''}`}>
+              <StepBadge step={i + 1} type={rule.type} />
+              <Icon className={`size-3.5 shrink-0 ${RULE_ICON_COLORS[rule.type]}`} />
+              <span className="capitalize">{rule.type}</span>
+              {detail && <span className="font-mono text-[10px] opacity-70">{detail}</span>}
+              {isConditional && (
+                <span className="text-[9px] rounded bg-blue-400/20 text-blue-300 px-1 font-medium">
+                  if converted
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function RulesetBadge({ ruleset }: { ruleset: Ruleset }) {
+  return (
+    <TooltipProvider delayDuration={200} disableHoverableContent>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-1 rounded border border-emerald-600/30 bg-emerald-600/10 text-emerald-600 px-1.5 py-0.5 text-xs font-medium cursor-default align-middle">
+            <Workflow className="size-3" />
+            {ruleset.name}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={6} showArrow={false} className="p-0 max-w-64 bg-popover text-popover-foreground border">
+          <RulesetPreview ruleset={ruleset} />
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 function SortIcon({ col, sortBy, sortOrder }: { col: SortBy; sortBy: SortBy; sortOrder: SortOrder }) {
   if (col !== sortBy) return <ChevronsUpDown className="size-3 opacity-30" />;
@@ -121,6 +199,8 @@ interface EditRowProps {
   hasScLink?: boolean;
   scLinkChanged?: boolean;
   activeRuleset?: Ruleset | null;
+  /** When set, show a Folder column with the path relative to this root. */
+  folderPath?: string;
 }
 
 function ScFieldRow({ label, scValue, currentValue, onApply }: { label: string; scValue?: string; currentValue: string; onApply: () => void }) {
@@ -139,7 +219,7 @@ function ScFieldRow({ label, scValue, currentValue, onApply }: { label: string; 
   );
 }
 
-function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, scData, onToggleSelect, onFieldChange, onApplyScField, onApplyAllScFields, onSelectScTrack, onSearchSc, onSelect, onSaveRow, onFinalize, savingRow, pendingArtworkB64, hasScLink, scLinkChanged, activeRuleset }: EditRowProps) {
+function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, scData, onToggleSelect, onFieldChange, onApplyScField, onApplyAllScFields, onSelectScTrack, onSearchSc, onSelect, onSaveRow, onFinalize, savingRow, pendingArtworkB64, hasScLink, scLinkChanged, activeRuleset, folderPath }: EditRowProps) {
   const artworkUrl = item.has_artwork
     ? api.getArtworkUrl(item.file_path)
     : pendingArtworkB64
@@ -156,12 +236,8 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
 
   const isChanged = (field: EditableField): boolean => field in changes;
 
-  const missingForFinalize: string[] = [];
-  if (!item.title) missingForFinalize.push('title');
-  if (!item.artist) missingForFinalize.push('artist');
-  if (!item.genre) missingForFinalize.push('genre');
-  if (!item.release_date) missingForFinalize.push('release_date');
-  if (!item.has_artwork) missingForFinalize.push('artwork');
+  const required = activeRuleset?.required_attributes ?? [];
+  const missingForFinalize = getMissingAttributes(item, required);
   const canFinalize = missingForFinalize.length === 0;
 
   return (
@@ -304,18 +380,29 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
       {/* File name — click to open single editor */}
       <span
         data-file-path={item.file_path}
-        className="w-28 shrink-0 text-[11px] text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors"
+        className="w-48 shrink-0 text-[11px] text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors"
         title={item.file_name}
         onClick={onSelect}
       >
         {item.file_name}
       </span>
 
+      {/* Folder column (only in tree/path mode) */}
+      {folderPath && (
+        <span className="w-36 shrink-0 text-[11px] text-muted-foreground truncate" title={item.folder ?? ''}>
+          {item.folder && folderPath
+            ? (item.folder.startsWith(folderPath)
+              ? item.folder.slice(folderPath.length + 1) || '.'
+              : item.folder)
+            : '—'}
+        </span>
+      )}
+
       {/* Editable fields */}
       {EDITABLE_FIELDS.map(f => (
         <div key={f.key} className={`${f.width} min-w-0 shrink-0`}>
           <input
-            className={`w-full h-7 px-1.5 text-xs rounded border bg-transparent outline-none transition-colors
+            className={`w-full h-7 px-1.5 text-xs rounded border bg-transparent outline-none transition-colors placeholder:text-muted-foreground/30
               ${isChanged(f.key) ? 'border-amber-400/70 bg-amber-400/5' : 'border-transparent hover:border-border'}
               focus:border-ring focus:ring-1 focus:ring-ring/50`}
             value={getValue(f.key)}
@@ -333,21 +420,28 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
       {/* Pinned action column — stays at the right edge when the row scrolls
           horizontally so Save / Apply Rules are always reachable. */}
       <div
-        className={`sticky right-0 ml-auto shrink-0 flex items-center gap-1 pl-2 pr-3 h-full
-          shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.2)]
-          ${isCurrent ? 'bg-primary/10' : isSelected ? 'bg-accent/30' : 'bg-card'}`}
+        className={cn(
+          'sticky right-0 ml-auto shrink-0 flex items-center gap-1 pl-3 pr-2 h-full',
+          'backdrop-blur-md bg-card/60 shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.25)]',
+          isCurrent && 'bg-primary/15',
+          isSelected && !isCurrent && 'bg-accent/40',
+        )}
       >
         {/* Per-row save */}
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                className={`shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors
-                  ${hasChanges ? 'text-primary hover:bg-primary/10 cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}
+                className={cn(
+                  'shrink-0 size-7 flex items-center justify-center rounded-md transition-colors',
+                  hasChanges
+                    ? 'text-primary bg-primary/10 hover:bg-primary/20 cursor-pointer'
+                    : 'text-muted-foreground/25 cursor-default',
+                )}
                 disabled={!hasChanges || savingRow}
                 onClick={onSaveRow}
               >
-                {savingRow ? <LogoSpinner className="size-3" /> : <Check className="size-3.5" />}
+                {savingRow ? <LogoSpinner className="size-3.5" /> : <Check className="size-3.5" />}
               </button>
             </TooltipTrigger>
             <TooltipContent side="left">
@@ -362,12 +456,16 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className={`shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors
-                    ${canFinalize ? 'text-emerald-600 hover:bg-emerald-600/10 cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}
+                  className={cn(
+                    'shrink-0 size-7 flex items-center justify-center rounded-md transition-colors',
+                    canFinalize
+                      ? 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 cursor-pointer'
+                      : 'text-muted-foreground/25 cursor-default',
+                  )}
                   disabled={!canFinalize}
                   onClick={onFinalize}
                 >
-                  <Sparkles className="size-3.5" />
+                  <Workflow className="size-3.5" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="left" sideOffset={6} showArrow={false} className="p-0 max-w-64 bg-popover text-popover-foreground border">
@@ -433,7 +531,7 @@ function SkeletonRow() {
   );
 }
 
-export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSelect, onTotalChange, onItemsChange, refreshToken, onEditSaved, activeRuleset, autoApplyScResults, pendingFieldEdits, setPendingFieldEdits }: CollectionTableProps) {
+export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFilePath, onSelect, onTotalChange, onItemsChange, refreshToken, onEditSaved, activeRuleset, autoApplyScResults, pendingFieldEdits, setPendingFieldEdits }: CollectionTableProps) {
   const [sortBy, setSortBy] = useQueryState('sort', searchParams.sort);
   const [sortOrder, setSortOrder] = useQueryState('order', searchParams.order);
   const [search] = useQueryState('search', searchParams.search);
@@ -476,6 +574,12 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
 
   // Pending SC link (comment) changes per file: filePath -> serialized comment string
   const [pendingScLinks, setPendingScLinks] = useState<Map<string, string>>(new Map());
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: React.ReactNode;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
   // SoundCloud auto-fill
   const [scAutoFill, setScAutoFill] = useState(false);
@@ -504,7 +608,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
       abortRef.current = controller;
 
       try {
-        const resp = await api.browseFiles(mode, {
+        const browseParams = {
           search: search || undefined,
           genres: genres.length ? genres : undefined,
           keys: keys.length ? keys : undefined,
@@ -514,7 +618,10 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
           sort_order: overrideSortOrder ?? sortOrder,
           page: pageNum,
           size: PAGE_SIZE,
-        }, controller.signal);
+        };
+        const resp = folderPath
+          ? await api.browsePath(folderPath, { ...browseParams, recursive: true }, controller.signal)
+          : await api.browseFiles(mode, browseParams, controller.signal);
         const nextItems = reset ? resp.items : [...itemsRef.current, ...resp.items];
         itemsRef.current = nextItems;
         setItems(nextItems);
@@ -532,11 +639,11 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
         setReloading(false);
       }
     },
-    [mode, search, genres, keys, bpmMin, bpmMax, sortBy, sortOrder]
+    [mode, folderPath, search, genres, keys, bpmMin, bpmMax, sortBy, sortOrder]
   );
 
-  // Reload on mode / filter / sort change
-  const filtersKey = `${mode}|${search}|${genres.join(',')}|${keys.join(',')}|${bpmMin}|${bpmMax}|${sortBy}|${sortOrder}`;
+  // Reload on mode / folderPath / filter / sort change
+  const filtersKey = `${mode}|${folderPath ?? ''}|${search}|${genres.join(',')}|${keys.join(',')}|${bpmMin}|${bpmMax}|${sortBy}|${sortOrder}`;
   useEffect(() => {
     // Cancel any in-flight request from the previous mode/filters
     abortRef.current?.abort(new DOMException('Request cancelled', 'AbortError'));
@@ -594,9 +701,9 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
     } else if (sortOrder === 'asc') {
       setSortOrder('desc');
     } else {
-      // Third click: reset to default
-      setSortBy('file_name');
-      setSortOrder('asc');
+      // Third click: reset to default (added date, newest first)
+      setSortBy('mtime');
+      setSortOrder('desc');
     }
   }
 
@@ -908,6 +1015,19 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
   const handleSave = async () => {
     const allPaths = new Set([...changes.keys(), ...pendingArtwork.keys(), ...pendingScLinks.keys()]);
     if (allPaths.size === 0) return;
+    if (allPaths.size > 1) {
+      setConfirmDialog({
+        open: true,
+        title: 'Save all changes?',
+        message: `Write changes to ${allPaths.size} files. This cannot be undone.`,
+        onConfirm: () => { void runSave(allPaths); },
+      });
+      return;
+    }
+    await runSave(allPaths);
+  };
+
+  const runSave = async (allPaths: Set<string>) => {
     setSaving(true);
 
     const batchItems: BatchUpdateItem[] = [];
@@ -993,8 +1113,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
     }
   }, [items, onEditSaved, renderStepsToast]);
 
-  const handleFinalizeSelected = useCallback(async () => {
-    const paths = selectedPaths.size > 0 ? [...selectedPaths] : items.map(i => i.file_path);
+  const runFinalizeSelected = useCallback(async (paths: string[]) => {
     const toastId = toast.loading(`Applying rules to ${paths.length} track${paths.length !== 1 ? 's' : ''}…`);
     let succeeded = 0;
     let failed = 0;
@@ -1012,7 +1131,39 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
       toast.warning(`${succeeded} applied, ${failed} failed`, { id: toastId });
     }
     onEditSaved?.();
-  }, [selectedPaths, items, onEditSaved]);
+  }, [onEditSaved]);
+
+  const handleFinalizeSelected = useCallback(() => {
+    const candidates = selectedPaths.size > 0
+      ? items.filter(i => selectedPaths.has(i.file_path))
+      : items;
+    const required = activeRuleset?.required_attributes ?? [];
+    const eligible = candidates.filter(i => canFinalizeItem(i, required));
+    const skipped = candidates.length - eligible.length;
+    if (eligible.length === 0) return;
+    const paths = eligible.map(i => i.file_path);
+    const skippedSuffix = skipped > 0 ? ` (${skipped} skipped — missing required fields)` : '';
+    if (paths.length > 1 || skipped > 0) {
+      setConfirmDialog({
+        open: true,
+        title: 'Apply rules?',
+        message: (
+          <>
+            Apply {activeRuleset ? <RulesetBadge ruleset={activeRuleset} /> : 'ruleset'} to{' '}
+            {paths.length} track{paths.length !== 1 ? 's' : ''}{skippedSuffix}. This will rewrite tags and move files.
+          </>
+        ),
+        onConfirm: () => { void runFinalizeSelected(paths); },
+      });
+      return;
+    }
+    void runFinalizeSelected(paths);
+  }, [selectedPaths, items, activeRuleset, runFinalizeSelected]);
+
+  const finalizeEligibleCount = (selectedPaths.size > 0
+    ? items.filter(i => selectedPaths.has(i.file_path))
+    : items
+  ).filter(i => canFinalizeItem(i, activeRuleset?.required_attributes ?? [])).length;
 
   const virtualItems = virtualizer.getVirtualItems();
   const allChangedPaths = new Set([...changes.keys(), ...pendingArtwork.keys(), ...pendingScLinks.keys()]);
@@ -1020,6 +1171,28 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
 
   return (
     <div className="flex flex-col h-full min-h-0">
+      <AlertDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialog.message}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                confirmDialog.onConfirm();
+                setConfirmDialog((prev) => ({ ...prev, open: false }));
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* Edit-mode toolbar */}
       {/* Toolbar */}
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/20 shrink-0">
@@ -1059,7 +1232,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
               }
             }}
           >
-            <PenLine className="size-3" />
+            <PencilLine className="size-3" />
             Set{selectedPaths.size > 0 ? ` (${selectedPaths.size})` : ' all'}
           </Button>
           <Button
@@ -1111,7 +1284,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
             disabled={totalChanges === 0 || saving}
             onClick={handleSave}
           >
-            {saving ? <LogoSpinner className="size-3" /> : <Save className="size-3" />}
+            {saving ? <LogoSpinner className="size-3" /> : <Check className="size-3" />}
             Save all
           </Button>
           {activeRuleset?.rules.length ? (
@@ -1123,39 +1296,14 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
                     size="sm"
                     className="h-7 text-xs gap-1 text-emerald-600 border-emerald-600/30 hover:bg-emerald-600/10"
                     onClick={handleFinalizeSelected}
+                    disabled={finalizeEligibleCount === 0}
                   >
-                    <Sparkles className="size-3" />
-                    Apply rules{selectedPaths.size > 0 ? ` (${selectedPaths.size})` : ''}
+                    <Workflow className="size-3" />
+                    Apply rules{finalizeEligibleCount > 0 ? ` (${finalizeEligibleCount})` : ''}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" sideOffset={6} showArrow={false} className="p-0 max-w-64 bg-popover text-popover-foreground border">
-                  <div className="px-3 py-2 border-b border-border">
-                    <p className="text-xs font-medium">{activeRuleset.name}</p>
-                  </div>
-                  <div className="py-1.5 flex flex-col gap-0.5 px-1.5">
-                    {activeRuleset.rules.map((rule, i) => {
-                      const Icon = RULE_ICONS[rule.type];
-                      const folderParam = rule.params.folder as string | undefined;
-                      const formatParam = rule.params.format as string | undefined;
-                      const detail = rule.type === 'convert'
-                        ? formatParam ? formatParam.toUpperCase() : 'preferred'
-                        : folderParam ? `${folderParam}/` : '';
-                      const isConditional = rule.requires.length > 0;
-                      return (
-                        <div key={i} className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${isConditional ? 'ml-4 border-l-2 border-blue-400/30 pl-2.5' : ''}`}>
-                          <StepBadge step={i + 1} type={rule.type} />
-                          <Icon className={`size-3.5 shrink-0 ${RULE_ICON_COLORS[rule.type]}`} />
-                          <span className="capitalize">{rule.type}</span>
-                          {detail && <span className="font-mono text-[10px] opacity-70">{detail}</span>}
-                          {isConditional && (
-                            <span className="text-[9px] rounded bg-blue-400/20 text-blue-300 px-1 font-medium">
-                              if converted
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <RulesetPreview ruleset={activeRuleset} />
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -1172,7 +1320,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
       <div className="w-max min-w-full">
 
       {/* Header row — sticky to the top of the scroll container */}
-      <div role="row" className="sticky top-0 z-20 flex items-center gap-1.5 pl-3 pr-0 h-9 border-b border-border bg-muted/30 text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
+      <div role="row" className="sticky top-0 z-20 flex items-center gap-1.5 pl-3 pr-0 h-9 border-b border-border bg-background text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
         {/* Select all checkbox */}
         <div className="shrink-0 w-6 flex items-center justify-center">
           <Checkbox
@@ -1200,19 +1348,23 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
         <div className="shrink-0 w-20" />
         {/* File name header */}
         <button
-          className="w-28 shrink-0 flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer"
+          className="w-48 shrink-0 flex items-center gap-0.5 uppercase hover:text-foreground transition-colors cursor-pointer"
           onClick={() => handleSort('file_name')}
         >
           File
           <SortIcon col="file_name" sortBy={sortBy} sortOrder={sortOrder} />
         </button>
+        {/* Folder header (only in tree/path mode) */}
+        {folderPath && (
+          <span className="w-36 shrink-0">Folder</span>
+        )}
         {/* Field headers — sortable where applicable */}
         {EDITABLE_FIELDS.map(f => {
           const sortKey = SORTABLE_FIELDS[f.key];
           return sortKey ? (
             <button
               key={f.key}
-              className={`${f.width} min-w-0 shrink-0 flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer`}
+              className={`${f.width} min-w-0 shrink-0 flex items-center gap-0.5 uppercase hover:text-foreground transition-colors cursor-pointer`}
               onClick={() => handleSort(sortKey)}
             >
               {f.label}
@@ -1226,7 +1378,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
         })}
         {/* Added date header — sortable by mtime */}
         <button
-          className="w-20 shrink-0 flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer"
+          className="w-20 shrink-0 flex items-center gap-0.5 uppercase hover:text-foreground transition-colors cursor-pointer"
           onClick={() => handleSort('mtime')}
         >
           Added
@@ -1234,9 +1386,11 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
         </button>
         {/* Pinned action column spacer — matches the sticky block in the row */}
         <div
-          className={`sticky right-0 ml-auto shrink-0 flex items-center gap-1 pl-2 pr-3 h-full bg-muted/30
-            shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.2)]
-            ${activeRuleset?.rules.length ? 'w-[calc(3rem+0.75rem)]' : 'w-[calc(1.5rem+0.75rem)]'}`}
+          className={cn(
+            'sticky right-0 ml-auto shrink-0 flex items-center gap-1 pl-2 pr-2 h-full bg-background',
+            'shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.2)]',
+            activeRuleset?.rules.length ? 'w-[4.75rem]' : 'w-[2.75rem]',
+          )}
         />
       </div>
 
@@ -1283,6 +1437,7 @@ export function CollectionTable({ mode, scrollToFilePath, selectedFilePath, onSe
                       hasScLink={!!item.soundcloud_id || pendingScLinks.has(item.file_path)}
                       scLinkChanged={pendingScLinks.has(item.file_path)}
                       activeRuleset={activeRuleset}
+                      folderPath={folderPath}
                     />
                 ) : (
                   <SkeletonRow />

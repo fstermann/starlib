@@ -44,9 +44,19 @@ def get_ruleset_by_id(ruleset_id: str) -> Ruleset:
     return _CLASSIC_RULESET
 
 
-def create_ruleset(name: str, rules: list[Rule]) -> tuple[Ruleset, RulesetsConfig]:
+def create_ruleset(
+    name: str,
+    rules: list[Rule],
+    required_attributes: list[str] | None = None,
+) -> tuple[Ruleset, RulesetsConfig]:
     """Create a new user ruleset and return it together with the updated config."""
-    new_ruleset = Ruleset(id=str(uuid.uuid4()), name=name, is_builtin=False, rules=rules)
+    new_ruleset = Ruleset(
+        id=str(uuid.uuid4()),
+        name=name,
+        is_builtin=False,
+        rules=rules,
+        required_attributes=required_attributes or [],
+    )
 
     def _add(s):
         s.rulesets.items.append(new_ruleset)
@@ -55,7 +65,12 @@ def create_ruleset(name: str, rules: list[Rule]) -> tuple[Ruleset, RulesetsConfi
     return new_ruleset, updated.rulesets
 
 
-def update_ruleset(ruleset_id: str, name: str | None, rules: list[Rule] | None) -> Ruleset:
+def update_ruleset(
+    ruleset_id: str,
+    name: str | None,
+    rules: list[Rule] | None,
+    required_attributes: list[str] | None = None,
+) -> Ruleset:
     """Update a user ruleset's name and/or rules.
 
     Raises
@@ -76,6 +91,8 @@ def update_ruleset(ruleset_id: str, name: str | None, rules: list[Rule] | None) 
                 updates["name"] = name
             if rules is not None:
                 updates["rules"] = rules
+            if required_attributes is not None:
+                updates["required_attributes"] = required_attributes
             updated = r.model_copy(update=updates)
             items[i] = updated
             settings_service.save(settings)

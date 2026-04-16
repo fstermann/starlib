@@ -168,6 +168,20 @@ def invalidate_file(file_path: Path) -> None:
     delete_track(file_path)
 
 
+def get_distinct_folders() -> list[str]:
+    """Return all distinct folder paths that contain at least one track."""
+    with get_engine().connect() as conn:
+        rows = conn.execute(select(Track.folder).distinct().order_by(Track.folder)).all()
+    return [r[0] for r in rows]
+
+
+def get_folder_track_counts() -> dict[str, int]:
+    """Return direct track count per folder (non-recursive)."""
+    with get_engine().connect() as conn:
+        rows = conn.execute(select(Track.folder, func.count()).group_by(Track.folder)).all()
+    return {r[0]: int(r[1]) for r in rows}
+
+
 def get_soundcloud_ids(folder: Path) -> list[int]:
     with get_engine().connect() as conn:
         rows = conn.execute(
@@ -181,10 +195,23 @@ def get_soundcloud_ids(folder: Path) -> list[int]:
 # ---------------------------------------------------------------------------
 
 
+def _folder_clause(folder: Path, recursive: bool = False):
+    """Return a SQLAlchemy clause filtering tracks to *folder*.
+
+    When *recursive* is True the clause matches the folder itself and all
+    subdirectories beneath it.
+    """
+    folder_str = str(folder)
+    if recursive:
+        return or_(Track.folder == folder_str, Track.folder.startswith(folder_str + "/"))
+    return Track.folder == folder_str
+
+
 def _apply_filters(
     stmt: Select,
     *,
     folder: Path | None = None,
+    recursive: bool = False,
     search_query: str | None = None,
     genres: list[str] | None = None,
     keys: list[str] | None = None,
@@ -195,7 +222,7 @@ def _apply_filters(
     artists: list[str] | None = None,
 ) -> Select:
     if folder is not None:
-        stmt = stmt.where(Track.folder == str(folder))
+        stmt = stmt.where(_folder_clause(folder, recursive))
     if genres:
         stmt = stmt.where(Track.genre.in_(genres))
     if keys:
@@ -221,6 +248,7 @@ def _apply_filters(
 def get_tracks(
     folder: Path,
     *,
+    recursive: bool = False,
     search_query: str | None = None,
     genres: list[str] | None = None,
     artists: list[str] | None = None,
@@ -236,6 +264,7 @@ def get_tracks(
     stmt = _apply_filters(
         select(Track),
         folder=folder,
+        recursive=recursive,
         search_query=search_query,
         genres=genres,
         artists=artists,
@@ -271,6 +300,7 @@ def get_tracks(
 def get_filter_values(
     folder: Path,
     *,
+    recursive: bool = False,
     search_query: str | None = None,
     genres: list[str] | None = None,
     keys: list[str] | None = None,
@@ -279,7 +309,7 @@ def get_filter_values(
 ) -> dict:
     """Return dropdown option lists + faceted counts for genres, keys, artists, BPM range."""
     engine = get_engine()
-    folder_str = str(folder)
+    fc = _folder_clause(folder, recursive)
 
     def _count(stmt: Select) -> list:
         with engine.connect() as conn:
@@ -291,7 +321,7 @@ def get_filter_values(
             for r in conn.execute(
                 select(Track.genre)
                 .where(
-                    Track.folder == folder_str,
+                    fc,
                     Track.genre.is_not(None),
                     Track.genre != "",
                 )
@@ -303,7 +333,7 @@ def get_filter_values(
             r[0]
             for r in conn.execute(
                 select(Track.key)
-                .where(Track.folder == folder_str, Track.key.is_not(None), Track.key != "")
+                .where(fc, Track.key.is_not(None), Track.key != "")
                 .group_by(Track.key)
                 .order_by(Track.key)
             ).all()
@@ -312,7 +342,7 @@ def get_filter_values(
     # Genre counts: apply all filters EXCEPT genres.
     genre_stmt = _apply_filters(
         select(Track.genre, func.count()).where(
-            Track.folder == folder_str, Track.genre.is_not(None), Track.genre != ""
+            fc, Track.genre.is_not(None), Track.genre != ""
         ),
         search_query=search_query,
         keys=keys,
@@ -324,7 +354,7 @@ def get_filter_values(
 
     # Key counts: apply all filters EXCEPT keys.
     key_stmt = _apply_filters(
-        select(Track.key, func.count()).where(Track.folder == folder_str, Track.key.is_not(None), Track.key != ""),
+        select(Track.key, func.count()).where(fc, Track.key.is_not(None), Track.key != ""),
         search_query=search_query,
         genres=genres,
         bpm_min=bpm_min,
@@ -335,12 +365,12 @@ def get_filter_values(
 
     with engine.connect() as conn:
         bpm_row = conn.execute(
-            select(func.min(Track.bpm), func.max(Track.bpm)).where(Track.folder == folder_str, Track.bpm.is_not(None))
+            select(func.min(Track.bpm), func.max(Track.bpm)).where(fc, Track.bpm.is_not(None))
         ).first()
         artists_rows = conn.execute(
             select(Track.artist_str)
             .where(
-                Track.folder == folder_str,
+                fc,
                 Track.artist_str.is_not(None),
                 Track.artist_str != "",
             )
@@ -359,21 +389,21 @@ def get_filter_values(
     }
 
 
-def get_stats(folder: Path) -> dict:
+def get_stats(folder: Path, *, recursive: bool = False) -> dict:
     engine = get_engine()
-    folder_str = str(folder)
+    fc = _folder_clause(folder, recursive)
     with engine.connect() as conn:
-        total = conn.execute(select(func.count()).select_from(Track).where(Track.folder == folder_str)).scalar_one()
+        total = conn.execute(select(func.count()).select_from(Track).where(fc)).scalar_one()
         complete = conn.execute(
-            select(func.count()).select_from(Track).where(Track.folder == folder_str, Track.is_complete.is_(True))
+            select(func.count()).select_from(Track).where(fc, Track.is_complete.is_(True))
         ).scalar_one()
         bpm_row = conn.execute(
-            select(func.min(Track.bpm), func.max(Track.bpm)).where(Track.folder == folder_str, Track.bpm.is_not(None))
+            select(func.min(Track.bpm), func.max(Track.bpm)).where(fc, Track.bpm.is_not(None))
         ).first()
 
         def _missing(where) -> int:
             return conn.execute(
-                select(func.count()).select_from(Track).where(Track.folder == folder_str, where)
+                select(func.count()).select_from(Track).where(fc, where)
             ).scalar_one()
 
         missing_artwork = _missing(Track.has_artwork.is_(False))
@@ -386,7 +416,7 @@ def get_stats(folder: Path) -> dict:
             for r in conn.execute(
                 select(Track.genre)
                 .where(
-                    Track.folder == folder_str,
+                    fc,
                     Track.genre.is_not(None),
                     Track.genre != "",
                 )
@@ -399,7 +429,7 @@ def get_stats(folder: Path) -> dict:
             for r in conn.execute(
                 select(Track.artist_str)
                 .where(
-                    Track.folder == folder_str,
+                    fc,
                     Track.artist_str.is_not(None),
                     Track.artist_str != "",
                 )
@@ -411,7 +441,7 @@ def get_stats(folder: Path) -> dict:
             r[0]
             for r in conn.execute(
                 select(Track.key)
-                .where(Track.folder == folder_str, Track.key.is_not(None), Track.key != "")
+                .where(fc, Track.key.is_not(None), Track.key != "")
                 .distinct()
                 .order_by(Track.key)
             ).all()

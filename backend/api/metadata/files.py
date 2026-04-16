@@ -27,6 +27,7 @@ from backend.schemas.metadata import (
     TrackInfoResponse,
     TrackInfoUpdateRequest,
 )
+from backend.schemas.tree import TreeNode
 from soundcloud_tools.handler.folder import FolderHandler
 from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
 
@@ -93,6 +94,160 @@ def initialize_folders(
     for subfolder in ["prepare", "collection", "cleaned", "archive"]:
         (root_folder / subfolder).mkdir(exist_ok=True)
     return OperationResponse(success=True, message=f"Folders created under {root_folder}")
+
+
+@router.get("/folders/tree", response_model=TreeNode)
+def get_folder_tree(
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> TreeNode:
+    """Return the folder tree built from indexed tracks.
+
+    Only folders that contain at least one track (directly or in a
+    descendant) are included — empty directories are omitted.
+    """
+    root_str = str(root_folder.resolve())
+    folder_counts = cache_db.get_folder_track_counts()
+
+    # Build nested dict from flat folder paths
+    tree: dict = {}
+    for fp in folder_counts:
+        # Make path relative to root; skip entries outside root
+        if not fp.startswith(root_str):
+            continue
+        rel = fp[len(root_str):]
+        if rel.startswith("/"):
+            rel = rel[1:]
+        parts = rel.split("/") if rel else []
+        node = tree
+        for part in parts:
+            node = node.setdefault(part, {})
+
+    def _build(name: str, abs_path: str, children_dict: dict) -> TreeNode:
+        children = [
+            _build(k, f"{abs_path}/{k}", v)
+            for k, v in sorted(children_dict.items())
+        ]
+        total = folder_counts.get(abs_path, 0) + sum(c.track_count for c in children)
+        return TreeNode(id=abs_path, name=name, children=children, track_count=total)
+
+    root_name = root_folder.name
+    children = [
+        _build(k, f"{root_str}/{k}", v)
+        for k, v in sorted(tree.items())
+    ]
+    total = folder_counts.get(root_str, 0) + sum(c.track_count for c in children)
+    return TreeNode(id=root_str, name=root_name, children=children, track_count=total)
+
+
+@router.get("/folders/browse-path", response_model=Page[TrackBrowseResponse])
+def browse_by_path(
+    response: Response,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+    path: str = Query(..., description="Absolute folder path to browse"),
+    recursive: bool = Query(True, description="Include tracks in subfolders"),
+    search: str | None = Query(None),
+    genres: list[str] | None = Query(None),
+    artists: list[str] | None = Query(None),
+    keys: list[str] | None = Query(None),
+    bpm_min: int | None = Query(None, ge=0),
+    bpm_max: int | None = Query(None, ge=0),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|mtime)$"),
+    sort_order: str = Query("asc", pattern="^(asc|desc)$"),
+) -> Page[TrackBrowseResponse]:
+    """Browse tracks by absolute folder path with optional recursion."""
+    folder_path = Path(path).resolve()
+    resolved_root = root_folder.resolve()
+
+    # Security: path must be under root
+    try:
+        folder_path.relative_to(resolved_root)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Path is outside the music library root.",
+        )
+
+    collection.ensure_folder_indexed(folder_path, root_folder=resolved_root)
+
+    try:
+        pairs = collection.list_and_filter_tracks(
+            folder=folder_path,
+            search_query=search,
+            genres=genres,
+            artists=artists,
+            keys=keys,
+            bpm_min=bpm_min,
+            bpm_max=bpm_max,
+            start_date=date_from,
+            end_date=date_to,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            recursive=recursive,
+        )
+    except Exception as e:
+        logger.exception("Failed to list tracks")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list tracks",
+        ) from e
+
+    def to_browse_response(row) -> TrackBrowseResponse:
+        return TrackBrowseResponse(
+            file_path=row["file_path"],
+            file_name=row["file_name"],
+            folder=_row_value(row, "folder"),
+            soundcloud_id=_row_value(row, "soundcloud_id"),
+            has_artwork=bool(row["has_artwork"]),
+            file_format=row["file_format"],
+            file_size=row["file_size"] or 0,
+            duration=row["duration"],
+            mtime=row["mtime"],
+            **_row_to_browse_dict(row),
+        )
+
+    if collection.is_indexing(folder_path):
+        response.headers["X-Cache-Loading"] = "true"
+
+    return paginate(pairs, transformer=lambda items: [to_browse_response(p) for p in items])
+
+
+@router.get("/folders/browse-path/filter-values", response_model=FilterValuesResponse)
+def browse_path_filter_values(
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+    path: str = Query(..., description="Absolute folder path"),
+    recursive: bool = Query(True),
+    search: str | None = Query(None),
+    genres: list[str] | None = Query(None),
+    keys: list[str] | None = Query(None),
+    bpm_min: int | None = Query(None, ge=0),
+    bpm_max: int | None = Query(None, ge=0),
+) -> FilterValuesResponse:
+    """Get available filter values for a folder path."""
+    folder_path = Path(path).resolve()
+    resolved_root = root_folder.resolve()
+
+    try:
+        folder_path.relative_to(resolved_root)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Path is outside the music library root.",
+        )
+
+    collection.ensure_folder_indexed(folder_path, root_folder=resolved_root)
+
+    result = collection.get_folder_filter_values(
+        folder_path,
+        recursive=recursive,
+        search_query=search,
+        genres=genres,
+        keys=keys,
+        bpm_min=bpm_min,
+        bpm_max=bpm_max,
+    )
+    return FilterValuesResponse(**result)
 
 
 @router.get("/folders/{mode}/files", response_model=Page[FileInfoResponse])
@@ -216,6 +371,7 @@ def browse_folder_files(
         return TrackBrowseResponse(
             file_path=row["file_path"],
             file_name=row["file_name"],
+            folder=_row_value(row, "folder"),
             soundcloud_id=_row_value(row, "soundcloud_id"),
             has_artwork=bool(row["has_artwork"]),
             file_format=row["file_format"],
@@ -387,7 +543,7 @@ def update_file_info(
     # Targeted cache update: remove old entry and re-index the (possibly renamed) file
     if new_path != resolved_path:
         cache_db.delete_track(resolved_path)
-    collection.reindex_file(new_path.parent, new_path)
+    collection.reindex_file(root_folder, new_path)
 
     return OperationResponse(
         success=True,
@@ -447,7 +603,7 @@ def batch_update_file_info(
 
             if new_path != resolved_path:
                 cache_db.delete_track(resolved_path)
-            collection.reindex_file(new_path.parent, new_path)
+            collection.reindex_file(root_folder, new_path)
 
             results.append(
                 BatchResultItem(

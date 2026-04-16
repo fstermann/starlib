@@ -17,6 +17,7 @@ export type SortOrder = (typeof SORT_ORDERS)[number];
 /** URL param parsers for all shareable page state. */
 export const searchParams = {
   mode: parseAsString.withDefault('prepare'),
+  nodeId: parseAsString.withDefault(''),
   search: parseAsString.withDefault(''),
   genres: parseAsArrayOf(parseAsString).withDefault([]),
   keys: parseAsArrayOf(parseAsString).withDefault([]),

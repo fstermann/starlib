@@ -185,6 +185,7 @@ class TrackBrowseResponse(_TagFieldsMixin):
 
     file_path: str
     file_name: str
+    folder: str | None = None
     soundcloud_id: int | None = None
     has_artwork: bool = False
     file_format: str

@@ -22,29 +22,19 @@ import { Eye, EyeOff, GripVertical, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { api, type FolderConfig, type Ruleset } from "@/lib/api";
+import { api, type FolderConfig } from "@/lib/api";
 import { toast } from "sonner";
 
 // ─── Single row ────────────────────────────────────────────────────────────────
 
 function FolderRow({
   folder,
-  rulesets,
   onChange,
   onDelete,
 }: {
   folder: FolderConfig;
-  rulesets: Ruleset[];
   onChange: (f: FolderConfig) => void;
   onDelete: () => void;
 }) {
@@ -113,36 +103,6 @@ function FolderRow({
           </span>
         </TooltipTrigger>
         <TooltipContent side="top">Subdirectory name in your music library root</TooltipContent>
-      </Tooltip>
-
-      {/* Ruleset picker */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="w-36 shrink-0">
-            <Select
-              value={folder.ruleset_id ?? "__none__"}
-              onValueChange={(v) =>
-                onChange({ ...folder, ruleset_id: v === "__none__" ? null : v })
-              }
-            >
-              <SelectTrigger className={cn("h-6 w-full text-xs", !folder.visible && "opacity-40")}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__" className="text-xs">
-                  <span className="text-muted-foreground/50">—</span>
-                </SelectItem>
-                {rulesets.length > 0 && <SelectSeparator />}
-                {rulesets.map((r) => (
-                  <SelectItem key={r.id} value={r.id} className="text-xs">
-                    {r.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="top">Ruleset applied when finalizing from this folder. Blank uses the active ruleset.</TooltipContent>
       </Tooltip>
 
       {/* Delete */}
@@ -216,12 +176,10 @@ function AddFolderRow({ onAdd }: { onAdd: (name: string, label: string) => void 
 
 export function FolderConfigManager() {
   const [folders, setFolders] = useState<FolderConfig[]>([]);
-  const [rulesets, setRulesets] = useState<Ruleset[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     api.getFoldersConfig().then((c) => setFolders(c.folders));
-    api.getRulesets().then((r) => setRulesets(r.rulesets));
   }, []);
 
   const sensors = useSensors(
@@ -265,7 +223,7 @@ export function FolderConfigManager() {
       toast.error(`Folder "${name}" already exists`);
       return;
     }
-    const next = [...folders, { name, label, visible: true, order: folders.length, ruleset_id: null }];
+    const next = [...folders, { name, label, visible: true, order: folders.length }];
     save(next);
   }
 
@@ -279,7 +237,6 @@ export function FolderConfigManager() {
           <span className="w-3.5 shrink-0" />
           <span className="flex-1">Label</span>
           <span className="w-24 shrink-0 text-right">Folder</span>
-          <span className="w-36 shrink-0">Ruleset</span>
           <span className="w-3.5 shrink-0" />
         </div>
 
@@ -290,7 +247,6 @@ export function FolderConfigManager() {
                 <FolderRow
                   key={folder.name}
                   folder={folder}
-                  rulesets={rulesets}
                   onChange={(updated) => handleChange(folder.name, updated)}
                   onDelete={() => handleDelete(folder.name)}
                 />

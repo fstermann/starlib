@@ -20,6 +20,6 @@ test.describe('Navigation', () => {
     const sidebar = page.locator('aside');
     const homeLink = sidebar.getByRole('link', { name: /Starlib/i });
     await homeLink.click();
-    await expect(page).toHaveURL('/');
+    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/(\?.*)?$/);
   });
 });

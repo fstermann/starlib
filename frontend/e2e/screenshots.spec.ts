@@ -381,11 +381,102 @@ async function mockScreenshotApi(page: Page) {
       contentType: 'application/json',
       body: JSON.stringify({
         folders: [
-          { name: 'prepare', label: 'Prepare', visible: true, order: 0, ruleset_id: 'classic' },
-          { name: 'cleaned', label: 'Cleaned', visible: true, order: 1, ruleset_id: null },
-          { name: 'collection', label: 'Collection', visible: true, order: 2, ruleset_id: null },
+          { name: 'prepare', label: 'Prepare', visible: true, order: 0 },
+          { name: 'cleaned', label: 'Cleaned', visible: true, order: 1 },
+          { name: 'collection', label: 'Collection', visible: true, order: 2 },
         ],
       }),
+    }),
+  );
+
+  // Folder tree
+  await page.route('**/api/metadata/folders/tree', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: '/music',
+        name: 'music',
+        children: [
+          {
+            id: '/music/prepare',
+            name: 'prepare',
+            children: [
+              { id: '/music/prepare/new-arrivals', name: 'new-arrivals', children: [] },
+              { id: '/music/prepare/to-review', name: 'to-review', children: [] },
+            ],
+          },
+          {
+            id: '/music/cleaned',
+            name: 'cleaned',
+            children: [
+              { id: '/music/cleaned/2024', name: '2024', children: [] },
+              { id: '/music/cleaned/2025', name: '2025', children: [] },
+            ],
+          },
+          {
+            id: '/music/collection',
+            name: 'collection',
+            children: [
+              {
+                id: '/music/collection/house',
+                name: 'house',
+                children: [
+                  { id: '/music/collection/house/deep-house', name: 'deep-house', children: [] },
+                  { id: '/music/collection/house/melodic-house', name: 'melodic-house', children: [] },
+                  { id: '/music/collection/house/progressive-house', name: 'progressive-house', children: [] },
+                ],
+              },
+              {
+                id: '/music/collection/techno',
+                name: 'techno',
+                children: [
+                  { id: '/music/collection/techno/melodic-techno', name: 'melodic-techno', children: [] },
+                  { id: '/music/collection/techno/peak-time', name: 'peak-time', children: [] },
+                ],
+              },
+              { id: '/music/collection/ambient', name: 'ambient', children: [] },
+            ],
+          },
+          { id: '/music/archive', name: 'archive', children: [] },
+        ],
+      }),
+    }),
+  );
+
+  // Single folder ruleset
+  await page.route('**/api/folders/ruleset?*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ path: '', ruleset_id: null }),
+    }),
+  );
+
+  // All folder rulesets (registered after single so it takes priority)
+  await page.route('**/api/folders/rulesets-by-path', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ folder_rulesets: {} }),
+    }),
+  );
+
+  // Browse by path (match query string start to avoid matching filter-values)
+  await page.route(/\/api\/metadata\/folders\/browse-path\?/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: browseItems, total: browseItems.length, page: 1, size: 50, pages: 1 }),
+    }),
+  );
+
+  // Browse path filter values
+  await page.route('**/api/metadata/folders/browse-path/filter-values*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ genres: ['House', 'Melodic Techno', 'Progressive House', 'Deep House'], genre_counts: {}, artists: [], keys: ['Cm', 'Am', 'Dm'], key_counts: {}, bpm_min: 118, bpm_max: 132 }),
     }),
   );
 
@@ -459,6 +550,18 @@ function injectAuthTokens(page: Page) {
       permalink: 'dj-starlib',
       avatar_url: 'https://placehold.co/200x200/1a1a2e/e94560?text=DJ',
     }));
+    // Pre-expand tree panel nodes to showcase the folder hierarchy
+    localStorage.setItem(
+      'tree-panel-expanded:filesystem',
+      JSON.stringify([
+        '/music',
+        '/music/prepare',
+        '/music/cleaned',
+        '/music/collection',
+        '/music/collection/house',
+        '/music/collection/techno',
+      ]),
+    );
   });
 }
 

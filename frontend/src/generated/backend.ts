@@ -232,6 +232,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metadata/folders/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Folder Tree
+         * @description Return the folder tree built from indexed tracks.
+         *
+         *     Only folders that contain at least one track (directly or in a
+         *     descendant) are included — empty directories are omitted.
+         */
+        get: operations["get_folder_tree_api_metadata_folders_tree_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metadata/folders/browse-path": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Browse By Path
+         * @description Browse tracks by absolute folder path with optional recursion.
+         */
+        get: operations["browse_by_path_api_metadata_folders_browse_path_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metadata/folders/browse-path/filter-values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Browse Path Filter Values
+         * @description Get available filter values for a folder path.
+         */
+        get: operations["browse_path_filter_values_api_metadata_folders_browse_path_filter_values_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metadata/folders/{mode}/files": {
         parameters: {
             query?: never;
@@ -914,6 +977,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/folders/rulesets-by-path": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get All Folder Rulesets
+         * @description Return all direct path→binding mappings (no inheritance applied).
+         */
+        get: operations["get_all_folder_rulesets_api_folders_rulesets_by_path_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/folders/ruleset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Folder Ruleset
+         * @description Return the resolved ruleset binding for an absolute folder path.
+         */
+        get: operations["get_folder_ruleset_api_folders_ruleset_get"];
+        /**
+         * Set Folder Ruleset
+         * @description Bind a ruleset to an absolute folder path.
+         */
+        put: operations["set_folder_ruleset_api_folders_ruleset_put"];
+        post?: never;
+        /**
+         * Delete Folder Ruleset
+         * @description Remove the ruleset binding for a folder path.
+         */
+        delete: operations["delete_folder_ruleset_api_folders_ruleset_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -962,7 +1073,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/ollama/status": {
+    "/api/ai/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Settings
+         * @description Return the active provider and per-provider configuration.
+         */
+        get: operations["get_settings_api_ai_settings_get"];
+        put?: never;
+        /**
+         * Update Settings
+         * @description Patch the AI settings; only provided fields are persisted.
+         */
+        post: operations["update_settings_api_ai_settings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -971,9 +1106,9 @@ export interface paths {
         };
         /**
          * Get Status
-         * @description Check if Ollama is reachable and return available model names.
+         * @description Return readiness for the currently selected provider.
          */
-        get: operations["get_status_api_ollama_status_get"];
+        get: operations["get_status_api_ai_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -982,7 +1117,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/ollama/start": {
+    "/api/ai/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Models
+         * @description List models offered by the currently selected provider.
+         */
+        get: operations["get_models_api_ai_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/ollama/start": {
         parameters: {
             query?: never;
             header?: never;
@@ -993,16 +1148,16 @@ export interface paths {
         put?: never;
         /**
          * Start Ollama
-         * @description Ensure Ollama is running, auto-starting it if necessary.
+         * @description Ensure the Ollama server is running (auto-starting if installed).
          */
-        post: operations["start_ollama_api_ollama_start_post"];
+        post: operations["start_ollama_api_ai_ollama_start_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/ollama/stop": {
+    "/api/ai/ollama/stop": {
         parameters: {
             query?: never;
             header?: never;
@@ -1013,54 +1168,54 @@ export interface paths {
         put?: never;
         /**
          * Stop Ollama
-         * @description Stop Ollama if we started it.
+         * @description Stop the Ollama server if we started it.
          */
-        post: operations["stop_ollama_api_ollama_stop_post"];
+        post: operations["stop_ollama_api_ai_ollama_stop_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/ollama/models": {
+    "/api/ai/ollama/pull-model": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Models
-         * @description Return installed models with details (name, size, digest).
-         */
-        get: operations["get_models_api_ollama_models_get"];
+        get?: never;
         put?: never;
-        post?: never;
+        /**
+         * Pull Ollama Model
+         * @description Pull an Ollama model by name via ``ollama pull``.
+         */
+        post: operations["pull_ollama_model_api_ai_ollama_pull_model_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/ollama/settings": {
+    "/api/ai/anthropic/credentials": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Settings
-         * @description Return current Ollama settings.
-         */
-        get: operations["get_settings_api_ollama_settings_get"];
+        get?: never;
         put?: never;
         /**
-         * Update Settings
-         * @description Update Ollama URL and/or selected model.
+         * Set Anthropic Credentials
+         * @description Store the Anthropic API key in the OS keychain.
          */
-        post: operations["update_settings_api_ollama_settings_post"];
-        delete?: never;
+        post: operations["set_anthropic_credentials_api_ai_anthropic_credentials_post"];
+        /**
+         * Delete Anthropic Credentials
+         * @description Remove the Anthropic API key from the OS keychain.
+         */
+        delete: operations["delete_anthropic_credentials_api_ai_anthropic_credentials_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1070,6 +1225,106 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AiCredentialsRequest */
+        AiCredentialsRequest: {
+            /** Api Key */
+            api_key: string;
+        };
+        /**
+         * AiModel
+         * @description A single model offered by the active provider.
+         */
+        AiModel: {
+            /** Id */
+            id: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** Size */
+            size?: number | null;
+        };
+        /** AiModelsResponse */
+        AiModelsResponse: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "ollama" | "anthropic" | "claude_code";
+            /** Models */
+            models?: components["schemas"]["AiModel"][];
+        };
+        /**
+         * AiSettingsRequest
+         * @description Partial update; only provided fields are persisted.
+         */
+        AiSettingsRequest: {
+            /** Provider */
+            provider?: ("ollama" | "anthropic" | "claude_code") | null;
+            ollama?: components["schemas"]["OllamaSettings"] | null;
+            anthropic?: components["schemas"]["AnthropicSettings"] | null;
+            claude_code?: components["schemas"]["ClaudeCodeSettings"] | null;
+        };
+        /**
+         * AiSettingsResponse
+         * @description Full AI settings payload (API key is never included).
+         */
+        AiSettingsResponse: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "ollama" | "anthropic" | "claude_code";
+            ollama: components["schemas"]["OllamaSettings"];
+            anthropic: components["schemas"]["AnthropicSettings"];
+            claude_code: components["schemas"]["ClaudeCodeSettings"];
+            /**
+             * Anthropic Has Api Key
+             * @default false
+             */
+            anthropic_has_api_key: boolean;
+        };
+        /**
+         * AiStatusResponse
+         * @description Per-provider readiness. Shape mirrors the previous Ollama status.
+         */
+        AiStatusResponse: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "ollama" | "anthropic" | "claude_code";
+            /** Available */
+            available: boolean;
+            /**
+             * Installed
+             * @default false
+             */
+            installed: boolean;
+            /**
+             * Started By Us
+             * @default false
+             */
+            started_by_us: boolean;
+            /** Models */
+            models?: string[];
+            /**
+             * Has Api Key
+             * @default false
+             */
+            has_api_key: boolean;
+            /**
+             * Claude Cli Installed
+             * @default false
+             */
+            claude_cli_installed: boolean;
+        };
+        /** AnthropicSettings */
+        AnthropicSettings: {
+            /**
+             * Model
+             * @default claude-haiku-4-5-20251001
+             */
+            model: string;
+        };
         /**
          * AuthorizeResponse
          * @description Authorization URL response.
@@ -1154,6 +1409,14 @@ export interface components {
             /** Expires In */
             expires_in?: number | null;
             user: components["schemas"]["UserInfo"];
+        };
+        /** ClaudeCodeSettings */
+        ClaudeCodeSettings: {
+            /**
+             * Model
+             * @default haiku
+             */
+            model: string;
         };
         /**
          * CollectionSoundcloudIdsResponse
@@ -1331,7 +1594,7 @@ export interface components {
         };
         /**
          * FolderConfig
-         * @description Configuration for a single music folder tab.
+         * @description Configuration for a single music folder shortcut.
          */
         FolderConfig: {
             /** Name */
@@ -1348,8 +1611,59 @@ export interface components {
              * @default 0
              */
             order: number;
+        };
+        /**
+         * FolderRulesetBinding
+         * @description A per-folder ruleset assignment.
+         *
+         *     ``recursive=True`` means the binding also applies to descendant folders
+         *     that have no explicit binding of their own.
+         */
+        FolderRulesetBinding: {
             /** Ruleset Id */
             ruleset_id?: string | null;
+            /**
+             * Recursive
+             * @default false
+             */
+            recursive: boolean;
+        };
+        /**
+         * FolderRulesetResponse
+         * @description A resolved folder ruleset binding.
+         *
+         *     When the ``source_path`` differs from the requested path, the binding
+         *     was inherited from a recursive ancestor.
+         */
+        FolderRulesetResponse: {
+            /** Path */
+            path: string;
+            /** Ruleset Id */
+            ruleset_id: string | null;
+            /**
+             * Recursive
+             * @default false
+             */
+            recursive: boolean;
+            /** Source Path */
+            source_path?: string | null;
+        };
+        /** FolderRulesetUpdate */
+        FolderRulesetUpdate: {
+            /** Ruleset Id */
+            ruleset_id: string | null;
+            /**
+             * Recursive
+             * @default false
+             */
+            recursive: boolean;
+        };
+        /** FolderRulesetsResponse */
+        FolderRulesetsResponse: {
+            /** Folder Rulesets */
+            folder_rulesets: {
+                [key: string]: components["schemas"]["FolderRulesetBinding"];
+            };
         };
         /**
          * FoldersConfig
@@ -1364,61 +1678,23 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
-        /**
-         * OllamaModel
-         * @description Single model from Ollama's /api/tags response.
-         */
-        OllamaModel: {
+        /** OllamaPullRequest */
+        OllamaPullRequest: {
             /** Name */
             name: string;
-            /**
-             * Size
-             * @default 0
-             */
-            size: number;
-            /**
-             * Digest
-             * @default
-             */
-            digest: string;
         };
-        /**
-         * OllamaModelsResponse
-         * @description Response for GET /ollama/models.
-         */
-        OllamaModelsResponse: {
-            /** Models */
-            models?: components["schemas"]["OllamaModel"][];
-        };
-        /**
-         * OllamaSettingsRequest
-         * @description Request body for POST /ollama/settings.
-         */
-        OllamaSettingsRequest: {
-            /** Url */
-            url?: string | null;
-            /** Model */
-            model?: string | null;
-        };
-        /**
-         * OllamaStatusResponse
-         * @description Response for GET /ollama/status.
-         */
-        OllamaStatusResponse: {
-            /** Available */
-            available: boolean;
+        /** OllamaSettings */
+        OllamaSettings: {
             /**
-             * Installed
-             * @default false
+             * Url
+             * @default http://localhost:11434
              */
-            installed: boolean;
-            /** Models */
-            models?: string[];
+            url: string;
             /**
-             * Started By Us
-             * @default false
+             * Model
+             * @default gemma4:e2b
              */
-            started_by_us: boolean;
+            model: string;
         };
         /**
          * OperationResponse
@@ -1536,6 +1812,8 @@ export interface components {
             is_builtin: boolean;
             /** Rules */
             rules?: components["schemas"]["Rule"][];
+            /** Required Attributes */
+            required_attributes?: ("title" | "artist" | "genre" | "bpm" | "key" | "release_date" | "remixer" | "comment" | "artwork")[];
         };
         /**
          * RulesetCreate
@@ -1546,6 +1824,8 @@ export interface components {
             name: string;
             /** Rules */
             rules?: components["schemas"]["Rule"][];
+            /** Required Attributes */
+            required_attributes?: ("title" | "artist" | "genre" | "bpm" | "key" | "release_date" | "remixer" | "comment" | "artwork")[];
         };
         /**
          * RulesetUpdate
@@ -1556,6 +1836,8 @@ export interface components {
             name?: string | null;
             /** Rules */
             rules?: components["schemas"]["Rule"][] | null;
+            /** Required Attributes */
+            required_attributes?: ("title" | "artist" | "genre" | "bpm" | "key" | "release_date" | "remixer" | "comment" | "artwork")[] | null;
         };
         /**
          * RulesetsResponse
@@ -1633,6 +1915,8 @@ export interface components {
             file_path: string;
             /** File Name */
             file_name: string;
+            /** Folder */
+            folder?: string | null;
             /** Soundcloud Id */
             soundcloud_id?: number | null;
             /**
@@ -1728,6 +2012,26 @@ export interface components {
             starlib_meta?: string | null;
             /** Artwork Data */
             artwork_data?: string | null;
+        };
+        /**
+         * TreeNode
+         * @description A node in the folder tree.
+         */
+        TreeNode: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Children
+             * @default []
+             */
+            children: components["schemas"]["TreeNode"][];
+            /**
+             * Track Count
+             * @default 0
+             */
+            track_count: number;
         };
         /**
          * UserInfo
@@ -1994,6 +2298,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OperationResponse"];
+                };
+            };
+        };
+    };
+    get_folder_tree_api_metadata_folders_tree_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeNode"];
+                };
+            };
+        };
+    };
+    browse_by_path_api_metadata_folders_browse_path_get: {
+        parameters: {
+            query: {
+                /** @description Absolute folder path to browse */
+                path: string;
+                /** @description Include tracks in subfolders */
+                recursive?: boolean;
+                search?: string | null;
+                genres?: string[] | null;
+                artists?: string[] | null;
+                keys?: string[] | null;
+                bpm_min?: number | null;
+                bpm_max?: number | null;
+                date_from?: string | null;
+                date_to?: string | null;
+                sort_by?: string;
+                sort_order?: string;
+                /** @description Page number */
+                page?: number;
+                /** @description Page size */
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_TrackBrowseResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    browse_path_filter_values_api_metadata_folders_browse_path_filter_values_get: {
+        parameters: {
+            query: {
+                /** @description Absolute folder path */
+                path: string;
+                recursive?: boolean;
+                search?: string | null;
+                genres?: string[] | null;
+                keys?: string[] | null;
+                bpm_min?: number | null;
+                bpm_max?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilterValuesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2813,6 +3223,126 @@ export interface operations {
             };
         };
     };
+    get_all_folder_rulesets_api_folders_rulesets_by_path_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderRulesetsResponse"];
+                };
+            };
+        };
+    };
+    get_folder_ruleset_api_folders_ruleset_get: {
+        parameters: {
+            query: {
+                /** @description Absolute folder path */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderRulesetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_folder_ruleset_api_folders_ruleset_put: {
+        parameters: {
+            query: {
+                /** @description Absolute folder path */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderRulesetUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderRulesetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_folder_ruleset_api_folders_ruleset_delete: {
+        parameters: {
+            query: {
+                /** @description Absolute folder path */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderRulesetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_settings_api_settings_get: {
         parameters: {
             query?: never;
@@ -2925,7 +3455,7 @@ export interface operations {
             };
         };
     };
-    get_status_api_ollama_status_get: {
+    get_settings_api_ai_settings_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -2940,94 +3470,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OllamaStatusResponse"];
+                    "application/json": components["schemas"]["AiSettingsResponse"];
                 };
             };
         };
     };
-    start_ollama_api_ollama_start_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OllamaStatusResponse"];
-                };
-            };
-        };
-    };
-    stop_ollama_api_ollama_stop_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OllamaStatusResponse"];
-                };
-            };
-        };
-    };
-    get_models_api_ollama_models_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OllamaModelsResponse"];
-                };
-            };
-        };
-    };
-    get_settings_api_ollama_settings_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    update_settings_api_ollama_settings_post: {
+    update_settings_api_ai_settings_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3036,7 +3484,120 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["OllamaSettingsRequest"];
+                "application/json": components["schemas"]["AiSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSettingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_ai_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiStatusResponse"];
+                };
+            };
+        };
+    };
+    get_models_api_ai_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiModelsResponse"];
+                };
+            };
+        };
+    };
+    start_ollama_api_ai_ollama_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiStatusResponse"];
+                };
+            };
+        };
+    };
+    stop_ollama_api_ai_ollama_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiStatusResponse"];
+                };
+            };
+        };
+    };
+    pull_ollama_model_api_ai_ollama_pull_model_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OllamaPullRequest"];
             };
         };
         responses: {
@@ -3058,6 +3619,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_anthropic_credentials_api_ai_anthropic_credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiCredentialsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSettingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_anthropic_credentials_api_ai_anthropic_credentials_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSettingsResponse"];
                 };
             };
         };

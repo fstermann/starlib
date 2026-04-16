@@ -35,6 +35,7 @@ _CLASSIC_RULESET = Ruleset(
     id=CLASSIC_RULESET_ID,
     name="Classic",
     is_builtin=True,
+    required_attributes=["title", "artist", "genre", "release_date", "artwork"],
     rules=[
         Rule(id="convert", type="convert", input="source", params={"format": "preferred"}),
         Rule(
@@ -49,7 +50,7 @@ _CLASSIC_RULESET = Ruleset(
 )
 
 _DEFAULT_FOLDERS = [
-    FolderConfig(name="prepare", label="Prepare", visible=True, order=0, ruleset_id="classic"),
+    FolderConfig(name="prepare", label="Prepare", visible=True, order=0),
     FolderConfig(name="cleaned", label="Cleaned", visible=True, order=1),
     FolderConfig(name="collection", label="Collection", visible=True, order=2),
 ]

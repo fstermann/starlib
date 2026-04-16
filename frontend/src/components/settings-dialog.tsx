@@ -27,7 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { getSetting, setSetting } from "@/lib/settings";
-import { api, type AiModel, type AiProvider, type AiSettings } from "@/lib/api";
+import { api, type AiModel, type AiProvider, type AiSettings, type FolderRulesetBinding, type Ruleset } from "@/lib/api";
 import {
   Select,
   SelectContent,
@@ -42,7 +42,7 @@ import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { RulesetManager } from "@/components/rulesets/ruleset-manager";
 import { FolderConfigManager } from "@/components/rulesets/folder-config-manager";
-import { Clapperboard, FolderOpen, Workflow } from "lucide-react";
+import { Clapperboard, FolderOpen, Trash2, Workflow } from "lucide-react";
 
 type SectionId = "general" | "appearance" | "meta-editor" | "folders" | "rulesets" | "ai" | "updates";
 
@@ -120,6 +120,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [apiKeySaving, setApiKeySaving] = useState(false);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
+  // Per-folder rulesets
+  const [folderRulesets, setFolderRulesets] = useState<Record<string, FolderRulesetBinding>>({});
+  const [allRulesets, setAllRulesets] = useState<Ruleset[]>([]);
+
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
@@ -141,7 +145,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       api.getRootMusicFolder(),
       api.getAiSettings(),
       api.getAiStatus(),
-    ]).then(([autoUpdate, outputFormat, rootPath, settings, status]) => {
+      api.getAllFolderRulesets(),
+      api.getRulesets(),
+    ]).then(([autoUpdate, outputFormat, rootPath, settings, status, folderRulesetsData, rulesetsData]) => {
       setAutoUpdate(autoUpdate);
       setPreferredOutputFormat(outputFormat);
       setRootFolder(rootPath);
@@ -154,6 +160,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       if (status.available) {
         api.getAiModels().then(({ models }) => setAiModels(models));
       }
+      setFolderRulesets(folderRulesetsData.folder_rulesets);
+      setAllRulesets(rulesetsData.rulesets);
       setLoaded(true);
     });
   }, [open]);
@@ -483,13 +491,90 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </div>
 
                 <div className="flex flex-col gap-4">
-                  <h2 className="text-base font-semibold">Folder tabs</h2>
+                  <h2 className="text-base font-semibold">Folder shortcuts</h2>
                   <p className="text-sm text-muted-foreground">
-                    Choose which folders appear in the meta editor, in what order,
-                    and which ruleset applies when finalizing from each folder.
-                    Removing a tab only hides it — it does not delete the folder or any tracks on disk.
+                    Choose which folders appear as quick-access buttons in the meta editor, and in what order.
+                    Removing a shortcut only hides it — it does not delete the folder or any tracks on disk.
+                    Per-folder rulesets are configured below.
                   </p>
                   <FolderConfigManager />
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <h2 className="text-base font-semibold">Folder rulesets</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Assign rulesets to specific folders. Tracks finalized from a folder with a
+                    bound ruleset will use that ruleset instead of the global default.
+                    You can also assign rulesets via right-click in the folder tree.
+                  </p>
+
+                  <FolderRulesetAdder
+                    rootFolder={rootFolder}
+                    allRulesets={allRulesets}
+                    inTauri={inTauri}
+                    onAdded={async () => {
+                      const data = await api.getAllFolderRulesets();
+                      setFolderRulesets(data.folder_rulesets);
+                    }}
+                  />
+
+                  {Object.keys(folderRulesets).length === 0 ? (
+                    <p className="text-xs text-muted-foreground/60 italic">
+                      No folder-specific rulesets configured. Add one above, or right-click a folder in the tree.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {Object.entries(folderRulesets).map(([path, binding]) => {
+                        const ruleset = allRulesets.find((r) => r.id === binding.ruleset_id);
+                        const displayPath = rootFolder && path.startsWith(rootFolder)
+                          ? path.slice(rootFolder.length + 1) || "/"
+                          : path;
+                        return (
+                          <div key={path} className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted/30">
+                            <FolderOpen className="size-3.5 shrink-0 text-muted-foreground/70" />
+                            <span className="flex-1 text-xs font-mono truncate" title={path}>
+                              {displayPath}
+                            </span>
+                            <span
+                              className="flex items-center gap-1 shrink-0 text-xs text-muted-foreground"
+                              title={
+                                ruleset
+                                  ? binding.recursive
+                                    ? `Ruleset: ${ruleset.name} (applies to this folder and sub-folders)`
+                                    : `Ruleset: ${ruleset.name}`
+                                  : "Unknown ruleset"
+                              }
+                            >
+                              <Workflow
+                                className={`size-3 ${ruleset ? "text-primary/70" : "text-muted-foreground/50"}`}
+                                {...(binding.recursive ? { strokeWidth: 2.5 } : {})}
+                              />
+                              {binding.recursive && (
+                                <span className="text-[9px] leading-none font-semibold tracking-wider uppercase text-primary/70">
+                                  R
+                                </span>
+                              )}
+                              <span className={ruleset ? "" : "italic text-muted-foreground/60"}>
+                                {ruleset?.name ?? "Unknown"}
+                              </span>
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 shrink-0 text-muted-foreground hover:text-destructive"
+                              onClick={async () => {
+                                await api.deleteFolderRuleset(path);
+                                const data = await api.getAllFolderRulesets();
+                                setFolderRulesets(data.folder_rulesets);
+                              }}
+                            >
+                              <Trash2 className="size-3" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -950,5 +1035,107 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface FolderRulesetAdderProps {
+  rootFolder: string;
+  allRulesets: Ruleset[];
+  inTauri: boolean;
+  onAdded: () => void | Promise<void>;
+}
+
+function FolderRulesetAdder({ rootFolder, allRulesets, inTauri, onAdded }: FolderRulesetAdderProps) {
+  const [pathDraft, setPathDraft] = useState("");
+  const [rulesetId, setRulesetId] = useState<string>("");
+  const [recursive, setRecursive] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSubmit = pathDraft.trim().length > 0 && rulesetId && !saving;
+
+  async function handleAdd() {
+    if (!canSubmit) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.setFolderRuleset(pathDraft.trim(), rulesetId, recursive);
+      setPathDraft("");
+      setRulesetId("");
+      setRecursive(false);
+      await onAdded();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to add binding");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-border/60 bg-muted/20 p-2.5">
+      <Label className="text-xs font-medium">Add a folder ruleset</Label>
+      <div className="flex gap-2">
+        <Input
+          value={pathDraft}
+          onChange={(e) => { setPathDraft(e.target.value); setError(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+          placeholder={rootFolder ? `${rootFolder}/subfolder` : "/absolute/path/to/folder"}
+          className="h-8 font-mono text-xs flex-1"
+        />
+        {inTauri && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 shrink-0 px-2"
+            title="Browse for folder"
+            onClick={async () => {
+              const { open } = await import("@tauri-apps/plugin-dialog");
+              const selected = await open({
+                directory: true,
+                multiple: false,
+                defaultPath: rootFolder || undefined,
+              });
+              if (typeof selected === "string") {
+                setPathDraft(selected);
+                setError(null);
+              }
+            }}
+          >
+            <FolderOpen className="size-3.5" />
+          </Button>
+        )}
+      </div>
+      <div className="flex gap-2 items-center">
+        <Select value={rulesetId} onValueChange={setRulesetId}>
+          <SelectTrigger className="h-8 text-xs flex-1">
+            <SelectValue placeholder="Select ruleset…" />
+          </SelectTrigger>
+          <SelectContent>
+            {allRulesets.map((r) => (
+              <SelectItem key={r.id} value={r.id} className="text-xs">
+                {r.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none shrink-0 px-1">
+          <Checkbox
+            checked={recursive}
+            onCheckedChange={(v) => setRecursive(v === true)}
+          />
+          Recursive
+        </label>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 shrink-0"
+          disabled={!canSubmit}
+          onClick={handleAdd}
+        >
+          {saving ? <Loader2 className="size-3.5 animate-spin" /> : "Add"}
+        </Button>
+      </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
   );
 }

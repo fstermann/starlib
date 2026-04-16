@@ -21,11 +21,13 @@ import { api, type FilterValues } from '@/lib/api';
 
 interface CollectionFilterBarProps {
   mode: string;
+  /** When set, fetch filter values by absolute folder path instead of mode. */
+  folderPath?: string;
   total?: number;
   cacheLoading?: boolean;
 }
 
-export function CollectionFilterBar({ mode, total, cacheLoading }: CollectionFilterBarProps) {
+export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: CollectionFilterBarProps) {
   const [filterValues, setFilterValues] = useState<FilterValues | null>(null);
   const [bpmRange, setBpmRange] = useState<[number, number] | null>(null);
   const [bpmValue, setBpmValue] = useState<[number, number] | null>(null);
@@ -37,7 +39,7 @@ export function CollectionFilterBar({ mode, total, cacheLoading }: CollectionFil
   const [bpmMax, setBpmMax] = useQueryState('bpmMax', searchParams.bpmMax);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filterFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevModeRef = useRef<string>(mode);
+
   const genreScrollRef = useRef<HTMLDivElement>(null);
   const keyScrollRef = useRef<HTMLDivElement>(null);
   const savedGenreScroll = useRef<number>(0);
@@ -56,10 +58,12 @@ export function CollectionFilterBar({ mode, total, cacheLoading }: CollectionFil
     }
   });
 
-  // Reset state and clear URL filter params when mode changes
+  // Reset state and clear URL filter params when mode or folderPath changes
+  const sourceKey = folderPath ?? mode;
+  const prevSourceRef = useRef<string>(sourceKey);
   useEffect(() => {
-    if (prevModeRef.current !== mode) {
-      prevModeRef.current = mode;
+    if (prevSourceRef.current !== sourceKey) {
+      prevSourceRef.current = sourceKey;
       setBpmRange(null);
       setBpmValue(null);
       setFilterValues(null);
@@ -70,19 +74,23 @@ export function CollectionFilterBar({ mode, total, cacheLoading }: CollectionFil
       setBpmMin(null);
       setBpmMax(null);
     }
-  }, [mode, setSearch, setGenres, setKeys, setBpmMin, setBpmMax]);
+  }, [sourceKey, setSearch, setGenres, setKeys, setBpmMin, setBpmMax]);
 
-  // Re-fetch filter values whenever mode or any active filter changes.
+  // Re-fetch filter values whenever mode/folderPath or any active filter changes.
   // Debounced so rapid filter changes don't cause double layout animations.
   useEffect(() => {
+    const filterParams = {
+      search: search || undefined,
+      genres: genres.length ? genres : undefined,
+      keys: keys.length ? keys : undefined,
+      bpmMin: bpmMin ?? undefined,
+      bpmMax: bpmMax ?? undefined,
+    };
     const doFetch = () => {
-      api.getFilterValues(mode, {
-        search: search || undefined,
-        genres: genres.length ? genres : undefined,
-        keys: keys.length ? keys : undefined,
-        bpmMin: bpmMin ?? undefined,
-        bpmMax: bpmMax ?? undefined,
-      }).then((vals) => {
+      const promise = folderPath
+        ? api.getPathFilterValues(folderPath, { ...filterParams, recursive: true })
+        : api.getFilterValues(mode, filterParams);
+      promise.then((vals) => {
         setFilterValues(vals);
         if (vals.bpm_min != null && vals.bpm_max != null) {
           const range: [number, number] = [vals.bpm_min, vals.bpm_max];
@@ -98,7 +106,7 @@ export function CollectionFilterBar({ mode, total, cacheLoading }: CollectionFil
       if (filterFetchTimerRef.current) clearTimeout(filterFetchTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, search, genres, keys, bpmMin, bpmMax]);
+  }, [mode, folderPath, search, genres, keys, bpmMin, bpmMax]);
 
   function handleSearchChange(value: string) {
     setSearchInput(value);
