@@ -8,7 +8,7 @@ import uuid
 
 from backend.core.services import settings as settings_service
 from backend.core.services.settings import _CLASSIC_RULESET, CLASSIC_RULESET_ID
-from backend.schemas.ruleset import Rule, Ruleset, RulesetsConfig
+from backend.schemas.ruleset import RequiredAttribute, Rule, Ruleset, RulesetsConfig
 
 __all__ = [
     "CLASSIC_RULESET_ID",
@@ -47,7 +47,7 @@ def get_ruleset_by_id(ruleset_id: str) -> Ruleset:
 def create_ruleset(
     name: str,
     rules: list[Rule],
-    required_attributes: list[str] | None = None,
+    required_attributes: list[RequiredAttribute] | None = None,
 ) -> tuple[Ruleset, RulesetsConfig]:
     """Create a new user ruleset and return it together with the updated config."""
     new_ruleset = Ruleset(
@@ -69,7 +69,7 @@ def update_ruleset(
     ruleset_id: str,
     name: str | None,
     rules: list[Rule] | None,
-    required_attributes: list[str] | None = None,
+    required_attributes: list[RequiredAttribute] | None = None,
 ) -> Ruleset:
     """Update a user ruleset's name and/or rules.
 

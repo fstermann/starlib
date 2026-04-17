@@ -114,7 +114,7 @@ def get_folder_tree(
         # Make path relative to root; skip entries outside root
         if not fp.startswith(root_str):
             continue
-        rel = fp[len(root_str):]
+        rel = fp[len(root_str) :]
         if rel.startswith("/"):
             rel = rel[1:]
         parts = rel.split("/") if rel else []
@@ -123,18 +123,12 @@ def get_folder_tree(
             node = node.setdefault(part, {})
 
     def _build(name: str, abs_path: str, children_dict: dict) -> TreeNode:
-        children = [
-            _build(k, f"{abs_path}/{k}", v)
-            for k, v in sorted(children_dict.items())
-        ]
+        children = [_build(k, f"{abs_path}/{k}", v) for k, v in sorted(children_dict.items())]
         total = folder_counts.get(abs_path, 0) + sum(c.track_count for c in children)
         return TreeNode(id=abs_path, name=name, children=children, track_count=total)
 
     root_name = root_folder.name
-    children = [
-        _build(k, f"{root_str}/{k}", v)
-        for k, v in sorted(tree.items())
-    ]
+    children = [_build(k, f"{root_str}/{k}", v) for k, v in sorted(tree.items())]
     total = folder_counts.get(root_str, 0) + sum(c.track_count for c in children)
     return TreeNode(id=root_str, name=root_name, children=children, track_count=total)
 
@@ -163,11 +157,11 @@ def browse_by_path(
     # Security: path must be under root
     try:
         folder_path.relative_to(resolved_root)
-    except ValueError:
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Path is outside the music library root.",
-        )
+        ) from e
 
     collection.ensure_folder_indexed(folder_path, root_folder=resolved_root)
 
@@ -230,11 +224,11 @@ def browse_path_filter_values(
 
     try:
         folder_path.relative_to(resolved_root)
-    except ValueError:
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Path is outside the music library root.",
-        )
+        ) from e
 
     collection.ensure_folder_indexed(folder_path, root_folder=resolved_root)
 

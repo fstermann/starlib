@@ -39,8 +39,15 @@ class Rule(BaseModel):
 
 
 RequiredAttribute = Literal[
-    "title", "artist", "genre", "bpm", "key",
-    "release_date", "remixer", "comment", "artwork",
+    "title",
+    "artist",
+    "genre",
+    "bpm",
+    "key",
+    "release_date",
+    "remixer",
+    "comment",
+    "artwork",
 ]
 
 
