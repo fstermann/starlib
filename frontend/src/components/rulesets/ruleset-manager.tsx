@@ -72,6 +72,7 @@ export function RulesetManager() {
       const saved = await api.updateRuleset(pendingEdit.id, {
         name: pendingEdit.name,
         rules: pendingEdit.rules,
+        required_attributes: pendingEdit.required_attributes,
       });
       setRulesets((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
       setPendingEdit(null);

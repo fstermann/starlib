@@ -51,8 +51,15 @@ const MOCK_TRACK_INFO = {
 
 test.describe('Meta editor waveform visibility', () => {
   test.beforeEach(async ({ page }) => {
-    // Override file listing to return one file
+    // Override file listing to return one file (mode-based and path-based)
     await page.route('**/api/metadata/folders/*/browse*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [MOCK_FILE], total: 1, page: 1, size: 50, pages: 1 }),
+      }),
+    );
+    await page.route(/\/api\/metadata\/folders\/browse-path\?/, (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -89,8 +96,8 @@ test.describe('Meta editor waveform visibility', () => {
   test('waveform is hidden when switching collection modes', async ({ page }) => {
     await selectFileAndWaitForPlayer(page);
 
-    // Switch from 'prepare' to 'collection' mode
-    await page.getByRole('radio', { name: 'collection' }).click();
+    // Switch from 'prepare' to 'collection' via folder shortcut button
+    await page.getByRole('button', { name: 'Collection' }).click();
 
     await expect(page.getByTestId('waveform-player')).not.toBeVisible();
   });
@@ -109,6 +116,13 @@ test.describe('Meta editor waveform visibility', () => {
 test.describe('Meta editor track playback', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/metadata/folders/*/browse*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [MOCK_FILE], total: 1, page: 1, size: 50, pages: 1 }),
+      }),
+    );
+    await page.route(/\/api\/metadata\/folders\/browse-path\?/, (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',

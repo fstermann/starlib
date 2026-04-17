@@ -38,6 +38,19 @@ class Rule(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+RequiredAttribute = Literal[
+    "title",
+    "artist",
+    "genre",
+    "bpm",
+    "key",
+    "release_date",
+    "remixer",
+    "comment",
+    "artwork",
+]
+
+
 class Ruleset(BaseModel):
     """A named, ordered collection of rules."""
 
@@ -45,6 +58,12 @@ class Ruleset(BaseModel):
     name: str
     is_builtin: bool = False
     rules: list[Rule] = Field(default_factory=list)
+    required_attributes: list[RequiredAttribute] = Field(default_factory=list)
+    """Track attributes that must be populated before the ruleset can run.
+
+    When any listed attribute is missing on a track, the Apply Rules action
+    is gated and the tooltip lists what's missing. Empty list = no gate.
+    """
 
 
 class RulesetsConfig(BaseModel):
@@ -59,6 +78,7 @@ class RulesetCreate(BaseModel):
 
     name: str
     rules: list[Rule] = Field(default_factory=list)
+    required_attributes: list[RequiredAttribute] = Field(default_factory=list)
 
 
 class RulesetUpdate(BaseModel):
@@ -66,6 +86,7 @@ class RulesetUpdate(BaseModel):
 
     name: str | None = None
     rules: list[Rule] | None = None
+    required_attributes: list[RequiredAttribute] | None = None
 
 
 class RulesetsResponse(BaseModel):

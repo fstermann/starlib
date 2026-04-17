@@ -22,17 +22,38 @@ The metadata editor lets you edit ID3/AIFF tags on your local audio files and en
 
 ### Workflow
 
-1. Select a file from the file browser on the left.
+1. Select a folder from the **folder tree** on the left, or a file from the table.
 2. Search SoundCloud for the track (or let Starlib match it automatically).
 3. Review and edit the metadata fields.
 4. Click **Save** to write the tags to the file.
 5. When the track is ready (all required fields filled), click **Apply Rules** to finalize.
+
+### Folder tree
+
+The left pane shows a tree of every folder that contains indexed tracks. Each folder displays a recursive track count on the right edge. A :material-sitemap: icon appears next to folders that have a ruleset bound to them; the icon is stronger when the binding is recursive (applies to sub-folders) and muted when inherited from an ancestor.
+
+**Right-click a folder** to assign or change its ruleset. The submenu lets you pick any ruleset, clear the binding, or toggle **Apply to sub-folders** (recursive inheritance).
+
+### Batch edit
+
+The table supports bulk operations across many tracks:
+
+- **Save all** — writes every pending change at once. A confirmation dialog appears whenever more than one file is affected.
+- **Apply rules** — runs the active ruleset against all selected tracks (or the full table when nothing is selected). The button shows a count of *eligible* tracks and is disabled when none qualify. Tracks that don't meet the ruleset's **required attributes** are automatically skipped, and the confirmation dialog reports how many were left out.
+
+Per-row **Save** (:material-check:) and **Apply rules** (:material-sitemap:) buttons live in a pinned action column that floats over the right edge of the table with a frosted-glass background.
 
 ### Apply Rules
 
 Once a track has all required metadata, the **Apply Rules** button appears. Clicking it runs the active ruleset — a sequence of steps that convert, move, or copy the file automatically.
 
 Click the :material-information-outline: icon next to the button to preview which steps will run before confirming.
+
+#### Required attributes
+
+A ruleset can declare which track attributes must be populated before it will run — these are the **required attributes**. Apply Rules is gated when any of them are missing; hovering the disabled button lists exactly what's missing.
+
+The built-in **Classic** ruleset requires **title, artist, genre, release date, and artwork**. Custom rulesets can declare their own set (or none, to disable the gate entirely).
 
 ### Settings
 
@@ -44,19 +65,26 @@ Under **Settings > Folders**, set the root directory that contains all your musi
 
 ![Folder settings](../assets/images/screenshots/settings-folders.png)
 
-#### Folder Tabs
+#### Folder Shortcuts
 
-Below the root path, configure which folders appear as tabs in the meta editor. Each folder maps to a subdirectory in your music library root.
+Below the root path, configure which folders appear as quick-access shortcuts in the meta editor header. Each shortcut maps to a subdirectory in your music library root.
 
 | Column | Description |
 |--------|-------------|
 | :material-eye: | Toggle visibility — hidden folders are not shown in the meta editor |
-| **Label** | Display name shown in the tab bar |
+| **Label** | Display name shown in the shortcut bar |
 | **Folder** | Subdirectory name on disk |
-| **Ruleset** | Ruleset to use when finalizing from this folder (blank = use the active ruleset) |
+
+Per-folder rulesets are configured in the **Folder rulesets** section below, or via right-click in the folder tree.
 
 !!! note
-    Removing a folder tab only hides it from the meta editor — it does not delete the folder or any tracks on disk.
+    Removing a folder shortcut only hides it from the meta editor — it does not delete the folder or any tracks on disk.
+
+#### Folder rulesets
+
+The **Folder rulesets** panel lists every folder that has a ruleset bound to it. Each row shows the folder path, the bound ruleset (with a :material-sitemap: icon mirroring the tree view — thicker stroke + **R** badge when the binding is recursive), and a trash button to remove the binding.
+
+Add a new binding from this panel, or directly from the folder tree (right-click → **Ruleset**). Recursive bindings are inherited by any descendant folder that doesn't have its own binding.
 
 #### Rulesets
 
@@ -87,6 +115,8 @@ The built-in **Classic** ruleset demonstrates the typical DJ workflow:
 3. :material-arrow-right: **Move** the result to `cleaned/`
 
 If the file is already in the target format, step 1 is a no-op, step 2 is skipped (no conversion happened), and step 3 moves the original directly to `cleaned/`.
+
+Classic requires **title, artist, genre, release date, and artwork** before it can run — Apply Rules stays disabled on any track missing one of these.
 
 #### Preferred Output Format
 

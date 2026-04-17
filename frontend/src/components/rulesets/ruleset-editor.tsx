@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 import { getSetting } from "@/lib/settings";
 import { RULE_ICON_COLORS } from "./rule-card";
 import { RuleCard, type InputOption } from "./rule-card";
-import { RULE_OUTPUTS, type Rule, type Ruleset, type RuleType } from "@/lib/api";
+import { REQUIRED_ATTRIBUTES, RULE_OUTPUTS, type RequiredAttribute, type Rule, type Ruleset, type RuleType } from "@/lib/api";
 
 const RULE_TYPE_META: { type: RuleType; label: string; icon: React.ElementType }[] = [
   { type: "convert", label: "Convert format", icon: RefreshCw },
@@ -407,6 +407,12 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
           </DndContext>
         </div>}</div>
 
+      <RequiredAttributesPicker
+        value={ruleset.required_attributes ?? []}
+        disabled={ruleset.is_builtin}
+        onChange={(next) => onChange({ ...ruleset, required_attributes: next })}
+      />
+
       {!ruleset.is_builtin && (
         <div className="flex items-center gap-2">
           <DropdownMenu>
@@ -437,6 +443,67 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+const REQUIRED_ATTR_LABEL: Record<RequiredAttribute, string> = {
+  title: "Title",
+  artist: "Artist",
+  genre: "Genre",
+  bpm: "BPM",
+  key: "Key",
+  release_date: "Release date",
+  remixer: "Remixer",
+  comment: "Comment",
+  artwork: "Artwork",
+};
+
+interface RequiredAttributesPickerProps {
+  value: RequiredAttribute[];
+  disabled: boolean;
+  onChange: (next: RequiredAttribute[]) => void;
+}
+
+function RequiredAttributesPicker({ value, disabled, onChange }: RequiredAttributesPickerProps) {
+  const selected = new Set(value);
+  function toggle(attr: RequiredAttribute) {
+    const next = new Set(selected);
+    if (next.has(attr)) next.delete(attr);
+    else next.add(attr);
+    // Preserve canonical order from REQUIRED_ATTRIBUTES
+    onChange(REQUIRED_ATTRIBUTES.filter((a) => next.has(a)));
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-sm">Required attributes</Label>
+      <p className="text-xs text-muted-foreground">
+        Tracks missing any of these can&apos;t be finalized with this ruleset.
+        The Apply Rules button will list what&apos;s missing.
+      </p>
+      <div className="flex flex-wrap gap-1.5 pt-0.5">
+        {REQUIRED_ATTRIBUTES.map((attr) => {
+          const isOn = selected.has(attr);
+          return (
+            <button
+              key={attr}
+              type="button"
+              disabled={disabled}
+              onClick={() => toggle(attr)}
+              className={cn(
+                "text-[11px] px-2 py-0.5 rounded-full border transition-colors",
+                isOn
+                  ? "bg-primary/15 border-primary/40 text-foreground"
+                  : "bg-transparent border-border/60 text-muted-foreground hover:text-foreground",
+                disabled && "cursor-not-allowed opacity-60",
+                !disabled && "cursor-pointer",
+              )}
+            >
+              {REQUIRED_ATTR_LABEL[attr]}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

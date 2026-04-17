@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from backend.core.services import cache_db, rule_engine
 from backend.core.services import folder_config as folder_config_service
 from backend.core.services import ruleset as ruleset_service
-from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
+from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, StarlibMeta, TrackHandler, TrackInfo
 from soundcloud_tools.utils.string import (
     remove_double_spaces,
     remove_free_dl,
@@ -116,6 +116,8 @@ def build_modified_track_info(
         value = patch[name]
         if name in {"artist", "original_artist", "remixer"}:
             value = _coerce_artist_field(value)
+        elif name == "starlib_meta" and isinstance(value, str):
+            value = StarlibMeta.from_str(value) if value else None
         data[name] = value
 
     # Drop binary artwork (handled separately by the API layer) and the URL
@@ -168,15 +170,14 @@ def finalize_track(
     dict
         Result with keys: ``success``, ``message``, ``converted``, ``output_path``.
     """
-    # Resolve ruleset: use folder-specific one if configured, else global active
-    try:
-        relative = file_path.relative_to(root_folder)
-        folder_name: str | None = relative.parts[0] if len(relative.parts) > 1 else None
-    except ValueError:
-        folder_name = None
-
-    ruleset_id = folder_config_service.get_ruleset_id_for_folder(folder_name) if folder_name else None
-    active = ruleset_service.get_ruleset_by_id(ruleset_id) if ruleset_id else ruleset_service.get_active_ruleset()
+    # Resolve ruleset from the file's parent folder, walking ancestors for
+    # recursive bindings. Falls back to the globally active ruleset.
+    resolved = folder_config_service.resolve_ruleset_for_path(str(file_path.parent))
+    active = (
+        ruleset_service.get_ruleset_by_id(resolved.ruleset_id)
+        if resolved.ruleset_id
+        else ruleset_service.get_active_ruleset()
+    )
     return rule_engine.execute_ruleset(file_path, root_folder, active)
 
 

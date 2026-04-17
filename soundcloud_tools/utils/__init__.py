@@ -62,6 +62,17 @@ def load_tracks(folder: Path, file_types: list[str] | None = None):
     return files
 
 
+def load_tracks_recursive(folder: Path, file_types: list[str] | None = None) -> list[Path]:
+    """Like ``load_tracks`` but recurses into subdirectories."""
+    files = [
+        f
+        for f in folder.rglob("*")
+        if f.is_file() and (f.suffix in file_types if file_types else True) and not f.stem.startswith(".")
+    ]
+    files.sort(key=lambda f: f.name)
+    return files
+
+
 def chunk_list(list_: list, n: int):
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(list_), n):

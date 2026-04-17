@@ -36,7 +36,11 @@ def get_active_ruleset() -> Ruleset:
 @router.post("", response_model=Ruleset, status_code=status.HTTP_201_CREATED)
 def create_ruleset(body: RulesetCreate) -> Ruleset:
     """Create a new user ruleset."""
-    new_ruleset, _ = ruleset_service.create_ruleset(name=body.name, rules=body.rules)
+    new_ruleset, _ = ruleset_service.create_ruleset(
+        name=body.name,
+        rules=body.rules,
+        required_attributes=body.required_attributes,
+    )
     return new_ruleset
 
 
@@ -50,7 +54,12 @@ def update_ruleset(ruleset_id: str, body: RulesetUpdate) -> Ruleset:
         404 if not found, 403 if built-in.
     """
     try:
-        return ruleset_service.update_ruleset(ruleset_id, name=body.name, rules=body.rules)
+        return ruleset_service.update_ruleset(
+            ruleset_id,
+            name=body.name,
+            rules=body.rules,
+            required_attributes=body.required_attributes,
+        )
     except KeyError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except ValueError as e:

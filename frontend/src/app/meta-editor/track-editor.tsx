@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { api, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest, type Ruleset, type RuleType } from '@/lib/api';
+import { api, type FileInfo, type TrackInfo, type TrackInfoUpdateRequest, type Ruleset, type RuleType, type RequiredAttribute } from '@/lib/api';
 import { cleanTitle, cleanArtist, titelize, removeParenthesis, parseFilename, removeMix } from '@/lib/string-utils';
 import { soundCloudSource } from '@/lib/sources/soundcloud';
 import type { SourceTrack } from '@/lib/sources/types';
@@ -10,6 +10,12 @@ import { format, parse, isValid } from 'date-fns';
 import { toast } from 'sonner';
 import { useSourceSearch } from './use-source-search';
 import { parseComment, serializeComment } from './utils';
+import { cn } from '@/lib/utils';
+
+const REQUIRED_ATTR_LABEL: Record<RequiredAttribute, string> = {
+  title: 'Title', artist: 'Artist', genre: 'Genre', bpm: 'BPM', key: 'Key',
+  release_date: 'Release date', remixer: 'Remixer', comment: 'Comment', artwork: 'Artwork',
+};
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -35,6 +41,7 @@ import { StepBadge, RULE_ICONS, RULE_ICON_COLORS } from '@/components/rulesets/r
 import { SoundCloudLogo } from '@/components/icons/soundcloud-logo';
 import {
   Sparkles,
+  Workflow,
   CaseSensitive,
   Check,
   Trash2,
@@ -137,6 +144,27 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
       setActiveRuleset(null);
     }
   }, [folderRulesetId]);
+
+  // Compute which of the ruleset's required attributes are missing on the current track
+  const missingRequiredAttrs: RequiredAttribute[] = (() => {
+    if (!activeRuleset?.required_attributes?.length || !trackInfo) return [];
+    const isEmptyListOrString = (v: unknown) =>
+      v == null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && v.length === 0);
+    return activeRuleset.required_attributes.filter((attr) => {
+      switch (attr) {
+        case 'title': return isEmptyListOrString(trackInfo.title);
+        case 'artist': return isEmptyListOrString(trackInfo.artist);
+        case 'genre': return isEmptyListOrString(trackInfo.genre);
+        case 'bpm': return !trackInfo.bpm;
+        case 'key': return isEmptyListOrString(trackInfo.key);
+        case 'release_date': return isEmptyListOrString(trackInfo.release_date);
+        case 'remixer': return isEmptyListOrString(trackInfo.remixer);
+        case 'comment': return isEmptyListOrString(trackInfo.user_comment);
+        case 'artwork': return !trackInfo.has_artwork;
+      }
+    });
+  })();
+  const hasMissingRequired = missingRequiredAttrs.length > 0;
 
   // Original values for SC-link change detection
   const [originalScLinkEnabled, setOriginalScLinkEnabled] = useState(true);
@@ -1190,11 +1218,16 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                   <TooltipTrigger asChild>
                     <Button
                       onClick={handleFinalize}
-                      disabled={loading}
+                      disabled={loading || hasMissingRequired}
                       size="sm"
-                      className="h-7 text-xs px-2.5 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                      className={cn(
+                        "h-7 text-xs px-2.5 gap-1.5 text-white font-semibold",
+                        hasMissingRequired
+                          ? "bg-muted-foreground/40 hover:bg-muted-foreground/40"
+                          : "bg-emerald-600 hover:bg-emerald-700",
+                      )}
                     >
-                      <Sparkles className="size-3" />
+                      <Workflow className="size-3" />
                       Apply Rules
                     </Button>
                   </TooltipTrigger>
@@ -1202,6 +1235,16 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                     <div className="px-3 py-2 border-b border-border">
                       <p className="text-xs font-medium">{activeRuleset.name}</p>
                     </div>
+                    {hasMissingRequired && (
+                      <div className="px-3 py-2 border-b border-border bg-amber-500/10">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-500 mb-1">
+                          Missing required
+                        </p>
+                        <p className="text-xs text-foreground/90">
+                          {missingRequiredAttrs.map((a) => REQUIRED_ATTR_LABEL[a]).join(', ')}
+                        </p>
+                      </div>
+                    )}
                     <div className="py-1.5 flex flex-col gap-0.5 px-1.5">
                       {activeRuleset.rules.map((rule, i) => {
                         const Icon = RULE_ICONS[rule.type];

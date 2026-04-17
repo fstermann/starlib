@@ -6,19 +6,16 @@ from pydantic import BaseModel, Field
 
 
 class FolderConfig(BaseModel):
-    """Configuration for a single music folder tab."""
+    """Configuration for a single music folder shortcut."""
 
     name: str
     """Subdirectory name (e.g. ``"prepare"``). Also used as the URL mode param."""
     label: str
-    """Display label shown in the UI tabs."""
+    """Display label shown in the UI shortcut bar."""
     visible: bool = True
-    """Whether the folder tab is shown in the meta editor."""
+    """Whether the folder shortcut is shown in the meta editor."""
     order: int = 0
     """Display order (ascending, lowest first)."""
-    ruleset_id: str | None = None
-    """Ruleset to use when finalising tracks from this folder.
-    ``None`` means fall back to the globally active ruleset."""
 
 
 class FoldersConfig(BaseModel):

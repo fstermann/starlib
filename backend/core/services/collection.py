@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from backend.core.services import cache_db
 from soundcloud_tools.handler.folder import FolderHandler
 from soundcloud_tools.handler.track import TrackHandler, TrackInfo
-from soundcloud_tools.utils import load_tracks
+from soundcloud_tools.utils import load_tracks, load_tracks_recursive
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +31,14 @@ _indexed_this_session: set[Path] = set()  # folders fully scanned this session
 _state_lock = threading.Lock()
 
 
-def _index_one(folder: Path, file: Path) -> None:
+def _index_one(root_folder: Path, file: Path) -> None:
     """Index a single file into the DB if its mtime has changed."""
     try:
         stat = file.stat()
         mtime = stat.st_mtime
         if cache_db.get_track_mtime(file) == mtime:
             return  # unchanged
-        handler = TrackHandler(root_folder=folder, file=file)
+        handler = TrackHandler(root_folder=root_folder, file=file)
         track_info = handler.track_info
         missing: list[str] = []
         if not track_info.title:
@@ -52,7 +52,7 @@ def _index_one(folder: Path, file: Path) -> None:
         sc_id = track_info.starlib_meta.soundcloud_id if track_info.starlib_meta else None
         cache_db.upsert_track(
             file_path=file,
-            folder=folder.resolve(),
+            folder=file.parent.resolve(),
             title=track_info.title or None,
             artist_str=track_info.artist_str,
             genre=track_info.genre or None,
@@ -77,13 +77,13 @@ def _index_one(folder: Path, file: Path) -> None:
         logger.warning("Skipping unreadable file %s: %s", file, e)
 
 
-def _load_folder_to_db(folder: Path) -> None:
-    """Scan *folder*, indexing new/changed files into the DB."""
+def _load_folder_to_db(folder: Path, root_folder: Path) -> None:
+    """Scan *folder* recursively, indexing new/changed files into the DB."""
     resolved = folder.resolve()
     try:
-        audio_files = load_tracks(folder)
+        audio_files = load_tracks_recursive(folder)
         with ThreadPoolExecutor() as pool:
-            futures = [pool.submit(_index_one, folder, f) for f in audio_files]
+            futures = [pool.submit(_index_one, root_folder, f) for f in audio_files]
             for _ in as_completed(futures):
                 pass
         logger.info("Finished indexing %s (%d files)", folder, len(audio_files))
@@ -95,14 +95,23 @@ def _load_folder_to_db(folder: Path) -> None:
             _indexed_this_session.add(resolved)
 
 
-def ensure_folder_indexed(folder: Path) -> None:
-    """Trigger a background scan of *folder* if not done this session."""
+def ensure_folder_indexed(folder: Path, root_folder: Path | None = None) -> None:
+    """Trigger a background scan of *folder* if not done this session.
+
+    The scan is recursive, so indexing a parent also covers all subfolders.
+    If *root_folder* is not given it defaults to *folder* (legacy callers).
+    """
     resolved = folder.resolve()
+    effective_root = root_folder or folder
     with _state_lock:
         if resolved in _indexed_this_session or resolved in _indexing:
             return
+        # A parent folder's recursive scan already covered this subfolder.
+        for indexed in _indexed_this_session:
+            if resolved != indexed and str(resolved).startswith(str(indexed) + "/"):
+                return
         _indexing.add(resolved)
-    threading.Thread(target=_load_folder_to_db, args=(folder,), daemon=True).start()
+    threading.Thread(target=_load_folder_to_db, args=(folder, effective_root), daemon=True).start()
 
 
 def is_indexing(folder: Path) -> bool:
@@ -128,9 +137,9 @@ def invalidate_file(file_path: Path) -> None:
         _indexed_this_session.discard(file_path.parent.resolve())
 
 
-def reindex_file(folder: Path, file_path: Path) -> None:
+def reindex_file(root_folder: Path, file_path: Path) -> None:
     """Re-index a single file immediately without a full folder re-scan."""
-    _index_one(folder, file_path)
+    _index_one(root_folder, file_path)
 
 
 def invalidate_cache(folder: Path | None = None) -> None:
@@ -470,6 +479,7 @@ def list_and_filter_tracks(
     end_date: date | None = None,
     sort_by: str = "file_name",
     sort_order: str = "asc",
+    recursive: bool = False,
 ) -> list:
     """
     List, filter, and sort tracks via SQL. Returns sqlite3.Row items.
@@ -498,6 +508,8 @@ def list_and_filter_tracks(
         Field to sort by: title, artist, genre, bpm, key, release_date, file_name
     sort_order : str
         "asc" or "desc"
+    recursive : bool
+        Include tracks in subfolders
 
     Returns
     -------
@@ -507,6 +519,7 @@ def list_and_filter_tracks(
     ensure_folder_indexed(folder)
     return cache_db.get_tracks(
         folder.resolve(),
+        recursive=recursive,
         search_query=search_query,
         genres=genres,
         artists=artists,
@@ -523,6 +536,7 @@ def list_and_filter_tracks(
 def get_folder_filter_values(
     folder: Path,
     *,
+    recursive: bool = False,
     search_query: str | None = None,
     genres: list[str] | None = None,
     keys: list[str] | None = None,
@@ -536,6 +550,8 @@ def get_folder_filter_values(
     ----------
     folder : Path
         Folder to scan
+    recursive : bool
+        Include tracks in subfolders
     search_query : str, optional
         Active search filter (used to compute faceted counts)
     genres : list[str], optional
@@ -555,6 +571,7 @@ def get_folder_filter_values(
     ensure_folder_indexed(folder)
     return cache_db.get_filter_values(
         folder.resolve(),
+        recursive=recursive,
         search_query=search_query,
         genres=genres,
         keys=keys,

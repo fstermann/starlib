@@ -128,11 +128,19 @@ export interface Rule {
   params: Record<string, unknown>;
 }
 
+export const REQUIRED_ATTRIBUTES = [
+  'title', 'artist', 'genre', 'bpm', 'key',
+  'release_date', 'remixer', 'comment', 'artwork',
+] as const;
+export type RequiredAttribute = typeof REQUIRED_ATTRIBUTES[number];
+
 export interface Ruleset {
   id: string;
   name: string;
   is_builtin: boolean;
   rules: Rule[];
+  /** Attributes that must be populated on a track before Apply Rules will run. */
+  required_attributes: RequiredAttribute[];
 }
 
 export interface RulesetsResponse {
@@ -143,11 +151,13 @@ export interface RulesetsResponse {
 export interface RulesetCreate {
   name: string;
   rules: Rule[];
+  required_attributes?: RequiredAttribute[];
 }
 
 export interface RulesetUpdate {
   name?: string;
   rules?: Rule[];
+  required_attributes?: RequiredAttribute[];
 }
 
 // ==================== App Settings Types ====================
@@ -216,11 +226,36 @@ export interface FolderConfig {
   label: string;
   visible: boolean;
   order: number;
-  ruleset_id: string | null;
 }
 
 export interface FoldersConfig {
   folders: FolderConfig[];
+}
+
+// ==================== Tree Types ====================
+
+export interface TreeNode {
+  id: string;
+  name: string;
+  children: TreeNode[];
+  track_count: number;
+}
+
+export interface FolderRulesetBinding {
+  ruleset_id: string | null;
+  recursive: boolean;
+}
+
+export interface FolderRuleset {
+  path: string;
+  ruleset_id: string | null;
+  recursive: boolean;
+  /** Path the binding is stored at — differs from `path` when inherited from an ancestor. */
+  source_path: string | null;
+}
+
+export interface FolderRulesetsMap {
+  folder_rulesets: Record<string, FolderRulesetBinding>;
 }
 
 // ==================== API Methods ====================
@@ -476,6 +511,87 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(config),
     });
+  },
+
+  // ==================== Folder Tree ====================
+
+  async getFolderTree(): Promise<TreeNode> {
+    return fetchApi('/api/metadata/folders/tree');
+  },
+
+  async browsePath(path: string, params: BrowseParams & { recursive?: boolean } = {}, signal?: AbortSignal): Promise<BrowsePage> {
+    const qs = new URLSearchParams();
+    qs.set('path', path);
+    if (params.recursive !== undefined) qs.set('recursive', String(params.recursive));
+    if (params.page) qs.set('page', String(params.page));
+    if (params.size) qs.set('size', String(params.size));
+    if (params.search) qs.set('search', params.search);
+    params.genres?.forEach((g) => qs.append('genres', g));
+    params.artists?.forEach((a) => qs.append('artists', a));
+    params.keys?.forEach((k) => qs.append('keys', k));
+    if (params.bpm_min !== undefined) qs.set('bpm_min', String(params.bpm_min));
+    if (params.bpm_max !== undefined) qs.set('bpm_max', String(params.bpm_max));
+    if (params.date_from) qs.set('date_from', params.date_from);
+    if (params.date_to) qs.set('date_to', params.date_to);
+    if (params.sort_by) qs.set('sort_by', params.sort_by);
+    if (params.sort_order) qs.set('sort_order', params.sort_order);
+    const url = `${API_BASE_URL}/api/metadata/folders/browse-path?${qs.toString()}`;
+    const response = await fetch(url, { signal });
+    if (!response.ok) {
+      throw new ApiError(`API error: ${response.status}`, response.status);
+    }
+    const data = await response.json();
+    data.cacheLoading = response.headers.get('X-Cache-Loading') === 'true';
+    return data as BrowsePage;
+  },
+
+  async getPathFilterValues(
+    path: string,
+    params?: {
+      recursive?: boolean;
+      search?: string;
+      genres?: string[];
+      keys?: string[];
+      bpmMin?: number;
+      bpmMax?: number;
+    }
+  ): Promise<FilterValues> {
+    const qs = new URLSearchParams();
+    qs.set('path', path);
+    if (params?.recursive !== undefined) qs.set('recursive', String(params.recursive));
+    if (params?.search) qs.set('search', params.search);
+    params?.genres?.forEach((g) => qs.append('genres', g));
+    params?.keys?.forEach((k) => qs.append('keys', k));
+    if (params?.bpmMin !== undefined) qs.set('bpm_min', String(params.bpmMin));
+    if (params?.bpmMax !== undefined) qs.set('bpm_max', String(params.bpmMax));
+    return fetchApi(`/api/metadata/folders/browse-path/filter-values?${qs.toString()}`);
+  },
+
+  // ==================== Per-path Rulesets ====================
+
+  async getFolderRuleset(path: string): Promise<FolderRuleset> {
+    return fetchApi(`/api/folders/ruleset?path=${encodeURIComponent(path)}`);
+  },
+
+  async setFolderRuleset(
+    path: string,
+    rulesetId: string | null,
+    recursive = false,
+  ): Promise<FolderRuleset> {
+    return fetchApi(`/api/folders/ruleset?path=${encodeURIComponent(path)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ruleset_id: rulesetId, recursive }),
+    });
+  },
+
+  async deleteFolderRuleset(path: string): Promise<FolderRuleset> {
+    return fetchApi(`/api/folders/ruleset?path=${encodeURIComponent(path)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getAllFolderRulesets(): Promise<FolderRulesetsMap> {
+    return fetchApi('/api/folders/rulesets-by-path');
   },
 
   // ==================== App Settings ====================
