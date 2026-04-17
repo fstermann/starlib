@@ -341,9 +341,7 @@ def get_filter_values(
 
     # Genre counts: apply all filters EXCEPT genres.
     genre_stmt = _apply_filters(
-        select(Track.genre, func.count()).where(
-            fc, Track.genre.is_not(None), Track.genre != ""
-        ),
+        select(Track.genre, func.count()).where(fc, Track.genre.is_not(None), Track.genre != ""),
         search_query=search_query,
         keys=keys,
         bpm_min=bpm_min,
@@ -402,9 +400,7 @@ def get_stats(folder: Path, *, recursive: bool = False) -> dict:
         ).first()
 
         def _missing(where) -> int:
-            return conn.execute(
-                select(func.count()).select_from(Track).where(fc, where)
-            ).scalar_one()
+            return conn.execute(select(func.count()).select_from(Track).where(fc, where)).scalar_one()
 
         missing_artwork = _missing(Track.has_artwork.is_(False))
         missing_release_date = _missing(Track.release_date.is_(None))
@@ -440,10 +436,7 @@ def get_stats(folder: Path, *, recursive: bool = False) -> dict:
         keys = [
             r[0]
             for r in conn.execute(
-                select(Track.key)
-                .where(fc, Track.key.is_not(None), Track.key != "")
-                .distinct()
-                .order_by(Track.key)
+                select(Track.key).where(fc, Track.key.is_not(None), Track.key != "").distinct().order_by(Track.key)
             ).all()
         ]
 

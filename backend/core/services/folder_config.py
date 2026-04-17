@@ -46,26 +46,30 @@ def resolve_ruleset_for_path(path: str) -> ResolvedBinding:
     parts = path.rstrip("/").split("/")
     for i in range(len(parts) - 1, 0, -1):
         ancestor = "/".join(parts[:i]) or "/"
-        b = bindings.get(ancestor)
-        if b is not None and b.recursive:
-            return ResolvedBinding(b.ruleset_id, b.recursive, ancestor)
+        ancestor_binding = bindings.get(ancestor)
+        if ancestor_binding is not None and ancestor_binding.recursive:
+            return ResolvedBinding(ancestor_binding.ruleset_id, ancestor_binding.recursive, ancestor)
     return ResolvedBinding(None, False, None)
 
 
 def set_ruleset_for_path(path: str, ruleset_id: str | None, recursive: bool = False) -> None:
     """Bind a ruleset to an absolute folder path."""
+
     def _mutate(s):
         s.folder_rulesets[path] = FolderRulesetBinding(
             ruleset_id=ruleset_id,
             recursive=recursive,
         )
+
     settings_service.update(_mutate)
 
 
 def delete_ruleset_for_path(path: str) -> None:
     """Remove the ruleset binding for a folder path."""
+
     def _mutate(s):
         s.folder_rulesets.pop(path, None)
+
     settings_service.update(_mutate)
 
 
