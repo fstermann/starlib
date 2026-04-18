@@ -53,9 +53,11 @@ export function TreePanelMiniPlayer() {
         {/* Artwork — click toggles play */}
         <button
           type="button"
+          data-testid="player-toggle"
           className="relative shrink-0 size-10 rounded-md overflow-hidden bg-muted flex items-center justify-center cursor-pointer group/art"
           onClick={() => toggle()}
           title={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? 'Pause' : 'Play'}
         >
           <img
             src={artworkUrl}

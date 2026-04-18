@@ -63,7 +63,9 @@ function MetaEditorContent() {
 
   // Load tree, folder config, root folder, and rulesets on mount
   useEffect(() => {
+    let cancelled = false;
     api.getFolderTree().then((t) => {
+      if (cancelled) return;
       setTree(t);
       setRootFolder(t.id);
       // Default to root if no node selected
@@ -74,6 +76,7 @@ function MetaEditorContent() {
 
     function loadFolders() {
       api.getFoldersConfig().then((c) => {
+        if (cancelled) return;
         const visible = c.folders
           .filter((f) => f.visible)
           .sort((a, b) => a.order - b.order);
@@ -84,14 +87,17 @@ function MetaEditorContent() {
     window.addEventListener("folders-config-changed", loadFolders);
 
     api.getAllFolderRulesets()
-      .then((data) => setFolderRulesets(data.folder_rulesets))
+      .then((data) => { if (!cancelled) setFolderRulesets(data.folder_rulesets); })
       .catch(() => {});
 
     api.getRulesets()
-      .then((data) => setAllRulesets(data.rulesets))
+      .then((data) => { if (!cancelled) setAllRulesets(data.rulesets); })
       .catch(() => {});
 
-    return () => window.removeEventListener("folders-config-changed", loadFolders);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("folders-config-changed", loadFolders);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

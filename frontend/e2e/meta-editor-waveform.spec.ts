@@ -163,7 +163,8 @@ test.describe('Meta editor track playback', () => {
     await page.locator('[data-file-path="track.mp3"]').click();
 
     await expect(page.getByTestId('waveform-player')).toBeVisible();
-    await expect(page.getByTestId('waveform-player').getByRole('button', { name: 'Play' })).toBeEnabled({ timeout: 10_000 });
+    await expect(page.getByTestId('player-toggle')).toBeEnabled({ timeout: 10_000 });
+    await expect(page.getByTestId('player-toggle')).toHaveAttribute('aria-label', 'Play');
   });
 
   test('clicking play switches button to pause', async ({ page }) => {
@@ -171,10 +172,11 @@ test.describe('Meta editor track playback', () => {
     await page.waitForLoadState('networkidle');
     await page.locator('[data-file-path="track.mp3"]').click();
 
-    const playBtn = page.getByTestId('waveform-player').getByRole('button', { name: 'Play' });
+    const playBtn = page.getByTestId('player-toggle');
     await expect(playBtn).toBeEnabled({ timeout: 10_000 });
+    await expect(playBtn).toHaveAttribute('aria-label', 'Play');
     await playBtn.click();
 
-    await expect(page.getByTestId('waveform-player').getByRole('button', { name: 'Pause' })).toBeVisible();
+    await expect(page.getByTestId('player-toggle')).toHaveAttribute('aria-label', 'Pause');
   });
 });
