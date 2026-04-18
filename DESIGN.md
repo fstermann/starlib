@@ -177,6 +177,7 @@ All sans-serif rows use Inter (variable, `font-optical-sizing: auto`). At sizes 
 
 | Token       | px   | Weight | Line-height | Tracking   | Use                          |
 | ----------- | ---- | ------ | ----------- | ---------- | ---------------------------- |
+| `text-2xs`  | 9    | 600    | 1.4         | `0.06em`   | All-caps field labels inside dense editors only. Pair with `uppercase tracking-wider`. Never for prose or interactive controls. |
 | `text-xs`   | 11   | 500    | 1.45        | `0.01em`   | Badges, micro-labels         |
 | `text-sm`   | 12   | 500    | 1.45        | `0.005em`  | Tables, dense UI, captions   |
 | `text-base` | 14   | 400    | 1.55        | `0`        | Body default                 |

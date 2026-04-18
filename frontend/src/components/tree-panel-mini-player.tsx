@@ -84,7 +84,7 @@ export function TreePanelMiniPlayer() {
             )}
           </div>
           {artistText && (
-            <div className="text-[10px] text-muted-foreground truncate" title={artistText}>{artistText}</div>
+            <div className="text-xs text-muted-foreground truncate" title={artistText}>{artistText}</div>
           )}
         </div>
 

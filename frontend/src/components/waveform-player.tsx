@@ -221,7 +221,7 @@ export function WaveformPlayer() {
     <div
       data-testid="waveform-player"
       aria-hidden={!largePlayer}
-      className={`fixed bottom-0 left-14 right-0 h-17 bg-card border-t border-border/60 flex items-center gap-4 px-4 z-40 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] transition-[transform,opacity] duration-200 ease-out ${
+      className={`fixed bottom-0 left-14 right-0 h-17 bg-card border-t border-border flex items-center gap-4 px-4 z-40 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] transition-[transform,opacity] duration-200 ease-out ${
         largePlayer ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
       } ${!ready ? 'opacity-60' : ''}`}
     >
@@ -229,7 +229,7 @@ export function WaveformPlayer() {
       <div ref={containerRef} className="flex-1 min-w-0" style={{ cursor: 'pointer' }} />
 
       {/* Time display */}
-      <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-18 text-right tabular-nums">
+      <span className="text-xs font-mono text-muted-foreground shrink-0 w-24 text-right tabular-nums">
         {formatTime(currentTime)} / {formatTime(duration)}
       </span>
     </div>

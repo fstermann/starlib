@@ -27,8 +27,8 @@ export function RulesetPreview({ ruleset, missingRequired }: RulesetPreviewProps
         <p className="text-xs font-medium">{ruleset.name}</p>
       </div>
       {hasMissing && (
-        <div className="px-3 py-2 border-b border-border bg-amber-500/10">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-500 mb-1">
+        <div className="px-3 py-2 border-b border-border bg-warning/10">
+          <p className="text-xs font-semibold uppercase tracking-wider text-warning mb-1">
             Missing required
           </p>
           <p className="text-xs text-foreground/90">
@@ -49,15 +49,15 @@ export function RulesetPreview({ ruleset, missingRequired }: RulesetPreviewProps
             <div
               key={i}
               className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${
-                isConditional ? 'ml-4 border-l-2 border-blue-400/30 pl-2.5' : ''
+                isConditional ? 'ml-4 border-l-2 border-info/30 pl-2.5' : ''
               }`}
             >
               <StepBadge step={i + 1} type={rule.type} />
               <Icon className={`size-3.5 shrink-0 ${RULE_ICON_COLORS[rule.type]}`} />
               <span className="capitalize">{rule.type}</span>
-              {detail && <span className="font-mono text-[10px] opacity-70">{detail}</span>}
+              {detail && <span className="font-mono text-xs opacity-70">{detail}</span>}
               {isConditional && (
-                <span className="text-[9px] rounded bg-blue-400/20 text-blue-300 px-1 font-medium">
+                <span className="text-xs rounded bg-info/20 text-info px-1 font-medium">
                   if converted
                 </span>
               )}

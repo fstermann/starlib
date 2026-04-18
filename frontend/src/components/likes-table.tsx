@@ -130,7 +130,7 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
             {track.title || '—'}
           </span>
           {isNew && (
-            <span className="shrink-0 text-[9px] font-semibold px-1 py-0.5 rounded bg-[var(--brand-soft)] text-[var(--brand)] leading-none">
+            <span className="shrink-0 text-xs font-semibold px-1 py-0.5 rounded bg-[var(--brand-soft)] text-[var(--brand)] leading-none">
               NEW
             </span>
           )}
@@ -237,7 +237,7 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
 
       {/* Expanded detail: player + description */}
       {isExpanded && (
-        <div className="px-3 py-2 border-b border-border/30 bg-muted/20 space-y-2">
+        <div className="px-3 py-2 border-b border-border bg-muted space-y-2">
           {track.permalink_url && (
             <iframe
               width="100%"
@@ -372,7 +372,7 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect, onRangeSelect,
         ))}
         <div className="w-28 shrink-0 flex items-center justify-center gap-1" title="Links">
           <FolderCheck className="size-3 opacity-50" />
-          <span className="text-[10px] opacity-50">Links</span>
+          <span className="text-xs opacity-50">Links</span>
         </div>
       </div>
 

@@ -333,11 +333,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         <DialogTitle className="sr-only">Settings</DialogTitle>
         <div className="flex h-[min(700px,85vh)] overflow-hidden">
           {/* Left nav */}
-          <nav className="w-48 shrink-0 border-r border-border/50 p-3 flex flex-col gap-4">
+          <nav className="w-48 shrink-0 border-r border-border p-3 flex flex-col gap-4">
             {NAV_GROUPS.map((group) => (
               <div key={group.label} className="flex flex-col gap-0.5">
                 {!group.header && (
-                  <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                  <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
                     {group.label}
                   </p>
                 )}
@@ -348,7 +348,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors text-left cursor-pointer",
                       section === group.header!.id
                         ? "bg-accent text-accent-foreground"
-                        : "text-foreground/70 hover:text-foreground hover:bg-accent/50"
+                        : "text-foreground/70 hover:text-foreground hover:bg-accent"
                     )}
                   >
                     <group.header.icon className="size-4 shrink-0" />
@@ -364,7 +364,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       indent ? "pl-8 pr-3" : "px-3",
                       section === id
                         ? "bg-accent text-accent-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
                     )}
                   >
                     <Icon className="size-4 shrink-0" />
@@ -530,7 +530,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           ? path.slice(rootFolder.length + 1) || "/"
                           : path;
                         return (
-                          <div key={path} className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted/30">
+                          <div key={path} className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted">
                             <FolderOpen className="size-3.5 shrink-0 text-muted-foreground/70" />
                             <span className="flex-1 text-xs font-mono truncate" title={path}>
                               {displayPath}
@@ -550,7 +550,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                                 {...(binding.recursive ? { strokeWidth: 2.5 } : {})}
                               />
                               {binding.recursive && (
-                                <span className="text-[9px] leading-none font-semibold tracking-wider uppercase text-primary/70">
+                                <span className="text-xs leading-none font-semibold tracking-wider uppercase text-primary/70">
                                   R
                                 </span>
                               )}
@@ -626,7 +626,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </div>
 
                 {aiSettings.provider === "ollama" && (
-                  <div className="flex flex-col gap-6 border-t border-border/50 pt-6">
+                  <div className="flex flex-col gap-6 border-t border-border pt-6">
                     {/* Connection status */}
                     <div className="flex items-center gap-2">
                       <span
@@ -635,10 +635,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           aiAvailable === null
                             ? "bg-muted-foreground/30"
                             : aiAvailable
-                              ? "bg-green-500"
+                              ? "bg-success"
                               : aiInstalled
-                                ? "bg-yellow-500"
-                                : "bg-red-500"
+                                ? "bg-warning"
+                                : "bg-destructive"
                         )}
                       />
                       <span className="text-sm">
@@ -679,7 +679,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                     {/* Installed but not running — offer to start */}
                     {aiAvailable === false && aiInstalled && (
-                      <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3 flex flex-col gap-2">
+                      <div className="rounded-md border border-warning/20 bg-warning/5 p-3 flex flex-col gap-2">
                         <p className="text-sm">
                           Ollama is installed but not running. You can start it manually
                           with <code className="bg-muted px-1 py-0.5 rounded text-xs">ollama serve</code>,
@@ -709,7 +709,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                     {/* Not installed — show install instructions */}
                     {aiAvailable === false && aiInstalled === false && (
-                      <div className="rounded-md border border-border/50 bg-muted/30 p-4 flex flex-col gap-3">
+                      <div className="rounded-md border border-border bg-muted p-4 flex flex-col gap-3">
                         <p className="text-sm font-medium">Install Ollama</p>
                         <div className="flex flex-col gap-2 text-xs text-muted-foreground">
                           <p>
@@ -798,12 +798,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 )}
 
                 {aiSettings.provider === "claude_code" && (
-                  <div className="flex flex-col gap-6 border-t border-border/50 pt-6">
+                  <div className="flex flex-col gap-6 border-t border-border pt-6">
                     <div className="flex items-center gap-2">
                       <span
                         className={cn(
                           "size-2.5 rounded-full shrink-0",
-                          aiAvailable === null ? "bg-muted-foreground/30" : aiAvailable ? "bg-green-500" : "bg-red-500",
+                          aiAvailable === null ? "bg-muted-foreground/30" : aiAvailable ? "bg-success" : "bg-destructive",
                         )}
                       />
                       <span className="text-sm">
@@ -816,7 +816,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </div>
 
                     {aiAvailable === false && (
-                      <div className="rounded-md border border-border/50 bg-muted/30 p-4 flex flex-col gap-2">
+                      <div className="rounded-md border border-border bg-muted p-4 flex flex-col gap-2">
                         <p className="text-sm font-medium">Install Claude Code</p>
                         <p className="text-xs text-muted-foreground">
                           Uses your existing Claude subscription login — no separate API key required.
@@ -852,7 +852,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 )}
 
                 {aiSettings.provider === "anthropic" && (
-                  <div className="flex flex-col gap-6 border-t border-border/50 pt-6">
+                  <div className="flex flex-col gap-6 border-t border-border pt-6">
                     {/* Key status */}
                     <div className="flex items-center gap-2">
                       <span
@@ -860,9 +860,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           "size-2.5 rounded-full shrink-0",
                           aiSettings.anthropic_has_api_key
                             ? aiAvailable
-                              ? "bg-green-500"
-                              : "bg-yellow-500"
-                            : "bg-red-500"
+                              ? "bg-success"
+                              : "bg-warning"
+                            : "bg-destructive"
                         )}
                       />
                       <span className="text-sm">
@@ -977,13 +977,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                     {updateResult && !updateResult.available && (
                       <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                        <CheckCircle2 className="size-4 text-green-500" />
+                        <CheckCircle2 className="size-4 text-success" />
                         You&apos;re on the latest version.
                       </p>
                     )}
 
                     {updateResult?.available && updateResult.update && (
-                      <div className="rounded-md border border-primary/20 bg-primary/5 p-3 flex flex-col gap-2">
+                      <div className="rounded-md border border-primary/20 bg-brand-soft p-3 flex flex-col gap-2">
                         <p className="text-sm font-medium">
                           Starlib {updateResult.update.version} is available
                         </p>
@@ -1072,7 +1072,7 @@ function FolderRulesetAdder({ rootFolder, allRulesets, inTauri, onAdded }: Folde
   }
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-md border border-border/60 bg-muted/20 p-2.5">
+    <div className="flex flex-col gap-1.5 rounded-md border border-border bg-muted p-2.5">
       <Label className="text-xs font-medium">Add a folder ruleset</Label>
       <div className="flex gap-2">
         <Input

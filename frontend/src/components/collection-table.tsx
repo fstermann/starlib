@@ -147,7 +147,7 @@ function RulesetBadge({ ruleset }: { ruleset: Ruleset }) {
     <TooltipProvider delayDuration={200} disableHoverableContent>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-1 rounded border border-emerald-600/30 bg-emerald-600/10 text-emerald-600 px-1.5 py-0.5 text-xs font-medium cursor-default align-middle">
+          <span className="inline-flex items-center gap-1 rounded border border-success/30 bg-success/10 text-success px-1.5 py-0.5 text-xs font-medium cursor-default align-middle">
             <Workflow className="size-3" />
             {ruleset.name}
           </span>
@@ -211,7 +211,7 @@ function ScFieldRow({ label, scValue, currentValue, onApply }: { label: string; 
       <span className="w-14 text-muted-foreground shrink-0">{label}</span>
       <span className="flex-1 truncate text-foreground">{scValue}</span>
       <button
-        className="shrink-0 text-xs font-medium text-primary px-1.5 py-0.5 rounded-sm hover:bg-primary/10 transition-colors cursor-pointer"
+        className="shrink-0 text-xs font-medium text-primary px-1.5 py-0.5 rounded-sm hover:bg-brand-soft transition-colors cursor-pointer"
         onClick={onApply}
       >
         Apply
@@ -321,7 +321,7 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
       {/* File name — click to open single editor */}
       <span
         data-file-path={item.file_path}
-        className="w-48 shrink-0 text-[11px] text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors"
+        className="w-48 shrink-0 text-xs text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors"
         title={item.file_name}
         onClick={onSelect}
       >
@@ -330,7 +330,7 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
 
       {/* Folder column (only in tree/path mode) */}
       {folderPath && (
-        <span className="w-36 shrink-0 text-[11px] text-muted-foreground truncate" title={item.folder ?? ''}>
+        <span className="w-36 shrink-0 text-xs text-muted-foreground truncate" title={item.folder ?? ''}>
           {item.folder && folderPath
             ? (item.folder.startsWith(folderPath)
               ? item.folder.slice(folderPath.length + 1) || '.'
@@ -344,7 +344,7 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
         <div key={f.key} className={`${f.width} min-w-0 shrink-0`}>
           <input
             className={`w-full h-7 px-1.5 text-xs rounded border bg-transparent outline-none transition-colors placeholder:text-muted-foreground/30
-              ${isChanged(f.key) ? 'border-amber-400/70 bg-amber-400/5' : 'border-transparent hover:border-border'}
+              ${isChanged(f.key) ? 'border-warning/70 bg-warning/5' : 'border-transparent hover:border-border'}
               focus:border-ring focus:ring-1 focus:ring-ring/50`}
             value={getValue(f.key)}
             onChange={(e) => onFieldChange(f.key, e.target.value)}
@@ -354,7 +354,7 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
       ))}
 
       {/* Added date (read-only) */}
-      <span className="w-20 shrink-0 text-[11px] text-muted-foreground tabular-nums">
+      <span className="w-20 shrink-0 text-xs text-muted-foreground tabular-nums">
         {item.mtime ? new Date(item.mtime * 1000).toISOString().slice(0, 10) : '—'}
       </span>
 
@@ -370,7 +370,7 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
                   className={cn(
                     'shrink-0 size-7 flex items-center justify-center rounded-md transition-colors',
                     hasChanges
-                      ? 'text-primary bg-primary/10 hover:bg-primary/20 cursor-pointer'
+                      ? 'text-primary bg-brand-soft hover:bg-brand-soft cursor-pointer'
                       : 'text-muted-foreground/25 cursor-default',
                   )}
                   disabled={!hasChanges || savingRow}
@@ -394,7 +394,7 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
                   className={cn(
                     'shrink-0 size-7 flex items-center justify-center rounded-md transition-colors',
                     canFinalize
-                      ? 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 cursor-pointer'
+                      ? 'text-success bg-success/10 hover:bg-success/20 cursor-pointer'
                       : 'text-muted-foreground/25 cursor-default',
                   )}
                   disabled={!canFinalize}
@@ -422,8 +422,8 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
                   'shrink-0 size-7 flex items-center justify-center rounded-md transition-colors cursor-pointer',
                   scLinkChanged ? 'ring-1 ring-primary/40' : '',
                   scStatus === 'searching' || hasScLink || scStatus === 'found'
-                    ? 'text-primary bg-primary/10 hover:bg-primary/20'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+                    ? 'text-primary bg-brand-soft hover:bg-brand-soft'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent',
                 )}
                 onClick={(e) => {
                   if (scOpenViaContextRef.current) {
@@ -1302,7 +1302,7 @@ export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFi
       </AlertDialog>
       {/* Edit-mode toolbar */}
       {/* Toolbar */}
-        <div className="@container/toolbar flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/20 shrink-0 overflow-hidden">
+        <div className="@container/toolbar flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted shrink-0 overflow-hidden">
           <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
             {selectedPaths.size > 0 ? `${selectedPaths.size} selected` : `${items.length} tracks`}
           </span>
@@ -1373,7 +1373,7 @@ export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFi
             size="sm"
             className={cn(
               'h-7 gap-1.5 @max-[760px]/toolbar:gap-0 @max-[760px]/toolbar:px-2',
-              totalChanges > 0 ? 'text-primary hover:bg-primary/10 hover:text-primary' : 'text-muted-foreground/40',
+              totalChanges > 0 ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground/40',
             )}
             disabled={totalChanges === 0 || saving}
             onClick={handleSave}
@@ -1394,7 +1394,7 @@ export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFi
                     size="sm"
                     className={cn(
                       'h-7 gap-1.5 @max-[760px]/toolbar:gap-0 @max-[760px]/toolbar:px-2',
-                      finalizeEligibleCount > 0 ? 'text-emerald-600 hover:bg-emerald-600/10 hover:text-emerald-600' : 'text-muted-foreground/40',
+                      finalizeEligibleCount > 0 ? 'text-success hover:bg-success/10 hover:text-success' : 'text-muted-foreground/40',
                     )}
                     disabled={finalizeEligibleCount === 0}
                     onClick={handleFinalizeSelected}
@@ -1424,7 +1424,7 @@ export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFi
             size="sm"
             className={cn(
               'h-7 gap-1.5 @max-[760px]/toolbar:gap-0 @max-[760px]/toolbar:px-2',
-              scAutoFill ? 'text-primary hover:bg-primary/10 hover:text-primary' : 'text-muted-foreground hover:text-foreground',
+              scAutoFill ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground hover:text-foreground',
             )}
             onClick={() => {
               if (scAutoFill) {
@@ -1496,7 +1496,7 @@ export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFi
           return sortKey ? (
             <button
               key={f.key}
-              className={`${f.width} min-w-0 shrink-0 flex items-center gap-0.5 uppercase hover:text-foreground transition-colors cursor-pointer`}
+              className={`${f.width} min-w-0 shrink-0 flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer`}
               onClick={() => handleSort(sortKey)}
             >
               {f.label}
@@ -1510,7 +1510,7 @@ export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFi
         })}
         {/* Added date header — sortable by mtime */}
         <button
-          className="w-20 shrink-0 flex items-center gap-0.5 uppercase hover:text-foreground transition-colors cursor-pointer"
+          className="w-20 shrink-0 flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer"
           onClick={() => handleSort('mtime')}
         >
           Added

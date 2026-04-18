@@ -197,6 +197,12 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 
+  /* Extra type size — DESIGN.md §3.2. All-caps field labels inside dense editors. */
+  --text-2xs: 0.5625rem;
+  --text-2xs--line-height: 1.4;
+  --text-2xs--letter-spacing: 0.06em;
+  --text-2xs--font-weight: 600;
+
   /* Radii — derived from single knob. */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

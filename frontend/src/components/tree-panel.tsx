@@ -135,7 +135,7 @@ export function TreePanel({
   if (!tree) {
     return (
       <div
-        className="shrink-0 border-r border-border/50 p-3 relative"
+        className="shrink-0 border-r border-border p-3 relative"
         style={{ width: `${width}px` }}
       >
         <div className="text-xs text-muted-foreground">Loading...</div>
@@ -146,7 +146,7 @@ export function TreePanel({
   return (
     <div
       className={cn(
-        'shrink-0 border-r border-border/50 flex flex-col min-h-0 relative',
+        'shrink-0 border-r border-border flex flex-col min-h-0 relative',
         isAnimating && 'transition-[width] duration-200 ease-out',
       )}
       style={{ width: `${width}px` }}
@@ -167,7 +167,7 @@ export function TreePanel({
       <TreePanelMiniPlayer />
       {/* Resize handle */}
       <div
-        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors duration-150 hover:duration-300 hover:delay-150 z-10"
+        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-brand-soft active:bg-brand-soft transition-colors duration-150 hover:duration-300 hover:delay-150 z-10"
         onMouseDown={handleResizeStart}
         onDoubleClick={handleDoubleClick}
       />
@@ -229,7 +229,7 @@ function TreeNodeItem({
               'flex items-center gap-1 w-full text-left text-xs py-1 px-2 rounded-sm transition-colors cursor-pointer group',
               isSelected
                 ? 'bg-accent text-accent-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent',
             )}
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
             onClick={() => onSelect(node.id)}
@@ -274,7 +274,7 @@ function TreeNodeItem({
                         : {})}
                     />
                     {resolved!.own && resolved!.recursive && (
-                      <span className="ml-0.5 text-[9px] leading-none font-semibold tracking-wider text-primary/70 uppercase">
+                      <span className="ml-0.5 text-xs leading-none font-semibold tracking-wider text-primary/70 uppercase">
                         R
                       </span>
                     )}
@@ -286,7 +286,7 @@ function TreeNodeItem({
               </Tooltip>
             )}
             {node.track_count > 0 && (
-              <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground/50">
+              <span className="shrink-0 tabular-nums text-xs text-muted-foreground/50">
                 {node.track_count}
               </span>
             )}
@@ -307,7 +307,7 @@ function TreeNodeItem({
                   onSetRuleset(node.id, null, false);
                 }}
               >
-                None <span className="text-[10px] opacity-70">(use global)</span>
+                None <span className="text-xs opacity-70">(use global)</span>
               </ContextMenuItem>
               <ContextMenuSeparator />
               {rulesets.map((r) => (
@@ -321,7 +321,7 @@ function TreeNodeItem({
                 >
                   {r.name}
                   {currentRulesetId === r.id && (
-                    <span className="ml-auto text-primary text-[10px]">Active</span>
+                    <span className="ml-auto text-primary text-xs">Active</span>
                   )}
                 </ContextMenuItem>
               ))}

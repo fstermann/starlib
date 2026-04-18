@@ -49,7 +49,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="fixed left-0 top-0 bottom-0 z-50 flex w-14 flex-col border-r border-border/50 bg-card shrink-0">
+    <aside className="fixed left-0 top-0 bottom-0 z-50 flex w-14 flex-col border-r border-border bg-card shrink-0">
       {/* Logo */}
       <div className="h-14 flex items-center justify-center shrink-0">
         <Link href="/" aria-label="Starlib home">
@@ -82,7 +82,7 @@ export function Sidebar() {
                   className={`flex items-center justify-center size-9 rounded-md transition-colors ${
                     active
                       ? "text-[var(--brand)] bg-[var(--brand-soft)]"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
                   }`}
                 >
                   <Icon className="size-4" />
@@ -103,7 +103,7 @@ export function Sidebar() {
             <button
               onClick={() => setSettingsOpen(true)}
               aria-label="Settings"
-              className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors cursor-pointer"
+              className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
               <Settings className="size-4" />
             </button>
@@ -136,7 +136,7 @@ export function Sidebar() {
                     <SoundCloudLogo className="absolute -bottom-0.5 -right-0.5 size-2.5" />
                   </span>
                 ) : (
-                  <div className="size-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary">
+                  <div className="size-5 rounded-full bg-brand-soft flex items-center justify-center text-xs font-bold text-primary">
                     {user.username.slice(0, 1).toUpperCase()}
                   </div>
                 )}
@@ -152,7 +152,7 @@ export function Sidebar() {
               <Link
                 href="/auth/login"
                 aria-label="Connect SoundCloud"
-                className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-primary hover:bg-brand-soft transition-colors"
               >
                 <SoundCloudLogo className="size-4" />
               </Link>

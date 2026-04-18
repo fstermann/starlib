@@ -274,11 +274,11 @@ function MetaEditorContent() {
     title: (
       <>
         <span>Meta Editor</span>
-        <div className="w-px h-5 bg-border/50 shrink-0 mx-1" />
+        <div className="w-px h-5 bg-border shrink-0 mx-1" />
         <div className="flex items-center gap-2">
           {/* Source switcher (disabled placeholder) */}
           <Select value="filesystem" disabled>
-            <SelectTrigger className="h-7 w-auto gap-1.5 text-[10px] font-medium tracking-widest uppercase px-3">
+            <SelectTrigger className="h-7 w-auto gap-1.5 text-xs font-medium px-3">
               <FolderTree className="size-3" />
               <SelectValue />
             </SelectTrigger>
@@ -294,7 +294,7 @@ function MetaEditorContent() {
                 key={folder.name}
                 variant={activeShortcut === folder.name ? 'secondary' : 'ghost'}
                 size="sm"
-                className="h-7 px-3 text-[10px] font-medium tracking-widest uppercase cursor-pointer"
+                className="h-7 px-3 text-xs font-medium cursor-pointer"
                 onClick={() => handleFolderShortcut(folder.name)}
               >
                 {folder.label}
@@ -309,7 +309,7 @@ function MetaEditorContent() {
             {selectedFile && !editorOpen && (
               <button
                 onClick={() => setEditorOpen(true)}
-                className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 text-muted-foreground hover:text-foreground"
+                className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent text-muted-foreground hover:text-foreground"
                 title="Open editor"
               >
                 <PencilLine className="size-3.5" />
@@ -317,13 +317,13 @@ function MetaEditorContent() {
             )}
             <Popover>
               <PopoverTrigger asChild>
-                <button className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 text-muted-foreground hover:text-foreground">
+                <button className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent text-muted-foreground hover:text-foreground">
                   <Settings2 className="size-3.5" />
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-52" align="end">
                 <div className="space-y-3">
-                  <h4 className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Auto-Actions</h4>
+                  <h4 className="text-xs font-bold tracking-widest text-muted-foreground uppercase">Auto-Actions</h4>
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Checkbox id="auto-artwork" checked={autoActions.autoCopyArtwork} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyArtwork: v as boolean })} />
@@ -402,7 +402,7 @@ function MetaEditorContent() {
           {showEditor && (
             <div
               className={cn(
-                'relative shrink-0 flex flex-col bg-card border-l border-border/50 shadow-[-6px_0_16px_-4px_rgba(0,0,0,0.15)] dark:shadow-[-6px_0_16px_-4px_rgba(0,0,0,0.4)] z-10 overflow-hidden',
+                'relative shrink-0 flex flex-col bg-card border-l border-border shadow-[-6px_0_16px_-4px_rgba(0,0,0,0.15)] dark:shadow-[-6px_0_16px_-4px_rgba(0,0,0,0.4)] z-10 overflow-hidden',
                 editorResize.isAnimating && 'transition-[width] duration-200 ease-out',
               )}
               style={{ width: `${editorResize.width}px` }}
@@ -421,7 +421,7 @@ function MetaEditorContent() {
               />
               {/* Resize handle */}
               <div
-                className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors duration-150 hover:duration-300 hover:delay-300 z-10"
+                className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-brand-soft active:bg-brand-soft transition-colors duration-150 hover:duration-300 hover:delay-300 z-10"
                 onMouseDown={editorResize.handleResizeStart}
                 onDoubleClick={editorResize.handleDoubleClick}
               />

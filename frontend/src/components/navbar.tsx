@@ -57,7 +57,7 @@ export function Navbar() {
               href={link.href}
               className={`px-3 py-1 rounded text-xs font-medium tracking-wide uppercase transition-colors ${
                 pathname.startsWith(link.href)
-                  ? "text-primary bg-primary/10"
+                  ? "text-primary bg-brand-soft"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >

@@ -95,7 +95,7 @@ function FolderRow({
         <TooltipTrigger asChild>
           <span
             className={cn(
-              "w-24 shrink-0 truncate rounded border border-border/50 bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground text-right cursor-default",
+              "w-24 shrink-0 truncate rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground text-right cursor-default",
               !folder.visible && "opacity-40"
             )}
           >
@@ -232,7 +232,7 @@ export function FolderConfigManager() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2 px-2.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+        <div className="flex items-center gap-2 px-2.5 text-xs uppercase tracking-wider text-muted-foreground/60">
           <span className="w-3.5 shrink-0" />
           <span className="w-3.5 shrink-0" />
           <span className="flex-1">Label</span>
@@ -263,7 +263,7 @@ export function FolderConfigManager() {
       <div className="flex flex-col gap-1.5">
         <Label className="text-xs text-muted-foreground">Add folder</Label>
         <AddFolderRow onAdd={handleAdd} />
-        <p className="text-[10px] text-muted-foreground/50">
+        <p className="text-xs text-muted-foreground/50">
           Folder name must match the subdirectory name in your music library root.
         </p>
       </div>

@@ -153,7 +153,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
   const bpmActive = bpmMin !== null || bpmMax !== null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-border/50 bg-background/80 backdrop-blur-sm">
+    <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-border bg-background/80 backdrop-blur-sm">
       {/* Search */}
       <div className="relative flex-1 min-w-40 max-w-64">
         <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -179,7 +179,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
           <Button variant="outline" size="sm" className={`h-7 text-xs gap-1 ${genres.length ? 'border-primary text-primary' : ''}`}>
             Genre
             {genres.length > 0 && (
-              <Badge variant="default" className="h-4 px-1 text-[10px] rounded-full ml-0.5">
+              <Badge variant="default" className="h-4 px-1 text-xs rounded-full ml-0.5">
                 {genres.length}
               </Badge>
             )}
@@ -188,7 +188,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-40 p-0">
           <div className="px-1 pt-1">
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
               Genre
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -239,7 +239,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
           <Button variant="outline" size="sm" className={`h-7 text-xs gap-1 ${keys.length ? 'border-primary text-primary' : ''}`}>
             Key
             {keys.length > 0 && (
-              <Badge variant="default" className="h-4 px-1 text-[10px] rounded-full ml-0.5">
+              <Badge variant="default" className="h-4 px-1 text-xs rounded-full ml-0.5">
                 {keys.length}
               </Badge>
             )}
@@ -248,7 +248,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-32 p-0">
           <div className="px-1 pt-1">
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
               Key
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -308,7 +308,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
               <SlidersHorizontal className="size-3" />
               BPM
               {bpmActive && (
-                <span className="text-[10px] ml-0.5">
+                <span className="text-xs ml-0.5">
                   {bpmMin ?? bpmRange?.[0]}–{bpmMax ?? bpmRange?.[1]}
                 </span>
               )}
@@ -316,7 +316,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56 p-3">
-            <div className="flex justify-between text-[10px] text-muted-foreground mb-2">
+            <div className="flex justify-between text-xs text-muted-foreground mb-2">
               <span>{bpmValue?.[0] ?? bpmRange[0]} BPM</span>
               <span>{bpmValue?.[1] ?? bpmRange[1]} BPM</span>
             </div>
@@ -335,12 +335,12 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
 
       {/* Active filter chips */}
       {genres.map((g) => (
-        <Badge key={g} variant="secondary" className="h-6 text-[10px] gap-1 cursor-pointer" onClick={() => toggleGenre(g)}>
+        <Badge key={g} variant="secondary" className="h-6 text-xs gap-1 cursor-pointer" onClick={() => toggleGenre(g)}>
           {g} <X className="size-2.5" />
         </Badge>
       ))}
       {keys.map((k) => (
-        <Badge key={k} variant="secondary" className="h-6 text-[10px] gap-1 cursor-pointer" onClick={() => toggleKey(k)}>
+        <Badge key={k} variant="secondary" className="h-6 text-xs gap-1 cursor-pointer" onClick={() => toggleKey(k)}>
           {k} <X className="size-2.5" />
         </Badge>
       ))}
@@ -354,7 +354,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
 
       {/* Track count */}
       {total !== undefined && (
-        <div className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+        <div className="ml-auto text-xs text-muted-foreground tabular-nums">
           {total.toLocaleString()} track{total !== 1 ? 's' : ''}
           {cacheLoading && ' (loading…)'}
         </div>

@@ -126,7 +126,7 @@ export default function LikeExplorerPage() {
     title: (
       <>
         <span>Like Explorer</span>
-        <div className="w-px h-5 bg-border/50 shrink-0 mx-1" />
+        <div className="w-px h-5 bg-border shrink-0 mx-1" />
         <ToggleGroup
           type="single"
           variant="outline"
@@ -145,7 +145,7 @@ export default function LikeExplorerPage() {
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       {/* Explore tab: user search / selected user */}
       {tab === 'explore' && (
-        <div className="px-4 py-2 border-b border-border/50">
+        <div className="px-4 py-2 border-b border-border">
           {selectedUser ? (
             <UserCard user={selectedUser} onClear={() => setSelectedUser(null)} />
           ) : (
@@ -198,7 +198,7 @@ export default function LikeExplorerPage() {
                   variant="ghost"
                   className={cn(
                     'h-7 text-xs gap-1.5',
-                    selectedIds.size > 0 ? 'text-primary hover:bg-primary/10 hover:text-primary' : 'text-muted-foreground/40',
+                    selectedIds.size > 0 ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground/40',
                   )}
                   disabled={selectedIds.size === 0}
                 >
@@ -247,7 +247,7 @@ export default function LikeExplorerPage() {
 
         {/* Loading progress overlay */}
         {activeLikes.loading && activeLikes.tracks.length > 0 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border/50 shadow-lg">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border shadow-lg">
             <LogoSpinner className="size-4" />
             <span className="text-xs text-muted-foreground">
               Loading… {activeLikes.loaded} tracks
