@@ -1,19 +1,28 @@
-'use client';
+"use client";
 
-import type WaveSurferType from 'wavesurfer.js';
-import { useEffect, useRef, useState } from 'react';
-import { usePlayer } from '@/lib/player-context';
-import { api } from '@/lib/api';
+import { useEffect, useRef, useState } from "react";
+import type WaveSurferType from "wavesurfer.js";
+
+import { api } from "@/lib/api";
+import { usePlayer } from "@/lib/player-context";
 
 function formatTime(s: number): string {
-  if (!isFinite(s) || s < 0) return '0:00';
+  if (!isFinite(s) || s < 0) return "0:00";
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, '0')}`;
+  return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
 export function WaveformPlayer() {
-  const { currentTrack, isPlaying, pause, reportProgress, registerSeek, reportDuration, largePlayer } = usePlayer();
+  const {
+    currentTrack,
+    isPlaying,
+    pause,
+    reportProgress,
+    registerSeek,
+    reportDuration,
+    largePlayer,
+  } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurferType | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -41,15 +50,19 @@ export function WaveformPlayer() {
     async function init() {
       if (!containerRef.current || cancelled) return;
 
-      const { default: WaveSurfer } = await import('wavesurfer.js');
-      const { default: HoverPlugin } = await import('wavesurfer.js/dist/plugins/hover.esm.js');
+      const { default: WaveSurfer } = await import("wavesurfer.js");
+      const { default: HoverPlugin } =
+        await import("wavesurfer.js/dist/plugins/hover.esm.js");
       if (cancelled || !containerRef.current) return;
 
       // Calculate how many peaks fit the container at the chosen bar dimensions.
       const BAR_WIDTH = 2;
       const BAR_GAP = 1;
       const containerWidth = containerRef.current.clientWidth || 800;
-      const numPeaks = Math.min(2000, Math.max(50, Math.ceil(containerWidth / (BAR_WIDTH + BAR_GAP))));
+      const numPeaks = Math.min(
+        2000,
+        Math.max(50, Math.ceil(containerWidth / (BAR_WIDTH + BAR_GAP))),
+      );
 
       // Fetch peaks from the backend so WaveSurfer doesn't need to decode
       // the audio via AudioContext (which fails in sandboxed WKWebView).
@@ -62,7 +75,7 @@ export function WaveformPlayer() {
       // CORS mode on the <audio> element can cause playback failures in the
       // Tauri WKWebView when the WebKit media assertion (RBS) is unavailable.
       const audio = new Audio(api.getAudioUrl(currentTrack!.filePath));
-      audio.preload = 'metadata';
+      audio.preload = "metadata";
       audioRef.current = audio;
 
       // Wait until audio.duration is a finite positive number before creating
@@ -71,57 +84,66 @@ export function WaveformPlayer() {
       // RIFF header yet. We also listen to durationchange so we catch the
       // moment the browser settles on a real value.
       await new Promise<void>((resolve) => {
-        if (isFinite(audio.duration) && audio.duration > 0) { resolve(); return; }
+        if (isFinite(audio.duration) && audio.duration > 0) {
+          resolve();
+          return;
+        }
         const cleanup = () => {
-          audio.removeEventListener('durationchange', check);
-          audio.removeEventListener('loadedmetadata', check);
-          audio.removeEventListener('error', onError);
+          audio.removeEventListener("durationchange", check);
+          audio.removeEventListener("loadedmetadata", check);
+          audio.removeEventListener("error", onError);
         };
         const check = () => {
-          if (isFinite(audio.duration) && audio.duration > 0) { cleanup(); resolve(); }
+          if (isFinite(audio.duration) && audio.duration > 0) {
+            cleanup();
+            resolve();
+          }
         };
-        const onError = () => { cleanup(); resolve(); };
-        audio.addEventListener('durationchange', check);
-        audio.addEventListener('loadedmetadata', check);
-        audio.addEventListener('error', onError, { once: true });
+        const onError = () => {
+          cleanup();
+          resolve();
+        };
+        audio.addEventListener("durationchange", check);
+        audio.addEventListener("loadedmetadata", check);
+        audio.addEventListener("error", onError, { once: true });
       });
       if (cancelled || !containerRef.current) return;
       // Bail on a hard load error (duration stays NaN).
       if (!isFinite(audio.duration) || audio.duration <= 0) return;
       const knownDuration = audio.duration;
 
-      const isDark = document.documentElement.classList.contains('dark');
+      const isDark = document.documentElement.classList.contains("dark");
 
       // Build canvas gradients for the SoundCloud-style waveform.
-      const tmpCanvas = document.createElement('canvas');
-      const tmpCtx = tmpCanvas.getContext('2d')!;
+      const tmpCanvas = document.createElement("canvas");
+      const tmpCtx = tmpCanvas.getContext("2d")!;
       const h = 128;
 
       const waveGrad = tmpCtx.createLinearGradient(0, 0, 0, h * 1.35);
       if (isDark) {
-        waveGrad.addColorStop(0, '#55566a');
-        waveGrad.addColorStop((h * 0.7) / h, '#44455a');
-        waveGrad.addColorStop((h * 0.7 + 1) / h, '#8888aa');
-        waveGrad.addColorStop((h * 0.7 + 2) / h, '#8888aa');
-        waveGrad.addColorStop((h * 0.7 + 3) / h, '#333345');
-        waveGrad.addColorStop(1, '#333345');
+        waveGrad.addColorStop(0, "#55566a");
+        waveGrad.addColorStop((h * 0.7) / h, "#44455a");
+        waveGrad.addColorStop((h * 0.7 + 1) / h, "#8888aa");
+        waveGrad.addColorStop((h * 0.7 + 2) / h, "#8888aa");
+        waveGrad.addColorStop((h * 0.7 + 3) / h, "#333345");
+        waveGrad.addColorStop(1, "#333345");
       } else {
-        waveGrad.addColorStop(0, '#aaaaab');
-        waveGrad.addColorStop((h * 0.7) / h, '#909091');
-        waveGrad.addColorStop((h * 0.7 + 1) / h, '#ffffff');
-        waveGrad.addColorStop((h * 0.7 + 2) / h, '#ffffff');
-        waveGrad.addColorStop((h * 0.7 + 3) / h, '#bbbbbb');
-        waveGrad.addColorStop(1, '#bbbbbb');
+        waveGrad.addColorStop(0, "#aaaaab");
+        waveGrad.addColorStop((h * 0.7) / h, "#909091");
+        waveGrad.addColorStop((h * 0.7 + 1) / h, "#ffffff");
+        waveGrad.addColorStop((h * 0.7 + 2) / h, "#ffffff");
+        waveGrad.addColorStop((h * 0.7 + 3) / h, "#bbbbbb");
+        waveGrad.addColorStop(1, "#bbbbbb");
       }
 
       const progressGrad = tmpCtx.createLinearGradient(0, 0, 0, h * 1.35);
       /* Brand-color hex literals — kept inline for canvas-gradient perf. See --brand in globals.css. */
-      progressGrad.addColorStop(0, isDark ? '#d0fd5a' : '#bde752');
-      progressGrad.addColorStop((h * 0.7) / h, '#a8cd49');
-      progressGrad.addColorStop((h * 0.7 + 1) / h, '#ffffff');
-      progressGrad.addColorStop((h * 0.7 + 2) / h, '#ffffff');
-      progressGrad.addColorStop((h * 0.7 + 3) / h, '#a8cd49');
-      progressGrad.addColorStop(1, '#a8cd49');
+      progressGrad.addColorStop(0, isDark ? "#d0fd5a" : "#bde752");
+      progressGrad.addColorStop((h * 0.7) / h, "#a8cd49");
+      progressGrad.addColorStop((h * 0.7 + 1) / h, "#ffffff");
+      progressGrad.addColorStop((h * 0.7 + 2) / h, "#ffffff");
+      progressGrad.addColorStop((h * 0.7 + 3) / h, "#a8cd49");
+      progressGrad.addColorStop(1, "#a8cd49");
 
       ws = WaveSurfer.create({
         container: containerRef.current,
@@ -139,11 +161,15 @@ export function WaveformPlayer() {
         media: audio,
         plugins: [
           HoverPlugin.create({
-            lineColor: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)',
+            lineColor: isDark ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.25)",
             lineWidth: 1,
             labelSize: 9,
-            labelColor: isDark ? 'rgba(184,188,198,0.95)' : 'rgba(51,51,51,0.9)',
-            labelBackground: isDark ? 'rgba(12,16,25,0.82)' : 'rgba(255,255,255,0.82)',
+            labelColor: isDark
+              ? "rgba(184,188,198,0.95)"
+              : "rgba(51,51,51,0.9)",
+            labelBackground: isDark
+              ? "rgba(12,16,25,0.82)"
+              : "rgba(255,255,255,0.82)",
             labelPreferLeft: true,
             formatTimeCallback: formatTime,
           }),
@@ -152,7 +178,7 @@ export function WaveformPlayer() {
 
       wsRef.current = ws;
 
-      ws.on('ready', () => {
+      ws.on("ready", () => {
         if (cancelled) return;
         setDuration(knownDuration);
         reportDuration(knownDuration);
@@ -163,27 +189,27 @@ export function WaveformPlayer() {
         if (isPlayingRef.current) ws!.play();
       });
 
-      ws.on('audioprocess', () => {
+      ws.on("audioprocess", () => {
         const t = ws!.getCurrentTime();
         setCurrentTime(t);
         reportProgress(t / knownDuration);
       });
 
-      ws.on('finish', () => {
+      ws.on("finish", () => {
         pause();
         audio.currentTime = 0;
         setCurrentTime(0);
         reportProgress(0);
       });
 
-      ws.on('seeking', () => {
+      ws.on("seeking", () => {
         const t = ws!.getCurrentTime();
         setCurrentTime(t);
         reportProgress(t / knownDuration);
       });
 
-      ws.on('error', (err) => {
-        if (!cancelled) console.error('WaveSurfer error:', err);
+      ws.on("error", (err) => {
+        if (!cancelled) console.error("WaveSurfer error:", err);
       });
     }
 
@@ -198,11 +224,20 @@ export function WaveformPlayer() {
       wsRef.current = null;
       if (audioRef.current) {
         audioRef.current.pause();
-        audioRef.current.src = '';
+        audioRef.current.src = "";
         audioRef.current = null;
       }
     };
-  }, [currentTrack?.filePath, pause, reportProgress, registerSeek, reportDuration]);
+    // Only `currentTrack?.filePath` actually drives this effect; rebuilding
+    // WaveSurfer on every other currentTrack field change would thrash.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentTrack?.filePath,
+    pause,
+    reportProgress,
+    registerSeek,
+    reportDuration,
+  ]);
 
   // Sync isPlaying state to WaveSurfer
   useEffect(() => {
@@ -221,15 +256,21 @@ export function WaveformPlayer() {
     <div
       data-testid="waveform-player"
       aria-hidden={!largePlayer}
-      className={`fixed bottom-0 left-14 right-0 h-17 bg-card border-t border-border flex items-center gap-4 px-4 z-40 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] transition-[transform,opacity] duration-200 ease-out ${
-        largePlayer ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
-      } ${!ready ? 'opacity-60' : ''}`}
+      className={`bg-card border-border fixed right-0 bottom-0 left-14 z-40 flex h-17 items-center gap-4 border-t px-4 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] transition-[transform,opacity] duration-200 ease-out ${
+        largePlayer
+          ? "translate-y-0 opacity-100"
+          : "pointer-events-none translate-y-full opacity-0"
+      } ${!ready ? "opacity-60" : ""}`}
     >
       {/* Waveform canvas — play/pause + track info live in the tree-panel mini player */}
-      <div ref={containerRef} className="flex-1 min-w-0" style={{ cursor: 'pointer' }} />
+      <div
+        ref={containerRef}
+        className="min-w-0 flex-1"
+        style={{ cursor: "pointer" }}
+      />
 
       {/* Time display */}
-      <span className="text-xs font-mono text-muted-foreground shrink-0 w-24 text-right tabular-nums">
+      <span className="text-muted-foreground w-24 shrink-0 text-right font-mono text-xs tabular-nums">
         {formatTime(currentTime)} / {formatTime(duration)}
       </span>
     </div>

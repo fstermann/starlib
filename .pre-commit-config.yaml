@@ -62,3 +62,15 @@ repos:
         entry: bash -c 'cd frontend && npx tsc --noEmit'
         types_or: [ts, tsx]
         pass_filenames: false
+      - id: prettier
+        name: Prettier (frontend)
+        language: system
+        entry: bash -c 'cd frontend && exec ./node_modules/.bin/prettier --write --ignore-unknown "${@/#frontend\//}"' --
+        files: ^frontend/.*\.(ts|tsx|js|mjs|cjs|css|md|json|ya?ml)$
+        exclude: ^frontend/(node_modules|\.next|out|build|src/generated|playwright-report|test-results)/
+      - id: eslint
+        name: ESLint (frontend)
+        language: system
+        entry: bash -c 'cd frontend && exec ./node_modules/.bin/eslint --fix --max-warnings=0 "${@/#frontend\//}"' --
+        files: ^frontend/.*\.(ts|tsx|js|mjs|cjs)$
+        exclude: ^frontend/(node_modules|\.next|out|build|src/generated|playwright-report|test-results)/

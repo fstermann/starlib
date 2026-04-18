@@ -4,19 +4,21 @@
  * Token management is handled by src/lib/auth.ts.
  */
 
-import createClient from 'openapi-fetch';
-import type { components, paths } from '@/generated/soundcloud';
-import { ensureValidToken } from './auth';
+import createClient from "openapi-fetch";
 
-export type SCTrack = components['schemas']['Track'];
-export type SCPlaylist = components['schemas']['Playlist'];
-export type SCUser = components['schemas']['User'];
+import type { components, paths } from "@/generated/soundcloud";
+
+import { ensureValidToken } from "./auth";
+
+export type SCTrack = components["schemas"]["Track"];
+export type SCPlaylist = components["schemas"]["Playlist"];
+export type SCUser = components["schemas"]["User"];
 
 function createSCClient(token: string) {
-  const client = createClient<paths>({ baseUrl: 'https://api.soundcloud.com' });
+  const client = createClient<paths>({ baseUrl: "https://api.soundcloud.com" });
   client.use({
     onRequest({ request }) {
-      request.headers.set('Authorization', `OAuth ${token}`);
+      request.headers.set("Authorization", `OAuth ${token}`);
       return request;
     },
   });
@@ -28,27 +30,34 @@ async function getClient() {
   return createSCClient(token);
 }
 
-export async function searchTracks(query: string, limit = 20): Promise<SCTrack[]> {
+export async function searchTracks(
+  query: string,
+  limit = 20,
+): Promise<SCTrack[]> {
   const client = await getClient();
-  const { data, error } = await client.GET('/tracks', {
+  const { data, error } = await client.GET("/tracks", {
     params: { query: { q: query, limit } },
   });
-  if (error) throw new Error(`SoundCloud search failed: ${JSON.stringify(error)}`);
+  if (error)
+    throw new Error(`SoundCloud search failed: ${JSON.stringify(error)}`);
   return (data as SCTrack[]) ?? [];
 }
 
-export async function resolveUrl(url: string): Promise<SCTrack | SCPlaylist | SCUser | null> {
+export async function resolveUrl(
+  url: string,
+): Promise<SCTrack | SCPlaylist | SCUser | null> {
   const client = await getClient();
-  const { data, error } = await client.GET('/resolve', {
+  const { data, error } = await client.GET("/resolve", {
     params: { query: { url } },
   });
-  if (error) throw new Error(`SoundCloud resolve failed: ${JSON.stringify(error)}`);
+  if (error)
+    throw new Error(`SoundCloud resolve failed: ${JSON.stringify(error)}`);
   return data as SCTrack | SCPlaylist | SCUser | null;
 }
 
 export async function getTrack(trackUrn: string): Promise<SCTrack | null> {
   const client = await getClient();
-  const { data, error } = await client.GET('/tracks/{track_urn}', {
+  const { data, error } = await client.GET("/tracks/{track_urn}", {
     params: { path: { track_urn: trackUrn } },
   });
   if (error) throw new Error(`Failed to fetch track: ${JSON.stringify(error)}`);
@@ -57,7 +66,7 @@ export async function getTrack(trackUrn: string): Promise<SCTrack | null> {
 
 export async function getMe(): Promise<SCUser> {
   const client = await getClient();
-  const { data, error } = await client.GET('/me', {});
+  const { data, error } = await client.GET("/me", {});
   if (error) throw new Error(`Failed to fetch user: ${JSON.stringify(error)}`);
   return data as SCUser;
 }
@@ -65,44 +74,56 @@ export async function getMe(): Promise<SCUser> {
 export async function createPlaylist(
   title: string,
   trackUrns: string[],
-  options?: { description?: string; sharing?: 'public' | 'private' },
+  options?: { description?: string; sharing?: "public" | "private" },
 ): Promise<SCPlaylist> {
   const client = await getClient();
-  const { data, error } = await client.POST('/playlists', {
+  const { data, error } = await client.POST("/playlists", {
     body: {
       playlist: {
         title,
-        sharing: options?.sharing ?? 'private',
+        sharing: options?.sharing ?? "private",
         description: options?.description,
         tracks: trackUrns.map((urn) => ({ urn })),
       },
     },
   });
-  if (error) throw new Error(`Failed to create playlist: ${JSON.stringify(error)}`);
+  if (error)
+    throw new Error(`Failed to create playlist: ${JSON.stringify(error)}`);
   return data as SCPlaylist;
 }
 
-export async function addTracksToPlaylist(playlistUrn: string, trackUrns: string[]): Promise<SCPlaylist> {
+export async function addTracksToPlaylist(
+  playlistUrn: string,
+  trackUrns: string[],
+): Promise<SCPlaylist> {
   const client = await getClient();
-  const { data, error } = await client.PUT('/playlists/{playlist_urn}', {
+  const { data, error } = await client.PUT("/playlists/{playlist_urn}", {
     params: { path: { playlist_urn: playlistUrn } },
     body: { playlist: { tracks: trackUrns.map((urn) => ({ urn })) } },
   });
-  if (error) throw new Error(`Failed to update playlist: ${JSON.stringify(error)}`);
+  if (error)
+    throw new Error(`Failed to update playlist: ${JSON.stringify(error)}`);
   return data as SCPlaylist;
 }
 
-export type SCTracks = components['schemas']['Tracks'];
+export type SCTracks = components["schemas"]["Tracks"];
 
 export async function getMyLikedTracks(
   limit = 200,
   cursor?: string,
 ): Promise<SCTracks> {
   const client = await getClient();
-  const { data, error } = await client.GET('/me/likes/tracks', {
-    params: { query: { limit, linked_partitioning: true, ...(cursor ? { offset: cursor } : {}) } as never },
+  const { data, error } = await client.GET("/me/likes/tracks", {
+    params: {
+      query: {
+        limit,
+        linked_partitioning: true,
+        ...(cursor ? { offset: cursor } : {}),
+      } as never,
+    },
   });
-  if (error) throw new Error(`Failed to fetch liked tracks: ${JSON.stringify(error)}`);
+  if (error)
+    throw new Error(`Failed to fetch liked tracks: ${JSON.stringify(error)}`);
   return data as SCTracks;
 }
 
@@ -112,13 +133,20 @@ export async function getUserLikedTracks(
   cursor?: string,
 ): Promise<SCTracks> {
   const client = await getClient();
-  const { data, error } = await client.GET('/users/{user_urn}/likes/tracks', {
+  const { data, error } = await client.GET("/users/{user_urn}/likes/tracks", {
     params: {
       path: { user_urn: userUrn },
-      query: { limit, linked_partitioning: true, ...(cursor ? { offset: cursor } : {}) } as never,
+      query: {
+        limit,
+        linked_partitioning: true,
+        ...(cursor ? { offset: cursor } : {}),
+      } as never,
     },
   });
-  if (error) throw new Error(`Failed to fetch user liked tracks: ${JSON.stringify(error)}`);
+  if (error)
+    throw new Error(
+      `Failed to fetch user liked tracks: ${JSON.stringify(error)}`,
+    );
   return data as SCTracks;
 }
 
@@ -133,18 +161,21 @@ export async function fetchLikesPage(nextHref: string): Promise<SCTracks> {
 
 export async function getUser(userUrn: string): Promise<SCUser | null> {
   const client = await getClient();
-  const { data, error } = await client.GET('/users/{user_urn}', {
+  const { data, error } = await client.GET("/users/{user_urn}", {
     params: { path: { user_urn: userUrn } },
   });
   if (error) throw new Error(`Failed to fetch user: ${JSON.stringify(error)}`);
   return (data as SCUser) ?? null;
 }
 
-export async function searchUsers(query: string, limit = 10): Promise<SCUser[]> {
+export async function searchUsers(
+  query: string,
+  limit = 10,
+): Promise<SCUser[]> {
   const token = await ensureValidToken();
-  const url = new URL('https://api.soundcloud.com/users');
-  url.searchParams.set('q', query);
-  url.searchParams.set('limit', String(limit));
+  const url = new URL("https://api.soundcloud.com/users");
+  url.searchParams.set("q", query);
+  url.searchParams.set("limit", String(limit));
   const resp = await fetch(url.toString(), {
     headers: { Authorization: `OAuth ${token}` },
   });
@@ -153,8 +184,8 @@ export async function searchUsers(query: string, limit = 10): Promise<SCUser[]> 
   return (data?.collection ?? data) as SCUser[];
 }
 
-export type SCPlaylists = components['schemas']['Playlists'];
-export type SCActivities = components['schemas']['Activities'];
+export type SCPlaylists = components["schemas"]["Playlists"];
+export type SCActivities = components["schemas"]["Activities"];
 
 /**
  * Fetches one page of the authenticated user's recent track feed.
@@ -171,20 +202,23 @@ export async function getFeedTracksPage(
 
   if (nextHref) {
     const token = await ensureValidToken();
-    const resp = await fetch(nextHref, { headers: { Authorization: `OAuth ${token}` } });
+    const resp = await fetch(nextHref, {
+      headers: { Authorization: `OAuth ${token}` },
+    });
     if (!resp.ok) throw new Error(`Failed to fetch feed page: ${resp.status}`);
     data = (await resp.json()) as SCActivities;
   } else {
     const client = await getClient();
-    const { data: raw, error } = await client.GET('/me/feed/tracks', {
+    const { data: raw, error } = await client.GET("/me/feed/tracks", {
       params: { query: { limit } as never },
     });
-    if (error) throw new Error(`Failed to fetch feed: ${JSON.stringify(error)}`);
+    if (error)
+      throw new Error(`Failed to fetch feed: ${JSON.stringify(error)}`);
     data = raw as SCActivities;
   }
 
   const tracks = (data.collection ?? [])
-    .filter((item) => item.type === 'track' && item.origin)
+    .filter((item) => item.type === "track" && item.origin)
     .map((item) => ({
       ...(item.origin as SCTrack),
       // Use the activity date (when it appeared in the feed / was reposted),
@@ -195,17 +229,26 @@ export async function getFeedTracksPage(
   return { tracks, nextHref: data.next_href ?? undefined };
 }
 
-export async function getMyPlaylists(limit = 50, nextHref?: string): Promise<SCPlaylists> {
+export async function getMyPlaylists(
+  limit = 50,
+  nextHref?: string,
+): Promise<SCPlaylists> {
   if (nextHref) {
     const token = await ensureValidToken();
-    const resp = await fetch(nextHref, { headers: { Authorization: `OAuth ${token}` } });
-    if (!resp.ok) throw new Error(`Failed to fetch playlists page: ${resp.status}`);
+    const resp = await fetch(nextHref, {
+      headers: { Authorization: `OAuth ${token}` },
+    });
+    if (!resp.ok)
+      throw new Error(`Failed to fetch playlists page: ${resp.status}`);
     return (await resp.json()) as SCPlaylists;
   }
   const client = await getClient();
-  const { data, error } = await client.GET('/me/playlists', {
-    params: { query: { limit, show_tracks: true, linked_partitioning: true } as never },
+  const { data, error } = await client.GET("/me/playlists", {
+    params: {
+      query: { limit, show_tracks: true, linked_partitioning: true } as never,
+    },
   });
-  if (error) throw new Error(`Failed to fetch playlists: ${JSON.stringify(error)}`);
+  if (error)
+    throw new Error(`Failed to fetch playlists: ${JSON.stringify(error)}`);
   return data as SCPlaylists;
 }

@@ -18,16 +18,23 @@ const DEFAULTS: Settings = {
 
 const STORAGE_KEY = "starlib_settings";
 
-let storeInstance: Awaited<ReturnType<typeof import("@tauri-apps/plugin-store")["load"]>> | null = null;
+let storeInstance: Awaited<
+  ReturnType<(typeof import("@tauri-apps/plugin-store"))["load"]>
+> | null = null;
 
 async function getTauriStore() {
   if (storeInstance) return storeInstance;
   const { load } = await import("@tauri-apps/plugin-store");
-  storeInstance = await load("settings.json", { autoSave: true, defaults: { ...DEFAULTS } as Record<string, unknown> });
+  storeInstance = await load("settings.json", {
+    autoSave: true,
+    defaults: { ...DEFAULTS } as Record<string, unknown>,
+  });
   return storeInstance;
 }
 
-export async function getSetting<K extends keyof Settings>(key: K): Promise<Settings[K]> {
+export async function getSetting<K extends keyof Settings>(
+  key: K,
+): Promise<Settings[K]> {
   if (isTauri()) {
     const store = await getTauriStore();
     const val = await store.get<Settings[K]>(key);

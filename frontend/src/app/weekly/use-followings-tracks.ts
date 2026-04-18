@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  getFeedTracksPage,
-  type SCTrack,
-} from '@/lib/soundcloud';
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { getFeedTracksPage, type SCTrack } from "@/lib/soundcloud";
 
 interface UseFollowingsTracksResult {
   tracks: SCTrack[];
@@ -43,7 +41,10 @@ async function fetchRecentPages(
   let nextHref: string | undefined;
 
   do {
-    const { tracks, nextHref: next } = await getFeedTracksPage(PAGE_SIZE, nextHref);
+    const { tracks, nextHref: next } = await getFeedTracksPage(
+      PAGE_SIZE,
+      nextHref,
+    );
     nextHref = next;
 
     if (signal.aborted) return [];
@@ -72,37 +73,42 @@ export function useFollowingsTracks(): UseFollowingsTracksResult {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const fetchAll = useCallback(async (signal: AbortSignal, bypassCache = false) => {
-    if (!bypassCache) {
-      const cached = getCached();
-      if (cached) {
-        setTracks(cached);
-        setLoading(false);
-        setError(null);
-        return;
+  const fetchAll = useCallback(
+    async (signal: AbortSignal, bypassCache = false) => {
+      if (!bypassCache) {
+        const cached = getCached();
+        if (cached) {
+          setTracks(cached);
+          setLoading(false);
+          setError(null);
+          return;
+        }
       }
-    }
 
-    setLoading(true);
-    setError(null);
-    setTracks([]);
+      setLoading(true);
+      setError(null);
+      setTracks([]);
 
-    try {
-      const result = await fetchRecentPages(signal, (partial) => {
-        if (!signal.aborted) setTracks(partial);
-      });
-      if (!signal.aborted) {
-        followingsCache = { tracks: result, fetchedAt: Date.now() };
-        setTracks(result);
+      try {
+        const result = await fetchRecentPages(signal, (partial) => {
+          if (!signal.aborted) setTracks(partial);
+        });
+        if (!signal.aborted) {
+          followingsCache = { tracks: result, fetchedAt: Date.now() };
+          setTracks(result);
+        }
+      } catch (err) {
+        if (!signal.aborted) {
+          setError(
+            err instanceof Error ? err.message : "Failed to load tracks",
+          );
+        }
+      } finally {
+        if (!signal.aborted) setLoading(false);
       }
-    } catch (err) {
-      if (!signal.aborted) {
-        setError(err instanceof Error ? err.message : 'Failed to load tracks');
-      }
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();

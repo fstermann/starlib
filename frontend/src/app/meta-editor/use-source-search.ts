@@ -1,7 +1,8 @@
-'use client';
+"use client";
 
-import { useState, useCallback, useEffect } from 'react';
-import type { MusicSource, SourceTrack } from '@/lib/sources/types';
+import { useCallback, useEffect, useState } from "react";
+
+import type { MusicSource, SourceTrack } from "@/lib/sources/types";
 
 export interface UseSourceSearchReturn {
   query: string;
@@ -22,7 +23,7 @@ export function useSourceSearch(
   panelOpen: boolean,
   setError: (err: string | null) => void,
 ): UseSourceSearchReturn {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<SourceTrack[]>([]);
   const [searching, setSearching] = useState(false);
   const [queryPending, setQueryPending] = useState(false);
@@ -45,7 +46,7 @@ export function useSourceSearch(
         } else {
           setResults([]);
           setSelectedTrack(null);
-          setError('URL did not resolve to a track');
+          setError("URL did not resolve to a track");
         }
       } else {
         const tracks = await source.searchTracks(query);
@@ -53,7 +54,9 @@ export function useSourceSearch(
         setSelectedTrack(tracks.length > 0 ? tracks[0] : null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : `${source.name} search failed`);
+      setError(
+        err instanceof Error ? err.message : `${source.name} search failed`,
+      );
       setQueryPending(false);
     } finally {
       setSearching(false);

@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
 import {
-  DndContext,
   closestCenter,
+  DndContext,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -11,28 +10,41 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
+  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-  arrayMove,
 } from "@dnd-kit/sortable";
 import { Archive, Loader2, MoveRight, Plus, RefreshCw } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  REQUIRED_ATTRIBUTES,
+  RULE_OUTPUTS,
+  type RequiredAttribute,
+  type Rule,
+  type Ruleset,
+  type RuleType,
+} from "@/lib/api";
 import { getSetting } from "@/lib/settings";
-import { RULE_ICON_COLORS } from "./rule-card";
-import { RuleCard, type InputOption } from "./rule-card";
-import { REQUIRED_ATTRIBUTES, RULE_OUTPUTS, type RequiredAttribute, type Rule, type Ruleset, type RuleType } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
-const RULE_TYPE_META: { type: RuleType; label: string; icon: React.ElementType }[] = [
+import { RULE_ICON_COLORS, RuleCard, type InputOption } from "./rule-card";
+
+const RULE_TYPE_META: {
+  type: RuleType;
+  label: string;
+  icon: React.ElementType;
+}[] = [
   { type: "convert", label: "Convert format", icon: RefreshCw },
   { type: "copy", label: "Copy to folder", icon: Archive },
   { type: "move", label: "Move to folder", icon: MoveRight },
@@ -72,7 +84,13 @@ function nextRuleId(existing: Rule[], type: RuleType): string {
 
 function inputOptionsFor(rules: Rule[], idx: number): InputOption[] {
   const opts: InputOption[] = [
-    { ref: "source", sourceStep: null, sourceVerb: null, sourceType: null, outputName: null },
+    {
+      ref: "source",
+      sourceStep: null,
+      sourceVerb: null,
+      sourceType: null,
+      outputName: null,
+    },
   ];
   for (let i = 0; i < idx; i++) {
     const r = rules[i];
@@ -133,7 +151,11 @@ function buildSegments(rules: Rule[]): Segment[] {
     if (rule.type === "convert") {
       const prefix = `${rule.id}.`;
       const branchIdxs = [...absorbed]
-        .filter((j) => j > i && (rules[j].requires ?? []).some((r) => r.startsWith(prefix)))
+        .filter(
+          (j) =>
+            j > i &&
+            (rules[j].requires ?? []).some((r) => r.startsWith(prefix)),
+        )
         .sort((a, b) => a - b);
       result.push({ kind: "convert-group", convertIdx: i, branchIdxs });
     } else {
@@ -143,13 +165,21 @@ function buildSegments(rules: Rule[]): Segment[] {
   return result;
 }
 
-export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdit }: RulesetEditorProps) {
+export function RulesetEditor({
+  ruleset,
+  onChange,
+  onSave,
+  saving,
+  hasPendingEdit,
+}: RulesetEditorProps) {
   const [preferredFormat, setPreferredFormat] = useState("aiff");
   const rules = ruleset.rules;
 
   const sensors = useSensors(
     useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   useEffect(() => {
@@ -158,14 +188,15 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
       setPreferredFormat((e as CustomEvent<string>).detail);
     }
     window.addEventListener("preferred-format-changed", onFormatChanged);
-    return () => window.removeEventListener("preferred-format-changed", onFormatChanged);
+    return () =>
+      window.removeEventListener("preferred-format-changed", onFormatChanged);
   }, []);
 
   const segments = useMemo(() => buildSegments(rules), [rules]);
 
   // One sortable id per segment (convert-group uses the convert's id)
   const sortableSegmentIds = segments.map((s) =>
-    s.kind === "standalone" ? rules[s.ruleIdx].id : rules[s.convertIdx].id
+    s.kind === "standalone" ? rules[s.ruleIdx].id : rules[s.convertIdx].id,
   );
 
   function publishRules(newRules: Rule[]) {
@@ -184,7 +215,8 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
       let next = rule;
       if (!allowed.has(rule.input)) next = { ...next, input: "source" };
       const req = (rule.requires ?? []).filter((ref) => allowed.has(ref));
-      if (req.length !== (rule.requires?.length ?? 0)) next = { ...next, requires: req };
+      if (req.length !== (rule.requires?.length ?? 0))
+        next = { ...next, requires: req };
       return next;
     });
   }
@@ -194,7 +226,7 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
     return segs.flatMap((s) =>
       s.kind === "standalone"
         ? [src[s.ruleIdx]]
-        : [src[s.convertIdx], ...s.branchIdxs.map((i) => src[i])]
+        : [src[s.convertIdx], ...s.branchIdxs.map((i) => src[i])],
     );
   }
 
@@ -215,13 +247,20 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
   function handleDeleteStandalone(ruleIdx: number) {
     const removedId = rules[ruleIdx].id;
     const prefix = `${removedId}.`;
-    const remaining = rules.filter((_, i) => i !== ruleIdx).map((r) => {
-      let next = r;
-      if (r.input.startsWith(prefix)) next = { ...next, input: "source" };
-      if ((r.requires ?? []).some((ref) => ref.startsWith(prefix)))
-        next = { ...next, requires: (r.requires ?? []).filter((ref) => !ref.startsWith(prefix)) };
-      return next;
-    });
+    const remaining = rules
+      .filter((_, i) => i !== ruleIdx)
+      .map((r) => {
+        let next = r;
+        if (r.input.startsWith(prefix)) next = { ...next, input: "source" };
+        if ((r.requires ?? []).some((ref) => ref.startsWith(prefix)))
+          next = {
+            ...next,
+            requires: (r.requires ?? []).filter(
+              (ref) => !ref.startsWith(prefix),
+            ),
+          };
+        return next;
+      });
     publishRules(sanitize(remaining));
   }
 
@@ -229,16 +268,24 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
   function handleDeleteConvertGroup(convertIdx: number, branchIdxs: number[]) {
     const toRemove = new Set([convertIdx, ...branchIdxs]);
     const removedIds = new Set([...toRemove].map((i) => rules[i].id));
-    const remaining = rules.filter((_, i) => !toRemove.has(i)).map((r) => {
-      let next = r;
-      for (const rid of removedIds) {
-        const prefix = `${rid}.`;
-        if (next.input.startsWith(prefix)) next = { ...next, input: "source" };
-        if ((next.requires ?? []).some((ref) => ref.startsWith(prefix)))
-          next = { ...next, requires: (next.requires ?? []).filter((ref) => !ref.startsWith(prefix)) };
-      }
-      return next;
-    });
+    const remaining = rules
+      .filter((_, i) => !toRemove.has(i))
+      .map((r) => {
+        let next = r;
+        for (const rid of removedIds) {
+          const prefix = `${rid}.`;
+          if (next.input.startsWith(prefix))
+            next = { ...next, input: "source" };
+          if ((next.requires ?? []).some((ref) => ref.startsWith(prefix)))
+            next = {
+              ...next,
+              requires: (next.requires ?? []).filter(
+                (ref) => !ref.startsWith(prefix),
+              ),
+            };
+        }
+        return next;
+      });
     publishRules(sanitize(remaining));
   }
 
@@ -249,13 +296,25 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
 
   function handleAddRule(type: RuleType) {
     const id = nextRuleId(rules, type);
-    publishRules([...rules, {
-      id, type, input: "source", requires: [], params: { ...DEFAULT_PARAMS[type] },
-    }]);
+    publishRules([
+      ...rules,
+      {
+        id,
+        type,
+        input: "source",
+        requires: [],
+        params: { ...DEFAULT_PARAMS[type] },
+      },
+    ]);
   }
 
   /** Add an "if converted" step (gated on convert.converted). */
-  function handleAddConditionalStep(convertId: string, convertIdx: number, branchIdxs: number[], type: RuleType) {
+  function handleAddConditionalStep(
+    convertId: string,
+    convertIdx: number,
+    branchIdxs: number[],
+    type: RuleType,
+  ) {
     const id = nextRuleId(rules, type);
     const newRule: Rule = {
       id,
@@ -264,8 +323,15 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
       requires: [`${convertId}.converted`],
       params: { ...DEFAULT_PARAMS[type] },
     };
-    const insertIdx = branchIdxs.length > 0 ? branchIdxs[branchIdxs.length - 1] + 1 : convertIdx + 1;
-    publishRules([...rules.slice(0, insertIdx), newRule, ...rules.slice(insertIdx)]);
+    const insertIdx =
+      branchIdxs.length > 0
+        ? branchIdxs[branchIdxs.length - 1] + 1
+        : convertIdx + 1;
+    publishRules([
+      ...rules.slice(0, insertIdx),
+      newRule,
+      ...rules.slice(insertIdx),
+    ]);
   }
 
   // ---- Render sub-panel: only "if converted" (conditional) steps -----------
@@ -279,18 +345,20 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
     if (branchIdxs.length === 0 && ruleset.is_builtin) return null;
 
     return (
-      <div className="px-2 pb-2 pt-1 flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5 px-2 pt-1 pb-2">
         <div className="flex items-center gap-2">
-          <span className="h-px flex-1 bg-info/15" />
-          <span className="text-xs font-semibold text-info/60">
+          <span className="bg-info/15 h-px flex-1" />
+          <span className="text-info/60 text-xs font-semibold">
             if converted
           </span>
-          <span className="h-px flex-1 bg-info/15" />
+          <span className="bg-info/15 h-px flex-1" />
         </div>
-        <div className={cn(
-          "flex flex-col gap-1.5 rounded-md p-1.5",
-          branchIdxs.length > 0 && "border border-info/15 bg-info/4"
-        )}>
+        <div
+          className={cn(
+            "flex flex-col gap-1.5 rounded-md p-1.5",
+            branchIdxs.length > 0 && "border-info/15 bg-info/4 border",
+          )}
+        >
           {branchIdxs.map((bIdx) => {
             const bRule = rules[bIdx];
             return (
@@ -309,7 +377,9 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
             );
           })}
           {branchIdxs.length === 0 && (
-            <p className="text-xs text-muted-foreground px-1.5 py-0.5">No steps yet.</p>
+            <p className="text-muted-foreground px-1.5 py-0.5 text-xs">
+              No steps yet.
+            </p>
           )}
           {!ruleset.is_builtin && (
             <DropdownMenu>
@@ -317,7 +387,7 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-fit text-xs gap-1.5 cursor-pointer text-info/60 hover:text-info hover:bg-info/10"
+                  className="text-info/60 hover:text-info hover:bg-info/10 h-7 w-fit cursor-pointer gap-1.5 text-xs"
                 >
                   <Plus className="size-3" />
                   Add on success
@@ -328,9 +398,18 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
                   <DropdownMenuItem
                     key={type}
                     className="cursor-pointer gap-2.5"
-                    onClick={() => handleAddConditionalStep(convertId, convertIdx, branchIdxs, type)}
+                    onClick={() =>
+                      handleAddConditionalStep(
+                        convertId,
+                        convertIdx,
+                        branchIdxs,
+                        type,
+                      )
+                    }
                   >
-                    <Icon className={cn("size-4 shrink-0", RULE_ICON_COLORS[type])} />
+                    <Icon
+                      className={cn("size-4 shrink-0", RULE_ICON_COLORS[type])}
+                    />
                     {label}
                   </DropdownMenuItem>
                 ))}
@@ -356,56 +435,83 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
           />
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">Built-in ruleset — read only.</p>
+        <p className="text-muted-foreground text-xs">
+          Built-in ruleset — read only.
+        </p>
       )}
 
       <div className="flex flex-col gap-1.5">
         <Label className="text-sm">Workflow</Label>
         {rules.length === 0 && (
-          <p className="text-xs text-muted-foreground py-1">No rules yet — add one below.</p>
+          <p className="text-muted-foreground py-1 text-xs">
+            No rules yet — add one below.
+          </p>
         )}
-        {rules.length > 0 && <div className="rounded-lg border border-border bg-muted p-2">
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={sortableSegmentIds} strategy={verticalListSortingStrategy}>
-              <div className="flex flex-col gap-1.5">
-                {segments.map((seg) => {
-                  if (seg.kind === "standalone") {
-                    const rule = rules[seg.ruleIdx];
+        {rules.length > 0 && (
+          <div className="border-border bg-muted rounded-lg border p-2">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={sortableSegmentIds}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="flex flex-col gap-1.5">
+                  {segments.map((seg) => {
+                    if (seg.kind === "standalone") {
+                      const rule = rules[seg.ruleIdx];
+                      return (
+                        <RuleCard
+                          key={rule.id}
+                          id={rule.id}
+                          rule={rule}
+                          step={seg.ruleIdx + 1}
+                          isBuiltin={ruleset.is_builtin}
+                          preferredFormat={preferredFormat}
+                          inputOptions={inputOptionsFor(rules, seg.ruleIdx)}
+                          onChange={(updated) =>
+                            handleRuleChange(seg.ruleIdx, updated)
+                          }
+                          onDelete={() => handleDeleteStandalone(seg.ruleIdx)}
+                        />
+                      );
+                    }
+                    // convert-group
+                    const convRule = rules[seg.convertIdx];
                     return (
                       <RuleCard
-                        key={rule.id}
-                        id={rule.id}
-                        rule={rule}
-                        step={seg.ruleIdx + 1}
+                        key={convRule.id}
+                        id={convRule.id}
+                        rule={convRule}
+                        step={seg.convertIdx + 1}
                         isBuiltin={ruleset.is_builtin}
                         preferredFormat={preferredFormat}
-                        inputOptions={inputOptionsFor(rules, seg.ruleIdx)}
-                        onChange={(updated) => handleRuleChange(seg.ruleIdx, updated)}
-                        onDelete={() => handleDeleteStandalone(seg.ruleIdx)}
+                        inputOptions={inputOptionsFor(rules, seg.convertIdx)}
+                        onChange={(updated) =>
+                          handleRuleChange(seg.convertIdx, updated)
+                        }
+                        onDelete={() =>
+                          handleDeleteConvertGroup(
+                            seg.convertIdx,
+                            seg.branchIdxs,
+                          )
+                        }
+                        subPanel={renderBranchPanel(
+                          seg.convertIdx,
+                          convRule.id,
+                          seg.branchIdxs,
+                        )}
                       />
                     );
-                  }
-                  // convert-group
-                  const convRule = rules[seg.convertIdx];
-                  return (
-                    <RuleCard
-                      key={convRule.id}
-                      id={convRule.id}
-                      rule={convRule}
-                      step={seg.convertIdx + 1}
-                      isBuiltin={ruleset.is_builtin}
-                      preferredFormat={preferredFormat}
-                      inputOptions={inputOptionsFor(rules, seg.convertIdx)}
-                      onChange={(updated) => handleRuleChange(seg.convertIdx, updated)}
-                      onDelete={() => handleDeleteConvertGroup(seg.convertIdx, seg.branchIdxs)}
-                      subPanel={renderBranchPanel(seg.convertIdx, convRule.id, seg.branchIdxs)}
-                    />
-                  );
-                })}
-              </div>
-            </SortableContext>
-          </DndContext>
-        </div>}</div>
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </div>
+        )}
+      </div>
 
       <RequiredAttributesPicker
         value={ruleset.required_attributes ?? []}
@@ -417,7 +523,11 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="w-fit cursor-pointer">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-fit cursor-pointer"
+              >
                 <Plus className="size-3.5" />
                 Add rule
               </Button>
@@ -429,7 +539,9 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
                   className="cursor-pointer gap-2.5"
                   onClick={() => handleAddRule(type)}
                 >
-                  <Icon className={cn("size-4 shrink-0", RULE_ICON_COLORS[type])} />
+                  <Icon
+                    className={cn("size-4 shrink-0", RULE_ICON_COLORS[type])}
+                  />
                   {label}
                 </DropdownMenuItem>
               ))}
@@ -465,7 +577,11 @@ interface RequiredAttributesPickerProps {
   onChange: (next: RequiredAttribute[]) => void;
 }
 
-function RequiredAttributesPicker({ value, disabled, onChange }: RequiredAttributesPickerProps) {
+function RequiredAttributesPicker({
+  value,
+  disabled,
+  onChange,
+}: RequiredAttributesPickerProps) {
   const selected = new Set(value);
   function toggle(attr: RequiredAttribute) {
     const next = new Set(selected);
@@ -477,7 +593,7 @@ function RequiredAttributesPicker({ value, disabled, onChange }: RequiredAttribu
   return (
     <div className="flex flex-col gap-1.5">
       <Label className="text-sm">Required attributes</Label>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-muted-foreground text-xs">
         Tracks missing any of these can&apos;t be finalized with this ruleset.
         The Apply Rules button will list what&apos;s missing.
       </p>
@@ -491,10 +607,10 @@ function RequiredAttributesPicker({ value, disabled, onChange }: RequiredAttribu
               disabled={disabled}
               onClick={() => toggle(attr)}
               className={cn(
-                "text-xs px-2 py-0.5 rounded-full border transition-colors",
+                "rounded-full border px-2 py-0.5 text-xs transition-colors",
                 isOn
                   ? "bg-brand-soft border-primary/40 text-foreground"
-                  : "bg-transparent border-border text-muted-foreground hover:text-foreground",
+                  : "border-border text-muted-foreground hover:text-foreground bg-transparent",
                 disabled && "cursor-not-allowed opacity-60",
                 !disabled && "cursor-pointer",
               )}

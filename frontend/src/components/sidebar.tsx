@@ -1,13 +1,18 @@
 "use client";
 
+import { CalendarDays, FilePen, Heart, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { FilePen, Heart, Settings, CalendarDays } from "lucide-react";
-import { clearTokens } from "@/lib/auth";
-import { SettingsDialog } from "@/components/settings-dialog";
+
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SettingsDialog } from "@/components/settings-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { clearTokens } from "@/lib/auth";
 
 interface User {
   id: number;
@@ -49,28 +54,28 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="fixed left-0 top-0 bottom-0 z-50 flex w-14 flex-col border-r border-border bg-card shrink-0">
+    <aside className="border-border bg-card fixed top-0 bottom-0 left-0 z-50 flex w-14 shrink-0 flex-col border-r">
       {/* Logo */}
-      <div className="h-14 flex items-center justify-center shrink-0">
+      <div className="flex h-14 shrink-0 items-center justify-center">
         <Link href="/" aria-label="Starlib home">
           <span
-            className="size-6 block bg-primary"
+            className="bg-primary block size-6"
             style={{
-              maskImage: 'url(/starlib-logo.svg)',
-              WebkitMaskImage: 'url(/starlib-logo.svg)',
-              maskSize: 'contain',
-              WebkitMaskSize: 'contain',
-              maskRepeat: 'no-repeat',
-              WebkitMaskRepeat: 'no-repeat',
-              maskPosition: 'center',
-              WebkitMaskPosition: 'center',
+              maskImage: "url(/starlib-logo.svg)",
+              WebkitMaskImage: "url(/starlib-logo.svg)",
+              maskSize: "contain",
+              WebkitMaskSize: "contain",
+              maskRepeat: "no-repeat",
+              WebkitMaskRepeat: "no-repeat",
+              maskPosition: "center",
+              WebkitMaskPosition: "center",
             }}
           />
         </Link>
       </div>
 
       {/* Nav links */}
-      <nav className="flex-1 py-3 flex flex-col gap-1 px-2">
+      <nav className="flex flex-1 flex-col gap-1 px-2 py-3">
         {NAV_LINKS.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);
           return (
@@ -79,9 +84,9 @@ export function Sidebar() {
                 <Link
                   href={href}
                   aria-label={label}
-                  className={`flex items-center justify-center size-9 rounded-md transition-colors ${
+                  className={`flex size-9 items-center justify-center rounded-md transition-colors ${
                     active
-                      ? "text-[var(--brand)] bg-[var(--brand-soft)]"
+                      ? "bg-[var(--brand-soft)] text-[var(--brand)]"
                       : "text-muted-foreground hover:text-foreground hover:bg-accent"
                   }`}
                 >
@@ -97,13 +102,13 @@ export function Sidebar() {
       </nav>
 
       {/* Settings */}
-      <div className="px-2 pb-1 shrink-0">
+      <div className="shrink-0 px-2 pb-1">
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               onClick={() => setSettingsOpen(true)}
               aria-label="Settings"
-              className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+              className="text-muted-foreground hover:text-foreground hover:bg-accent flex size-9 cursor-pointer items-center justify-center rounded-md transition-colors"
             >
               <Settings className="size-4" />
             </button>
@@ -117,14 +122,14 @@ export function Sidebar() {
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       {/* User / disconnect */}
-      <div className="px-2 py-3 shrink-0">
+      <div className="shrink-0 px-2 py-3">
         {user ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 onClick={handleDisconnect}
                 aria-label="Disconnect SoundCloud"
-                className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex size-9 items-center justify-center rounded-md transition-colors"
               >
                 {user.avatar_url ? (
                   <span className="relative flex items-center justify-center">
@@ -133,10 +138,10 @@ export function Sidebar() {
                       alt={user.username}
                       className="size-5 rounded-full object-cover"
                     />
-                    <SoundCloudLogo className="absolute -bottom-0.5 -right-0.5 size-2.5" />
+                    <SoundCloudLogo className="absolute -right-0.5 -bottom-0.5 size-2.5" />
                   </span>
                 ) : (
-                  <div className="size-5 rounded-full bg-brand-soft flex items-center justify-center text-xs font-bold text-primary">
+                  <div className="bg-brand-soft text-primary flex size-5 items-center justify-center rounded-full text-xs font-bold">
                     {user.username.slice(0, 1).toUpperCase()}
                   </div>
                 )}
@@ -152,7 +157,7 @@ export function Sidebar() {
               <Link
                 href="/auth/login"
                 aria-label="Connect SoundCloud"
-                className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-primary hover:bg-brand-soft transition-colors"
+                className="text-muted-foreground hover:text-primary hover:bg-brand-soft flex size-9 items-center justify-center rounded-md transition-colors"
               >
                 <SoundCloudLogo className="size-4" />
               </Link>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+
 import { Button } from "@/components/ui/button";
 
 interface User {
@@ -41,21 +42,21 @@ export function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-xl shrink-0">
-      <div className="px-5 h-12 flex items-center gap-6">
+    <header className="bg-card/95 sticky top-0 z-50 shrink-0 backdrop-blur-xl">
+      <div className="flex h-12 items-center gap-6 px-5">
         <Link
           href="/"
-          className="font-bold text-sm tracking-tight text-primary hover:opacity-75 transition-opacity shrink-0"
+          className="text-primary shrink-0 text-sm font-bold tracking-tight transition-opacity hover:opacity-75"
         >
           Starlib
         </Link>
 
-        <nav className="flex items-center gap-0.5 flex-1">
+        <nav className="flex flex-1 items-center gap-0.5">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className={`px-3 py-1 rounded text-xs font-medium tracking-wide transition-colors ${
+              className={`rounded px-3 py-1 text-xs font-medium tracking-wide transition-colors ${
                 pathname.startsWith(link.href)
                   ? "text-primary bg-brand-soft"
                   : "text-muted-foreground hover:text-foreground"
@@ -66,13 +67,18 @@ export function Navbar() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
           {user ? (
             <>
-              <span className="text-xs text-muted-foreground hidden sm:block font-mono">
+              <span className="text-muted-foreground hidden font-mono text-xs sm:block">
                 {user.username}
               </span>
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleDisconnect}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleDisconnect}
+              >
                 Disconnect
               </Button>
             </>
@@ -83,7 +89,7 @@ export function Navbar() {
           )}
         </div>
       </div>
-      <div className="h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+      <div className="via-primary/40 h-px bg-gradient-to-r from-transparent to-transparent" />
     </header>
   );
 }

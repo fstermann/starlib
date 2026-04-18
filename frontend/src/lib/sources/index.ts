@@ -1,8 +1,8 @@
-export type { MusicSource, SourceTrack, SourceMetadata } from './types';
-export { soundCloudSource } from './soundcloud';
+import { soundCloudSource } from "./soundcloud";
+import type { MusicSource } from "./types";
 
-import { soundCloudSource } from './soundcloud';
-import type { MusicSource } from './types';
+export type { MusicSource, SourceTrack, SourceMetadata } from "./types";
+export { soundCloudSource } from "./soundcloud";
 
 export const SOURCES: MusicSource[] = [soundCloudSource];
 

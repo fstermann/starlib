@@ -36,7 +36,7 @@ export function LogoSpinner({ className = "size-28" }: { className?: string }) {
               ? {
                   strokeDasharray: pathLength,
                   strokeDashoffset: pathLength,
-                  animation: `logo-draw-${id.replace(/:/g, '')} 2s ease-in-out infinite`,
+                  animation: `logo-draw-${id.replace(/:/g, "")} 2s ease-in-out infinite`,
                 }
               : undefined
           }
@@ -44,7 +44,7 @@ export function LogoSpinner({ className = "size-28" }: { className?: string }) {
       </svg>
       {pathLength > 0 && (
         <style>{`
-          @keyframes logo-draw-${id.replace(/:/g, '')} {
+          @keyframes logo-draw-${id.replace(/:/g, "")} {
             0% { stroke-dashoffset: ${pathLength}; opacity: 0.4; }
             50% { stroke-dashoffset: 0; opacity: 1; }
             100% { stroke-dashoffset: -${pathLength}; opacity: 0.4; }

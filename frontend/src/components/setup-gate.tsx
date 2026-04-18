@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+
 import { api } from "@/lib/api";
 
 /**
@@ -15,13 +16,16 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (pathname === "/setup") return;
 
-    api.getSetupStatus().then(({ configured }) => {
-      if (!configured) {
-        router.replace("/setup");
-      }
-    }).catch(() => {
-      // Backend unreachable — let the page handle it normally.
-    });
+    api
+      .getSetupStatus()
+      .then(({ configured }) => {
+        if (!configured) {
+          router.replace("/setup");
+        }
+      })
+      .catch(() => {
+        // Backend unreachable — let the page handle it normally.
+      });
   }, [pathname, router]);
 
   return <>{children}</>;

@@ -1,11 +1,12 @@
 "use client";
 
+import { Download, Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Download, X, Loader2 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
-import { checkForUpdate, type UpdateResult } from "@/lib/updater";
 import { getSetting } from "@/lib/settings";
 import { isTauri } from "@/lib/tauri";
+import { checkForUpdate, type UpdateResult } from "@/lib/updater";
 
 export function UpdateBanner() {
   const [update, setUpdate] = useState<UpdateResult | null>(null);
@@ -28,7 +29,9 @@ export function UpdateBanner() {
         console.error("[updater] check failed:", err);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!update?.available || dismissed) return null;
@@ -45,10 +48,11 @@ export function UpdateBanner() {
   }
 
   return (
-    <div className="bg-brand-soft border-b border-primary/20 px-4 py-2 flex items-center gap-3 text-sm">
-      <Download className="size-4 text-primary shrink-0" />
-      <span className="flex-1 text-foreground">
-        <span className="font-medium">Starlib {update.update?.version}</span> is available.
+    <div className="bg-brand-soft border-primary/20 flex items-center gap-3 border-b px-4 py-2 text-sm">
+      <Download className="text-primary size-4 shrink-0" />
+      <span className="text-foreground flex-1">
+        <span className="font-medium">Starlib {update.update?.version}</span> is
+        available.
       </span>
       <Button
         size="sm"
@@ -58,7 +62,7 @@ export function UpdateBanner() {
       >
         {installing ? (
           <>
-            <Loader2 className="size-3 animate-spin mr-1" />
+            <Loader2 className="mr-1 size-3 animate-spin" />
             Installing…
           </>
         ) : (

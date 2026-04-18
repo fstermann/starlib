@@ -1,8 +1,9 @@
-'use client';
+"use client";
 
-import { useState, useCallback, useEffect } from 'react';
-import * as soundcloud from '@/lib/soundcloud';
-import type { SCTrack } from '@/lib/soundcloud';
+import { useCallback, useEffect, useState } from "react";
+
+import * as soundcloud from "@/lib/soundcloud";
+import type { SCTrack } from "@/lib/soundcloud";
 
 export interface UseSoundCloudSearchReturn {
   scQuery: string;
@@ -22,7 +23,7 @@ export function useSoundCloudSearch(
   scPanelOpen: boolean,
   setError: (err: string | null) => void,
 ): UseSoundCloudSearchReturn {
-  const [scQuery, setScQuery] = useState('');
+  const [scQuery, setScQuery] = useState("");
   const [scResults, setScResults] = useState<SCTrack[]>([]);
   const [scSearching, setScSearching] = useState(false);
   const [scQueryPending, setScQueryPending] = useState(false);
@@ -38,13 +39,13 @@ export function useSoundCloudSearch(
       setError(null);
       if (isUrl) {
         const result = await soundcloud.resolveUrl(scQuery.trim());
-        if (result && 'title' in result) {
+        if (result && "title" in result) {
           setScResults([result as SCTrack]);
           setSelectedScTrack(result as SCTrack);
         } else {
           setScResults([]);
           setSelectedScTrack(null);
-          setError('URL did not resolve to a track');
+          setError("URL did not resolve to a track");
         }
       } else {
         const tracks = await soundcloud.searchTracks(scQuery);
@@ -52,7 +53,7 @@ export function useSoundCloudSearch(
         setSelectedScTrack(tracks.length > 0 ? tracks[0] : null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'SoundCloud search failed');
+      setError(err instanceof Error ? err.message : "SoundCloud search failed");
       setScQueryPending(false);
     } finally {
       setScSearching(false);

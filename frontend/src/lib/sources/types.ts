@@ -1,4 +1,4 @@
-import type { ComponentType, CSSProperties } from 'react';
+import type { ComponentType, CSSProperties } from "react";
 
 /**
  * Common track representation shared by all music sources.

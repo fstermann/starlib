@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+
 import { fetchApi } from "@/lib/api";
 import { storeTokens } from "@/lib/auth";
 
@@ -26,6 +27,9 @@ function CallbackHandler() {
   const [error, setError] = useState<string | null>(null);
   const exchanged = useRef(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect --
+     OAuth callback: one-shot side effect on mount, guarded by exchanged ref.
+     setError paths are terminal (no cascading renders). */
   useEffect(() => {
     if (exchanged.current) return;
     exchanged.current = true;
@@ -77,6 +81,7 @@ function CallbackHandler() {
         .catch(handleError);
     }
   }, [searchParams, router]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (error) {
     return (
@@ -84,7 +89,7 @@ function CallbackHandler() {
         <p className="text-destructive mb-4 text-sm">{error}</p>
         <Link
           href="/auth/login"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground text-sm"
         >
           Try again
         </Link>
@@ -94,7 +99,7 @@ function CallbackHandler() {
 
   return (
     <div className="text-center">
-      <div className="size-6 border-2 border-border border-t-foreground rounded-full animate-spin mx-auto mb-4" />
+      <div className="border-border border-t-foreground mx-auto mb-4 size-6 animate-spin rounded-full border-2" />
       <p className="text-muted-foreground text-sm">Authenticating…</p>
     </div>
   );
@@ -102,12 +107,12 @@ function CallbackHandler() {
 
 export default function CallbackPage() {
   return (
-    <div className="flex justify-center py-20 px-6">
-      <div className="bg-card border border-border rounded-xl p-8 shadow-lg shadow-primary/5">
+    <div className="flex justify-center px-6 py-20">
+      <div className="bg-card border-border shadow-primary/5 rounded-xl border p-8 shadow-lg">
         <Suspense
           fallback={
             <div className="text-center">
-              <div className="size-6 border-2 border-border border-t-foreground rounded-full animate-spin mx-auto mb-4" />
+              <div className="border-border border-t-foreground mx-auto mb-4 size-6 animate-spin rounded-full border-2" />
               <p className="text-muted-foreground text-sm">Loading…</p>
             </div>
           }

@@ -1,21 +1,24 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Inter } from "next/font/google";
+
 import "./globals.css";
-import { Sidebar } from "@/components/sidebar";
-import { Toaster } from "@/components/ui/sonner";
-import { SetupGate } from "@/components/setup-gate";
+
+import { ThemeProvider } from "next-themes";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
+
 import { BackendGate } from "@/components/backend-gate";
-import { PlayerProvider } from "@/lib/player-context";
+import { DeepLinkListener } from "@/components/deep-link-listener";
 import { LayoutShell } from "@/components/layout-shell";
 import { TopBar } from "@/components/layout/top-bar";
 import { TopBarProvider } from "@/components/layout/top-bar-context";
-import { WaveformPlayer } from "@/components/waveform-player";
-import { UpdateBanner } from "@/components/update-banner";
 import { LogInit } from "@/components/log-init";
-import { DeepLinkListener } from "@/components/deep-link-listener";
-import { NuqsAdapter } from "nuqs/adapters/next/app";
-import { ThemeProvider } from "next-themes";
+import { SetupGate } from "@/components/setup-gate";
+import { Sidebar } from "@/components/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { UpdateBanner } from "@/components/update-banner";
+import { WaveformPlayer } from "@/components/waveform-player";
+import { PlayerProvider } from "@/lib/player-context";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -43,30 +46,28 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${geistMono.variable} antialiased h-screen flex flex-row bg-background text-foreground overflow-hidden`}
+        className={`${inter.variable} ${geistMono.variable} bg-background text-foreground flex h-screen flex-row overflow-hidden antialiased`}
       >
         <LogInit />
         <DeepLinkListener />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <TooltipProvider>
-          <BackendGate>
-            <NuqsAdapter>
-              <PlayerProvider>
-                <TopBarProvider>
-                  <Sidebar />
-                  <TopBar />
-                  <LayoutShell>
-                    <UpdateBanner />
-                    <SetupGate>
-                      {children}
-                    </SetupGate>
-                  </LayoutShell>
-                  <WaveformPlayer />
-                  <Toaster />
-                </TopBarProvider>
-              </PlayerProvider>
-            </NuqsAdapter>
-          </BackendGate>
+            <BackendGate>
+              <NuqsAdapter>
+                <PlayerProvider>
+                  <TopBarProvider>
+                    <Sidebar />
+                    <TopBar />
+                    <LayoutShell>
+                      <UpdateBanner />
+                      <SetupGate>{children}</SetupGate>
+                    </LayoutShell>
+                    <WaveformPlayer />
+                    <Toaster />
+                  </TopBarProvider>
+                </PlayerProvider>
+              </NuqsAdapter>
+            </BackendGate>
           </TooltipProvider>
         </ThemeProvider>
       </body>

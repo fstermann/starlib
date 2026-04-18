@@ -1,0 +1,9 @@
+.next
+out
+build
+node_modules
+playwright-report
+test-results
+src/generated
+tsconfig.tsbuildinfo
+package-lock.json

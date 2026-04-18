@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import {
+  fetchLikesPage,
   getMyLikedTracks,
   getUserLikedTracks,
-  fetchLikesPage,
   type SCTrack,
-} from '@/lib/soundcloud';
+} from "@/lib/soundcloud";
 
 interface UseLikesResult {
   tracks: SCTrack[];
@@ -37,7 +38,7 @@ function getCached(key: string): SCTrack[] | null {
 const PAGE_SIZE = 200;
 
 async function fetchAllPages(
-  userUrn: string | 'me',
+  userUrn: string | "me",
   signal: AbortSignal,
   onProgress: (tracks: SCTrack[]) => void,
 ): Promise<SCTrack[]> {
@@ -45,7 +46,7 @@ async function fetchAllPages(
 
   // First page via typed client
   const first =
-    userUrn === 'me'
+    userUrn === "me"
       ? await getMyLikedTracks(PAGE_SIZE)
       : await getUserLikedTracks(userUrn, PAGE_SIZE);
 
@@ -75,7 +76,7 @@ async function fetchAllPages(
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
-export function useLikes(userUrn: string | 'me' | null): UseLikesResult {
+export function useLikes(userUrn: string | "me" | null): UseLikesResult {
   const [tracks, setTracks] = useState<SCTrack[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -115,7 +116,7 @@ export function useLikes(userUrn: string | 'me' | null): UseLikesResult {
         }
       } catch (err) {
         if (signal.aborted) return;
-        setError(err instanceof Error ? err.message : 'Failed to fetch likes');
+        setError(err instanceof Error ? err.message : "Failed to fetch likes");
       } finally {
         if (!signal.aborted) setLoading(false);
       }

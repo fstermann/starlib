@@ -3,12 +3,21 @@ import {
   parseAsInteger,
   parseAsString,
   parseAsStringLiteral,
-} from 'nuqs';
+} from "nuqs";
 
 /** Legacy constant kept for reference; tabs are now driven by the folder config API. */
-export const FOLDER_MODES = ['prepare', 'collection', 'cleaned'] as const;
-export const SORT_FIELDS = ['title', 'artist', 'genre', 'bpm', 'key', 'release_date', 'file_name', 'mtime'] as const;
-export const SORT_ORDERS = ['asc', 'desc'] as const;
+export const FOLDER_MODES = ["prepare", "collection", "cleaned"] as const;
+export const SORT_FIELDS = [
+  "title",
+  "artist",
+  "genre",
+  "bpm",
+  "key",
+  "release_date",
+  "file_name",
+  "mtime",
+] as const;
+export const SORT_ORDERS = ["asc", "desc"] as const;
 
 export type FolderMode = string;
 export type SortField = (typeof SORT_FIELDS)[number];
@@ -16,13 +25,13 @@ export type SortOrder = (typeof SORT_ORDERS)[number];
 
 /** URL param parsers for all shareable page state. */
 export const searchParams = {
-  mode: parseAsString.withDefault('prepare'),
-  nodeId: parseAsString.withDefault(''),
-  search: parseAsString.withDefault(''),
+  mode: parseAsString.withDefault("prepare"),
+  nodeId: parseAsString.withDefault(""),
+  search: parseAsString.withDefault(""),
   genres: parseAsArrayOf(parseAsString).withDefault([]),
   keys: parseAsArrayOf(parseAsString).withDefault([]),
   bpmMin: parseAsInteger,
   bpmMax: parseAsInteger,
-  sort: parseAsStringLiteral(SORT_FIELDS).withDefault('mtime'),
-  order: parseAsStringLiteral(SORT_ORDERS).withDefault('desc'),
+  sort: parseAsStringLiteral(SORT_FIELDS).withDefault("mtime"),
+  order: parseAsStringLiteral(SORT_ORDERS).withDefault("desc"),
 };

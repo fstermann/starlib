@@ -1,12 +1,13 @@
-import { useMemo } from 'react';
-import type { SCTrack } from '@/lib/soundcloud';
+import { useMemo } from "react";
+
+import type { SCTrack } from "@/lib/soundcloud";
 
 export interface WeeklyFilterOptions {
   search: string;
   genres: string[];
   minDuration: number | null;
   maxDuration: number | null;
-  trackType: 'track' | 'set' | null;
+  trackType: "track" | "set" | null;
   excludeSeen: boolean;
   inCollection: boolean | null;
   excludeOwnLikes: boolean;
@@ -19,7 +20,7 @@ interface UseWeeklyFilterResult {
 
 function extractId(track: SCTrack): number | undefined {
   if (!track.urn) return undefined;
-  const parts = track.urn.split(':');
+  const parts = track.urn.split(":");
   return parseInt(parts[parts.length - 1], 10) || undefined;
 }
 
@@ -42,9 +43,10 @@ export function useWeeklyFilter(
     const searchLower = options.search.toLowerCase().trim();
     return tracks.filter((track) => {
       if (searchLower) {
-        const title = (track.title ?? '').toLowerCase();
-        const artist = (track.user?.username ?? '').toLowerCase();
-        if (!title.includes(searchLower) && !artist.includes(searchLower)) return false;
+        const title = (track.title ?? "").toLowerCase();
+        const artist = (track.user?.username ?? "").toLowerCase();
+        if (!title.includes(searchLower) && !artist.includes(searchLower))
+          return false;
       }
 
       if (options.genres.length > 0) {
@@ -53,10 +55,12 @@ export function useWeeklyFilter(
 
       if (track.duration != null) {
         const durationSec = track.duration / 1000;
-        if (options.minDuration != null && durationSec < options.minDuration) return false;
-        if (options.maxDuration != null && durationSec > options.maxDuration) return false;
-        if (options.trackType === 'track' && durationSec >= 720) return false;
-        if (options.trackType === 'set' && durationSec < 720) return false;
+        if (options.minDuration != null && durationSec < options.minDuration)
+          return false;
+        if (options.maxDuration != null && durationSec > options.maxDuration)
+          return false;
+        if (options.trackType === "track" && durationSec >= 720) return false;
+        if (options.trackType === "set" && durationSec < 720) return false;
       }
 
       if (options.excludeSeen && seenTrackIds) {

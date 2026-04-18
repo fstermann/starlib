@@ -1,4 +1,4 @@
-import type { TreeNode } from '@/lib/api';
+import type { TreeNode } from "@/lib/api";
 
 export type { TreeNode };
 

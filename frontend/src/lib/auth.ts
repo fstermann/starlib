@@ -3,11 +3,11 @@
  * Handles token storage, expiry checks, and refresh via backend.
  */
 
-import { fetchApi } from './api';
+import { fetchApi } from "./api";
 
-const ACCESS_TOKEN_KEY = 'access_token';
-const REFRESH_TOKEN_KEY = 'refresh_token';
-const EXPIRES_AT_KEY = 'token_expires_at';
+const ACCESS_TOKEN_KEY = "access_token";
+const REFRESH_TOKEN_KEY = "refresh_token";
+const EXPIRES_AT_KEY = "token_expires_at";
 
 interface RefreshResponse {
   access_token: string;
@@ -23,7 +23,11 @@ export function getRefreshToken(): string | null {
   return localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
-export function storeTokens(accessToken: string, refreshToken: string | null, expiresIn: number | null): void {
+export function storeTokens(
+  accessToken: string,
+  refreshToken: string | null,
+  expiresIn: number | null,
+): void {
   localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
   if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
   if (expiresIn) {
@@ -36,7 +40,7 @@ export function clearTokens(): void {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(EXPIRES_AT_KEY);
-  localStorage.removeItem('sc_user');
+  localStorage.removeItem("sc_user");
 }
 
 export function isTokenExpired(): boolean {
@@ -48,10 +52,10 @@ export function isTokenExpired(): boolean {
 
 export async function refreshToken(): Promise<string> {
   const refresh = getRefreshToken();
-  if (!refresh) throw new Error('No refresh token available');
+  if (!refresh) throw new Error("No refresh token available");
 
-  const data = await fetchApi<RefreshResponse>('/auth/soundcloud/refresh', {
-    method: 'POST',
+  const data = await fetchApi<RefreshResponse>("/auth/soundcloud/refresh", {
+    method: "POST",
     body: JSON.stringify({ refresh_token: refresh }),
   });
 
@@ -63,6 +67,6 @@ export async function refreshToken(): Promise<string> {
 export async function ensureValidToken(): Promise<string> {
   if (isTokenExpired()) return refreshToken();
   const token = getAccessToken();
-  if (!token) throw new Error('Not authenticated');
+  if (!token) throw new Error("Not authenticated");
   return token;
 }
