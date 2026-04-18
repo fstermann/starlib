@@ -66,23 +66,7 @@ export function CollectionFilterBar({
     }
   });
 
-  // Reset state and clear URL filter params when mode or folderPath changes
   const sourceKey = folderPath ?? mode;
-  const prevSourceRef = useRef<string>(sourceKey);
-  useEffect(() => {
-    if (prevSourceRef.current !== sourceKey) {
-      prevSourceRef.current = sourceKey;
-      setBpmRange(null);
-      setBpmValue(null);
-      setFilterValues(null);
-      setSearchInput("");
-      setSearch("");
-      setGenres([]);
-      setKeys([]);
-      setBpmMin(null);
-      setBpmMax(null);
-    }
-  }, [sourceKey, setSearch, setGenres, setKeys, setBpmMin, setBpmMax]);
 
   // Re-fetch filter values whenever mode/folderPath or any active filter changes.
   // Debounced so rapid filter changes don't cause double layout animations.

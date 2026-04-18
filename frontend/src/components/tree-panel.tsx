@@ -113,26 +113,16 @@ export function TreePanel({
     }
   }, [expanded, fullStorageKey]);
 
-  // Auto-expand ancestors of the selected node
-  // TODO: refactor — derive expanded set via useMemo(selectedId, tree) instead of setState-in-effect
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!tree || !selectedId) return;
+  // Ancestors of the selected node are always shown expanded (derived, not stored).
+  // The user's own toggles live in `expanded`; rendering uses the union.
+  const expandedSet = useMemo(() => {
+    if (!tree || !selectedId) return expanded;
     const ancestors = findAncestors(tree, selectedId);
-    if (ancestors.length === 0) return;
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const id of ancestors) {
-        if (!next.has(id)) {
-          next.add(id);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [tree, selectedId]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+    if (ancestors.length === 0) return expanded;
+    const next = new Set(expanded);
+    for (const id of ancestors) next.add(id);
+    return next;
+  }, [expanded, tree, selectedId]);
 
   const toggleExpand = useCallback((nodeId: string) => {
     setExpanded((prev) => {
@@ -175,7 +165,7 @@ export function TreePanel({
           node={tree}
           depth={0}
           selectedId={selectedId}
-          expanded={expanded}
+          expanded={expandedSet}
           onSelect={onSelect}
           onToggleExpand={toggleExpand}
           resolveFor={resolveFor}

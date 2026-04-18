@@ -103,13 +103,13 @@ export function useWeeklyGroups(
   tracks: SCTrack[],
   mode: GroupingMode,
 ): WeekGroup[] {
+  /* eslint-disable react-hooks/purity --
+     Bucket window is anchored to "now". Recomputing with a fresh clock each
+     time tracks/mode change keeps boundaries accurate as the app stays open. */
   return useMemo(() => {
     if (tracks.length === 0) return [];
 
-    // TODO: lift "now" to caller (or freeze on mount) so useMemo body stays pure
-     
     const now = new Date();
-    // eslint-disable-next-line react-hooks/purity
     const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
     // Determine period boundaries: from two-weeks-ago-Sunday to next Sunday
@@ -193,4 +193,5 @@ export function useWeeklyGroups(
         };
       });
   }, [tracks, mode]);
+  /* eslint-enable react-hooks/purity */
 }

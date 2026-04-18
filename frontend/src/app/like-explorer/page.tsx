@@ -66,76 +66,6 @@ export default function LikeExplorerPage() {
       .catch(() => {}); // non-critical — column just stays empty
   }, []);
 
-  // Filter state
-  const [search, setSearch] = useState("");
-  const [genres, setGenres] = useState<string[]>([]);
-  const [minDuration, setMinDuration] = useState<number | null>(null);
-  const [maxDuration, setMaxDuration] = useState<number | null>(null);
-  const [excludeMyLikes, setExcludeMyLikes] = useState(false);
-  const [inCollection, setInCollection] = useState<boolean | null>(null);
-
-  const { filteredTracks, availableGenres } = useLikesFilter(
-    activeLikes.tracks,
-    { search, genres, minDuration, maxDuration, excludeMyLikes, inCollection },
-    tab === "explore" ? myLikedIds : undefined,
-    collectionIds,
-  );
-
-  // Selection state
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-
-  const toggleSelect = useCallback((id: number) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const selectAllFiltered = useCallback(() => {
-    const ids = new Set<number>();
-    for (const track of filteredTracks) {
-      const id = extractId(track);
-      if (id) ids.add(id);
-    }
-    setSelectedIds(ids);
-  }, [filteredTracks]);
-
-  const deselectAll = useCallback(() => setSelectedIds(new Set()), []);
-
-  const selectRange = useCallback((ids: number[]) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => next.add(id));
-      return next;
-    });
-  }, []);
-
-  // Reset selection when switching tabs
-  // TODO: refactor — prefer remounting subtree via `key={tab}` over setState-in-effect
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    setSelectedIds(new Set());
-    setSearch("");
-    setGenres([]);
-    setMinDuration(null);
-    setMaxDuration(null);
-    setExcludeMyLikes(false);
-    setInCollection(null);
-  }, [tab]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  // Selected tracks for playlist creation
-  const selectedTracks = useMemo(
-    () =>
-      activeLikes.tracks.filter((t) => {
-        const id = extractId(t);
-        return id != null && selectedIds.has(id);
-      }),
-    [activeLikes.tracks, selectedIds],
-  );
-
   useTopBar({
     title: (
       <>
@@ -185,7 +115,88 @@ export default function LikeExplorerPage() {
         </div>
       )}
 
-      {/* Filter bar (show when we have tracks or are loading) */}
+      <LikeTabView
+        key={tab}
+        tab={tab}
+        activeLikes={activeLikes}
+        myLikedIds={myLikedIds}
+        collectionIds={collectionIds}
+        hasSelectedUser={selectedUser != null}
+      />
+    </div>
+  );
+}
+
+type LikeTabViewProps = {
+  tab: string;
+  activeLikes: ReturnType<typeof useLikes>;
+  myLikedIds: Set<number>;
+  collectionIds: Set<number>;
+  hasSelectedUser: boolean;
+};
+
+function LikeTabView({
+  tab,
+  activeLikes,
+  myLikedIds,
+  collectionIds,
+  hasSelectedUser,
+}: LikeTabViewProps) {
+  // Filter state — resets on tab switch via `key={tab}` on this component.
+  const [search, setSearch] = useState("");
+  const [genres, setGenres] = useState<string[]>([]);
+  const [minDuration, setMinDuration] = useState<number | null>(null);
+  const [maxDuration, setMaxDuration] = useState<number | null>(null);
+  const [excludeMyLikes, setExcludeMyLikes] = useState(false);
+  const [inCollection, setInCollection] = useState<boolean | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const { filteredTracks, availableGenres } = useLikesFilter(
+    activeLikes.tracks,
+    { search, genres, minDuration, maxDuration, excludeMyLikes, inCollection },
+    tab === "explore" ? myLikedIds : undefined,
+    collectionIds,
+  );
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectAllFiltered = useCallback(() => {
+    const ids = new Set<number>();
+    for (const track of filteredTracks) {
+      const id = extractId(track);
+      if (id) ids.add(id);
+    }
+    setSelectedIds(ids);
+  }, [filteredTracks]);
+
+  const deselectAll = useCallback(() => setSelectedIds(new Set()), []);
+
+  const selectRange = useCallback((ids: number[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }, []);
+
+  const selectedTracks = useMemo(
+    () =>
+      activeLikes.tracks.filter((t) => {
+        const id = extractId(t);
+        return id != null && selectedIds.has(id);
+      }),
+    [activeLikes.tracks, selectedIds],
+  );
+
+  return (
+    <>
       {(activeLikes.tracks.length > 0 || activeLikes.loading) && (
         <LikesFilterBar
           search={search}
@@ -252,7 +263,6 @@ export default function LikeExplorerPage() {
         />
       )}
 
-      {/* Content */}
       <div className="relative min-h-0 flex-1">
         {activeLikes.loading && activeLikes.tracks.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-4">
@@ -269,7 +279,7 @@ export default function LikeExplorerPage() {
               Retry
             </button>
           </div>
-        ) : tab === "explore" && !selectedUser ? (
+        ) : tab === "explore" && !hasSelectedUser ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-muted-foreground text-sm">
               Search for a user to explore their likes
@@ -293,7 +303,6 @@ export default function LikeExplorerPage() {
           />
         )}
 
-        {/* Loading progress overlay */}
         {activeLikes.loading && activeLikes.tracks.length > 0 && (
           <div className="bg-card border-border absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-1.5 shadow-lg">
             <LogoSpinner className="size-4" />
@@ -303,6 +312,6 @@ export default function LikeExplorerPage() {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
