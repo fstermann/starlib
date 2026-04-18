@@ -114,7 +114,7 @@ export function RulesetManager() {
                 "flex-1 flex items-center gap-1.5 truncate rounded-md py-1.5 px-2 text-left text-sm transition-colors",
                 selectedId === r.id
                   ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
               )}
             >
               <span className="truncate">{r.name}</span>
@@ -123,7 +123,7 @@ export function RulesetManager() {
             {!r.is_builtin && selectedId === r.id && (
               <button
                 onClick={() => handleDelete(r.id)}
-                className="absolute right-1 hidden group-hover:flex items-center justify-center size-5 rounded text-muted-foreground/50 hover:text-destructive"
+                className="absolute right-1 hidden group-hover:flex items-center justify-center size-5 rounded text-muted-foreground hover:text-destructive"
                 aria-label={`Delete ${r.name}`}
               >
                 <Trash2 className="size-3" />

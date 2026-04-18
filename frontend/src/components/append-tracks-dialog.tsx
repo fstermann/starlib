@@ -104,7 +104,7 @@ export function AppendTracksDialog({ newTracks, existingPlaylist, trigger, onApp
           </div>
           <div className="flex items-center justify-between text-muted-foreground">
             <span>New tracks to append</span>
-            <span className="tabular-nums font-medium text-green-600">+{newTracks.length} · {formatTotalDuration(newTracks)}</span>
+            <span className="tabular-nums font-medium text-success">+{newTracks.length} · {formatTotalDuration(newTracks)}</span>
           </div>
           <div className="border-t border-border pt-3 flex items-center justify-between text-muted-foreground">
             <span>Total after append</span>

@@ -281,15 +281,15 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
     return (
       <div className="px-2 pb-2 pt-1 flex flex-col gap-1.5">
         <div className="flex items-center gap-2">
-          <span className="h-px flex-1 bg-blue-500/15" />
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-500/60">
+          <span className="h-px flex-1 bg-info/15" />
+          <span className="text-xs font-semibold text-info/60">
             if converted
           </span>
-          <span className="h-px flex-1 bg-blue-500/15" />
+          <span className="h-px flex-1 bg-info/15" />
         </div>
         <div className={cn(
           "flex flex-col gap-1.5 rounded-md p-1.5",
-          branchIdxs.length > 0 && "border border-blue-500/15 bg-blue-500/4"
+          branchIdxs.length > 0 && "border border-info/15 bg-info/4"
         )}>
           {branchIdxs.map((bIdx) => {
             const bRule = rules[bIdx];
@@ -309,7 +309,7 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
             );
           })}
           {branchIdxs.length === 0 && (
-            <p className="text-[10px] text-muted-foreground px-1.5 py-0.5">No steps yet.</p>
+            <p className="text-xs text-muted-foreground px-1.5 py-0.5">No steps yet.</p>
           )}
           {!ruleset.is_builtin && (
             <DropdownMenu>
@@ -317,7 +317,7 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-fit text-xs gap-1.5 cursor-pointer text-blue-500/60 hover:text-blue-500 hover:bg-blue-500/10"
+                  className="h-7 w-fit text-xs gap-1.5 cursor-pointer text-info/60 hover:text-info hover:bg-info/10"
                 >
                   <Plus className="size-3" />
                   Add on success
@@ -364,7 +364,7 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
         {rules.length === 0 && (
           <p className="text-xs text-muted-foreground py-1">No rules yet — add one below.</p>
         )}
-        {rules.length > 0 && <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+        {rules.length > 0 && <div className="rounded-lg border border-border bg-muted p-2">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={sortableSegmentIds} strategy={verticalListSortingStrategy}>
               <div className="flex flex-col gap-1.5">
@@ -491,10 +491,10 @@ function RequiredAttributesPicker({ value, disabled, onChange }: RequiredAttribu
               disabled={disabled}
               onClick={() => toggle(attr)}
               className={cn(
-                "text-[11px] px-2 py-0.5 rounded-full border transition-colors",
+                "text-xs px-2 py-0.5 rounded-full border transition-colors",
                 isOn
-                  ? "bg-primary/15 border-primary/40 text-foreground"
-                  : "bg-transparent border-border/60 text-muted-foreground hover:text-foreground",
+                  ? "bg-brand-soft border-primary/40 text-foreground"
+                  : "bg-transparent border-border text-muted-foreground hover:text-foreground",
                 disabled && "cursor-not-allowed opacity-60",
                 !disabled && "cursor-pointer",
               )}

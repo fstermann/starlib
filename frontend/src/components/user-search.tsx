@@ -71,7 +71,7 @@ export function UserSearch({ onSelect }: UserSearchProps) {
               <button
                 key={user.urn ?? user.permalink}
                 onClick={() => { onSelect(user); setQuery(''); setResults([]); }}
-                className="flex items-center gap-3 p-3 rounded-lg border border-border/50 hover:border-primary/40 hover:bg-accent/20 transition-colors text-left cursor-pointer"
+                className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-accent transition-colors text-left cursor-pointer"
               >
                 <div className="size-10 shrink-0 rounded-full overflow-hidden bg-muted flex items-center justify-center">
                   {avatarUrl

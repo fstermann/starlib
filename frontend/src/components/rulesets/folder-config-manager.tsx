@@ -59,7 +59,7 @@ function FolderRow({
             {...attributes}
             {...listeners}
             tabIndex={-1}
-            className="shrink-0 cursor-grab text-muted-foreground/25 transition-colors hover:text-muted-foreground/50 active:cursor-grabbing"
+            className="shrink-0 cursor-grab text-muted-foreground transition-colors hover:text-muted-foreground active:cursor-grabbing"
           >
             <GripVertical className="size-3.5" />
           </button>
@@ -72,7 +72,7 @@ function FolderRow({
         <TooltipTrigger asChild>
           <button
             onClick={() => onChange({ ...folder, visible: !folder.visible })}
-            className="cursor-pointer shrink-0 text-muted-foreground/40 transition-colors hover:text-foreground"
+            className="cursor-pointer shrink-0 text-muted-foreground transition-colors hover:text-foreground"
           >
             {folder.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
           </button>
@@ -95,7 +95,7 @@ function FolderRow({
         <TooltipTrigger asChild>
           <span
             className={cn(
-              "w-24 shrink-0 truncate rounded border border-border/50 bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground text-right cursor-default",
+              "w-24 shrink-0 truncate rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground text-right cursor-default",
               !folder.visible && "opacity-40"
             )}
           >
@@ -110,7 +110,7 @@ function FolderRow({
         <TooltipTrigger asChild>
           <button
             onClick={onDelete}
-            className="shrink-0 cursor-pointer text-muted-foreground/20 transition-colors hover:text-destructive"
+            className="shrink-0 cursor-pointer text-muted-foreground transition-colors hover:text-destructive"
             aria-label="Remove folder"
           >
             <Trash2 className="size-3.5" />
@@ -140,7 +140,7 @@ function AddFolderRow({ onAdd }: { onAdd: (name: string, label: string) => void 
 
   return (
     <div className="flex items-center gap-2">
-      <Plus className="size-3.5 shrink-0 text-muted-foreground/40" />
+      <Plus className="size-3.5 shrink-0 text-muted-foreground" />
       <Input
         value={name}
         onChange={(e) => setName(e.target.value)}
@@ -232,7 +232,7 @@ export function FolderConfigManager() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2 px-2.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+        <div className="flex items-center gap-2 px-2.5 text-xs text-muted-foreground">
           <span className="w-3.5 shrink-0" />
           <span className="w-3.5 shrink-0" />
           <span className="flex-1">Label</span>
@@ -263,7 +263,7 @@ export function FolderConfigManager() {
       <div className="flex flex-col gap-1.5">
         <Label className="text-xs text-muted-foreground">Add folder</Label>
         <AddFolderRow onAdd={handleAdd} />
-        <p className="text-[10px] text-muted-foreground/50">
+        <p className="text-xs text-muted-foreground">
           Folder name must match the subdirectory name in your music library root.
         </p>
       </div>

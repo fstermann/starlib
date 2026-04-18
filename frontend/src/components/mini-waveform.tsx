@@ -64,7 +64,7 @@ export function MiniWaveform({ track, className, artworkReady = true, halfHeight
       const y = halfHeightRef.current ? h - barH : (h - barH) / 2;
 
       if (active && i < played) {
-        /* Primary colors (defined in globals.css: --primary-light, --primary-dark) */
+        /* Brand-color hex literals — kept inline for canvas-render perf. See --brand in globals.css. */
         ctx.fillStyle = isDark ? 'rgb(208 253 90 / 0.9)' : 'rgb(189 231 82 / 0.9)';
       } else if (active) {
         ctx.fillStyle = isDark ? 'rgb(208 253 90 / 0.35)' : 'rgb(189 231 82 / 0.35)';

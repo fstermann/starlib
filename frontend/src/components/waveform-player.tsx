@@ -2,7 +2,6 @@
 
 import type WaveSurferType from 'wavesurfer.js';
 import { useEffect, useRef, useState } from 'react';
-import { Pause, Play } from 'lucide-react';
 import { usePlayer } from '@/lib/player-context';
 import { api } from '@/lib/api';
 
@@ -14,7 +13,7 @@ function formatTime(s: number): string {
 }
 
 export function WaveformPlayer() {
-  const { currentTrack, isPlaying, pause, toggle, reportProgress, registerSeek, reportDuration } = usePlayer();
+  const { currentTrack, isPlaying, pause, reportProgress, registerSeek, reportDuration, largePlayer } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurferType | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -22,17 +21,11 @@ export function WaveformPlayer() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [ready, setReady] = useState(false);
-  const [displayedTrack, setDisplayedTrack] = useState(currentTrack);
 
   // Keep isPlayingRef current for use in async callbacks
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
-
-  // Update displayed track only when the new waveform is ready
-  useEffect(() => {
-    if (ready && currentTrack) setDisplayedTrack(currentTrack);
-  }, [ready, currentTrack]);
 
   // Initialize / rebuild WaveSurfer whenever the track changes
   useEffect(() => {
@@ -122,7 +115,7 @@ export function WaveformPlayer() {
       }
 
       const progressGrad = tmpCtx.createLinearGradient(0, 0, 0, h * 1.35);
-      /* Primary colors (defined in globals.css: --primary-light, --primary-dark, --primary-accent) */
+      /* Brand-color hex literals — kept inline for canvas-gradient perf. See --brand in globals.css. */
       progressGrad.addColorStop(0, isDark ? '#d0fd5a' : '#bde752');
       progressGrad.addColorStop((h * 0.7) / h, '#a8cd49');
       progressGrad.addColorStop((h * 0.7 + 1) / h, '#ffffff');
@@ -224,39 +217,19 @@ export function WaveformPlayer() {
 
   if (!currentTrack) return null;
 
-  const trackLabel = displayedTrack?.title ?? displayedTrack?.fileName;
-  const artistLabel = displayedTrack?.artist;
-
   return (
-    <div data-testid="waveform-player" className={`fixed bottom-0 left-14 right-0 h-17 bg-card border-t border-border/60 flex items-center gap-4 px-4 z-40 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] transition-opacity duration-200 ${!ready ? 'opacity-60' : 'opacity-100'}`}>
-      {/* Play / Pause */}
-      <button
-        onClick={() => toggle()}
-        disabled={!ready}
-        className="size-9 rounded-full disabled:opacity-40 text-primary-foreground flex items-center justify-center shrink-0 transition-colors cursor-pointer disabled:cursor-default"
-        style={{ backgroundColor: ready ? 'var(--primary)' : undefined }}
-        aria-label={isPlaying ? 'Pause' : 'Play'}
-      >
-        {isPlaying ? (
-          <Pause className="size-4" />
-        ) : (
-          <Play className="size-4 ml-0.5" />
-        )}
-      </button>
-
-      {/* Track info */}
-      <div className="w-52 shrink-0 min-w-0">
-        <p className="text-xs font-semibold truncate text-foreground leading-snug">{trackLabel}</p>
-        {artistLabel && (
-          <p className="text-[10px] text-muted-foreground truncate leading-snug">{artistLabel}</p>
-        )}
-      </div>
-
-      {/* Waveform canvas */}
+    <div
+      data-testid="waveform-player"
+      aria-hidden={!largePlayer}
+      className={`fixed bottom-0 left-14 right-0 h-17 bg-card border-t border-border flex items-center gap-4 px-4 z-40 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] transition-[transform,opacity] duration-200 ease-out ${
+        largePlayer ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
+      } ${!ready ? 'opacity-60' : ''}`}
+    >
+      {/* Waveform canvas — play/pause + track info live in the tree-panel mini player */}
       <div ref={containerRef} className="flex-1 min-w-0" style={{ cursor: 'pointer' }} />
 
       {/* Time display */}
-      <span className="text-[10px] font-mono text-muted-foreground shrink-0 w-18 text-right tabular-nums">
+      <span className="text-xs font-mono text-muted-foreground shrink-0 w-24 text-right tabular-nums">
         {formatTime(currentTime)} / {formatTime(duration)}
       </span>
     </div>

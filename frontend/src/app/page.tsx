@@ -33,7 +33,7 @@ export default function Home() {
       <div className="mb-16 flex flex-col items-center text-center">
         <h1 className="text-8xl font-bold tracking-tight mb-3 flex items-center gap-0">
           <span
-            className="inline-block shrink-0 bg-gradient-to-br from-primary to-chart-2"
+            className="inline-block shrink-0 bg-primary"
             style={{
               maskImage: 'url(/starlib-logo.svg)',
               WebkitMaskImage: 'url(/starlib-logo.svg)',
@@ -48,7 +48,7 @@ export default function Home() {
             }}
             aria-hidden="true"
           />
-          <span className="-ml-3 bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
+          <span className="-ml-3 text-primary">
             Starlib
           </span>
         </h1>
@@ -62,10 +62,10 @@ export default function Home() {
           const Icon = tool.icon;
           return tool.available ? (
             <Link key={tool.href} href={tool.href} className="block group">
-              <Card className="h-full transition-all duration-300 border-border/60 hover:border-primary/40 hover:shadow-[0_0_30px_-8px] hover:shadow-primary/25 group-hover:-translate-y-0.5">
+              <Card className="h-full transition-all duration-300 border-border hover:border-primary/40 hover:shadow-[0_0_30px_-8px] hover:shadow-primary/25 group-hover:-translate-y-0.5">
                 <CardHeader>
                   <div className="flex items-center gap-3">
-                    <div className="size-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                    <div className="size-9 rounded-lg bg-brand-soft border border-primary/20 flex items-center justify-center text-primary shrink-0">
                       <Icon className="size-4" />
                     </div>
                     <CardTitle className="text-base">{tool.title}</CardTitle>
@@ -78,7 +78,7 @@ export default function Home() {
             </Link>
           ) : (
             <div key={tool.href}>
-              <Card className="h-full opacity-30 border-border/30">
+              <Card className="h-full opacity-30 border-border">
                 <CardHeader>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
@@ -87,7 +87,7 @@ export default function Home() {
                       </div>
                       <CardTitle className="text-base">{tool.title}</CardTitle>
                     </div>
-                    <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest shrink-0">
+                    <span className="text-xs text-muted-foreground font-mono shrink-0">
                       Soon
                     </span>
                   </div>

@@ -16,7 +16,7 @@ export function UserCard({ user, onClear }: UserCardProps) {
   const profileHref = user.permalink_url ?? null;
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border/50 bg-card">
+    <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
       <a
         href={profileHref ?? undefined}
         target="_blank"

@@ -660,7 +660,7 @@ test.describe('Documentation screenshots', () => {
     await page.goto('/meta-editor');
     await page.waitForLoadState('networkidle');
     // Open settings dialog via sidebar button
-    await page.locator('button[title="Settings"]').click();
+    await page.locator('button[aria-label="Settings"]').click();
     await page.locator('[data-slot="dialog-content"]').waitFor({ state: 'visible' });
     // Navigate to Folders section
     await page.getByText('Folders', { exact: true }).click();
@@ -676,7 +676,7 @@ test.describe('Documentation screenshots', () => {
     await page.goto('/meta-editor');
     await page.waitForLoadState('networkidle');
     // Open settings dialog
-    await page.locator('button[title="Settings"]').click();
+    await page.locator('button[aria-label="Settings"]').click();
     await page.locator('[data-slot="dialog-content"]').waitFor({ state: 'visible' });
     // Navigate to Rulesets section
     await page.getByText('Rulesets', { exact: true }).click();

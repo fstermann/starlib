@@ -16,7 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CollectionFilterBar } from '@/components/collection-filter-bar';
 import { CollectionTable } from '@/components/collection-table';
 import { TreePanel } from '@/components/tree-panel';
-import { PageHeader } from '@/components/page-header';
+import { useTopBar } from '@/components/layout/top-bar-context';
 import {
   Select,
   SelectContent,
@@ -63,7 +63,9 @@ function MetaEditorContent() {
 
   // Load tree, folder config, root folder, and rulesets on mount
   useEffect(() => {
+    let cancelled = false;
     api.getFolderTree().then((t) => {
+      if (cancelled) return;
       setTree(t);
       setRootFolder(t.id);
       // Default to root if no node selected
@@ -74,6 +76,7 @@ function MetaEditorContent() {
 
     function loadFolders() {
       api.getFoldersConfig().then((c) => {
+        if (cancelled) return;
         const visible = c.folders
           .filter((f) => f.visible)
           .sort((a, b) => a.order - b.order);
@@ -84,14 +87,17 @@ function MetaEditorContent() {
     window.addEventListener("folders-config-changed", loadFolders);
 
     api.getAllFolderRulesets()
-      .then((data) => setFolderRulesets(data.folder_rulesets))
+      .then((data) => { if (!cancelled) setFolderRulesets(data.folder_rulesets); })
       .catch(() => {});
 
     api.getRulesets()
-      .then((data) => setAllRulesets(data.rulesets))
+      .then((data) => { if (!cancelled) setAllRulesets(data.rulesets); })
       .catch(() => {});
 
-    return () => window.removeEventListener("folders-config-changed", loadFolders);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("folders-config-changed", loadFolders);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -163,6 +169,13 @@ function MetaEditorContent() {
 
   // Table refresh signal
   const [refreshToken, setRefreshToken] = useState(0);
+
+  // Reload the folder tree whenever something changes (save, finalize, etc.)
+  // so folder track counts stay in sync.
+  useEffect(() => {
+    if (refreshToken === 0) return; // initial mount already loads the tree
+    api.getFolderTree().then(setTree).catch(() => {});
+  }, [refreshToken]);
 
   // Track items for next-track selection
   const [tableItems, setTableItems] = useState<TrackBrowse[]>([]);
@@ -263,45 +276,46 @@ function MetaEditorContent() {
     return shortcut?.name ?? '';
   })();
 
-  return (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <PageHeader
-        title="Meta Editor"
-        controls={
-          <div className="flex items-center gap-2">
-            {/* Source switcher (disabled placeholder) */}
-            <Select value="filesystem" disabled>
-              <SelectTrigger className="h-7 w-auto gap-1.5 text-[10px] font-medium tracking-widest uppercase px-3">
-                <FolderTree className="size-3" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="filesystem">Filesystem</SelectItem>
-              </SelectContent>
-            </Select>
+  useTopBar({
+    title: (
+      <>
+        <span>Meta Editor</span>
+        <div className="w-px h-5 bg-border shrink-0 mx-1" />
+        <div className="flex items-center gap-2">
+          {/* Source switcher (disabled placeholder) */}
+          <Select value="filesystem" disabled>
+            <SelectTrigger className="h-7 w-auto gap-1.5 text-xs font-medium px-3">
+              <FolderTree className="size-3" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="filesystem">Filesystem</SelectItem>
+            </SelectContent>
+          </Select>
 
-            {/* Folder shortcuts */}
-            <div className="flex items-center gap-0.5">
-              {folderShortcuts.map((folder) => (
-                <Button
-                  key={folder.name}
-                  variant={activeShortcut === folder.name ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-7 px-3 text-[10px] font-medium tracking-widest uppercase cursor-pointer"
-                  onClick={() => handleFolderShortcut(folder.name)}
-                >
-                  {folder.label}
-                </Button>
-              ))}
-            </div>
+          {/* Folder shortcuts */}
+          <div className="flex items-center gap-0.5">
+            {folderShortcuts.map((folder) => (
+              <Button
+                key={folder.name}
+                variant={activeShortcut === folder.name ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-3 text-xs font-medium cursor-pointer"
+                onClick={() => handleFolderShortcut(folder.name)}
+              >
+                {folder.label}
+              </Button>
+            ))}
           </div>
-        }
-        actions={
+        </div>
+      </>
+    ),
+    actions: (
           <div className="flex items-center gap-1">
             {selectedFile && !editorOpen && (
               <button
                 onClick={() => setEditorOpen(true)}
-                className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 text-muted-foreground hover:text-foreground"
+                className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent text-muted-foreground hover:text-foreground"
                 title="Open editor"
               >
                 <PencilLine className="size-3.5" />
@@ -309,13 +323,13 @@ function MetaEditorContent() {
             )}
             <Popover>
               <PopoverTrigger asChild>
-                <button className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent/50 text-muted-foreground hover:text-foreground">
+                <button className="cursor-pointer size-6 flex items-center justify-center rounded-md transition-colors hover:bg-accent text-muted-foreground hover:text-foreground">
                   <Settings2 className="size-3.5" />
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-52" align="end">
                 <div className="space-y-3">
-                  <h4 className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Auto-Actions</h4>
+                  <h4 className="text-xs font-bold tracking-widest text-muted-foreground uppercase">Auto-Actions</h4>
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Checkbox id="auto-artwork" checked={autoActions.autoCopyArtwork} onCheckedChange={(v) => setAutoActions({ ...autoActions, autoCopyArtwork: v as boolean })} />
@@ -346,9 +360,11 @@ function MetaEditorContent() {
               </PopoverContent>
             </Popover>
           </div>
-        }
-      />
+        ),
+  });
 
+  return (
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       {/* Main content: tree | table+filters | editor */}
       <div className="flex flex-1 min-h-0">
         {/* Tree panel */}
@@ -381,6 +397,8 @@ function MetaEditorContent() {
               onTotalChange={(t, cl) => { setTableTotal(t); setTableCacheLoading(cl); }}
               onEditSaved={() => setRefreshToken(t => t + 1)}
               activeRuleset={activeRuleset}
+              folderRulesets={folderRulesets}
+              rulesets={allRulesets}
               autoApplyScResults={autoActions.autoApplyScResults}
               pendingFieldEdits={pendingFieldEdits}
               setPendingFieldEdits={setPendingFieldEdits}
@@ -390,7 +408,7 @@ function MetaEditorContent() {
           {showEditor && (
             <div
               className={cn(
-                'relative shrink-0 flex flex-col bg-card border-l border-border/50 shadow-[-6px_0_16px_-4px_rgba(0,0,0,0.15)] dark:shadow-[-6px_0_16px_-4px_rgba(0,0,0,0.4)] z-10 overflow-hidden',
+                'relative shrink-0 flex flex-col bg-card border-l border-border shadow-[-6px_0_16px_-4px_rgba(0,0,0,0.15)] dark:shadow-[-6px_0_16px_-4px_rgba(0,0,0,0.4)] z-10 overflow-hidden',
                 editorResize.isAnimating && 'transition-[width] duration-200 ease-out',
               )}
               style={{ width: `${editorResize.width}px` }}
@@ -409,7 +427,7 @@ function MetaEditorContent() {
               />
               {/* Resize handle */}
               <div
-                className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors duration-150 hover:duration-300 hover:delay-300 z-10"
+                className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-brand-soft active:bg-brand-soft transition-colors duration-150 hover:duration-300 hover:delay-300 z-10"
                 onMouseDown={editorResize.handleResizeStart}
                 onDoubleClick={editorResize.handleDoubleClick}
               />

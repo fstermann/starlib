@@ -12,10 +12,6 @@ import { useSourceSearch } from './use-source-search';
 import { parseComment, serializeComment } from './utils';
 import { cn } from '@/lib/utils';
 
-const REQUIRED_ATTR_LABEL: Record<RequiredAttribute, string> = {
-  title: 'Title', artist: 'Artist', genre: 'Genre', bpm: 'BPM', key: 'Key',
-  release_date: 'Release date', remixer: 'Remixer', comment: 'Comment', artwork: 'Artwork',
-};
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -37,7 +33,8 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Calendar } from '@/components/ui/calendar';
 import { LogoSpinner } from '@/components/logo-spinner';
-import { StepBadge, RULE_ICONS, RULE_ICON_COLORS } from '@/components/rulesets/rule-card';
+import { RULE_ICONS, RULE_ICON_COLORS } from '@/components/rulesets/rule-card';
+import { RulesetPreview } from '@/components/rulesets/ruleset-preview';
 import { SoundCloudLogo } from '@/components/icons/soundcloud-logo';
 import {
   Sparkles,
@@ -650,11 +647,11 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
       </AlertDialog>
 
       {/* Panel header: filename + close */}
-      <div className="px-3 h-10 flex items-center justify-between border-b border-border/50 shrink-0">
+      <div className="px-3 h-10 flex items-center justify-between border-b border-border shrink-0">
         <span className="text-xs text-muted-foreground truncate min-w-0 mr-2">{trackInfo?.file_name ?? selectedFile.file_name}</span>
         <button
           onClick={onClose}
-          className="cursor-pointer shrink-0 size-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+          className="cursor-pointer shrink-0 size-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           title="Close editor"
         >
           <X className="size-3" />
@@ -738,7 +735,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                   </div>
                 </div>
                 <div
-                  className={`relative size-21.5 rounded-lg overflow-hidden border ${pendingArtworkData ? 'border-amber-400/70' : 'border-border/50'} ${artworkUrl ? 'cursor-zoom-in' : 'cursor-pointer'}`}
+                  className={`relative size-21.5 rounded-lg overflow-hidden border ${pendingArtworkData ? 'border-warning/70' : 'border-border'} ${artworkUrl ? 'cursor-zoom-in' : 'cursor-pointer'}`}
                   onClick={() => {
                     if (artworkUrl) {
                       setArtworkPreviewOpen(true);
@@ -754,9 +751,9 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                   {artworkUrl ? (
                     <img src={artworkUrl} alt="Artwork" className="size-full object-cover" />
                   ) : (
-                    <div className="size-full bg-accent/50 flex flex-col items-center justify-center gap-0.5 hover:bg-accent transition-colors">
+                    <div className="size-full bg-accent flex flex-col items-center justify-center gap-0.5 hover:bg-accent transition-colors">
                       <Image className="size-3 text-muted-foreground" />
-                      <span className="text-[8px] text-muted-foreground">N/A</span>
+                      <span className="text-xs text-muted-foreground">N/A</span>
                     </div>
                   )}
                 </div>
@@ -767,7 +764,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                 {/* Title */}
                 <div className="group flex flex-col gap-0.5">
                   <div className="flex items-center justify-between h-4">
-                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Title</span>
+                    <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">Title</span>
                     <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                       <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('title')} disabled={!selectedScTrack} title="Copy from SoundCloud"><activeSource.Icon className="size-3"  /></Button>
                       <Button variant="ghost" size="icon-xs" onClick={handleCleanTitle} title="Clean"><Sparkles /></Button>
@@ -778,13 +775,13 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                       {isChanged('title') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('title', originalFormData.title)} title="Reset"><RotateCcw /></Button>}
                     </div>
                   </div>
-                  <Input value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} className={`h-8 text-xs${isChanged('title') ? ' border-amber-400/70' : ''}`} placeholder="Title" />
+                  <Input value={formData.title} onChange={(e) => handleFormChange('title', e.target.value)} className={`h-8 text-xs${isChanged('title') ? ' border-warning/70' : ''}`} placeholder="Title" />
                 </div>
 
                 {/* Artist */}
                 <div className="group flex flex-col gap-0.5">
                   <div className="flex items-center justify-between h-4">
-                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Artist</span>
+                    <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">Artist</span>
                     <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                       <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('artist')} disabled={!selectedScTrack} title="Copy from SoundCloud"><activeSource.Icon className="size-3"  /></Button>
                       <Button variant="ghost" size="icon-xs" onClick={handleCleanArtist} title="Clean"><Sparkles /></Button>
@@ -804,7 +801,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                       {isChanged('artist') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('artist', originalFormData.artist)} title="Reset"><RotateCcw /></Button>}
                     </div>
                   </div>
-                  <Input value={formData.artist} onChange={(e) => handleFormChange('artist', e.target.value)} className={`h-8 text-xs${isChanged('artist') ? ' border-amber-400/70' : ''}`} placeholder="Artist" />
+                  <Input value={formData.artist} onChange={(e) => handleFormChange('artist', e.target.value)} className={`h-8 text-xs${isChanged('artist') ? ' border-warning/70' : ''}`} placeholder="Artist" />
                 </div>
               </div>
             </div>
@@ -814,25 +811,25 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
               {/* Genre */}
               <div className="group flex flex-col gap-0.5">
                 <div className="flex items-center justify-between h-4">
-                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Genre</span>
+                  <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">Genre</span>
                   <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                     <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('genre')} disabled={!selectedScTrack} title="Copy from SC"><activeSource.Icon className="size-3"  /></Button>
                     <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.genre) return; const t = titelize(formData.genre); if (t !== formData.genre) setFormData({...formData, genre: t}); }} title="Titelize"><CaseSensitive /></Button>
                     {isChanged('genre') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('genre', originalFormData.genre)} title="Reset"><RotateCcw /></Button>}
                   </div>
                 </div>
-                <Input value={formData.genre} onChange={(e) => handleFormChange('genre', e.target.value)} className={`h-8 text-xs${isChanged('genre') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+                <Input value={formData.genre} onChange={(e) => handleFormChange('genre', e.target.value)} className={`h-8 text-xs${isChanged('genre') ? ' border-warning/70' : ''}`} placeholder="—" />
               </div>
 
               {/* BPM */}
               <div className="group flex flex-col gap-0.5">
                 <div className="flex items-center justify-between h-4">
-                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">BPM</span>
+                  <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">BPM</span>
                   <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                     {isChanged('bpm') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('bpm', originalFormData.bpm)} title="Reset"><RotateCcw /></Button>}
                   </div>
                 </div>
-                <Input type="number" value={formData.bpm} onChange={(e) => handleFormChange('bpm', e.target.value)} className={`h-8 text-xs${isChanged('bpm') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+                <Input type="number" value={formData.bpm} onChange={(e) => handleFormChange('bpm', e.target.value)} className={`h-8 text-xs${isChanged('bpm') ? ' border-warning/70' : ''}`} placeholder="—" />
               </div>
             </div>
 
@@ -841,7 +838,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
               {/* Release Date */}
               <div className="group flex flex-col gap-0.5">
                 <div className="flex items-center justify-between h-4">
-                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Release Date</span>
+                  <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">Release Date</span>
                   <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                     <Button variant="ghost" size="icon-xs" onClick={() => handleCopyFromSc('release_date')} disabled={!selectedScTrack} title="Copy from SC"><activeSource.Icon className="size-3"  /></Button>
                     {isChanged('release_date') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('release_date', originalFormData.release_date)} title="Reset"><RotateCcw /></Button>}
@@ -852,7 +849,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                     <Button
                       variant="outline"
                       size="sm"
-                      className={`h-8 w-full justify-start text-left font-normal text-sm px-2.5 dark:bg-input/30${isChanged('release_date') ? ' border-amber-400/70 dark:border-amber-400/70' : ' dark:border-input'}${!formData.release_date ? ' text-muted-foreground' : ' text-foreground/80'}`}
+                      className={`h-8 w-full justify-start text-left font-normal text-xs px-2.5 bg-card dark:bg-muted${isChanged('release_date') ? ' border-warning/70 dark:border-warning/70' : ' dark:border-input'}${!formData.release_date ? ' text-muted-foreground' : ' text-foreground'}`}
                     >
                       <CalendarIcon className="mr-1 shrink-0" />
                       {formData.release_date
@@ -874,8 +871,8 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
               {/* Release Year */}
               <div className="group flex flex-col gap-0.5 w-20">
                 <div className="flex items-center justify-between h-4">
-                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium" title={yearMismatch ? `Year doesn't match release date (${releaseDateYear})` : undefined}>
-                    Year{yearMismatch && <span className="ml-0.5 text-amber-400/90">*</span>}
+                  <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium" title={yearMismatch ? `Year doesn't match release date (${releaseDateYear})` : undefined}>
+                    Year{yearMismatch && <span className="ml-0.5 text-warning/90">*</span>}
                   </span>
                   <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                     {isChanged('release_year') && <Button variant="ghost" size="icon-xs" onClick={() => { setReleaseYearTouched(false); handleFormChange('release_year', originalFormData.release_year); }} title="Reset"><RotateCcw /></Button>}
@@ -885,7 +882,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                   type="number"
                   value={formData.release_year}
                   onChange={(e) => handleFormChange('release_year', e.target.value)}
-                  className={`h-8 text-xs${isChanged('release_year') || yearMismatch ? ' border-amber-400/70' : ''}`}
+                  className={`h-8 text-xs${isChanged('release_year') || yearMismatch ? ' border-warning/70' : ''}`}
                   placeholder="—"
                 />
               </div>
@@ -893,12 +890,12 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
               {/* Key */}
               <div className="group flex flex-col gap-0.5">
                 <div className="flex items-center justify-between h-4">
-                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Key</span>
+                  <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">Key</span>
                   <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                     {isChanged('key') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('key', originalFormData.key)} title="Reset"><RotateCcw /></Button>}
                   </div>
                 </div>
-                <Input value={formData.key} onChange={(e) => handleFormChange('key', e.target.value)} className={`h-8 text-xs${isChanged('key') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+                <Input value={formData.key} onChange={(e) => handleFormChange('key', e.target.value)} className={`h-8 text-xs${isChanged('key') ? ' border-warning/70' : ''}`} placeholder="—" />
               </div>
             </div>
 
@@ -907,7 +904,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
               {/* Original Artist */}
               <div className="group flex flex-col gap-0.5">
                 <div className="flex items-center justify-between h-4">
-                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Original Artist</span>
+                  <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">Original Artist</span>
                   <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                     <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.original_artist) return; const t = cleanArtist(formData.original_artist); if (t !== formData.original_artist) handleFormChange('original_artist', t); }} title="Clean"><Sparkles /></Button>
                     <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.original_artist) return; const t = titelize(formData.original_artist); if (t !== formData.original_artist) handleFormChange('original_artist', t); }} title="Titelize"><CaseSensitive /></Button>
@@ -926,13 +923,13 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                     {isChanged('original_artist') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('original_artist', originalFormData.original_artist)} title="Reset"><RotateCcw /></Button>}
                   </div>
                 </div>
-                <Input value={formData.original_artist} onChange={(e) => handleFormChange('original_artist', e.target.value)} className={`h-8 text-xs${isChanged('original_artist') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+                <Input value={formData.original_artist} onChange={(e) => handleFormChange('original_artist', e.target.value)} className={`h-8 text-xs${isChanged('original_artist') ? ' border-warning/70' : ''}`} placeholder="—" />
               </div>
 
               {/* Remixer */}
               <div className="group flex flex-col gap-0.5">
                 <div className="flex items-center justify-between h-4">
-                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Remixer</span>
+                  <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">Remixer</span>
                   <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                     <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.remixer) return; const t = cleanArtist(formData.remixer); if (t !== formData.remixer) handleFormChange('remixer', t); }} title="Clean"><Sparkles /></Button>
                     <Button variant="ghost" size="icon-xs" onClick={() => { if (!formData.remixer) return; const t = titelize(formData.remixer); if (t !== formData.remixer) handleFormChange('remixer', t); }} title="Titelize"><CaseSensitive /></Button>
@@ -951,14 +948,14 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                     {isChanged('remixer') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('remixer', originalFormData.remixer)} title="Reset"><RotateCcw /></Button>}
                   </div>
                 </div>
-                <Input value={formData.remixer} onChange={(e) => handleFormChange('remixer', e.target.value)} className={`h-8 text-xs${isChanged('remixer') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+                <Input value={formData.remixer} onChange={(e) => handleFormChange('remixer', e.target.value)} className={`h-8 text-xs${isChanged('remixer') ? ' border-warning/70' : ''}`} placeholder="—" />
               </div>
             </div>
 
             {/* Mix name (full width) */}
             <div className="group flex flex-col gap-0.5">
               <div className="flex items-center justify-between h-4">
-                <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Mix</span>
+                <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">Mix</span>
                 <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out">
                   <Popover>
                     <PopoverTrigger asChild>
@@ -975,13 +972,13 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                   {isChanged('mix_name') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('mix_name', originalFormData.mix_name)} title="Reset"><RotateCcw /></Button>}
                 </div>
               </div>
-              <Input value={formData.mix_name} onChange={(e) => handleFormChange('mix_name', e.target.value)} className={`h-8 text-xs${isChanged('mix_name') ? ' border-amber-400/70' : ''}`} placeholder="—" />
+              <Input value={formData.mix_name} onChange={(e) => handleFormChange('mix_name', e.target.value)} className={`h-8 text-xs${isChanged('mix_name') ? ' border-warning/70' : ''}`} placeholder="—" />
             </div>
 
             {/* User comment — plain text in COMM::eng, separate from StarlibMeta. */}
             <div className="group flex flex-col gap-0.5">
               <div className="flex items-center justify-between h-4">
-                <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-medium">Comment</span>
+                <span className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">Comment</span>
                 <div className="flex gap-0.5 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 transition-all duration-150 ease-out">
                   {isChanged('user_comment') && <Button variant="ghost" size="icon-xs" onClick={() => handleFormChange('user_comment', originalFormData.user_comment)} title="Reset"><RotateCcw /></Button>}
                 </div>
@@ -989,22 +986,22 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
               <textarea
                 value={formData.user_comment}
                 onChange={(e) => handleFormChange('user_comment', e.target.value)}
-                className={`min-h-16 px-2.5 py-2 text-xs rounded-md border bg-transparent dark:bg-input/30 outline-none resize-y focus:border-ring focus:ring-1 focus:ring-ring/50${isChanged('user_comment') ? ' border-amber-400/70' : ' border-input dark:border-input'}`}
+                className={`min-h-16 px-2.5 py-2 text-xs rounded-md border bg-card dark:bg-muted outline-none resize-y focus:border-ring focus:ring-1 focus:ring-ring/50${isChanged('user_comment') ? ' border-warning/70' : ' border-input dark:border-input'}`}
                 placeholder="—"
               />
             </div>
 
             {/* SC link + search */}
             <div className="pt-3">
-              <div className={`relative rounded-lg border transition-colors duration-200 ${scLinkEnabled ? 'border-border/50 bg-accent/40' : 'border-border/30 bg-accent/20'}`}>
+              <div className={`relative rounded-lg border transition-colors duration-200 ${scLinkEnabled ? 'border-border bg-accent' : 'border-border bg-accent'}`}>
                 {/* Left chip: SC link toggle */}
                 <button
                   onClick={() => setScLinkEnabled(!scLinkEnabled)}
-                  className={`cursor-pointer absolute -top-2.75 left-3 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
+                  className={`cursor-pointer absolute -top-2.75 left-3 inline-flex items-center gap-1.5 text-2xs uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md transition-all duration-150 ${
                     scLinkEnabled
                       ? 'bg-card border text-primary shadow-sm'
                       : 'bg-card border border-dashed text-muted-foreground hover:text-foreground'
-                  } ${scLinkEnabled !== originalScLinkEnabled ? 'border-amber-400/70' : scLinkEnabled ? 'border-border/50' : 'border-border/60 hover:border-border'}`}
+                  } ${scLinkEnabled !== originalScLinkEnabled ? 'border-warning/70' : scLinkEnabled ? 'border-border' : 'border-border hover:border-border'}`}
                 >
                   <activeSource.Icon className="size-2.5" />
                   SoundCloud
@@ -1012,10 +1009,10 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                 {/* Right chip: search toggle */}
                 <button
                   onClick={() => setScSidebarOpen(!scSidebarOpen)}
-                  className={`cursor-pointer absolute -top-2.75 right-3 inline-flex items-center gap-1 text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md border transition-all duration-150 ${
+                  className={`cursor-pointer absolute -top-2.75 right-3 inline-flex items-center gap-1 text-2xs uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md border transition-all duration-150 ${
                     scSidebarOpen
-                      ? 'bg-card border-border/50 text-primary shadow-sm'
-                      : 'bg-card border-dashed border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
+                      ? 'bg-card border-border text-primary shadow-sm'
+                      : 'bg-card border-dashed border-border text-muted-foreground hover:text-foreground hover:border-border'
                   }`}
                   title={scSidebarOpen ? 'Close search' : 'Search SoundCloud'}
                 >
@@ -1031,12 +1028,12 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                         href={commentData.soundcloud_permalink || `https://soundcloud.com/tracks/${commentData.soundcloud_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`text-[10px] truncate block font-mono transition-colors hover:text-foreground ${commentData.soundcloud_id !== originalCommentData.soundcloud_id || commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink ? 'text-amber-400/90' : 'text-muted-foreground'}`}
+                        className={`text-xs truncate block font-mono transition-colors hover:text-foreground ${commentData.soundcloud_id !== originalCommentData.soundcloud_id || commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink ? 'text-warning/90' : 'text-muted-foreground'}`}
                       >
                         {commentData.soundcloud_permalink || `ID: ${commentData.soundcloud_id}`}
                       </a>
                     ) : (
-                      <span className={`text-[10px] ${commentData.soundcloud_id !== originalCommentData.soundcloud_id || commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink ? 'text-amber-400/90' : 'text-muted-foreground'}`}>No SoundCloud track linked</span>
+                      <span className={`text-xs ${commentData.soundcloud_id !== originalCommentData.soundcloud_id || commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink ? 'text-warning/90' : 'text-muted-foreground'}`}>No SoundCloud track linked</span>
                     )}
                   </div>
                   <div className="flex gap-0.5 shrink-0 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out">
@@ -1074,13 +1071,13 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
 
                 {/* Compact track preview (search closed, track selected) */}
                 {!scSidebarOpen && selectedScTrack && (
-                  <div className="flex items-center gap-2 px-3 pb-2 pt-0 border-t border-border/30">
-                    <div className="size-5 shrink-0 rounded overflow-hidden border border-border/30 mt-1.5">
+                  <div className="flex items-center gap-2 px-3 pb-2 pt-0 border-t border-border">
+                    <div className="size-5 shrink-0 rounded overflow-hidden border border-border mt-1.5">
                       {selectedScTrack.artwork_url ? (
                         <img src={selectedScTrack.artwork_url} alt="" className="size-full object-cover" />
                       ) : (
-                        <div className="size-full bg-accent/40 flex items-center justify-center">
-                          <Image className="size-3 text-muted-foreground/40" />
+                        <div className="size-full bg-accent flex items-center justify-center">
+                          <Image className="size-3 text-muted-foreground" />
                         </div>
                       )}
                     </div>
@@ -1090,8 +1087,8 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
 
                 {/* Expanded search UI */}
                 {scSidebarOpen && (
-                  <div className="border-t border-border/30">
-                    <div className={`px-3 py-2.5 ${(selectedScTrack || scResults.length > 0) ? 'border-b border-border/30' : ''}`}>
+                  <div className="border-t border-border">
+                    <div className={`px-3 py-2.5 ${(selectedScTrack || scResults.length > 0) ? 'border-b border-border' : ''}`}>
                       <div className="flex gap-2">
                         <Input
                           value={scQuery}
@@ -1108,7 +1105,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                     </div>
 
                     {selectedScTrack && (
-                      <div className="px-3 py-3 border-b border-border/30 space-y-2">
+                      <div className="px-3 py-3 border-b border-border space-y-2">
                         <a
                           href={selectedScTrack.permalink_url ?? undefined}
                           target="_blank"
@@ -1120,14 +1117,14 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                             {selectedScTrack.artwork_url ? (
                               <img src={selectedScTrack.artwork_url} alt="" className="size-full object-cover" />
                             ) : (
-                              <div className="size-full bg-accent/40 flex items-center justify-center">
-                                <Image className="size-3 text-muted-foreground/40" />
+                              <div className="size-full bg-accent flex items-center justify-center">
+                                <Image className="size-3 text-muted-foreground" />
                               </div>
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="text-xs font-medium truncate text-foreground group-hover/sclink:text-primary transition-colors">{selectedScTrack.title}</div>
-                            <div className="flex items-center gap-1 text-[10px] text-muted-foreground truncate">
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground truncate">
                               <activeSource.Icon className="size-2.5 shrink-0" />
                               {selectedScTrack.username}
                             </div>
@@ -1159,26 +1156,26 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                           i === scResults.length - 1 ? 'rounded-b-lg' : ''
                         } ${
                           selectedScTrack?.id === track.id
-                            ? 'bg-primary/10 text-foreground'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                            ? 'bg-brand-soft text-foreground'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                         }`}
                       >
                         {selectedScTrack?.id === track.id && (
                           <div className="absolute inset-y-0 left-0 w-0.5 bg-primary rounded-r" />
                         )}
                         <div className="flex items-center gap-2.5">
-                          <div className="size-8 shrink-0 rounded overflow-hidden border border-border/30">
+                          <div className="size-8 shrink-0 rounded overflow-hidden border border-border">
                             {track.artwork_url ? (
                               <img src={track.artwork_url} alt="" className="size-full object-cover" loading="lazy" />
                             ) : (
-                              <div className="size-full bg-accent/40 flex items-center justify-center">
-                                <Image className="size-3 text-muted-foreground/40" />
+                              <div className="size-full bg-accent flex items-center justify-center">
+                                <Image className="size-3 text-muted-foreground" />
                               </div>
                             )}
                           </div>
                           <div className="min-w-0">
                             <div className="text-xs font-medium truncate">{track.title}</div>
-                            <div className="text-[10px] opacity-60 truncate">{track.username}{track.genre ? ` · ${track.genre}` : ''}</div>
+                            <div className="text-xs opacity-60 truncate">{track.username}{track.genre ? ` · ${track.genre}` : ''}</div>
                           </div>
                         </div>
                       </button>
@@ -1191,21 +1188,17 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
           </div>
 
           {/* Actions */}
-          <div className="shrink-0 border-t border-border/50 px-3 py-2.5 flex items-center gap-1">
-            <div
-              className={`size-2 rounded-full shrink-0 ${trackInfo.is_ready ? 'bg-chart-1' : 'bg-amber-400'}`}
-              title={[
-                ...(trackInfo.missing_fields.length ? [`Missing: ${trackInfo.missing_fields.join(', ')}`] : []),
-                ...(trackInfo.issues.length ? [trackInfo.issues.join(' · ')] : []),
-              ].join('\n') || 'Ready'}
-            />
-
+          <div className="shrink-0 border-t border-border px-3 py-2.5 flex items-center gap-1">
             {/* Save */}
             <Button
               onClick={handleSave}
               disabled={!hasChanges || loading}
+              variant="ghost"
               size="sm"
-              className="h-7 text-xs px-2.5 gap-1.5"
+              className={cn(
+                'h-7 text-xs px-2.5 gap-1.5',
+                hasChanges ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground',
+              )}
             >
               {loading ? <LogoSpinner className="size-3" /> : <Check className="size-3" />}
               Save
@@ -1219,56 +1212,22 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                     <Button
                       onClick={handleFinalize}
                       disabled={loading || hasMissingRequired}
+                      variant="ghost"
                       size="sm"
                       className={cn(
-                        "h-7 text-xs px-2.5 gap-1.5 text-white font-semibold",
-                        hasMissingRequired
-                          ? "bg-muted-foreground/40 hover:bg-muted-foreground/40"
-                          : "bg-emerald-600 hover:bg-emerald-700",
+                        'h-7 text-xs gap-1',
+                        hasMissingRequired ? 'text-muted-foreground' : 'text-success hover:bg-success/10 hover:text-success',
                       )}
                     >
                       <Workflow className="size-3" />
-                      Apply Rules
+                      Apply rules
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="top" sideOffset={6} showArrow={false} className="p-0 max-w-64 bg-popover text-popover-foreground border">
-                    <div className="px-3 py-2 border-b border-border">
-                      <p className="text-xs font-medium">{activeRuleset.name}</p>
-                    </div>
-                    {hasMissingRequired && (
-                      <div className="px-3 py-2 border-b border-border bg-amber-500/10">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-500 mb-1">
-                          Missing required
-                        </p>
-                        <p className="text-xs text-foreground/90">
-                          {missingRequiredAttrs.map((a) => REQUIRED_ATTR_LABEL[a]).join(', ')}
-                        </p>
-                      </div>
-                    )}
-                    <div className="py-1.5 flex flex-col gap-0.5 px-1.5">
-                      {activeRuleset.rules.map((rule, i) => {
-                        const Icon = RULE_ICONS[rule.type];
-                        const folderParam = rule.params.folder as string | undefined;
-                        const formatParam = rule.params.format as string | undefined;
-                        const detail = rule.type === 'convert'
-                          ? formatParam ? formatParam.toUpperCase() : 'preferred'
-                          : folderParam ? `${folderParam}/` : '';
-                        const isConditional = rule.requires.length > 0;
-                        return (
-                          <div key={i} className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${isConditional ? 'ml-4 border-l-2 border-blue-400/30 pl-2.5' : ''}`}>
-                            <StepBadge step={i + 1} type={rule.type} />
-                            <Icon className={`size-3.5 shrink-0 ${RULE_ICON_COLORS[rule.type]}`} />
-                            <span className="capitalize">{rule.type}</span>
-                            {detail && <span className="font-mono text-[10px] opacity-70">{detail}</span>}
-                            {isConditional && (
-                              <span className="text-[9px] rounded bg-blue-400/20 text-blue-300 px-1 font-medium">
-                                if converted
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <RulesetPreview
+                      ruleset={activeRuleset}
+                      missingRequired={hasMissingRequired ? missingRequiredAttrs : undefined}
+                    />
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

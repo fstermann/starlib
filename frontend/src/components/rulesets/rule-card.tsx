@@ -20,9 +20,9 @@ export const RULE_ICONS: Record<RuleType, React.ElementType> = {
 };
 
 export const RULE_ICON_COLORS: Record<RuleType, string> = {
-  convert: "text-blue-500",
-  copy: "text-amber-500",
-  move: "text-green-500",
+  convert: "text-info",
+  copy: "text-warning",
+  move: "text-success",
 };
 
 const FOLDER_PRESETS = ["cleaned", "archive", "prepare", "collection"];
@@ -52,8 +52,8 @@ function FolderChip({
 
   const colorClass =
     color === "green"
-      ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/25 hover:bg-green-500/18"
-      : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25 hover:bg-amber-500/18";
+      ? "bg-success/10 text-success dark:text-success border-success/25 hover:bg-success/18"
+      : "bg-warning/10 text-warning dark:text-warning border-warning/25 hover:bg-warning/18";
 
   const inner = (
     <span className="font-mono">
@@ -103,7 +103,7 @@ function FolderChip({
           {FOLDER_PRESETS.map((p) => (
             <button
               key={p}
-              className="cursor-pointer rounded bg-accent px-1.5 py-0.5 text-xs font-mono text-accent-foreground transition-colors hover:bg-accent/70"
+              className="cursor-pointer rounded bg-accent px-1.5 py-0.5 text-xs font-mono text-accent-foreground transition-colors hover:bg-accent"
               onClick={() => { onChange(p); setOpen(false); }}
             >
               {p}
@@ -132,7 +132,7 @@ function FormatChip({
 }) {
   const [open, setOpen] = useState(false);
 
-  const base = "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25";
+  const base = "bg-info/10 text-info dark:text-info border-info/25";
 
   const isPreferred = format === "preferred";
   const displayFormat = isPreferred ? (preferredFormat ?? "aiff") : format;
@@ -144,7 +144,7 @@ function FormatChip({
         <span className="ml-1 opacity-50 font-mono">{quality}k</span>
       )}
       {isPreferred && (
-        <span className="ml-1 rounded bg-primary/10 px-1 text-[9px] font-semibold uppercase tracking-wide text-primary/70">
+        <span className="ml-1 rounded bg-brand-soft px-1 text-xs font-semibold tracking-wide text-primary">
           preferred
         </span>
       )}
@@ -164,7 +164,7 @@ function FormatChip({
       <PopoverTrigger asChild>
         <button
           className={cn(
-            "inline-flex cursor-pointer items-center rounded border px-1.5 py-0.5 text-xs font-medium transition-colors hover:bg-blue-500/18",
+            "inline-flex cursor-pointer items-center rounded border px-1.5 py-0.5 text-xs font-medium transition-colors hover:bg-info/18",
             base
           )}
         >
@@ -177,8 +177,8 @@ function FormatChip({
             className={cn(
               "w-full cursor-pointer rounded border px-2 py-1 text-xs font-medium transition-colors text-left flex items-center justify-between",
               isPreferred
-                ? "bg-primary/10 text-primary border-primary/20"
-                : "bg-accent text-accent-foreground border-transparent hover:bg-accent/70"
+                ? "bg-brand-soft text-primary border-primary/20"
+                : "bg-accent text-accent-foreground border-transparent hover:bg-accent"
             )}
             onClick={() => { onFormatChange("preferred"); setOpen(false); }}
           >
@@ -194,7 +194,7 @@ function FormatChip({
                 "flex-1 cursor-pointer rounded border px-2 py-1 text-xs font-mono font-medium transition-colors",
                 format === f
                   ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-accent text-accent-foreground border-transparent hover:bg-accent/70"
+                  : "bg-accent text-accent-foreground border-transparent hover:bg-accent"
               )}
               onClick={() => { onFormatChange(f); setOpen(false); }}
             >
@@ -204,16 +204,16 @@ function FormatChip({
         </div>
         {format === "mp3" && (
           <div className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Bitrate</span>
+            <span className="text-xs tracking-wide text-muted-foreground">Bitrate</span>
             <div className="flex gap-1">
               {[128, 192, 256, 320].map((q) => (
                 <button
                   key={q}
                   className={cn(
-                    "flex-1 cursor-pointer rounded border px-1 py-1 text-[10px] font-mono transition-colors",
+                    "flex-1 cursor-pointer rounded border px-1 py-1 text-xs font-mono transition-colors",
                     quality === q
                       ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-accent text-accent-foreground border-transparent hover:bg-accent/70"
+                      : "bg-accent text-accent-foreground border-transparent hover:bg-accent"
                   )}
                   onClick={() => onQualityChange(q)}
                 >
@@ -230,14 +230,14 @@ function FormatChip({
 
 export function StepBadge({ step, type, className }: { step: number; type: RuleType; className?: string }) {
   const bg: Record<RuleType, string> = {
-    convert: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
-    copy:    "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
-    move:    "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30",
+    convert: "bg-info/15 text-info dark:text-info border-info/30",
+    copy:    "bg-warning/15 text-warning dark:text-warning border-warning/30",
+    move:    "bg-success/15 text-success dark:text-success border-success/30",
   };
   return (
     <span
       className={cn(
-        "inline-flex size-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold tabular-nums",
+        "inline-flex size-4 shrink-0 items-center justify-center rounded-full border text-xs font-bold tabular-nums",
         bg[type],
         className
       )}
@@ -284,7 +284,7 @@ function InputPicker({
   const baseClass = cn(
     "inline-flex items-center rounded-md border px-2 py-1 text-xs transition-colors",
     isSource
-      ? "bg-muted/30 text-muted-foreground border-border/60"
+      ? "bg-muted text-muted-foreground border-border"
       : "bg-card text-foreground border-border"
   );
 
@@ -312,7 +312,7 @@ function InputPicker({
                 key={opt.ref}
                 className={cn(
                   "cursor-pointer rounded px-2 py-1.5 text-left text-xs transition-colors",
-                  active ? "bg-primary/10 text-primary" : "hover:bg-accent text-foreground"
+                  active ? "bg-brand-soft text-primary" : "hover:bg-accent text-foreground"
                 )}
                 onClick={() => { onChange(opt.ref); setOpen(false); }}
               >
@@ -416,7 +416,7 @@ export function RuleCard({
           {...(draggable ? { ...attributes, ...listeners } : {})}
           tabIndex={-1}
           className={cn(
-            "shrink-0 text-muted-foreground/25 transition-colors group-hover:text-muted-foreground/50",
+            "shrink-0 text-muted-foreground transition-colors group-hover:text-muted-foreground",
             isBuiltin || !draggable
               ? "pointer-events-none cursor-default opacity-30"
               : "cursor-grab active:cursor-grabbing"
@@ -429,14 +429,14 @@ export function RuleCard({
 
         <div className="flex shrink-0 items-center gap-1.5 min-w-18">
           <Icon className={cn("size-3.5 shrink-0", RULE_ICON_COLORS[rule.type] ?? "text-muted-foreground")} />
-          <span className="font-medium text-foreground/90">{verb[rule.type]}</span>
+          <span className="font-medium text-foreground">{verb[rule.type]}</span>
         </div>
 
         <div className="flex shrink-0 items-center">
           {inputPicker}
         </div>
 
-        <span className="shrink-0 text-muted-foreground/60">to</span>
+        <span className="shrink-0 text-muted-foreground">to</span>
 
         <div className="flex flex-1 items-center">
           {destination}
@@ -445,7 +445,7 @@ export function RuleCard({
         {!isBuiltin && (
           <button
             onClick={onDelete}
-            className="shrink-0 cursor-pointer text-muted-foreground/20 transition-colors group-hover:text-muted-foreground/40 hover:text-destructive!"
+            className="shrink-0 cursor-pointer text-muted-foreground transition-colors group-hover:text-muted-foreground hover:text-destructive!"
             aria-label="Remove rule"
           >
             <Trash2 className="size-3.5" />
@@ -453,7 +453,7 @@ export function RuleCard({
         )}
       </div>
       {subPanel && (
-        <div className="border-t border-border/30">
+        <div className="border-t border-border">
           {subPanel}
         </div>
       )}

@@ -98,8 +98,8 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
       <div
         role="row"
         tabIndex={0}
-        className={`flex items-center h-12 gap-2 px-3 border-b border-border/30 transition-colors select-none cursor-pointer
-          ${isExpanded ? 'bg-accent/40' : 'hover:bg-accent/20'}`}
+        className={`flex items-center h-10 gap-2 px-3 border-b border-border transition-colors select-none cursor-pointer
+          ${isSelected ? 'bg-[var(--brand-soft)]' : isExpanded ? 'bg-[var(--surface-3)]' : 'hover:bg-[var(--surface-3)]'}`}
         onClick={onExpand}
         onKeyDown={(e) => {
           if (e.key === 'Enter') onExpand();
@@ -118,10 +118,10 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
         </div>
 
         {/* Artwork */}
-        <div className="size-8 shrink-0 rounded overflow-hidden bg-muted flex items-center justify-center">
+        <div className="size-7 shrink-0 rounded overflow-hidden bg-muted flex items-center justify-center">
           {imgUrl
-            ? <img src={imgUrl} alt="" className="size-8 object-cover" loading="lazy" />
-            : <Music className="size-3.5 text-muted-foreground/50" />}
+            ? <img src={imgUrl} alt="" className="size-7 object-cover" loading="lazy" />
+            : <Music className="size-3.5 text-muted-foreground" />}
         </div>
 
         {/* Title */}
@@ -130,7 +130,7 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
             {track.title || '—'}
           </span>
           {isNew && (
-            <span className="shrink-0 text-[9px] font-semibold px-1 py-0.5 rounded bg-green-500/15 text-green-600 leading-none">
+            <span className="shrink-0 text-xs font-semibold px-1 py-0.5 rounded bg-[var(--brand-soft)] text-[var(--brand)] leading-none">
               NEW
             </span>
           )}
@@ -237,7 +237,7 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
 
       {/* Expanded detail: player + description */}
       {isExpanded && (
-        <div className="px-3 py-2 border-b border-border/30 bg-muted/20 space-y-2">
+        <div className="px-3 py-2 border-b border-border bg-muted space-y-2">
           {track.permalink_url && (
             <iframe
               width="100%"
@@ -346,7 +346,7 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect, onRangeSelect,
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
-      <div role="row" className="flex items-center gap-2 px-3 h-9 shrink-0 border-b border-border bg-muted/30 text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
+      <div role="row" className="flex items-center gap-2 px-3 h-9 shrink-0 border-b border-border bg-[var(--surface-2)] text-xs font-medium text-muted-foreground">
         <div className="shrink-0 w-6 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
           <Checkbox
             checked={allSelected ? true : someSelected ? "indeterminate" : false}
@@ -372,7 +372,7 @@ export function LikesTable({ tracks, selectedIds, onToggleSelect, onRangeSelect,
         ))}
         <div className="w-28 shrink-0 flex items-center justify-center gap-1" title="Links">
           <FolderCheck className="size-3 opacity-50" />
-          <span className="text-[10px] opacity-50">Links</span>
+          <span className="text-xs opacity-50">Links</span>
         </div>
       </div>
 

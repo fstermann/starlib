@@ -1,62 +1,44 @@
-# General coding guidelines
+# Starlib
 
-## 1. Think Before Coding
+Music management app for DJs and producers: edit local audio metadata, explore SoundCloud likes, track weekly releases from followed artists.
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+## Stack
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+| Component  | Stack                         | Directory   |
+|------------|-------------------------------|-------------|
+| Backend    | FastAPI · Python (uv)         | `backend/`, `soundcloud_tools/`, `starlib/` |
+| Frontend   | Next.js · React · TypeScript · Tailwind v4 · shadcn | `frontend/` |
+| Desktop    | Tauri v2 · Rust               | `desktop/`  |
+| Docs       | Zensical (mkdocs-style)       | `docs/`     |
 
-## 2. Simplicity First
+## Dev
 
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-## 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
+```bash
+uv run python -m backend.main     # backend → :8000
+cd frontend && npm run dev        # frontend → :3000
 ```
 
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+Frontend routes: `/meta-editor`, `/like-explorer`, `/weekly`, `/design` (dev-only showcase), `/auth/*`, `/setup/*`.
 
+## Conventions
 
-# General guidelines
+- **Python**: Google-style docstrings. Dependency/command runner is `uv`.
+- **Frontend styling**: see the Design section below — `DESIGN.md` is the spec, `.claude/skills/styling/SKILL.md` is the how-to.
+- **UI primitives** in `frontend/src/components/ui/*` are shadcn-sourced; leave their token vocabulary alone. Feature components use the primitive tokens from `globals.css`.
+- **Package manager**: `npm` in `frontend/`, `uv` for Python, `cargo` for `desktop/`.
+
+# Backend
 
 - Use Google-style docstrings.
+
+# Design
+
+Starlib has a single source of truth for visual design: **`DESIGN.md`** at the repo root. Read it before any UI change. It defines the OKLCH token system (three knobs → surfaces, text, brand, charts), the shadcn alias layer, typography scale, density, radii, motion, component variants, and the inverted-L layout shell.
+
+For non-trivial styling work — new components, token changes, layout chrome, theme work, anything touching `frontend/src/app/globals.css` or files under `src/components/ui/*` — also follow the procedural guidance in **`.claude/skills/styling/SKILL.md`**. DESIGN.md is the declarative spec; the skill is the how-to.
+
+Quick rules:
+- Use primitive tokens (`--surface-*`, `--text-*`, `--brand*`) in new code. shadcn alias names stay inside `src/components/ui/*`.
+- Never invent a token in a component file. Tokens live in `globals.css`.
+- Visually verify in `/design` (the in-app showcase) in both light and dark before reporting done.
+- If implementation drifts from DESIGN.md, update DESIGN.md in the same change.

@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Music2, FilePen, Heart, Settings, CalendarDays } from "lucide-react";
+import { FilePen, Heart, Settings, CalendarDays } from "lucide-react";
 import { clearTokens } from "@/lib/auth";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface User {
   id: number;
@@ -48,12 +49,12 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="group/sidebar fixed left-0 top-0 bottom-0 z-50 flex flex-col bg-card border-r border-border/50 w-14 hover:w-52 transition-[width] duration-200 ease-in-out overflow-hidden shrink-0">
+    <aside className="fixed left-0 top-0 bottom-0 z-50 flex w-14 flex-col border-r border-border bg-card shrink-0">
       {/* Logo */}
-      <div className="h-14 flex items-center px-4 shrink-0">
-        <Link href="/" className="flex items-center gap-3 min-w-0">
+      <div className="h-14 flex items-center justify-center shrink-0">
+        <Link href="/" aria-label="Starlib home">
           <span
-            className="size-6 shrink-0 bg-primary"
+            className="size-6 block bg-primary"
             style={{
               maskImage: 'url(/starlib-logo.svg)',
               WebkitMaskImage: 'url(/starlib-logo.svg)',
@@ -65,52 +66,52 @@ export function Sidebar() {
               WebkitMaskPosition: 'center',
             }}
           />
-          <span className="text-sm font-bold tracking-tight text-primary opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
-            Starlib
-          </span>
         </Link>
       </div>
 
       {/* Nav links */}
-      <nav className="flex-1 py-3 flex flex-col gap-2 px-2">
+      <nav className="flex-1 py-3 flex flex-col gap-1 px-2">
         {NAV_LINKS.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);
           return (
-            <Link
-              key={href}
-              href={href}
-              title={label}
-              className={`flex items-center gap-3 px-2 py-2 rounded-md transition-colors ${
-                active
-                  ? "text-primary bg-primary/10"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-              }`}
-            >
-              <span className="w-6 shrink-0 flex items-center justify-center">
-                <Icon className="size-4" />
-              </span>
-              <span className="text-xs font-medium tracking-wide opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
+            <Tooltip key={href}>
+              <TooltipTrigger asChild>
+                <Link
+                  href={href}
+                  aria-label={label}
+                  className={`flex items-center justify-center size-9 rounded-md transition-colors ${
+                    active
+                      ? "text-[var(--brand)] bg-[var(--brand-soft)]"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  }`}
+                >
+                  <Icon className="size-4" />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right" showArrow={false}>
                 {label}
-              </span>
-            </Link>
+              </TooltipContent>
+            </Tooltip>
           );
         })}
       </nav>
 
       {/* Settings */}
       <div className="px-2 pb-1 shrink-0">
-        <button
-          onClick={() => setSettingsOpen(true)}
-          title="Settings"
-          className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors cursor-pointer"
-        >
-          <span className="w-6 shrink-0 flex items-center justify-center">
-            <Settings className="size-4" />
-          </span>
-          <span className="text-xs opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Settings"
+              className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              <Settings className="size-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" showArrow={false}>
             Settings
-          </span>
-        </button>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
@@ -118,44 +119,48 @@ export function Sidebar() {
       {/* User / disconnect */}
       <div className="px-2 py-3 shrink-0">
         {user ? (
-          <button
-            onClick={handleDisconnect}
-            title="Disconnect SoundCloud"
-            className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-          >
-            {user.avatar_url ? (
-              <span className="w-6 shrink-0 flex items-center justify-center relative">
-                <img
-                  src={user.avatar_url}
-                  alt={user.username}
-                  className="size-5 rounded-full object-cover"
-                />
-                <SoundCloudLogo className="absolute -bottom-0.5 -right-0.5 size-2.5"  />
-              </span>
-            ) : (
-              <span className="w-6 shrink-0 flex items-center justify-center">
-              <div className="size-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary">
-                {user.username.slice(0, 1).toUpperCase()}
-              </div>
-              </span>
-            )}
-            <span className="text-xs opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
-              Disconnect
-            </span>
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleDisconnect}
+                aria-label="Disconnect SoundCloud"
+                className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+              >
+                {user.avatar_url ? (
+                  <span className="relative flex items-center justify-center">
+                    <img
+                      src={user.avatar_url}
+                      alt={user.username}
+                      className="size-5 rounded-full object-cover"
+                    />
+                    <SoundCloudLogo className="absolute -bottom-0.5 -right-0.5 size-2.5" />
+                  </span>
+                ) : (
+                  <div className="size-5 rounded-full bg-brand-soft flex items-center justify-center text-xs font-bold text-primary">
+                    {user.username.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" showArrow={false}>
+              Disconnect {user.username}
+            </TooltipContent>
+          </Tooltip>
         ) : (
-          <Link
-            href="/auth/login"
-            title="Connect SoundCloud"
-            className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-          >
-            <span className="w-6 shrink-0 flex items-center justify-center">
-              <SoundCloudLogo className="size-4"  />
-            </span>
-            <span className="text-xs opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-150 whitespace-nowrap overflow-hidden">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                href="/auth/login"
+                aria-label="Connect SoundCloud"
+                className="flex items-center justify-center size-9 rounded-md text-muted-foreground hover:text-primary hover:bg-brand-soft transition-colors"
+              >
+                <SoundCloudLogo className="size-4" />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right" showArrow={false}>
               Connect SoundCloud
-            </span>
-          </Link>
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
     </aside>

@@ -145,7 +145,7 @@ export function LikesFilterBar({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-border/50 bg-background/80 backdrop-blur-sm">
+    <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-border bg-background/80 backdrop-blur-sm">
       {/* Search */}
       <div className="relative flex-1 min-w-40 max-w-64">
         <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -171,7 +171,7 @@ export function LikesFilterBar({
           <Button variant="outline" size="sm" className={`h-7 text-xs gap-1 ${genres.length ? 'border-primary text-primary' : ''}`}>
             Genre
             {genres.length > 0 && (
-              <Badge variant="default" className="h-4 px-1 text-[10px] rounded-full ml-0.5">
+              <Badge variant="default" className="h-4 px-1 text-xs rounded-full ml-0.5">
                 {genres.length}
               </Badge>
             )}
@@ -180,7 +180,7 @@ export function LikesFilterBar({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-40 p-0">
           <div className="px-1 pt-1">
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
               Genre
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -215,7 +215,7 @@ export function LikesFilterBar({
             <SlidersHorizontal className="size-3" />
             Duration
             {durationActive && (
-              <span className="text-[10px] ml-0.5">
+              <span className="text-xs ml-0.5">
                 {formatDuration(minDuration ?? 0)}–{formatDuration(maxDuration ?? DURATION_MAX)}
               </span>
             )}
@@ -223,7 +223,7 @@ export function LikesFilterBar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56 p-3">
-          <div className="flex justify-between text-[10px] text-muted-foreground mb-2">
+          <div className="flex justify-between text-xs text-muted-foreground mb-2">
             <span>{formatDuration(durationValue[0])}</span>
             <span>{formatDuration(durationValue[1])}</span>
           </div>
@@ -290,7 +290,7 @@ export function LikesFilterBar({
 
       {/* Active genre chips */}
       {genres.map((g) => (
-        <Badge key={g} variant="secondary" className="h-6 text-[10px] gap-1 cursor-pointer" onClick={() => toggleGenre(g)}>
+        <Badge key={g} variant="secondary" className="h-6 text-xs gap-1 cursor-pointer" onClick={() => toggleGenre(g)}>
           {g} <X className="size-2.5" />
         </Badge>
       ))}
@@ -303,7 +303,7 @@ export function LikesFilterBar({
       )}
 
       {/* Track count */}
-      <div className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+      <div className="ml-auto text-xs text-muted-foreground tabular-nums">
         {selectedCount > 0
           ? `${selectedCount.toLocaleString()} / ${filteredCount.toLocaleString()} selected`
           : filteredCount === totalCount

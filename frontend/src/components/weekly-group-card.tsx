@@ -161,14 +161,14 @@ export function WeeklyGroupCard({
 
   return (
     <div className={cn(
-      'border border-border/50 rounded-lg overflow-hidden',
+      'border border-border rounded-lg overflow-hidden',
       group.isCurrent && 'border-primary/50',
     )}>
       {/* Header */}
       <div
         className={cn(
-          'flex items-center gap-2 px-3 h-10 cursor-pointer select-none hover:bg-muted/30 transition-colors',
-          group.isCurrent && 'bg-primary/5',
+          'flex items-center gap-2 px-3 h-10 cursor-pointer select-none hover:bg-muted transition-colors',
+          group.isCurrent && 'bg-brand-soft',
         )}
         onClick={() => setExpanded(!expanded)}
       >
@@ -181,13 +181,13 @@ export function WeeklyGroupCard({
         {/* Table-like fixed columns — always rendered so every row aligns */}
         <div className="w-20 shrink-0 flex justify-center">
           {group.isCurrent && (
-            <Badge variant="default" className="h-4 px-1.5 text-[10px]">Current Week</Badge>
+            <Badge variant="default" className="h-4 px-1.5 text-xs">Current Week</Badge>
           )}
         </div>
-        <span className="text-[10px] text-muted-foreground shrink-0 w-36 text-center hidden sm:block tabular-nums">
+        <span className="text-xs text-muted-foreground shrink-0 w-36 text-center hidden sm:block tabular-nums">
           {labelParts.dateRange}
         </span>
-        <span className="text-[10px] text-muted-foreground shrink-0 w-12 hidden sm:block tabular-nums">
+        <span className="text-xs text-muted-foreground shrink-0 w-12 hidden sm:block tabular-nums">
           {labelParts.cw}
         </span>
 
@@ -200,8 +200,8 @@ export function WeeklyGroupCard({
               onClick={(e) => e.stopPropagation()}
               className={cn(!playlistUrl && 'pointer-events-none')}
             >
-              <Badge variant="secondary" className="h-4 px-1.5 text-[10px] gap-1 cursor-pointer hover:bg-secondary/70 transition-colors">
-                <CheckCircle2 className="size-2.5 text-green-500" />
+              <Badge variant="secondary" className="h-4 px-1.5 text-xs gap-1 cursor-pointer hover:bg-secondary/70 transition-colors">
+                <CheckCircle2 className="size-2.5 text-success" />
                 Playlist exists ({existingTrackCount})
                 {playlistUrl && <ExternalLink className="size-2.5" />}
               </Badge>
@@ -211,19 +211,19 @@ export function WeeklyGroupCard({
             <Badge
               variant="outline"
               className={cn(
-                'h-4 px-1.5 text-[10px] cursor-pointer transition-colors',
+                'h-4 px-1.5 text-xs cursor-pointer transition-colors',
                 showOnlyNew === true
-                  ? 'bg-green-500/15 text-green-600 border-green-500/60 hover:bg-green-500/25'
+                  ? 'bg-success/15 text-success border-success/60 hover:bg-success/25'
                   : showOnlyNew === false
-                    ? 'text-muted-foreground border-border/50 hover:border-border'
-                    : 'text-green-600 border-green-500/40 hover:bg-green-500/10',
+                    ? 'text-muted-foreground border-border hover:border-border'
+                    : 'text-success border-success/40 hover:bg-success/10',
               )}
               onClick={(e) => { e.stopPropagation(); setShowOnlyNew((v) => v === null ? true : v === true ? false : null); }}
             >
               +{newTracks.length} new
             </Badge>
           )}
-          <span className="text-[10px] text-muted-foreground tabular-nums">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {trackCountLabel} · {formatDuration(totalDuration)}
             {groupSelectedCount > 0 && ` · ${groupSelectedCount} selected`}
           </span>
@@ -237,8 +237,8 @@ export function WeeklyGroupCard({
                 trigger={
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="h-6 text-xs px-2 gap-1 border-green-500/40 text-green-600 hover:text-green-600"
+                    variant="ghost"
+                    className="h-6 text-xs px-2 gap-1 text-success hover:bg-success/10 hover:text-success"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <ListPlus className="size-3" />
@@ -255,8 +255,8 @@ export function WeeklyGroupCard({
                 trigger={
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="h-6 text-xs px-2 gap-1"
+                    variant="ghost"
+                    className="h-6 text-xs px-2 gap-1 text-primary hover:bg-brand-soft hover:text-primary"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <ListPlus className="size-3" />
@@ -271,7 +271,7 @@ export function WeeklyGroupCard({
 
       {/* Track table */}
       {expanded && (
-        <div className="border-t border-border/50" style={{ height: Math.min(visibleTracks.length * 48 + 32, 420) }}>
+        <div className="border-t border-border" style={{ height: Math.min(visibleTracks.length * 48 + 32, 420) }}>
           <LikesTable
             tracks={visibleTracks}
             selectedIds={selectedIds}

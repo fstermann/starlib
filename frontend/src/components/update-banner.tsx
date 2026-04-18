@@ -45,7 +45,7 @@ export function UpdateBanner() {
   }
 
   return (
-    <div className="bg-primary/10 border-b border-primary/20 px-4 py-2 flex items-center gap-3 text-sm">
+    <div className="bg-brand-soft border-b border-primary/20 px-4 py-2 flex items-center gap-3 text-sm">
       <Download className="size-4 text-primary shrink-0" />
       <span className="flex-1 text-foreground">
         <span className="font-medium">Starlib {update.update?.version}</span> is available.

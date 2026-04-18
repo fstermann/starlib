@@ -9,7 +9,7 @@ import { useWeeklyGroups, type GroupingMode } from './use-weekly-groups';
 import { useWeeklyFilter, type WeeklyFilterOptions } from './use-weekly-filter';
 import { WeeklyGroupCard } from '@/components/weekly-group-card';
 import { LikesFilterBar } from '@/components/likes-filter-bar';
-import { PageHeader } from '@/components/page-header';
+import { useTopBar } from '@/components/layout/top-bar-context';
 import { LogoSpinner } from '@/components/logo-spinner';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -196,61 +196,61 @@ export default function WeeklyPage() {
   const totalFilteredCount = allFilteredTracks.length;
   const selectedCount = selectedIds.size;
 
+  useTopBar({
+    title: 'Weekly Favorites',
+    actions: (
+      <div className="flex items-center gap-2">
+        <ToggleGroup
+          type="single"
+          value={groupingMode ?? 'weekly'}
+          onValueChange={(v) => v && setGroupingMode(v as GroupingMode)}
+          className="h-7"
+        >
+          <ToggleGroupItem value="weekly" className="h-7 text-xs px-3">Weekly</ToggleGroupItem>
+          <ToggleGroupItem value="biweekly" className="h-7 text-xs px-3">Twice a week</ToggleGroupItem>
+        </ToggleGroup>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={reload}
+          title="Refresh tracks"
+        >
+          <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+        </Button>
+      </div>
+    ),
+  });
+
   return (
     <div className="flex flex-col h-full min-h-0">
-      <PageHeader
-        title="Weekly Favorites"
-        actions={
-          <div className="flex items-center gap-2">
-            <ToggleGroup
-              type="single"
-              value={groupingMode ?? 'weekly'}
-              onValueChange={(v) => v && setGroupingMode(v as GroupingMode)}
-              className="h-7"
-            >
-              <ToggleGroupItem value="weekly" className="h-7 text-xs px-3">Weekly</ToggleGroupItem>
-              <ToggleGroupItem value="biweekly" className="h-7 text-xs px-3">Twice a week</ToggleGroupItem>
-            </ToggleGroup>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0"
-              onClick={reload}
-              title="Refresh tracks"
-            >
-              <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        }
-      >
-        <LikesFilterBar
-          search={search}
-          onSearchChange={setSearch}
-          genres={genres}
-          onGenresChange={setGenres}
-          availableGenres={availableGenres}
-          minDuration={minDuration}
-          maxDuration={maxDuration}
-          onMinDurationChange={setMinDuration}
-          onMaxDurationChange={setMaxDuration}
-          trackType={trackType}
-          onTrackTypeChange={setTrackType}
-          excludeMyLikes={excludeSeen}
-          onExcludeMyLikesChange={setExcludeSeen}
-          showExcludeMyLikes={true}
-          excludeMyLikesLabel="Exclude previously added"
-          excludeOwnLikes={excludeOwnLikes}
-          onExcludeOwnLikesChange={setExcludeOwnLikes}
-          showExcludeOwnLikes={true}
-          inCollection={inCollection}
-          onInCollectionChange={setInCollection}
-          showInCollection={collectionIds.size > 0}
-          filteredCount={totalFilteredCount}
-          totalCount={tracks.length}
-          loading={loading}
-          selectedCount={selectedCount}
-        />
-      </PageHeader>
+      <LikesFilterBar
+        search={search}
+        onSearchChange={setSearch}
+        genres={genres}
+        onGenresChange={setGenres}
+        availableGenres={availableGenres}
+        minDuration={minDuration}
+        maxDuration={maxDuration}
+        onMinDurationChange={setMinDuration}
+        onMaxDurationChange={setMaxDuration}
+        trackType={trackType}
+        onTrackTypeChange={setTrackType}
+        excludeMyLikes={excludeSeen}
+        onExcludeMyLikesChange={setExcludeSeen}
+        showExcludeMyLikes={true}
+        excludeMyLikesLabel="Exclude previously added"
+        excludeOwnLikes={excludeOwnLikes}
+        onExcludeOwnLikesChange={setExcludeOwnLikes}
+        showExcludeOwnLikes={true}
+        inCollection={inCollection}
+        onInCollectionChange={setInCollection}
+        showInCollection={collectionIds.size > 0}
+        filteredCount={totalFilteredCount}
+        totalCount={tracks.length}
+        loading={loading}
+        selectedCount={selectedCount}
+      />
 
       <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-3">
         {error && (
