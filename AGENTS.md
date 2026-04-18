@@ -27,6 +27,13 @@ Frontend routes: `/meta-editor`, `/like-explorer`, `/weekly`, `/design` (dev-onl
 - **UI primitives** in `frontend/src/components/ui/*` are shadcn-sourced; leave their token vocabulary alone. Feature components use the primitive tokens from `globals.css`.
 - **Package manager**: `npm` in `frontend/`, `uv` for Python, `cargo` for `desktop/`.
 
+## Quality gates
+
+- **All git hooks** are managed by the Python `pre-commit` framework via `.pre-commit-config.yaml` at the repo root. Install once with `pre-commit install`. Python hooks (ruff, mypy, pydoclint) and frontend hooks (prettier, tsc) live side by side — do not introduce a second hook runner.
+- **Frontend formatter**: Prettier owns all formatting. Don't hand-sort imports or Tailwind classes — `@ianvs/prettier-plugin-sort-imports` and `prettier-plugin-tailwindcss` handle both. `cn` and `cva` are registered as Tailwind functions. Config: `frontend/.prettierrc.json`.
+- **Frontend scripts**: `npm run lint`, `npm run format`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`.
+- **CI** should run: `lint`, `format:check`, `typecheck`, `test`, `build`.
+
 # Backend
 
 - Use Google-style docstrings.

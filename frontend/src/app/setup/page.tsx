@@ -1,7 +1,8 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,39 +30,52 @@ export default function SetupPage() {
       // Redirect to home after successful setup.
       router.push("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save configuration.");
+      setError(
+        err instanceof Error ? err.message : "Failed to save configuration.",
+      );
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex justify-center py-20 px-6">
-      <div className="max-w-lg w-full">
+    <div className="flex justify-center px-6 py-20">
+      <div className="w-full max-w-lg">
         <div className="mb-10">
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Welcome to SoundCloud Tools</h1>
+          <h1 className="mb-2 text-3xl font-bold tracking-tight">
+            Welcome to SoundCloud Tools
+          </h1>
           <p className="text-muted-foreground">
-            To get started, you need to register a SoundCloud app and enter your credentials below.
-            Your credentials are stored locally on this machine and never shared.
+            To get started, you need to register a SoundCloud app and enter your
+            credentials below. Your credentials are stored locally on this
+            machine and never shared.
           </p>
         </div>
 
-        <div className="bg-card border border-border rounded-xl p-6 mb-6">
-          <h2 className="font-semibold mb-1">How to get your credentials</h2>
-          <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+        <div className="bg-card border-border mb-6 rounded-xl border p-6">
+          <h2 className="mb-1 font-semibold">How to get your credentials</h2>
+          <ol className="text-muted-foreground list-inside list-decimal space-y-1 text-sm">
             <li>
               Go to{" "}
               <a
                 href="https://soundcloud.com/you/apps"
                 target="_blank"
                 rel="noreferrer"
-                className="underline underline-offset-2 hover:text-foreground"
+                className="hover:text-foreground underline underline-offset-2"
               >
                 soundcloud.com/you/apps
               </a>{" "}
               and register a new application.
             </li>
-            <li>Set the redirect URI to: <code className="bg-muted px-1 rounded text-xs">http://127.0.0.1:8000/auth/soundcloud/redirect</code></li>
-            <li>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> from the app page.</li>
+            <li>
+              Set the redirect URI to:{" "}
+              <code className="bg-muted rounded px-1 text-xs">
+                http://127.0.0.1:8000/auth/soundcloud/redirect
+              </code>
+            </li>
+            <li>
+              Copy the <strong>Client ID</strong> and{" "}
+              <strong>Client Secret</strong> from the app page.
+            </li>
           </ol>
         </div>
 
@@ -101,14 +115,13 @@ export default function SetupPage() {
               value={musicFolder}
               onChange={(e) => setMusicFolder(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              The folder where your local music files are stored. Tilde (~) is expanded automatically.
+            <p className="text-muted-foreground text-xs">
+              The folder where your local music files are stored. Tilde (~) is
+              expanded automatically.
             </p>
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-destructive text-sm">{error}</p>}
 
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Saving…" : "Save and get started"}

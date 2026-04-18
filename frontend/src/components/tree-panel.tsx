@@ -1,10 +1,15 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronRight, FolderOpen, Folder, Workflow, Check } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useResizable } from '@/lib/use-resizable';
-import type { TreeNode, Ruleset, FolderRulesetBinding } from '@/lib/api';
+import {
+  Check,
+  ChevronRight,
+  Folder,
+  FolderOpen,
+  Workflow,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { TreePanelMiniPlayer } from "@/components/tree-panel-mini-player";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -14,9 +19,15 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
   ContextMenuTrigger,
-} from '@/components/ui/context-menu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { TreePanelMiniPlayer } from '@/components/tree-panel-mini-player';
+} from "@/components/ui/context-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import type { FolderRulesetBinding, Ruleset, TreeNode } from "@/lib/api";
+import { useResizable } from "@/lib/use-resizable";
+import { cn } from "@/lib/utils";
 
 interface TreePanelProps {
   tree: TreeNode | null;
@@ -27,7 +38,11 @@ interface TreePanelProps {
   /** All available rulesets (for the context menu). */
   rulesets: Ruleset[];
   /** Called when the user assigns/removes a ruleset via context menu. */
-  onSetRuleset: (path: string, rulesetId: string | null, recursive: boolean) => void;
+  onSetRuleset: (
+    path: string,
+    rulesetId: string | null,
+    recursive: boolean,
+  ) => void;
   /** Storage key for persisting expanded state. */
   storageKey?: string;
 }
@@ -40,7 +55,7 @@ interface ResolvedBinding {
   own: boolean;
 }
 
-const STORAGE_PREFIX = 'tree-panel-expanded';
+const STORAGE_PREFIX = "tree-panel-expanded";
 
 function resolveBinding(
   path: string,
@@ -50,9 +65,9 @@ function resolveBinding(
   if (own) {
     return { ...own, source_path: path, own: true };
   }
-  const parts = path.replace(/\/+$/, '').split('/');
+  const parts = path.replace(/\/+$/, "").split("/");
   for (let i = parts.length - 1; i > 0; i--) {
-    const ancestor = parts.slice(0, i).join('/') || '/';
+    const ancestor = parts.slice(0, i).join("/") || "/";
     const b = bindings[ancestor];
     if (b && b.recursive) {
       return { ...b, source_path: ancestor, own: false };
@@ -68,16 +83,17 @@ export function TreePanel({
   folderRulesets,
   rulesets,
   onSetRuleset,
-  storageKey = 'filesystem',
+  storageKey = "filesystem",
 }: TreePanelProps) {
   const fullStorageKey = `${STORAGE_PREFIX}:${storageKey}`;
 
-  const { width, isAnimating, handleResizeStart, handleDoubleClick } = useResizable({
-    defaultWidth: 240,
-    minWidth: 140,
-    maxWidth: 480,
-    storageKey: 'tree-panel-width',
-  });
+  const { width, isAnimating, handleResizeStart, handleDoubleClick } =
+    useResizable({
+      defaultWidth: 240,
+      minWidth: 140,
+      maxWidth: 480,
+      storageKey: "tree-panel-width",
+    });
 
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     try {
@@ -135,10 +151,10 @@ export function TreePanel({
   if (!tree) {
     return (
       <div
-        className="shrink-0 border-r border-border p-3 relative"
+        className="border-border relative shrink-0 border-r p-3"
         style={{ width: `${width}px` }}
       >
-        <div className="text-xs text-muted-foreground">Loading...</div>
+        <div className="text-muted-foreground text-xs">Loading...</div>
       </div>
     );
   }
@@ -146,8 +162,8 @@ export function TreePanel({
   return (
     <div
       className={cn(
-        'shrink-0 border-r border-border flex flex-col min-h-0 relative',
-        isAnimating && 'transition-[width] duration-200 ease-out',
+        "border-border relative flex min-h-0 shrink-0 flex-col border-r",
+        isAnimating && "transition-[width] duration-200 ease-out",
       )}
       style={{ width: `${width}px` }}
     >
@@ -167,7 +183,7 @@ export function TreePanel({
       <TreePanelMiniPlayer />
       {/* Resize handle */}
       <div
-        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-brand-soft active:bg-brand-soft transition-colors duration-150 hover:duration-300 hover:delay-150 z-10"
+        className="hover:bg-brand-soft active:bg-brand-soft absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize transition-colors duration-150 hover:delay-150 hover:duration-300"
         onMouseDown={handleResizeStart}
         onDoubleClick={handleDoubleClick}
       />
@@ -184,7 +200,11 @@ interface TreeNodeItemProps {
   onToggleExpand: (nodeId: string) => void;
   resolveFor: (path: string) => ResolvedBinding | null;
   rulesets: Ruleset[];
-  onSetRuleset: (path: string, rulesetId: string | null, recursive: boolean) => void;
+  onSetRuleset: (
+    path: string,
+    rulesetId: string | null,
+    recursive: boolean,
+  ) => void;
 }
 
 function TreeNodeItem({
@@ -226,17 +246,17 @@ function TreeNodeItem({
         <ContextMenuTrigger asChild>
           <button
             className={cn(
-              'flex items-center gap-1 w-full text-left text-xs py-1 px-2 rounded-sm transition-colors cursor-pointer group',
+              "group flex w-full cursor-pointer items-center gap-1 rounded-sm px-2 py-1 text-left text-xs transition-colors",
               isSelected
-                ? 'bg-accent text-accent-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent',
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent",
             )}
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
             onClick={() => onSelect(node.id)}
           >
             {hasChildren ? (
               <span
-                className="shrink-0 size-4 flex items-center justify-center"
+                className="flex size-4 shrink-0 items-center justify-center"
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleExpand(node.id);
@@ -244,37 +264,35 @@ function TreeNodeItem({
               >
                 <ChevronRight
                   className={cn(
-                    'size-3 transition-transform duration-150',
-                    isExpanded && 'rotate-90',
+                    "size-3 transition-transform duration-150",
+                    isExpanded && "rotate-90",
                   )}
                 />
               </span>
             ) : (
-              <span className="shrink-0 size-4" />
+              <span className="size-4 shrink-0" />
             )}
             {isExpanded ? (
-              <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+              <FolderOpen className="text-muted-foreground size-3.5 shrink-0" />
             ) : (
-              <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+              <Folder className="text-muted-foreground size-3.5 shrink-0" />
             )}
-            <span className="truncate flex-1">{node.name}</span>
+            <span className="flex-1 truncate">{node.name}</span>
             {ruleset && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="shrink-0 flex items-center">
+                  <span className="flex shrink-0 items-center">
                     <Workflow
                       className={cn(
-                        'size-3',
-                        resolved!.own
-                          ? 'text-primary'
-                          : 'text-primary',
+                        "size-3",
+                        resolved!.own ? "text-primary" : "text-primary",
                       )}
                       {...(resolved!.own && resolved!.recursive
                         ? { strokeWidth: 2.5 }
                         : {})}
                     />
                     {resolved!.own && resolved!.recursive && (
-                      <span className="ml-0.5 text-xs leading-none font-semibold text-primary">
+                      <span className="text-primary ml-0.5 text-xs leading-none font-semibold">
                         R
                       </span>
                     )}
@@ -286,7 +304,7 @@ function TreeNodeItem({
               </Tooltip>
             )}
             {node.track_count > 0 && (
-              <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                 {node.track_count}
               </span>
             )}
@@ -295,12 +313,12 @@ function TreeNodeItem({
         <ContextMenuContent className="w-52">
           <ContextMenuSub>
             <ContextMenuSubTrigger className="text-xs">
-              <Workflow className="size-3.5 mr-2" />
+              <Workflow className="mr-2 size-3.5" />
               Ruleset
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="w-56">
               <ContextMenuItem
-                className="text-xs text-muted-foreground"
+                className="text-muted-foreground text-xs"
                 disabled={!ownBinding}
                 onSelect={(e) => {
                   e.preventDefault();
@@ -321,7 +339,7 @@ function TreeNodeItem({
                 >
                   {r.name}
                   {currentRulesetId === r.id && (
-                    <span className="ml-auto text-primary text-xs">Active</span>
+                    <span className="text-primary ml-auto text-xs">Active</span>
                   )}
                 </ContextMenuItem>
               ))}
@@ -336,10 +354,10 @@ function TreeNodeItem({
               >
                 <span
                   className={cn(
-                    'mr-2 inline-flex size-3.5 items-center justify-center rounded-[3px] border',
+                    "mr-2 inline-flex size-3.5 items-center justify-center rounded-[3px] border",
                     currentRecursive
-                      ? 'bg-primary border-primary text-primary-foreground'
-                      : 'border-muted-foreground/40',
+                      ? "bg-primary border-primary text-primary-foreground"
+                      : "border-muted-foreground/40",
                   )}
                 >
                   {currentRecursive && <Check className="size-2.5" />}

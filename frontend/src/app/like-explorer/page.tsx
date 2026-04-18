@@ -1,42 +1,51 @@
-'use client';
+"use client";
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useQueryState } from 'nuqs';
-import { useLikes } from './use-likes';
-import { useLikesFilter } from './use-likes-filter';
-import { LikesFilterBar } from '@/components/likes-filter-bar';
-import { LikesTable } from '@/components/likes-table';
-import { UserSearch } from '@/components/user-search';
-import { UserCard } from '@/components/user-card';
-import { CreatePlaylistDialog, MAX_TRACKS } from '@/components/create-playlist-dialog';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { useTopBar } from '@/components/layout/top-bar-context';
-import { LogoSpinner } from '@/components/logo-spinner';
-import { ListPlus, Heart, Compass } from 'lucide-react';
-import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
-import type { SCUser, SCTrack } from '@/lib/soundcloud';
+import { Compass, Heart, ListPlus } from "lucide-react";
+import { useQueryState } from "nuqs";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import {
+  CreatePlaylistDialog,
+  MAX_TRACKS,
+} from "@/components/create-playlist-dialog";
+import { useTopBar } from "@/components/layout/top-bar-context";
+import { LikesFilterBar } from "@/components/likes-filter-bar";
+import { LikesTable } from "@/components/likes-table";
+import { LogoSpinner } from "@/components/logo-spinner";
+import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { UserCard } from "@/components/user-card";
+import { UserSearch } from "@/components/user-search";
+import { api } from "@/lib/api";
+import type { SCTrack, SCUser } from "@/lib/soundcloud";
+import { cn } from "@/lib/utils";
+
+import { useLikes } from "./use-likes";
+import { useLikesFilter } from "./use-likes-filter";
 
 function extractId(track: SCTrack): number | undefined {
   if (!track.urn) return undefined;
-  const parts = track.urn.split(':');
+  const parts = track.urn.split(":");
   return parseInt(parts[parts.length - 1], 10) || undefined;
 }
 
 export default function LikeExplorerPage() {
-  const [tab, setTab] = useQueryState('tab', { defaultValue: 'me' });
+  const [tab, setTab] = useQueryState("tab", { defaultValue: "me" });
 
   // User search state (Explore tab)
   const [selectedUser, setSelectedUser] = useState<SCUser | null>(null);
 
   // Determine which user to fetch likes for
   const exploreUrn = selectedUser?.urn ?? null;
-  const myLikes = useLikes('me');
-  const exploreLikes = useLikes(tab === 'explore' ? exploreUrn : null);
+  const myLikes = useLikes("me");
+  const exploreLikes = useLikes(tab === "explore" ? exploreUrn : null);
 
-  const activeLikes = tab === 'me' ? myLikes : exploreLikes;
+  const activeLikes = tab === "me" ? myLikes : exploreLikes;
 
   // My liked track IDs for "exclude my likes" filter
   const myLikedIds = useMemo(() => {
@@ -51,13 +60,14 @@ export default function LikeExplorerPage() {
   // Collection SoundCloud IDs
   const [collectionIds, setCollectionIds] = useState<Set<number>>(new Set());
   useEffect(() => {
-    api.getCollectionSoundcloudIds()
+    api
+      .getCollectionSoundcloudIds()
       .then((ids) => setCollectionIds(new Set(ids)))
-      .catch(() => {});  // non-critical — column just stays empty
+      .catch(() => {}); // non-critical — column just stays empty
   }, []);
 
   // Filter state
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [genres, setGenres] = useState<string[]>([]);
   const [minDuration, setMinDuration] = useState<number | null>(null);
   const [maxDuration, setMaxDuration] = useState<number | null>(null);
@@ -67,7 +77,7 @@ export default function LikeExplorerPage() {
   const { filteredTracks, availableGenres } = useLikesFilter(
     activeLikes.tracks,
     { search, genres, minDuration, maxDuration, excludeMyLikes, inCollection },
-    tab === 'explore' ? myLikedIds : undefined,
+    tab === "explore" ? myLikedIds : undefined,
     collectionIds,
   );
 
@@ -105,7 +115,7 @@ export default function LikeExplorerPage() {
   // Reset selection when switching tabs
   useEffect(() => {
     setSelectedIds(new Set());
-    setSearch('');
+    setSearch("");
     setGenres([]);
     setMinDuration(null);
     setMaxDuration(null);
@@ -115,10 +125,11 @@ export default function LikeExplorerPage() {
 
   // Selected tracks for playlist creation
   const selectedTracks = useMemo(
-    () => activeLikes.tracks.filter((t) => {
-      const id = extractId(t);
-      return id != null && selectedIds.has(id);
-    }),
+    () =>
+      activeLikes.tracks.filter((t) => {
+        const id = extractId(t);
+        return id != null && selectedIds.has(id);
+      }),
     [activeLikes.tracks, selectedIds],
   );
 
@@ -126,28 +137,45 @@ export default function LikeExplorerPage() {
     title: (
       <>
         <span>Like Explorer</span>
-        <div className="w-px h-5 bg-border shrink-0 mx-1" />
+        <div className="bg-border mx-1 h-5 w-px shrink-0" />
         <ToggleGroup
           type="single"
           variant="outline"
           value={tab}
-          onValueChange={(v) => { if (v) setTab(v); }}
+          onValueChange={(v) => {
+            if (v) setTab(v);
+          }}
           className="h-7"
         >
-          <ToggleGroupItem value="me" className="h-7 px-2 gap-1.5 text-xs cursor-pointer"><Heart className="size-3.5" />My Likes</ToggleGroupItem>
-          <ToggleGroupItem value="explore" className="h-7 px-2 gap-1.5 text-xs cursor-pointer"><Compass className="size-3.5" />Explore</ToggleGroupItem>
+          <ToggleGroupItem
+            value="me"
+            className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
+          >
+            <Heart className="size-3.5" />
+            My Likes
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="explore"
+            className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
+          >
+            <Compass className="size-3.5" />
+            Explore
+          </ToggleGroupItem>
         </ToggleGroup>
       </>
     ),
   });
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Explore tab: user search / selected user */}
-      {tab === 'explore' && (
-        <div className="px-4 py-2 border-b border-border">
+      {tab === "explore" && (
+        <div className="border-border border-b px-4 py-2">
           {selectedUser ? (
-            <UserCard user={selectedUser} onClear={() => setSelectedUser(null)} />
+            <UserCard
+              user={selectedUser}
+              onClear={() => setSelectedUser(null)}
+            />
           ) : (
             <UserSearch onSelect={setSelectedUser} />
           )}
@@ -168,7 +196,7 @@ export default function LikeExplorerPage() {
           onMaxDurationChange={setMaxDuration}
           excludeMyLikes={excludeMyLikes}
           onExcludeMyLikesChange={setExcludeMyLikes}
-          showExcludeMyLikes={tab === 'explore'}
+          showExcludeMyLikes={tab === "explore"}
           inCollection={inCollection}
           onInCollectionChange={setInCollection}
           showInCollection={collectionIds.size > 0}
@@ -181,7 +209,12 @@ export default function LikeExplorerPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span tabIndex={0}>
-                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-muted-foreground" disabled>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground h-7 gap-1.5 text-xs"
+                      disabled
+                    >
                       <ListPlus className="size-3.5" />
                       Create Playlist
                     </Button>
@@ -192,46 +225,58 @@ export default function LikeExplorerPage() {
                 </TooltipContent>
               </Tooltip>
             ) : (
-              <CreatePlaylistDialog tracks={selectedTracks} trigger={
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={cn(
-                    'h-7 text-xs gap-1.5',
-                    selectedIds.size > 0 ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground',
-                  )}
-                  disabled={selectedIds.size === 0}
-                >
-                  <ListPlus className="size-3.5" />
-                  Create Playlist
-                </Button>
-              } />
+              <CreatePlaylistDialog
+                tracks={selectedTracks}
+                trigger={
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={cn(
+                      "h-7 gap-1.5 text-xs",
+                      selectedIds.size > 0
+                        ? "text-primary hover:bg-brand-soft hover:text-primary"
+                        : "text-muted-foreground",
+                    )}
+                    disabled={selectedIds.size === 0}
+                  >
+                    <ListPlus className="size-3.5" />
+                    Create Playlist
+                  </Button>
+                }
+              />
             )
           }
         />
       )}
 
       {/* Content */}
-      <div className="flex-1 min-h-0 relative">
+      <div className="relative min-h-0 flex-1">
         {activeLikes.loading && activeLikes.tracks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-4">
+          <div className="flex h-full flex-col items-center justify-center gap-4">
             <LogoSpinner className="size-16" />
-            <p className="text-sm text-muted-foreground">Loading tracks…</p>
+            <p className="text-muted-foreground text-sm">Loading tracks…</p>
           </div>
         ) : activeLikes.error ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2">
-            <p className="text-sm text-destructive">{activeLikes.error}</p>
-            <button className="text-xs text-primary underline cursor-pointer" onClick={activeLikes.reload}>
+          <div className="flex h-full flex-col items-center justify-center gap-2">
+            <p className="text-destructive text-sm">{activeLikes.error}</p>
+            <button
+              className="text-primary cursor-pointer text-xs underline"
+              onClick={activeLikes.reload}
+            >
               Retry
             </button>
           </div>
-        ) : tab === 'explore' && !selectedUser ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-sm text-muted-foreground">Search for a user to explore their likes</p>
+        ) : tab === "explore" && !selectedUser ? (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-muted-foreground text-sm">
+              Search for a user to explore their likes
+            </p>
           </div>
         ) : activeLikes.tracks.length === 0 && !activeLikes.loading ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-sm text-muted-foreground">No liked tracks found</p>
+          <div className="flex h-full items-center justify-center">
+            <p className="text-muted-foreground text-sm">
+              No liked tracks found
+            </p>
           </div>
         ) : (
           <LikesTable
@@ -247,9 +292,9 @@ export default function LikeExplorerPage() {
 
         {/* Loading progress overlay */}
         {activeLikes.loading && activeLikes.tracks.length > 0 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border shadow-lg">
+          <div className="bg-card border-border absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-1.5 shadow-lg">
             <LogoSpinner className="size-4" />
-            <span className="text-xs text-muted-foreground">
+            <span className="text-muted-foreground text-xs">
               Loading… {activeLikes.loaded} tracks
             </span>
           </div>

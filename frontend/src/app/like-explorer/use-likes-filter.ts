@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
-import type { SCTrack } from '@/lib/soundcloud';
+import { useMemo } from "react";
+
+import type { SCTrack } from "@/lib/soundcloud";
 
 interface UseLikesFilterOptions {
   search: string;
@@ -17,7 +18,7 @@ interface UseLikesFilterResult {
 
 function extractId(track: SCTrack): number | undefined {
   if (!track.urn) return undefined;
-  const parts = track.urn.split(':');
+  const parts = track.urn.split(":");
   return parseInt(parts[parts.length - 1], 10) || undefined;
 }
 
@@ -40,9 +41,10 @@ export function useLikesFilter(
     return tracks.filter((track) => {
       // Search filter
       if (searchLower) {
-        const title = (track.title ?? '').toLowerCase();
-        const artist = (track.user?.username ?? '').toLowerCase();
-        if (!title.includes(searchLower) && !artist.includes(searchLower)) return false;
+        const title = (track.title ?? "").toLowerCase();
+        const artist = (track.user?.username ?? "").toLowerCase();
+        if (!title.includes(searchLower) && !artist.includes(searchLower))
+          return false;
       }
 
       // Genre filter
@@ -53,8 +55,10 @@ export function useLikesFilter(
       // Duration filters (track.duration is in milliseconds)
       if (track.duration != null) {
         const durationSec = track.duration / 1000;
-        if (options.minDuration != null && durationSec < options.minDuration) return false;
-        if (options.maxDuration != null && durationSec > options.maxDuration) return false;
+        if (options.minDuration != null && durationSec < options.minDuration)
+          return false;
+        if (options.maxDuration != null && durationSec > options.maxDuration)
+          return false;
       }
 
       // Exclude my likes
@@ -73,7 +77,17 @@ export function useLikesFilter(
 
       return true;
     });
-  }, [tracks, options.search, options.genres, options.minDuration, options.maxDuration, options.excludeMyLikes, myLikedIds, options.inCollection, collectionIds]);
+  }, [
+    tracks,
+    options.search,
+    options.genres,
+    options.minDuration,
+    options.maxDuration,
+    options.excludeMyLikes,
+    myLikedIds,
+    options.inCollection,
+    collectionIds,
+  ]);
 
   return { filteredTracks, availableGenres };
 }

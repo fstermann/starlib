@@ -6,7 +6,7 @@ export function TopBar() {
   const { title, actions } = useTopBarContent();
 
   return (
-    <header className="fixed top-0 right-0 left-14 z-40 flex h-11 items-center gap-3 border-b border-border bg-card px-4">
+    <header className="border-border bg-card fixed top-0 right-0 left-14 z-40 flex h-11 items-center gap-3 border-b px-4">
       <div className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium">
         {title ?? null}
       </div>

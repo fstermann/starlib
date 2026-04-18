@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 import Link from "next/link";
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { fetchApi } from "@/lib/api";
 import { isTauri } from "@/lib/tauri";
-import { open as openExternal } from "@tauri-apps/plugin-shell";
 
 interface AuthorizeResponse {
   authorization_url: string;
@@ -26,7 +27,7 @@ export default function LoginPage() {
         ? "starlib://localhost/auth/soundcloud/callback"
         : `${window.location.origin}/auth/soundcloud/callback`;
       const data = await fetchApi<AuthorizeResponse>(
-        `/auth/soundcloud/authorize?return_to=${encodeURIComponent(returnTo)}`
+        `/auth/soundcloud/authorize?return_to=${encodeURIComponent(returnTo)}`,
       );
       sessionStorage.setItem("oauth_state", data.state);
       if (inTauri) {
@@ -42,28 +43,21 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex justify-center py-20 px-6">
-      <div className="max-w-md w-full">
-
-        <div className="bg-card border border-border rounded-xl p-8 text-center shadow-lg shadow-primary/5">
-          <h1 className="text-2xl font-semibold text-card-foreground mb-2">
+    <div className="flex justify-center px-6 py-20">
+      <div className="w-full max-w-md">
+        <div className="bg-card border-border shadow-primary/5 rounded-xl border p-8 text-center shadow-lg">
+          <h1 className="text-card-foreground mb-2 text-2xl font-semibold">
             Connect SoundCloud
           </h1>
           <p className="text-muted-foreground mb-8 text-sm">
             Authorize Starlib to access your SoundCloud account.
           </p>
 
-          <Button
-            onClick={handleConnect}
-            disabled={loading}
-            className="w-full"
-          >
+          <Button onClick={handleConnect} disabled={loading} className="w-full">
             {loading ? "Opening…" : "Connect with SoundCloud"}
           </Button>
 
-          {error && (
-            <p className="mt-4 text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-destructive mt-4 text-sm">{error}</p>}
         </div>
       </div>
     </div>

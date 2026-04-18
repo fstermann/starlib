@@ -1,33 +1,34 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
 import {
-  Download,
-  Loader2,
+  Bot,
   CheckCircle2,
-  XCircle,
-  Settings as SettingsIcon,
+  Clapperboard,
+  Download,
+  FolderOpen,
+  Loader2,
+  Monitor,
+  Moon,
   Paintbrush,
   RefreshCw,
-  Moon,
-  Sun,
-  Monitor,
-  Bot,
-  Zap,
+  Settings as SettingsIcon,
   Square,
+  Sun,
+  Trash2,
+  Workflow,
+  XCircle,
+  Zap,
 } from "lucide-react";
+import { useTheme } from "next-themes";
+import React, { useEffect, useState } from "react";
+
+import { FolderConfigManager } from "@/components/rulesets/folder-config-manager";
+import { RulesetManager } from "@/components/rulesets/ruleset-manager";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { getSetting, setSetting } from "@/lib/settings";
-import { api, type AiModel, type AiProvider, type AiSettings, type FolderRulesetBinding, type Ruleset } from "@/lib/api";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -35,16 +36,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { checkForUpdate, type UpdateResult } from "@/lib/updater";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  api,
+  type AiModel,
+  type AiProvider,
+  type AiSettings,
+  type FolderRulesetBinding,
+  type Ruleset,
+} from "@/lib/api";
+import { getSetting, setSetting } from "@/lib/settings";
 import { isTauri } from "@/lib/tauri";
-import { useTheme } from "next-themes";
+import { checkForUpdate, type UpdateResult } from "@/lib/updater";
 import { cn } from "@/lib/utils";
-import { RulesetManager } from "@/components/rulesets/ruleset-manager";
-import { FolderConfigManager } from "@/components/rulesets/folder-config-manager";
-import { Clapperboard, FolderOpen, Trash2, Workflow } from "lucide-react";
 
-type SectionId = "general" | "appearance" | "meta-editor" | "folders" | "rulesets" | "ai" | "updates";
+type SectionId =
+  | "general"
+  | "appearance"
+  | "meta-editor"
+  | "folders"
+  | "rulesets"
+  | "ai"
+  | "updates";
 
 interface NavItem {
   id: SectionId;
@@ -92,7 +110,9 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [section, setSection] = useState<SectionId>("general");
   const [autoUpdate, setAutoUpdate] = useState(true);
-  const [preferredOutputFormat, setPreferredOutputFormat] = useState<"aiff" | "mp3">("aiff");
+  const [preferredOutputFormat, setPreferredOutputFormat] = useState<
+    "aiff" | "mp3"
+  >("aiff");
   const [loaded, setLoaded] = useState(false);
   const [checking, setChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateResult | null>(null);
@@ -112,7 +132,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [aiInstalled, setAiInstalled] = useState<boolean | null>(null);
   const [aiStartedByUs, setAiStartedByUs] = useState(false);
   const [aiModels, setAiModels] = useState<AiModel[]>([]);
-  const [ollamaUrlDraft, setOllamaUrlDraft] = useState("http://localhost:11434");
+  const [ollamaUrlDraft, setOllamaUrlDraft] = useState(
+    "http://localhost:11434",
+  );
   const [ollamaChecking, setOllamaChecking] = useState(false);
   const [ollamaStopping, setOllamaStopping] = useState(false);
   const [ollamaSaving, setOllamaSaving] = useState(false);
@@ -121,10 +143,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
   // Per-folder rulesets
-  const [folderRulesets, setFolderRulesets] = useState<Record<string, FolderRulesetBinding>>({});
+  const [folderRulesets, setFolderRulesets] = useState<
+    Record<string, FolderRulesetBinding>
+  >({});
   const [allRulesets, setAllRulesets] = useState<Ruleset[]>([]);
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -147,23 +173,33 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       api.getAiStatus(),
       api.getAllFolderRulesets(),
       api.getRulesets(),
-    ]).then(([autoUpdate, outputFormat, rootPath, settings, status, folderRulesetsData, rulesetsData]) => {
-      setAutoUpdate(autoUpdate);
-      setPreferredOutputFormat(outputFormat);
-      setRootFolder(rootPath);
-      setRootFolderDraft(rootPath);
-      setAiSettings(settings);
-      setOllamaUrlDraft(settings.ollama.url);
-      setAiAvailable(status.available);
-      setAiInstalled(status.installed);
-      setAiStartedByUs(status.started_by_us);
-      if (status.available) {
-        api.getAiModels().then(({ models }) => setAiModels(models));
-      }
-      setFolderRulesets(folderRulesetsData.folder_rulesets);
-      setAllRulesets(rulesetsData.rulesets);
-      setLoaded(true);
-    });
+    ]).then(
+      ([
+        autoUpdate,
+        outputFormat,
+        rootPath,
+        settings,
+        status,
+        folderRulesetsData,
+        rulesetsData,
+      ]) => {
+        setAutoUpdate(autoUpdate);
+        setPreferredOutputFormat(outputFormat);
+        setRootFolder(rootPath);
+        setRootFolderDraft(rootPath);
+        setAiSettings(settings);
+        setOllamaUrlDraft(settings.ollama.url);
+        setAiAvailable(status.available);
+        setAiInstalled(status.installed);
+        setAiStartedByUs(status.started_by_us);
+        if (status.available) {
+          api.getAiModels().then(({ models }) => setAiModels(models));
+        }
+        setFolderRulesets(folderRulesetsData.folder_rulesets);
+        setAllRulesets(rulesetsData.rulesets);
+        setLoaded(true);
+      },
+    );
   }, [open]);
 
   async function handleAutoUpdateChange(checked: boolean) {
@@ -175,7 +211,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setPreferredOutputFormat(format);
     await setSetting("preferredOutputFormat", format);
     await api.updateAppSettings({ preferred_output_format: format });
-    window.dispatchEvent(new CustomEvent("preferred-format-changed", { detail: format }));
+    window.dispatchEvent(
+      new CustomEvent("preferred-format-changed", { detail: format }),
+    );
   }
 
   async function handleSaveRootFolder() {
@@ -274,7 +312,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     if (!aiSettings || ollamaUrlDraft === aiSettings.ollama.url) return;
     setOllamaSaving(true);
     try {
-      const next = await api.updateAiSettings({ ollama: { url: ollamaUrlDraft } });
+      const next = await api.updateAiSettings({
+        ollama: { url: ollamaUrlDraft },
+      });
       setAiSettings(next);
       setOllamaUrlDraft(next.ollama.url);
       setAiAvailable(null);
@@ -329,15 +369,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl p-0 gap-0 translate-y-0 top-[10vh] data-[state=open]:slide-in-from-top-[0%] data-[state=closed]:slide-out-to-top-[0%]">
+      <DialogContent className="data-[state=open]:slide-in-from-top-[0%] data-[state=closed]:slide-out-to-top-[0%] top-[10vh] translate-y-0 gap-0 p-0 sm:max-w-4xl">
         <DialogTitle className="sr-only">Settings</DialogTitle>
         <div className="flex h-[min(700px,85vh)] overflow-hidden">
           {/* Left nav */}
-          <nav className="w-48 shrink-0 border-r border-border p-3 flex flex-col gap-4">
+          <nav className="border-border flex w-48 shrink-0 flex-col gap-4 border-r p-3">
             {NAV_GROUPS.map((group) => (
               <div key={group.label} className="flex flex-col gap-0.5">
                 {!group.header && (
-                  <p className="px-3 pb-1 text-xs font-semibold text-muted-foreground">
+                  <p className="text-muted-foreground px-3 pb-1 text-xs font-semibold">
                     {group.label}
                   </p>
                 )}
@@ -345,10 +385,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <button
                     onClick={() => setSection(group.header!.id)}
                     className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors text-left cursor-pointer",
+                      "flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors",
                       section === group.header!.id
                         ? "bg-accent text-accent-foreground"
-                        : "text-foreground hover:text-foreground hover:bg-accent"
+                        : "text-foreground hover:text-foreground hover:bg-accent",
                     )}
                   >
                     <group.header.icon className="size-4 shrink-0" />
@@ -360,11 +400,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     key={id}
                     onClick={() => setSection(id)}
                     className={cn(
-                      "flex items-center gap-2 py-1.5 rounded-md text-sm transition-colors text-left cursor-pointer",
-                      indent ? "pl-8 pr-3" : "px-3",
+                      "flex cursor-pointer items-center gap-2 rounded-md py-1.5 text-left text-sm transition-colors",
+                      indent ? "pr-3 pl-8" : "px-3",
                       section === id
                         ? "bg-accent text-accent-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent",
                     )}
                   >
                     <Icon className="size-4 shrink-0" />
@@ -380,7 +420,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {section === "general" && (
               <div className="flex flex-col gap-4">
                 <h2 className="text-base font-semibold">General</h2>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-muted-foreground text-sm">
                   General application settings will appear here.
                 </p>
               </div>
@@ -392,18 +432,27 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                 <div className="flex flex-col gap-2">
                   <Label className="text-sm">Preferred output format</Label>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     Used as the default format when adding convert rules.
                   </p>
                   <ToggleGroup
                     type="single"
                     variant="outline"
                     value={preferredOutputFormat}
-                    onValueChange={(val) => { if (val) handlePreferredOutputFormatChange(val as "aiff" | "mp3"); }}
+                    onValueChange={(val) => {
+                      if (val)
+                        handlePreferredOutputFormatChange(
+                          val as "aiff" | "mp3",
+                        );
+                    }}
                     className="w-fit"
                   >
-                    <ToggleGroupItem value="aiff" className="font-mono">AIFF</ToggleGroupItem>
-                    <ToggleGroupItem value="mp3" className="font-mono">MP3</ToggleGroupItem>
+                    <ToggleGroupItem value="aiff" className="font-mono">
+                      AIFF
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="mp3" className="font-mono">
+                      MP3
+                    </ToggleGroupItem>
                   </ToggleGroup>
                 </div>
               </div>
@@ -419,7 +468,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     type="single"
                     variant="outline"
                     value={theme}
-                    onValueChange={(val) => { if (val) setTheme(val); }}
+                    onValueChange={(val) => {
+                      if (val) setTheme(val);
+                    }}
                   >
                     <ToggleGroupItem value="light" aria-label="Light theme">
                       <Sun className="size-4" />
@@ -445,16 +496,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                   <div className="flex flex-col gap-1.5">
                     <Label className="text-sm">Music library root</Label>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-muted-foreground text-xs">
                       The root directory that contains all your music folders.
                     </p>
                     <div className="flex gap-2">
                       <Input
                         value={rootFolderDraft}
-                        onChange={(e) => { setRootFolderDraft(e.target.value); setRootFolderError(null); }}
-                        onKeyDown={(e) => { if (e.key === "Enter") handleSaveRootFolder(); }}
+                        onChange={(e) => {
+                          setRootFolderDraft(e.target.value);
+                          setRootFolderError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveRootFolder();
+                        }}
                         placeholder="~/Music"
-                        className="h-8 font-mono text-xs flex-1"
+                        className="h-8 flex-1 font-mono text-xs"
                       />
                       {inTauri && (
                         <Button
@@ -463,8 +519,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           className="h-8 shrink-0 px-2"
                           title="Browse for folder"
                           onClick={async () => {
-                            const { open } = await import("@tauri-apps/plugin-dialog");
-                            const selected = await open({ directory: true, multiple: false });
+                            const { open } =
+                              await import("@tauri-apps/plugin-dialog");
+                            const selected = await open({
+                              directory: true,
+                              multiple: false,
+                            });
                             if (typeof selected === "string") {
                               setRootFolderDraft(selected);
                               setRootFolderError(null);
@@ -478,34 +538,44 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         size="sm"
                         variant="outline"
                         className="h-8 shrink-0"
-                        disabled={rootFolderSaving || rootFolderDraft === rootFolder}
+                        disabled={
+                          rootFolderSaving || rootFolderDraft === rootFolder
+                        }
                         onClick={handleSaveRootFolder}
                       >
-                        {rootFolderSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+                        {rootFolderSaving ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          "Save"
+                        )}
                       </Button>
                     </div>
                     {rootFolderError && (
-                      <p className="text-xs text-destructive">{rootFolderError}</p>
+                      <p className="text-destructive text-xs">
+                        {rootFolderError}
+                      </p>
                     )}
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-4">
                   <h2 className="text-base font-semibold">Folder shortcuts</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Choose which folders appear as quick-access buttons in the meta editor, and in what order.
-                    Removing a shortcut only hides it — it does not delete the folder or any tracks on disk.
-                    Per-folder rulesets are configured below.
+                  <p className="text-muted-foreground text-sm">
+                    Choose which folders appear as quick-access buttons in the
+                    meta editor, and in what order. Removing a shortcut only
+                    hides it — it does not delete the folder or any tracks on
+                    disk. Per-folder rulesets are configured below.
                   </p>
                   <FolderConfigManager />
                 </div>
 
                 <div className="flex flex-col gap-4">
                   <h2 className="text-base font-semibold">Folder rulesets</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Assign rulesets to specific folders. Tracks finalized from a folder with a
-                    bound ruleset will use that ruleset instead of the global default.
-                    You can also assign rulesets via right-click in the folder tree.
+                  <p className="text-muted-foreground text-sm">
+                    Assign rulesets to specific folders. Tracks finalized from a
+                    folder with a bound ruleset will use that ruleset instead of
+                    the global default. You can also assign rulesets via
+                    right-click in the folder tree.
                   </p>
 
                   <FolderRulesetAdder
@@ -519,24 +589,34 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   />
 
                   {Object.keys(folderRulesets).length === 0 ? (
-                    <p className="text-xs text-muted-foreground italic">
-                      No folder-specific rulesets configured. Add one above, or right-click a folder in the tree.
+                    <p className="text-muted-foreground text-xs italic">
+                      No folder-specific rulesets configured. Add one above, or
+                      right-click a folder in the tree.
                     </p>
                   ) : (
                     <div className="flex flex-col gap-1.5">
                       {Object.entries(folderRulesets).map(([path, binding]) => {
-                        const ruleset = allRulesets.find((r) => r.id === binding.ruleset_id);
-                        const displayPath = rootFolder && path.startsWith(rootFolder)
-                          ? path.slice(rootFolder.length + 1) || "/"
-                          : path;
+                        const ruleset = allRulesets.find(
+                          (r) => r.id === binding.ruleset_id,
+                        );
+                        const displayPath =
+                          rootFolder && path.startsWith(rootFolder)
+                            ? path.slice(rootFolder.length + 1) || "/"
+                            : path;
                         return (
-                          <div key={path} className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted">
-                            <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
-                            <span className="flex-1 text-xs font-mono truncate" title={path}>
+                          <div
+                            key={path}
+                            className="bg-muted flex items-center gap-2 rounded-md px-2 py-1.5"
+                          >
+                            <FolderOpen className="text-muted-foreground size-3.5 shrink-0" />
+                            <span
+                              className="flex-1 truncate font-mono text-xs"
+                              title={path}
+                            >
                               {displayPath}
                             </span>
                             <span
-                              className="flex items-center gap-1 shrink-0 text-xs text-muted-foreground"
+                              className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs"
                               title={
                                 ruleset
                                   ? binding.recursive
@@ -547,21 +627,27 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                             >
                               <Workflow
                                 className={`size-3 ${ruleset ? "text-primary" : "text-muted-foreground"}`}
-                                {...(binding.recursive ? { strokeWidth: 2.5 } : {})}
+                                {...(binding.recursive
+                                  ? { strokeWidth: 2.5 }
+                                  : {})}
                               />
                               {binding.recursive && (
-                                <span className="text-xs leading-none font-semibold text-primary">
+                                <span className="text-primary text-xs leading-none font-semibold">
                                   R
                                 </span>
                               )}
-                              <span className={ruleset ? "" : "italic text-muted-foreground"}>
+                              <span
+                                className={
+                                  ruleset ? "" : "text-muted-foreground italic"
+                                }
+                              >
                                 {ruleset?.name ?? "Unknown"}
                               </span>
                             </span>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 w-6 p-0 shrink-0 text-muted-foreground hover:text-destructive"
+                              className="text-muted-foreground hover:text-destructive h-6 w-6 shrink-0 p-0"
                               onClick={async () => {
                                 await api.deleteFolderRuleset(path);
                                 const data = await api.getAllFolderRulesets();
@@ -582,12 +668,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {section === "rulesets" && (
               <div className="flex flex-col gap-4">
                 <h2 className="text-base font-semibold">Rulesets</h2>
-                <p className="text-sm text-muted-foreground">
-                  A ruleset is a sequence of steps that run automatically when you finalize a track.
-                  Each step can convert, move, or copy the file — and can reference the output of an earlier step.
+                <p className="text-muted-foreground text-sm">
+                  A ruleset is a sequence of steps that run automatically when
+                  you finalize a track. Each step can convert, move, or copy the
+                  file — and can reference the output of an earlier step.
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Steps under <span className="font-medium">if converted</span> only run when the conversion actually produced a new file — useful for archiving the original.
+                <p className="text-muted-foreground text-xs">
+                  Steps under <span className="font-medium">if converted</span>{" "}
+                  only run when the conversion actually produced a new file —
+                  useful for archiving the original.
                 </p>
                 <RulesetManager />
               </div>
@@ -596,9 +685,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {section === "ai" && loaded && aiSettings && (
               <div className="flex flex-col gap-6">
                 <h2 className="text-base font-semibold">AI</h2>
-                <p className="text-sm text-muted-foreground">
-                  Pick a provider for LLM-powered features. Use local Ollama for offline inference,
-                  or Claude for higher quality via the Anthropic API.
+                <p className="text-muted-foreground text-sm">
+                  Pick a provider for LLM-powered features. Use local Ollama for
+                  offline inference, or Claude for higher quality via the
+                  Anthropic API.
                 </p>
 
                 {/* Provider selector */}
@@ -607,38 +697,58 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <ToggleGroup
                     type="single"
                     value={aiSettings.provider}
-                    onValueChange={(v) => v && handleProviderChange(v as AiProvider)}
+                    onValueChange={(v) =>
+                      v && handleProviderChange(v as AiProvider)
+                    }
                     className="w-fit"
                   >
                     <ToggleGroupItem value="ollama" className="gap-2 text-xs">
-                      <img src="/icons/ollama.svg" alt="" className="size-4 dark:invert" />
+                      <img
+                        src="/icons/ollama.svg"
+                        alt=""
+                        className="size-4 dark:invert"
+                      />
                       Ollama
                     </ToggleGroupItem>
-                    <ToggleGroupItem value="claude_code" className="gap-2 text-xs">
-                      <img src="/icons/claude-color.svg" alt="" className="size-4" />
+                    <ToggleGroupItem
+                      value="claude_code"
+                      className="gap-2 text-xs"
+                    >
+                      <img
+                        src="/icons/claude-color.svg"
+                        alt=""
+                        className="size-4"
+                      />
                       Claude Code
                     </ToggleGroupItem>
-                    <ToggleGroupItem value="anthropic" className="gap-2 text-xs">
-                      <img src="/icons/anthropic.svg" alt="" className="size-4 dark:invert" />
+                    <ToggleGroupItem
+                      value="anthropic"
+                      className="gap-2 text-xs"
+                    >
+                      <img
+                        src="/icons/anthropic.svg"
+                        alt=""
+                        className="size-4 dark:invert"
+                      />
                       Anthropic API
                     </ToggleGroupItem>
                   </ToggleGroup>
                 </div>
 
                 {aiSettings.provider === "ollama" && (
-                  <div className="flex flex-col gap-6 border-t border-border pt-6">
+                  <div className="border-border flex flex-col gap-6 border-t pt-6">
                     {/* Connection status */}
                     <div className="flex items-center gap-2">
                       <span
                         className={cn(
-                          "size-2.5 rounded-full shrink-0",
+                          "size-2.5 shrink-0 rounded-full",
                           aiAvailable === null
                             ? "bg-muted-foreground/30"
                             : aiAvailable
                               ? "bg-success"
                               : aiInstalled
                                 ? "bg-warning"
-                                : "bg-destructive"
+                                : "bg-destructive",
                         )}
                       />
                       <span className="text-sm">
@@ -651,7 +761,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               : "Not installed"}
                       </span>
                       {aiAvailable && (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-muted-foreground text-xs">
                           {aiStartedByUs ? "managed by Starlib" : "external"}
                         </span>
                       )}
@@ -661,7 +771,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 px-1.5 text-muted-foreground hover:text-destructive"
+                              className="text-muted-foreground hover:text-destructive h-6 px-1.5"
                               onClick={handleOllamaStop}
                               disabled={ollamaStopping}
                             >
@@ -679,11 +789,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                     {/* Installed but not running — offer to start */}
                     {aiAvailable === false && aiInstalled && (
-                      <div className="rounded-md border border-warning/20 bg-warning/5 p-3 flex flex-col gap-2">
+                      <div className="border-warning/20 bg-warning/5 flex flex-col gap-2 rounded-md border p-3">
                         <p className="text-sm">
-                          Ollama is installed but not running. You can start it manually
-                          with <code className="bg-muted px-1 py-0.5 rounded text-xs">ollama serve</code>,
-                          or let Starlib start it for you.
+                          Ollama is installed but not running. You can start it
+                          manually with{" "}
+                          <code className="bg-muted rounded px-1 py-0.5 text-xs">
+                            ollama serve
+                          </code>
+                          , or let Starlib start it for you.
                         </p>
                         <Button
                           size="sm"
@@ -694,12 +807,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         >
                           {ollamaChecking ? (
                             <>
-                              <Loader2 data-icon="inline-start" className="animate-spin" />
+                              <Loader2
+                                data-icon="inline-start"
+                                className="animate-spin"
+                              />
                               Starting…
                             </>
                           ) : (
                             <>
-                              <Zap data-icon="inline-start" className="size-3.5" />
+                              <Zap
+                                data-icon="inline-start"
+                                className="size-3.5"
+                              />
                               Start Ollama
                             </>
                           )}
@@ -709,24 +828,41 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                     {/* Not installed — show install instructions */}
                     {aiAvailable === false && aiInstalled === false && (
-                      <div className="rounded-md border border-border bg-muted p-4 flex flex-col gap-3">
+                      <div className="border-border bg-muted flex flex-col gap-3 rounded-md border p-4">
                         <p className="text-sm font-medium">Install Ollama</p>
-                        <div className="flex flex-col gap-2 text-xs text-muted-foreground">
+                        <div className="text-muted-foreground flex flex-col gap-2 text-xs">
                           <p>
-                            <span className="font-medium text-foreground">macOS:</span>{" "}
-                            <code className="bg-muted px-1 py-0.5 rounded">brew install ollama</code>
+                            <span className="text-foreground font-medium">
+                              macOS:
+                            </span>{" "}
+                            <code className="bg-muted rounded px-1 py-0.5">
+                              brew install ollama
+                            </code>
                           </p>
                           <p>
-                            <span className="font-medium text-foreground">Linux:</span>{" "}
-                            <code className="bg-muted px-1 py-0.5 rounded">curl -fsSL https://ollama.com/install.sh | sh</code>
+                            <span className="text-foreground font-medium">
+                              Linux:
+                            </span>{" "}
+                            <code className="bg-muted rounded px-1 py-0.5">
+                              curl -fsSL https://ollama.com/install.sh | sh
+                            </code>
                           </p>
                           <p>
-                            <span className="font-medium text-foreground">Windows:</span>{" "}
-                            Download from <span className="font-mono">ollama.com/download</span>
+                            <span className="text-foreground font-medium">
+                              Windows:
+                            </span>{" "}
+                            Download from{" "}
+                            <span className="font-mono">
+                              ollama.com/download
+                            </span>
                           </p>
                         </div>
-                        <p className="text-xs text-muted-foreground">After installing, pull a model:</p>
-                        <code className="text-xs bg-muted px-2 py-1 rounded w-fit">ollama pull gemma4:e2b</code>
+                        <p className="text-muted-foreground text-xs">
+                          After installing, pull a model:
+                        </p>
+                        <code className="bg-muted w-fit rounded px-2 py-1 text-xs">
+                          ollama pull gemma4:e2b
+                        </code>
                       </div>
                     )}
 
@@ -737,18 +873,27 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         <Input
                           value={ollamaUrlDraft}
                           onChange={(e) => setOllamaUrlDraft(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleOllamaSaveUrl(); }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleOllamaSaveUrl();
+                          }}
                           placeholder="http://localhost:11434"
-                          className="h-8 font-mono text-xs flex-1"
+                          className="h-8 flex-1 font-mono text-xs"
                         />
                         <Button
                           size="sm"
                           variant="outline"
                           className="h-8 shrink-0"
-                          disabled={ollamaSaving || ollamaUrlDraft === aiSettings.ollama.url}
+                          disabled={
+                            ollamaSaving ||
+                            ollamaUrlDraft === aiSettings.ollama.url
+                          }
                           onClick={handleOllamaSaveUrl}
                         >
-                          {ollamaSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+                          {ollamaSaving ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            "Save"
+                          )}
                         </Button>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -775,13 +920,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     {aiModels.length > 0 && (
                       <div className="flex flex-col gap-1.5">
                         <Label className="text-sm">Model</Label>
-                        <Select value={aiSettings.ollama.model} onValueChange={handleOllamaModelChange}>
+                        <Select
+                          value={aiSettings.ollama.model}
+                          onValueChange={handleOllamaModelChange}
+                        >
                           <SelectTrigger className="h-8 w-fit min-w-48 font-mono text-xs">
                             <SelectValue placeholder="Select a model" />
                           </SelectTrigger>
                           <SelectContent>
                             {aiModels.map((m) => (
-                              <SelectItem key={m.id} value={m.id} className="font-mono text-xs">
+                              <SelectItem
+                                key={m.id}
+                                value={m.id}
+                                className="font-mono text-xs"
+                              >
                                 {m.id}
                                 {m.size && m.size > 0 && (
                                   <span className="text-muted-foreground ml-2">
@@ -798,12 +950,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 )}
 
                 {aiSettings.provider === "claude_code" && (
-                  <div className="flex flex-col gap-6 border-t border-border pt-6">
+                  <div className="border-border flex flex-col gap-6 border-t pt-6">
                     <div className="flex items-center gap-2">
                       <span
                         className={cn(
-                          "size-2.5 rounded-full shrink-0",
-                          aiAvailable === null ? "bg-muted-foreground/30" : aiAvailable ? "bg-success" : "bg-destructive",
+                          "size-2.5 shrink-0 rounded-full",
+                          aiAvailable === null
+                            ? "bg-muted-foreground/30"
+                            : aiAvailable
+                              ? "bg-success"
+                              : "bg-destructive",
                         )}
                       />
                       <span className="text-sm">
@@ -816,11 +972,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </div>
 
                     {aiAvailable === false && (
-                      <div className="rounded-md border border-border bg-muted p-4 flex flex-col gap-2">
-                        <p className="text-sm font-medium">Install Claude Code</p>
-                        <p className="text-xs text-muted-foreground">
-                          Uses your existing Claude subscription login — no separate API key required.
-                          Install at <span className="font-mono">claude.com/code</span>.
+                      <div className="border-border bg-muted flex flex-col gap-2 rounded-md border p-4">
+                        <p className="text-sm font-medium">
+                          Install Claude Code
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          Uses your existing Claude subscription login — no
+                          separate API key required. Install at{" "}
+                          <span className="font-mono">claude.com/code</span>.
                         </p>
                       </div>
                     )}
@@ -831,7 +990,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         <Select
                           value={aiSettings.claude_code.model}
                           onValueChange={async (model) => {
-                            const next = await api.updateAiSettings({ claude_code: { model } });
+                            const next = await api.updateAiSettings({
+                              claude_code: { model },
+                            });
                             setAiSettings(next);
                           }}
                         >
@@ -840,7 +1001,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           </SelectTrigger>
                           <SelectContent>
                             {aiModels.map((m) => (
-                              <SelectItem key={m.id} value={m.id} className="font-mono text-xs">
+                              <SelectItem
+                                key={m.id}
+                                value={m.id}
+                                className="font-mono text-xs"
+                              >
                                 {m.display_name ?? m.id}
                               </SelectItem>
                             ))}
@@ -852,17 +1017,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 )}
 
                 {aiSettings.provider === "anthropic" && (
-                  <div className="flex flex-col gap-6 border-t border-border pt-6">
+                  <div className="border-border flex flex-col gap-6 border-t pt-6">
                     {/* Key status */}
                     <div className="flex items-center gap-2">
                       <span
                         className={cn(
-                          "size-2.5 rounded-full shrink-0",
+                          "size-2.5 shrink-0 rounded-full",
                           aiSettings.anthropic_has_api_key
                             ? aiAvailable
                               ? "bg-success"
                               : "bg-warning"
-                            : "bg-destructive"
+                            : "bg-destructive",
                         )}
                       />
                       <span className="text-sm">
@@ -877,18 +1042,26 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     {/* API key form */}
                     <div className="flex flex-col gap-1.5">
                       <Label className="text-sm">Anthropic API key</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Stored in your OS keychain — never written to disk in plain text.
-                        Get one at <span className="font-mono">console.anthropic.com</span>.
+                      <p className="text-muted-foreground text-xs">
+                        Stored in your OS keychain — never written to disk in
+                        plain text. Get one at{" "}
+                        <span className="font-mono">console.anthropic.com</span>
+                        .
                       </p>
                       <div className="flex gap-2">
                         <Input
                           type="password"
                           value={apiKeyDraft}
                           onChange={(e) => setApiKeyDraft(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleSaveApiKey(); }}
-                          placeholder={aiSettings.anthropic_has_api_key ? "••••••••" : "sk-ant-…"}
-                          className="h-8 font-mono text-xs flex-1"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveApiKey();
+                          }}
+                          placeholder={
+                            aiSettings.anthropic_has_api_key
+                              ? "••••••••"
+                              : "sk-ant-…"
+                          }
+                          className="h-8 flex-1 font-mono text-xs"
                         />
                         <Button
                           size="sm"
@@ -897,7 +1070,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           disabled={apiKeySaving || !apiKeyDraft.trim()}
                           onClick={handleSaveApiKey}
                         >
-                          {apiKeySaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+                          {apiKeySaving ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            "Save"
+                          )}
                         </Button>
                         {aiSettings.anthropic_has_api_key && (
                           <Button
@@ -910,27 +1087,39 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           </Button>
                         )}
                       </div>
-                      {apiKeyError && <p className="text-xs text-destructive">{apiKeyError}</p>}
+                      {apiKeyError && (
+                        <p className="text-destructive text-xs">
+                          {apiKeyError}
+                        </p>
+                      )}
                     </div>
 
                     {/* Model selection */}
-                    {aiSettings.anthropic_has_api_key && aiModels.length > 0 && (
-                      <div className="flex flex-col gap-1.5">
-                        <Label className="text-sm">Model</Label>
-                        <Select value={aiSettings.anthropic.model} onValueChange={handleAnthropicModelChange}>
-                          <SelectTrigger className="h-8 w-fit min-w-64 font-mono text-xs">
-                            <SelectValue placeholder="Select a model" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {aiModels.map((m) => (
-                              <SelectItem key={m.id} value={m.id} className="font-mono text-xs">
-                                {m.display_name ?? m.id}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
+                    {aiSettings.anthropic_has_api_key &&
+                      aiModels.length > 0 && (
+                        <div className="flex flex-col gap-1.5">
+                          <Label className="text-sm">Model</Label>
+                          <Select
+                            value={aiSettings.anthropic.model}
+                            onValueChange={handleAnthropicModelChange}
+                          >
+                            <SelectTrigger className="h-8 w-fit min-w-64 font-mono text-xs">
+                              <SelectValue placeholder="Select a model" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {aiModels.map((m) => (
+                                <SelectItem
+                                  key={m.id}
+                                  value={m.id}
+                                  className="font-mono text-xs"
+                                >
+                                  {m.display_name ?? m.id}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                   </div>
                 )}
               </div>
@@ -948,7 +1137,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       handleAutoUpdateChange(checked === true)
                     }
                   />
-                  <Label htmlFor="auto-update" className="text-sm cursor-pointer">
+                  <Label
+                    htmlFor="auto-update"
+                    className="cursor-pointer text-sm"
+                  >
                     Check for updates automatically on startup
                   </Label>
                 </div>
@@ -964,7 +1156,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     >
                       {checking ? (
                         <>
-                          <Loader2 data-icon="inline-start" className="animate-spin" />
+                          <Loader2
+                            data-icon="inline-start"
+                            className="animate-spin"
+                          />
                           Checking…
                         </>
                       ) : (
@@ -976,19 +1171,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </Button>
 
                     {updateResult && !updateResult.available && (
-                      <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                        <CheckCircle2 className="size-4 text-success" />
+                      <p className="text-muted-foreground flex items-center gap-1.5 text-sm">
+                        <CheckCircle2 className="text-success size-4" />
                         You&apos;re on the latest version.
                       </p>
                     )}
 
                     {updateResult?.available && updateResult.update && (
-                      <div className="rounded-md border border-primary/20 bg-brand-soft p-3 flex flex-col gap-2">
+                      <div className="border-primary/20 bg-brand-soft flex flex-col gap-2 rounded-md border p-3">
                         <p className="text-sm font-medium">
                           Starlib {updateResult.update.version} is available
                         </p>
                         {updateResult.update.body && (
-                          <p className="text-xs text-muted-foreground line-clamp-3">
+                          <p className="text-muted-foreground line-clamp-3 text-xs">
                             {updateResult.update.body}
                           </p>
                         )}
@@ -999,7 +1194,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         >
                           {installing ? (
                             <>
-                              <Loader2 data-icon="inline-start" className="animate-spin" />
+                              <Loader2
+                                data-icon="inline-start"
+                                className="animate-spin"
+                              />
                               Installing…
                             </>
                           ) : (
@@ -1010,7 +1208,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     )}
 
                     {checkError && (
-                      <p className="text-sm text-destructive flex items-center gap-1.5">
+                      <p className="text-destructive flex items-center gap-1.5 text-sm">
                         <XCircle className="size-4" />
                         {checkError}
                       </p>
@@ -1019,13 +1217,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 )}
 
                 {!inTauri && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     Update checking is only available in the desktop app.
                   </p>
                 )}
 
                 {version && (
-                  <p className="text-xs text-muted-foreground mt-auto">
+                  <p className="text-muted-foreground mt-auto text-xs">
                     v{version}
                   </p>
                 )}
@@ -1045,7 +1243,12 @@ interface FolderRulesetAdderProps {
   onAdded: () => void | Promise<void>;
 }
 
-function FolderRulesetAdder({ rootFolder, allRulesets, inTauri, onAdded }: FolderRulesetAdderProps) {
+function FolderRulesetAdder({
+  rootFolder,
+  allRulesets,
+  inTauri,
+  onAdded,
+}: FolderRulesetAdderProps) {
   const [pathDraft, setPathDraft] = useState("");
   const [rulesetId, setRulesetId] = useState<string>("");
   const [recursive, setRecursive] = useState(false);
@@ -1072,15 +1275,22 @@ function FolderRulesetAdder({ rootFolder, allRulesets, inTauri, onAdded }: Folde
   }
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-md border border-border bg-muted p-2.5">
+    <div className="border-border bg-muted flex flex-col gap-1.5 rounded-md border p-2.5">
       <Label className="text-xs font-medium">Add a folder ruleset</Label>
       <div className="flex gap-2">
         <Input
           value={pathDraft}
-          onChange={(e) => { setPathDraft(e.target.value); setError(null); }}
-          onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-          placeholder={rootFolder ? `${rootFolder}/subfolder` : "/absolute/path/to/folder"}
-          className="h-8 font-mono text-xs flex-1"
+          onChange={(e) => {
+            setPathDraft(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleAdd();
+          }}
+          placeholder={
+            rootFolder ? `${rootFolder}/subfolder` : "/absolute/path/to/folder"
+          }
+          className="h-8 flex-1 font-mono text-xs"
         />
         {inTauri && (
           <Button
@@ -1105,9 +1315,9 @@ function FolderRulesetAdder({ rootFolder, allRulesets, inTauri, onAdded }: Folde
           </Button>
         )}
       </div>
-      <div className="flex gap-2 items-center">
+      <div className="flex items-center gap-2">
         <Select value={rulesetId} onValueChange={setRulesetId}>
-          <SelectTrigger className="h-8 text-xs flex-1">
+          <SelectTrigger className="h-8 flex-1 text-xs">
             <SelectValue placeholder="Select ruleset…" />
           </SelectTrigger>
           <SelectContent>
@@ -1118,7 +1328,7 @@ function FolderRulesetAdder({ rootFolder, allRulesets, inTauri, onAdded }: Folde
             ))}
           </SelectContent>
         </Select>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none shrink-0 px-1">
+        <label className="text-muted-foreground flex shrink-0 cursor-pointer items-center gap-1.5 px-1 text-xs select-none">
           <Checkbox
             checked={recursive}
             onCheckedChange={(v) => setRecursive(v === true)}
@@ -1135,7 +1345,7 @@ function FolderRulesetAdder({ rootFolder, allRulesets, inTauri, onAdded }: Folde
           {saving ? <Loader2 className="size-3.5 animate-spin" /> : "Add"}
         </Button>
       </div>
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-destructive text-xs">{error}</p>}
     </div>
   );
 }

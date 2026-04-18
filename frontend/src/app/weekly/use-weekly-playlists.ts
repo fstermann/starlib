@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { getMyPlaylists, type SCPlaylist } from '@/lib/soundcloud';
+import { useEffect, useState } from "react";
+
+import { getMyPlaylists, type SCPlaylist } from "@/lib/soundcloud";
 
 interface UseWeeklyPlaylistsResult {
   playlists: SCPlaylist[];
@@ -10,12 +11,12 @@ interface UseWeeklyPlaylistsResult {
 }
 
 function isWeeklyPlaylist(playlist: SCPlaylist): boolean {
-  return (playlist.title ?? '').toLowerCase().includes('weekly favorites');
+  return (playlist.title ?? "").toLowerCase().includes("weekly favorites");
 }
 
 function extractId(urn: string | undefined): number | null {
   if (!urn) return null;
-  const parts = urn.split(':');
+  const parts = urn.split(":");
   const id = parseInt(parts[parts.length - 1], 10);
   return isNaN(id) ? null : id;
 }
@@ -62,7 +63,9 @@ export function useWeeklyPlaylists(): UseWeeklyPlaylistsResult {
         setSeenTrackIds(ids);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load playlists');
+          setError(
+            err instanceof Error ? err.message : "Failed to load playlists",
+          );
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -70,7 +73,9 @@ export function useWeeklyPlaylists(): UseWeeklyPlaylistsResult {
     }
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [reloadKey]);
 
   return { playlists, seenTrackIds, loading, error, reload };

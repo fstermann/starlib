@@ -1,11 +1,17 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties } from "react";
 
 /**
  * SoundCloud brand logomark.
  * Renders as an SVG that accepts `className` for sizing and colour via currentColor.
  * Default brand colour: #ff5500
  */
-export function SoundCloudLogo({ className, style }: { className?: string; style?: CSSProperties }) {
+export function SoundCloudLogo({
+  className,
+  style,
+}: {
+  className?: string;
+  style?: CSSProperties;
+}) {
   return (
     <svg
       viewBox="0 0 143 64"

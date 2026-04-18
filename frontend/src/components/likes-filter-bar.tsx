@@ -1,20 +1,27 @@
-'use client';
+"use client";
 
-import { useState, useRef } from 'react';
-import { Search, X, ChevronDown, SlidersHorizontal, FolderCheck } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Slider } from '@/components/ui/slider';
-import { Checkbox } from '@/components/ui/checkbox';
+import {
+  ChevronDown,
+  FolderCheck,
+  Search,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
+import { useRef, useState } from "react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuCheckboxItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
+  DropdownMenuContent,
   DropdownMenuLabel,
-} from '@/components/ui/dropdown-menu';
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 
 interface LikesFilterBarProps {
   search: string;
@@ -30,8 +37,8 @@ interface LikesFilterBarProps {
   onExcludeMyLikesChange: (value: boolean) => void;
   showExcludeMyLikes: boolean;
   excludeMyLikesLabel?: string;
-  trackType?: 'track' | 'set' | null;
-  onTrackTypeChange?: (value: 'track' | 'set' | null) => void;
+  trackType?: "track" | "set" | null;
+  onTrackTypeChange?: (value: "track" | "set" | null) => void;
   excludeOwnLikes?: boolean;
   onExcludeOwnLikesChange?: (value: boolean) => void;
   showExcludeOwnLikes?: boolean;
@@ -48,7 +55,7 @@ interface LikesFilterBarProps {
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
-  return `${m}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 const DURATION_MAX = 1800; // 30 minutes
@@ -66,7 +73,7 @@ export function LikesFilterBar({
   excludeMyLikes,
   onExcludeMyLikesChange,
   showExcludeMyLikes,
-  excludeMyLikesLabel = 'Exclude my likes',
+  excludeMyLikesLabel = "Exclude my likes",
   trackType = null,
   onTrackTypeChange,
   excludeOwnLikes = false,
@@ -98,7 +105,9 @@ export function LikesFilterBar({
 
   function toggleGenre(genre: string) {
     onGenresChange(
-      genres.includes(genre) ? genres.filter((g) => g !== genre) : [...genres, genre],
+      genres.includes(genre)
+        ? genres.filter((g) => g !== genre)
+        : [...genres, genre],
     );
   }
 
@@ -117,8 +126,8 @@ export function LikesFilterBar({
   const durationActive = minDuration !== null || maxDuration !== null;
 
   function cycleTrackType() {
-    if (trackType === null) onTrackTypeChange?.('track');
-    else if (trackType === 'track') onTrackTypeChange?.('set');
+    if (trackType === null) onTrackTypeChange?.("track");
+    else if (trackType === "track") onTrackTypeChange?.("set");
     else onTrackTypeChange?.(null);
   }
 
@@ -132,8 +141,8 @@ export function LikesFilterBar({
     inCollection !== null;
 
   function clearAll() {
-    setSearchInput('');
-    onSearchChange('');
+    setSearchInput("");
+    onSearchChange("");
     onGenresChange([]);
     onMinDurationChange(null);
     onMaxDurationChange(null);
@@ -145,10 +154,10 @@ export function LikesFilterBar({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-border bg-background/80 backdrop-blur-sm">
+    <div className="border-border bg-background/80 flex flex-wrap items-center gap-2 border-b px-3 py-2 backdrop-blur-sm">
       {/* Search */}
-      <div className="relative flex-1 min-w-40 max-w-64">
-        <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+      <div className="relative max-w-64 min-w-40 flex-1">
+        <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
         <Input
           value={searchInput}
           onChange={(e) => handleSearchChange(e.target.value)}
@@ -157,8 +166,11 @@ export function LikesFilterBar({
         />
         {search && (
           <button
-            onClick={() => { setSearchInput(''); onSearchChange(''); }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setSearchInput("");
+              onSearchChange("");
+            }}
+            className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
           >
             <X className="size-3" />
           </button>
@@ -168,10 +180,17 @@ export function LikesFilterBar({
       {/* Genre filter */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className={`h-7 text-xs gap-1 ${genres.length ? 'border-primary text-primary' : ''}`}>
+          <Button
+            variant="outline"
+            size="sm"
+            className={`h-7 gap-1 text-xs ${genres.length ? "border-primary text-primary" : ""}`}
+          >
             Genre
             {genres.length > 0 && (
-              <Badge variant="default" className="h-4 px-1 text-xs rounded-full ml-0.5">
+              <Badge
+                variant="default"
+                className="ml-0.5 h-4 rounded-full px-1 text-xs"
+              >
                 {genres.length}
               </Badge>
             )}
@@ -180,7 +199,7 @@ export function LikesFilterBar({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-40 p-0">
           <div className="px-1 pt-1">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
+            <DropdownMenuLabel className="text-muted-foreground text-xs">
               Genre
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -198,7 +217,9 @@ export function LikesFilterBar({
               </DropdownMenuCheckboxItem>
             ))}
             {availableGenres.length === 0 && (
-              <div className="px-2 py-1 text-xs text-muted-foreground">No genres</div>
+              <div className="text-muted-foreground px-2 py-1 text-xs">
+                No genres
+              </div>
             )}
           </div>
         </DropdownMenuContent>
@@ -210,20 +231,21 @@ export function LikesFilterBar({
           <Button
             variant="outline"
             size="sm"
-            className={`h-7 text-xs gap-1 ${durationActive ? 'border-primary text-primary' : ''}`}
+            className={`h-7 gap-1 text-xs ${durationActive ? "border-primary text-primary" : ""}`}
           >
             <SlidersHorizontal className="size-3" />
             Duration
             {durationActive && (
-              <span className="text-xs ml-0.5">
-                {formatDuration(minDuration ?? 0)}–{formatDuration(maxDuration ?? DURATION_MAX)}
+              <span className="ml-0.5 text-xs">
+                {formatDuration(minDuration ?? 0)}–
+                {formatDuration(maxDuration ?? DURATION_MAX)}
               </span>
             )}
             <ChevronDown className="size-3 opacity-50" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56 p-3">
-          <div className="flex justify-between text-xs text-muted-foreground mb-2">
+          <div className="text-muted-foreground mb-2 flex justify-between text-xs">
             <span>{formatDuration(durationValue[0])}</span>
             <span>{formatDuration(durationValue[1])}</span>
           </div>
@@ -243,11 +265,15 @@ export function LikesFilterBar({
       <Button
         variant="outline"
         size="sm"
-        className={`h-7 text-xs gap-1 cursor-pointer ${trackType !== null ? 'border-primary text-primary' : ''}`}
+        className={`h-7 cursor-pointer gap-1 text-xs ${trackType !== null ? "border-primary text-primary" : ""}`}
         onClick={cycleTrackType}
         title="Filter by track type: Track (<12 min) or Set (≥12 min)"
       >
-        {trackType === 'track' ? 'Track' : trackType === 'set' ? 'Set' : 'Track / Set'}
+        {trackType === "track"
+          ? "Track"
+          : trackType === "set"
+            ? "Set"
+            : "Track / Set"}
       </Button>
 
       {/* In Collection filter */}
@@ -255,18 +281,28 @@ export function LikesFilterBar({
         <Button
           variant="outline"
           size="sm"
-          className={`h-7 text-xs gap-1 cursor-pointer ${inCollection !== null ? 'border-primary text-primary' : ''}`}
+          className={`h-7 cursor-pointer gap-1 text-xs ${inCollection !== null ? "border-primary text-primary" : ""}`}
           onClick={cycleInCollection}
-          title={inCollection === null ? 'All tracks' : inCollection ? 'In collection' : 'Not in collection'}
+          title={
+            inCollection === null
+              ? "All tracks"
+              : inCollection
+                ? "In collection"
+                : "Not in collection"
+          }
         >
           <FolderCheck className="size-3" />
-          {inCollection === null ? 'Collection' : inCollection ? 'In collection' : 'Not in collection'}
+          {inCollection === null
+            ? "Collection"
+            : inCollection
+              ? "In collection"
+              : "Not in collection"}
         </Button>
       )}
 
       {/* Exclude my likes */}
       {showExcludeMyLikes && (
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+        <label className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs select-none">
           <Checkbox
             checked={excludeMyLikes}
             onCheckedChange={(v) => onExcludeMyLikesChange(v === true)}
@@ -278,7 +314,7 @@ export function LikesFilterBar({
 
       {/* Exclude own liked tracks */}
       {showExcludeOwnLikes && (
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+        <label className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs select-none">
           <Checkbox
             checked={excludeOwnLikes}
             onCheckedChange={(v) => onExcludeOwnLikesChange?.(v === true)}
@@ -290,26 +326,36 @@ export function LikesFilterBar({
 
       {/* Active genre chips */}
       {genres.map((g) => (
-        <Badge key={g} variant="secondary" className="h-6 text-xs gap-1 cursor-pointer" onClick={() => toggleGenre(g)}>
+        <Badge
+          key={g}
+          variant="secondary"
+          className="h-6 cursor-pointer gap-1 text-xs"
+          onClick={() => toggleGenre(g)}
+        >
           {g} <X className="size-2.5" />
         </Badge>
       ))}
 
       {/* Clear all */}
       {hasActiveFilters && (
-        <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={clearAll}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground h-7 text-xs"
+          onClick={clearAll}
+        >
           Clear all
         </Button>
       )}
 
       {/* Track count */}
-      <div className="ml-auto text-xs text-muted-foreground tabular-nums">
+      <div className="text-muted-foreground ml-auto text-xs tabular-nums">
         {selectedCount > 0
           ? `${selectedCount.toLocaleString()} / ${filteredCount.toLocaleString()} selected`
           : filteredCount === totalCount
-            ? `${totalCount.toLocaleString()} track${totalCount !== 1 ? 's' : ''}`
+            ? `${totalCount.toLocaleString()} track${totalCount !== 1 ? "s" : ""}`
             : `${filteredCount.toLocaleString()} of ${totalCount.toLocaleString()}`}
-        {loading && ' (loading…)'}
+        {loading && " (loading…)"}
       </div>
 
       {/* Slot for page-level actions (e.g. Create Playlist) */}

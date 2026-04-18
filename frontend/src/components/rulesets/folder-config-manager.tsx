@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import {
-  DndContext,
   closestCenter,
+  DndContext,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -11,21 +10,28 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
+  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  arrayMove,
   useSortable,
+  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Eye, EyeOff, GripVertical, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { api, type FolderConfig } from "@/lib/api";
-import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 // ─── Single row ────────────────────────────────────────────────────────────────
 
@@ -38,94 +44,111 @@ function FolderRow({
   onChange: (f: FolderConfig) => void;
   onDelete: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id: folder.name,
   });
   const style = { transform: CSS.Transform.toString(transform), transition };
 
   return (
     <TooltipProvider delayDuration={600}>
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        "flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-2",
-        isDragging && "opacity-50 shadow-lg"
-      )}
-    >
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            {...attributes}
-            {...listeners}
-            tabIndex={-1}
-            className="shrink-0 cursor-grab text-muted-foreground transition-colors hover:text-muted-foreground active:cursor-grabbing"
-          >
-            <GripVertical className="size-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top">Drag to reorder</TooltipContent>
-      </Tooltip>
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={cn(
+          "border-border bg-card flex items-center gap-2 rounded-md border px-2.5 py-2",
+          isDragging && "opacity-50 shadow-lg",
+        )}
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              {...attributes}
+              {...listeners}
+              tabIndex={-1}
+              className="text-muted-foreground hover:text-muted-foreground shrink-0 cursor-grab transition-colors active:cursor-grabbing"
+            >
+              <GripVertical className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Drag to reorder</TooltipContent>
+        </Tooltip>
 
-      {/* Visibility toggle */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => onChange({ ...folder, visible: !folder.visible })}
-            className="cursor-pointer shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {folder.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          {folder.visible ? "Hide from meta editor" : "Show in meta editor"}
-        </TooltipContent>
-      </Tooltip>
+        {/* Visibility toggle */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => onChange({ ...folder, visible: !folder.visible })}
+              className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer transition-colors"
+            >
+              {folder.visible ? (
+                <Eye className="size-3.5" />
+              ) : (
+                <EyeOff className="size-3.5" />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {folder.visible ? "Hide from meta editor" : "Show in meta editor"}
+          </TooltipContent>
+        </Tooltip>
 
-      {/* Label input */}
-      <Input
-        value={folder.label}
-        onChange={(e) => onChange({ ...folder, label: e.target.value })}
-        className={cn("h-6 flex-1 text-xs", !folder.visible && "opacity-40")}
-        placeholder="Label"
-      />
+        {/* Label input */}
+        <Input
+          value={folder.label}
+          onChange={(e) => onChange({ ...folder, label: e.target.value })}
+          className={cn("h-6 flex-1 text-xs", !folder.visible && "opacity-40")}
+          placeholder="Label"
+        />
 
-      {/* Folder name badge */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            className={cn(
-              "w-24 shrink-0 truncate rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground text-right cursor-default",
-              !folder.visible && "opacity-40"
-            )}
-          >
-            {folder.name}/
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top">Subdirectory name in your music library root</TooltipContent>
-      </Tooltip>
+        {/* Folder name badge */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className={cn(
+                "border-border bg-muted text-muted-foreground w-24 shrink-0 cursor-default truncate rounded border px-1.5 py-0.5 text-right font-mono text-xs",
+                !folder.visible && "opacity-40",
+              )}
+            >
+              {folder.name}/
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            Subdirectory name in your music library root
+          </TooltipContent>
+        </Tooltip>
 
-      {/* Delete */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={onDelete}
-            className="shrink-0 cursor-pointer text-muted-foreground transition-colors hover:text-destructive"
-            aria-label="Remove folder"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top">Remove folder</TooltipContent>
-      </Tooltip>
-    </div>
+        {/* Delete */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onDelete}
+              className="text-muted-foreground hover:text-destructive shrink-0 cursor-pointer transition-colors"
+              aria-label="Remove folder"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Remove folder</TooltipContent>
+        </Tooltip>
+      </div>
     </TooltipProvider>
   );
 }
 
 // ─── Add folder form ───────────────────────────────────────────────────────────
 
-function AddFolderRow({ onAdd }: { onAdd: (name: string, label: string) => void }) {
+function AddFolderRow({
+  onAdd,
+}: {
+  onAdd: (name: string, label: string) => void;
+}) {
   const [name, setName] = useState("");
   const [label, setLabel] = useState("");
 
@@ -140,7 +163,7 @@ function AddFolderRow({ onAdd }: { onAdd: (name: string, label: string) => void 
 
   return (
     <div className="flex items-center gap-2">
-      <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+      <Plus className="text-muted-foreground size-3.5 shrink-0" />
       <Input
         value={name}
         onChange={(e) => setName(e.target.value)}
@@ -184,7 +207,9 @@ export function FolderConfigManager() {
 
   const sensors = useSensors(
     useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   async function save(updated: FolderConfig[]) {
@@ -205,7 +230,10 @@ export function FolderConfigManager() {
     if (!over || active.id === over.id) return;
     const oldIdx = folders.findIndex((f) => f.name === String(active.id));
     const newIdx = folders.findIndex((f) => f.name === String(over.id));
-    const reordered = arrayMove(folders, oldIdx, newIdx).map((f, i) => ({ ...f, order: i }));
+    const reordered = arrayMove(folders, oldIdx, newIdx).map((f, i) => ({
+      ...f,
+      order: i,
+    }));
     save(reordered);
   }
 
@@ -223,7 +251,10 @@ export function FolderConfigManager() {
       toast.error(`Folder "${name}" already exists`);
       return;
     }
-    const next = [...folders, { name, label, visible: true, order: folders.length }];
+    const next = [
+      ...folders,
+      { name, label, visible: true, order: folders.length },
+    ];
     save(next);
   }
 
@@ -232,7 +263,7 @@ export function FolderConfigManager() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2 px-2.5 text-xs text-muted-foreground">
+        <div className="text-muted-foreground flex items-center gap-2 px-2.5 text-xs">
           <span className="w-3.5 shrink-0" />
           <span className="w-3.5 shrink-0" />
           <span className="flex-1">Label</span>
@@ -240,7 +271,11 @@ export function FolderConfigManager() {
           <span className="w-3.5 shrink-0" />
         </div>
 
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
           <SortableContext items={ids} strategy={verticalListSortingStrategy}>
             <div className="flex flex-col gap-1.5">
               {folders.map((folder) => (
@@ -256,15 +291,18 @@ export function FolderConfigManager() {
         </DndContext>
 
         {folders.length === 0 && !saving && (
-          <p className="py-2 text-center text-xs text-muted-foreground">No folders configured.</p>
+          <p className="text-muted-foreground py-2 text-center text-xs">
+            No folders configured.
+          </p>
         )}
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label className="text-xs text-muted-foreground">Add folder</Label>
+        <Label className="text-muted-foreground text-xs">Add folder</Label>
         <AddFolderRow onAdd={handleAdd} />
-        <p className="text-xs text-muted-foreground">
-          Folder name must match the subdirectory name in your music library root.
+        <p className="text-muted-foreground text-xs">
+          Folder name must match the subdirectory name in your music library
+          root.
         </p>
       </div>
     </div>

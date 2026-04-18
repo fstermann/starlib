@@ -1,6 +1,13 @@
-'use client';
+"use client";
 
-import { createContext, useContext, useState, useCallback, useRef, useMemo } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 export interface PlayerTrack {
   filePath: string;
@@ -53,28 +60,37 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setCurrentTrack(track);
   }, []);
 
-  const load = useCallback((track: PlayerTrack) => {
-    updateTrack(track);
-    setIsPlaying(false);
-  }, [updateTrack]);
+  const load = useCallback(
+    (track: PlayerTrack) => {
+      updateTrack(track);
+      setIsPlaying(false);
+    },
+    [updateTrack],
+  );
 
-  const play = useCallback((track: PlayerTrack) => {
-    updateTrack(track);
-    setIsPlaying(true);
-  }, [updateTrack]);
+  const play = useCallback(
+    (track: PlayerTrack) => {
+      updateTrack(track);
+      setIsPlaying(true);
+    },
+    [updateTrack],
+  );
 
   const pause = useCallback(() => {
     setIsPlaying(false);
   }, []);
 
-  const toggle = useCallback((track?: PlayerTrack) => {
-    if (track && track.filePath !== currentTrackRef.current?.filePath) {
-      updateTrack(track);
-      setIsPlaying(true);
-    } else {
-      setIsPlaying((prev) => !prev);
-    }
-  }, [updateTrack]);
+  const toggle = useCallback(
+    (track?: PlayerTrack) => {
+      if (track && track.filePath !== currentTrackRef.current?.filePath) {
+        updateTrack(track);
+        setIsPlaying(true);
+      } else {
+        setIsPlaying((prev) => !prev);
+      }
+    },
+    [updateTrack],
+  );
 
   const stop = useCallback(() => {
     setIsPlaying(false);
@@ -106,19 +122,49 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setDuration(d);
   }, []);
 
-  const value = useMemo<PlayerContextValue>(() => ({
-    currentTrack, isPlaying, load, play, pause, toggle, stop, seek, reportProgress, subscribeProgress, registerSeek, duration, reportDuration, largePlayer, setLargePlayer,
-  }), [currentTrack, isPlaying, load, play, pause, toggle, stop, seek, reportProgress, subscribeProgress, registerSeek, duration, reportDuration, largePlayer]);
+  const value = useMemo<PlayerContextValue>(
+    () => ({
+      currentTrack,
+      isPlaying,
+      load,
+      play,
+      pause,
+      toggle,
+      stop,
+      seek,
+      reportProgress,
+      subscribeProgress,
+      registerSeek,
+      duration,
+      reportDuration,
+      largePlayer,
+      setLargePlayer,
+    }),
+    [
+      currentTrack,
+      isPlaying,
+      load,
+      play,
+      pause,
+      toggle,
+      stop,
+      seek,
+      reportProgress,
+      subscribeProgress,
+      registerSeek,
+      duration,
+      reportDuration,
+      largePlayer,
+    ],
+  );
 
   return (
-    <PlayerContext.Provider value={value}>
-      {children}
-    </PlayerContext.Provider>
+    <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>
   );
 }
 
 export function usePlayer(): PlayerContextValue {
   const ctx = useContext(PlayerContext);
-  if (!ctx) throw new Error('usePlayer must be used within a PlayerProvider');
+  if (!ctx) throw new Error("usePlayer must be used within a PlayerProvider");
   return ctx;
 }

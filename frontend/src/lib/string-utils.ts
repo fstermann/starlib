@@ -4,15 +4,15 @@
  */
 
 function removeDoubleSpaces(text: string): string {
-  return text.replace(/\s+/g, ' ').trim();
+  return text.replace(/\s+/g, " ").trim();
 }
 
 function removeFreeDl(text: string): string {
-  return text.replace(/[([{]\s*free\s*(dl|download)\s*.*?[)\]}]/gi, '').trim();
+  return text.replace(/[([{]\s*free\s*(dl|download)\s*.*?[)\]}]/gi, "").trim();
 }
 
 function removePremiere(text: string): string {
-  return text.replace(/(premiere|premear):?/gi, '').trim();
+  return text.replace(/(premiere|premear):?/gi, "").trim();
 }
 
 function isRemix(title: string): boolean {
@@ -20,7 +20,10 @@ function isRemix(title: string): boolean {
 }
 
 export function removeMix(title: string): string {
-  return title.replace(/\([^)]*\b(?:edit|mix|bootleg|rework|flip)\b[^)]*\)/gi, '').replace(/\s+/g, ' ').trim();
+  return title
+    .replace(/\([^)]*\b(?:edit|mix|bootleg|rework|flip)\b[^)]*\)/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function cleanTitle(title: string): string {
@@ -37,15 +40,15 @@ export function cleanArtist(artist: string): string {
   artist = removeDoubleSpaces(artist);
   artist = removeFreeDl(artist);
   artist = removePremiere(artist);
-  return artist.replace(/\s+(&|and|x|X)\s+/g, ', ');
+  return artist.replace(/\s+(&|and|x|X)\s+/g, ", ");
 }
 
 export function titelize(text: string): string {
   text = text
-    .split(' ')
+    .split(" ")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
-  text = text.replace(/\bdj\b/gi, 'DJ');
+    .join(" ");
+  text = text.replace(/\bdj\b/gi, "DJ");
   text = text.replace(/'S\b/g, "'s");
   text = text.replace(/'Re\b/g, "'re");
   text = text.replace(/'T\b/g, "'t");
@@ -53,18 +56,21 @@ export function titelize(text: string): string {
 }
 
 export function removeOriginalMix(title: string): string {
-  return title.replace(/\(.*original mix.*\)/gi, '').trim();
+  return title.replace(/\(.*original mix.*\)/gi, "").trim();
 }
 
 export function removeParenthesis(title: string): string {
-  return title.replace(/\[.*?\]/g, '').trim();
+  return title.replace(/\[.*?\]/g, "").trim();
 }
 
-export function parseFilename(filename: string): { artist?: string; title?: string } {
+export function parseFilename(filename: string): {
+  artist?: string;
+  title?: string;
+} {
   const stem = filename
-    .replace(/\.(mp3|aiff|wav|flac|m4a|ogg)$/i, '')
-    .replace(/_/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/\.(mp3|aiff|wav|flac|m4a|ogg)$/i, "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 
   const match = stem.match(/^(.+?)\s+-\s+(.+)$/);
@@ -77,24 +83,26 @@ export function parseFilename(filename: string): { artist?: string; title?: stri
 
 // Ordered from most-specific to least-specific so multi-word suffixes match before sub-words
 const MIX_SUFFIX_MAP: Array<[RegExp, string]> = [
-  [/\bvip\s+(?:mix|remix)$/i, 'VIP Mix'],
-  [/\bextended\s+mix$/i, 'Extended Mix'],
-  [/\bradio\s+edit$/i, 'Radio Edit'],
-  [/\bclub\s+mix$/i, 'Club Mix'],
-  [/\bdub\s+mix$/i, 'Dub Mix'],
-  [/\bremix$/i, 'Remix'],
-  [/\bedit$/i, 'Remix'],
-  [/\bmix$/i, 'Remix'],
-  [/\bbootleg$/i, 'Remix'],
-  [/\brework$/i, 'Remix'],
-  [/\bflip$/i, 'Remix'],
+  [/\bvip\s+(?:mix|remix)$/i, "VIP Mix"],
+  [/\bextended\s+mix$/i, "Extended Mix"],
+  [/\bradio\s+edit$/i, "Radio Edit"],
+  [/\bclub\s+mix$/i, "Club Mix"],
+  [/\bdub\s+mix$/i, "Dub Mix"],
+  [/\bremix$/i, "Remix"],
+  [/\bedit$/i, "Remix"],
+  [/\bmix$/i, "Remix"],
+  [/\bbootleg$/i, "Remix"],
+  [/\brework$/i, "Remix"],
+  [/\bflip$/i, "Remix"],
 ];
 
 /**
  * Detect remix info from a track title like "Track (Remixer Remix)".
  * Returns null for non-remixes or "Original Mix".
  */
-export function parseRemix(title: string): { remixer: string; mixName: string } | null {
+export function parseRemix(
+  title: string,
+): { remixer: string; mixName: string } | null {
   const parenMatch = title.match(/\(([^)]+)\)/);
   if (!parenMatch) return null;
 
@@ -105,7 +113,7 @@ export function parseRemix(title: string): { remixer: string; mixName: string } 
 
   for (const [pattern, mixName] of MIX_SUFFIX_MAP) {
     if (!pattern.test(inner)) continue;
-    const remixer = inner.replace(pattern, '').trim();
+    const remixer = inner.replace(pattern, "").trim();
     if (!remixer) continue;
     return { remixer, mixName };
   }

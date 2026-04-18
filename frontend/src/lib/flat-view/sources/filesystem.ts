@@ -1,10 +1,10 @@
-import { api } from '@/lib/api';
-import type { TreeSource } from '@/lib/flat-view/types';
+import { api } from "@/lib/api";
+import type { TreeSource } from "@/lib/flat-view/types";
 
 export const filesystemSource: TreeSource = {
-  id: 'filesystem',
-  label: 'Filesystem',
+  id: "filesystem",
+  label: "Filesystem",
   dedupTracks: false,
-  pathColumnLabel: 'Folder',
+  pathColumnLabel: "Folder",
   loadTree: () => api.getFolderTree(),
 };

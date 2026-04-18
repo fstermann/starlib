@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+
 import { LogoSpinner } from "@/components/logo-spinner";
+import { api } from "@/lib/api";
 
 const POLL_INTERVAL_MS = 500;
 
@@ -25,13 +26,15 @@ export function BackendGate({ children }: { children: React.ReactNode }) {
     }
 
     poll();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (ready) return <>{children}</>;
 
   return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center bg-background">
+    <div className="bg-background fixed inset-0 z-100 flex items-center justify-center">
       <LogoSpinner />
     </div>
   );

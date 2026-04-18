@@ -11,23 +11,23 @@
  * Cache TTL: 24 hours — re-fetched only when stale.
  */
 
-import path from 'path';
-import fs from 'fs';
+import fs from "fs";
+import path from "path";
 
-const CACHE_FILE = path.join(__dirname, '../../.cache/screenshot-tracks.json');
+const CACHE_FILE = path.join(__dirname, "../../.cache/screenshot-tracks.json");
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const ARTIST_QUERIES = [
-  'pegassi',
-  'mischluft',
-  'mika heggemann',
-  'marlon hoffstadt',
-  'funk tribu',
-  'dj sonnenbrand',
-  'butschi',
-  'cleopard2000',
-  'linds',
-  'trancemaster krause',
+  "pegassi",
+  "mischluft",
+  "mika heggemann",
+  "marlon hoffstadt",
+  "funk tribu",
+  "dj sonnenbrand",
+  "butschi",
+  "cleopard2000",
+  "linds",
+  "trancemaster krause",
 ];
 
 export interface RealTrack {
@@ -52,7 +52,7 @@ interface CacheFile {
 function isCacheValid(): boolean {
   if (!fs.existsSync(CACHE_FILE)) return false;
   try {
-    const data: CacheFile = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'));
+    const data: CacheFile = JSON.parse(fs.readFileSync(CACHE_FILE, "utf-8"));
     return Date.now() - data.fetchedAt < CACHE_TTL_MS;
   } catch {
     return false;
@@ -69,18 +69,21 @@ interface ItunesTrack {
   trackViewUrl: string;
 }
 
-async function fetchTracksForArtist(query: string, limit = 3): Promise<RealTrack[]> {
+async function fetchTracksForArtist(
+  query: string,
+  limit = 3,
+): Promise<RealTrack[]> {
   const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&media=music&limit=${limit}`;
   try {
     const resp = await fetch(url);
     if (!resp.ok) return [];
-    const data = await resp.json() as { results: ItunesTrack[] };
+    const data = (await resp.json()) as { results: ItunesTrack[] };
     return (data.results ?? []).map((t) => ({
       id: t.trackId,
       urn: `itunes:tracks:${t.trackId}`,
       title: t.trackName,
       artist: t.artistName,
-      artwork_url: t.artworkUrl100?.replace('100x100bb', '500x500bb') ?? null,
+      artwork_url: t.artworkUrl100?.replace("100x100bb", "500x500bb") ?? null,
       genre: t.primaryGenreName ?? null,
       duration: t.trackTimeMillis ?? 300000,
       playback_count: 10000 + (t.trackId % 90000),
@@ -94,11 +97,11 @@ async function fetchTracksForArtist(query: string, limit = 3): Promise<RealTrack
 
 export default async function globalSetup() {
   if (isCacheValid()) {
-    console.log('[screenshots] Using cached track data (< 24h old)');
+    console.log("[screenshots] Using cached track data (< 24h old)");
     return;
   }
 
-  console.log('[screenshots] Fetching track data from iTunes…');
+  console.log("[screenshots] Fetching track data from iTunes…");
 
   const seen = new Set<number>();
   const tracks: RealTrack[] = [];
@@ -116,7 +119,9 @@ export default async function globalSetup() {
   }
 
   if (tracks.length < 4) {
-    console.log('[screenshots] Too few results from iTunes — using placeholder data');
+    console.log(
+      "[screenshots] Too few results from iTunes — using placeholder data",
+    );
     return;
   }
 
@@ -128,5 +133,7 @@ export default async function globalSetup() {
   fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
   const cache: CacheFile = { fetchedAt: Date.now(), tracks, feedTracks };
   fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
-  console.log(`[screenshots] Cached ${tracks.length} tracks + ${feedTracks.length} feed tracks`);
+  console.log(
+    `[screenshots] Cached ${tracks.length} tracks + ${feedTracks.length} feed tracks`,
+  );
 }

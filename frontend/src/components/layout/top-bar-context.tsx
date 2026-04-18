@@ -41,7 +41,9 @@ export function TopBarProvider({ children }: { children: ReactNode }) {
 
   return (
     <SetterContext.Provider value={setter}>
-      <ContentContext.Provider value={content}>{children}</ContentContext.Provider>
+      <ContentContext.Provider value={content}>
+        {children}
+      </ContentContext.Provider>
     </SetterContext.Provider>
   );
 }
@@ -59,7 +61,8 @@ export function useTopBarContent(): TopBarContent {
  */
 export function useTopBar(value: TopBarContent) {
   const setter = useContext(SetterContext);
-  if (!setter) throw new Error("useTopBar must be used inside <TopBarProvider>");
+  if (!setter)
+    throw new Error("useTopBar must be used inside <TopBarProvider>");
 
   // Stash the latest value in a ref. Update the ref on every render so the
   // effect below always reads fresh content without re-running.
@@ -82,6 +85,7 @@ export function useTopBar(value: TopBarContent) {
 // Kept in case future callers want the imperative API.
 export function useTopBarSetter(): Setter {
   const setter = useContext(SetterContext);
-  if (!setter) throw new Error("useTopBarSetter must be used inside <TopBarProvider>");
+  if (!setter)
+    throw new Error("useTopBarSetter must be used inside <TopBarProvider>");
   return setter;
 }

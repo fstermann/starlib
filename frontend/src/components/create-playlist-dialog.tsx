@@ -1,14 +1,12 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { toast } from 'sonner';
-import { createPlaylist, type SCTrack } from '@/lib/soundcloud';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { TriangleAlert } from 'lucide-react';
+import { ListPlus, TriangleAlert } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -17,8 +15,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { ListPlus } from 'lucide-react';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { createPlaylist, type SCTrack } from "@/lib/soundcloud";
 
 export const MAX_TRACKS = 500;
 
@@ -43,15 +43,24 @@ function formatTotalDuration(tracks: SCTrack[]): string {
   return `${mins}m`;
 }
 
-export function CreatePlaylistDialog({ tracks, trigger, defaultTitle, defaultDescription, onCreated }: CreatePlaylistDialogProps) {
+export function CreatePlaylistDialog({
+  tracks,
+  trigger,
+  defaultTitle,
+  defaultDescription,
+  onCreated,
+}: CreatePlaylistDialogProps) {
   const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const trackUrns = tracks.slice(0, MAX_TRACKS).map((t) => extractUrn(t)).filter((urn): urn is string => urn != null);
+  const trackUrns = tracks
+    .slice(0, MAX_TRACKS)
+    .map((t) => extractUrn(t))
+    .filter((urn): urn is string => urn != null);
   const truncated = tracks.length > MAX_TRACKS;
 
   async function handleCreate() {
@@ -61,18 +70,22 @@ export function CreatePlaylistDialog({ tracks, trigger, defaultTitle, defaultDes
     try {
       const playlist = await createPlaylist(title.trim(), trackUrns, {
         description: description.trim() || undefined,
-        sharing: isPublic ? 'public' : 'private',
+        sharing: isPublic ? "public" : "private",
       });
-      const url = (playlist as Record<string, unknown>).permalink_url as string | undefined;
+      const url = (playlist as Record<string, unknown>).permalink_url as
+        | string
+        | undefined;
       onCreated?.();
       setOpen(false);
       toast.success(`Playlist "${title.trim()}" created`, {
         action: url
-          ? { label: 'Open', onClick: () => window.open(url, '_blank') }
+          ? { label: "Open", onClick: () => window.open(url, "_blank") }
           : undefined,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create playlist');
+      setError(
+        err instanceof Error ? err.message : "Failed to create playlist",
+      );
     } finally {
       setCreating(false);
     }
@@ -82,8 +95,10 @@ export function CreatePlaylistDialog({ tracks, trigger, defaultTitle, defaultDes
     setOpen(next);
     if (next) {
       // Reset form on open
-      setTitle(defaultTitle ?? `Liked tracks – ${new Date().toLocaleDateString()}`);
-      setDescription(defaultDescription ?? '');
+      setTitle(
+        defaultTitle ?? `Liked tracks – ${new Date().toLocaleDateString()}`,
+      );
+      setDescription(defaultDescription ?? "");
       setIsPublic(false);
       setError(null);
     }
@@ -94,7 +109,7 @@ export function CreatePlaylistDialog({ tracks, trigger, defaultTitle, defaultDes
       <DialogTrigger asChild>
         {trigger ?? (
           <Button size="sm" variant="default">
-            <ListPlus className="size-4 mr-1.5" />
+            <ListPlus className="mr-1.5 size-4" />
             Create Playlist ({tracks.length})
           </Button>
         )}
@@ -103,7 +118,8 @@ export function CreatePlaylistDialog({ tracks, trigger, defaultTitle, defaultDes
         <DialogHeader>
           <DialogTitle>Create SoundCloud Playlist</DialogTitle>
           <DialogDescription>
-            {tracks.length} track{tracks.length !== 1 ? 's' : ''} · {formatTotalDuration(tracks)}
+            {tracks.length} track{tracks.length !== 1 ? "s" : ""} ·{" "}
+            {formatTotalDuration(tracks)}
           </DialogDescription>
         </DialogHeader>
 
@@ -111,7 +127,9 @@ export function CreatePlaylistDialog({ tracks, trigger, defaultTitle, defaultDes
           <Alert variant="destructive" className="py-2 [&>svg]:translate-y-0">
             <TriangleAlert className="size-4" />
             <AlertDescription className="text-xs">
-              Limited to {MAX_TRACKS} tracks — {tracks.length - MAX_TRACKS} track{tracks.length - MAX_TRACKS !== 1 ? 's' : ''} will be excluded.
+              Limited to {MAX_TRACKS} tracks — {tracks.length - MAX_TRACKS}{" "}
+              track{tracks.length - MAX_TRACKS !== 1 ? "s" : ""} will be
+              excluded.
             </AlertDescription>
           </Alert>
         )}
@@ -145,11 +163,16 @@ export function CreatePlaylistDialog({ tracks, trigger, defaultTitle, defaultDes
               Make playlist public
             </Label>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="text-destructive text-sm">{error}</p>}
         </div>
         <DialogFooter>
-          <Button onClick={handleCreate} disabled={creating || !title.trim() || trackUrns.length === 0 || truncated}>
-            {creating ? 'Creating…' : 'Create'}
+          <Button
+            onClick={handleCreate}
+            disabled={
+              creating || !title.trim() || trackUrns.length === 0 || truncated
+            }
+          >
+            {creating ? "Creating…" : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
 import { isTauri } from "@/lib/tauri";
 
 export function DeepLinkListener() {
