@@ -105,7 +105,6 @@ export function CollectionFilterBar({
       if (filterFetchTimerRef.current)
         clearTimeout(filterFetchTimerRef.current);
     };
-     
   }, [mode, folderPath, search, genres, keys, bpmMin, bpmMax]);
 
   function handleSearchChange(value: string) {
