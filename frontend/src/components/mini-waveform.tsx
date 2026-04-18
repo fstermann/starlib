@@ -27,6 +27,9 @@ export function MiniWaveform({
   const containerRef = useRef<HTMLDivElement>(null);
   const peaksRef = useRef<number[] | null>(null);
   const [peaksLoaded, setPeaksLoaded] = useState(false);
+  const [placeholderHeights] = useState(() =>
+    Array.from({ length: 12 }, () => 20 + Math.random() * 60),
+  );
   const observerRef = useRef<IntersectionObserver | null>(null);
   const fetchedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -34,16 +37,17 @@ export function MiniWaveform({
   const { currentTrack, subscribeProgress, seek, toggle, duration } =
     usePlayer();
   const isActive = currentTrack?.filePath === track.filePath;
-  // Keep isActive in a ref so the draw callback sees the latest value without re-subscriptions
+  // Keep latest values in refs so the draw callback sees them without re-subscriptions
   const isActiveRef = useRef(isActive);
-  isActiveRef.current = isActive;
-
   const currentProgressRef = useRef(0);
   const hoverXRef = useRef<number | null>(null);
   const durationRef = useRef(duration);
-  durationRef.current = duration;
   const halfHeightRef = useRef(halfHeight);
-  halfHeightRef.current = halfHeight;
+  useEffect(() => {
+    isActiveRef.current = isActive;
+    durationRef.current = duration;
+    halfHeightRef.current = halfHeight;
+  });
 
   const draw = useCallback((progress: number, hoverX: number | null = null) => {
     const canvas = canvasRef.current;
@@ -238,11 +242,11 @@ export function MiniWaveform({
           }}
           style={{ cursor: "pointer" }}
         >
-          {Array.from({ length: 12 }).map((_, i) => (
+          {placeholderHeights.map((h, i) => (
             <div
               key={i}
               className="bg-muted flex-1 animate-pulse rounded-sm"
-              style={{ height: `${20 + Math.random() * 60}%` }}
+              style={{ height: `${h}%` }}
             />
           ))}
         </div>

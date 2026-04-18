@@ -113,6 +113,8 @@ export default function LikeExplorerPage() {
   }, []);
 
   // Reset selection when switching tabs
+  // TODO: refactor — prefer remounting subtree via `key={tab}` over setState-in-effect
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setSelectedIds(new Set());
     setSearch("");
@@ -122,6 +124,7 @@ export default function LikeExplorerPage() {
     setExcludeMyLikes(false);
     setInCollection(null);
   }, [tab]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Selected tracks for playlist creation
   const selectedTracks = useMemo(

@@ -896,7 +896,10 @@ export function TrackEditor({
                         const input = document.createElement("input");
                         input.type = "file";
                         input.accept = "image/*";
-                        input.onchange = handleArtworkUpload as any;
+                        input.onchange = handleArtworkUpload as unknown as (
+                          this: GlobalEventHandlers,
+                          ev: Event,
+                        ) => unknown;
                         input.click();
                       }}
                     >
@@ -924,7 +927,10 @@ export function TrackEditor({
                       const input = document.createElement("input");
                       input.type = "file";
                       input.accept = "image/*";
-                      input.onchange = handleArtworkUpload as any;
+                      input.onchange = handleArtworkUpload as unknown as (
+                        this: GlobalEventHandlers,
+                        ev: Event,
+                      ) => unknown;
                       input.click();
                     }
                   }}

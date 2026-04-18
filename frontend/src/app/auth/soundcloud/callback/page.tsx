@@ -27,6 +27,9 @@ function CallbackHandler() {
   const [error, setError] = useState<string | null>(null);
   const exchanged = useRef(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect --
+     OAuth callback: one-shot side effect on mount, guarded by exchanged ref.
+     setError paths are terminal (no cascading renders). */
   useEffect(() => {
     if (exchanged.current) return;
     exchanged.current = true;
@@ -78,6 +81,7 @@ function CallbackHandler() {
         .catch(handleError);
     }
   }, [searchParams, router]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (error) {
     return (

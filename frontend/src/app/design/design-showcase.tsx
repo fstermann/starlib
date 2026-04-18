@@ -83,6 +83,7 @@ export function DesignShowcase() {
   const [contrast, setContrast] = useState(KNOB_DEFAULTS.contrast);
   const [mounted, setMounted] = useState(false);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR hydration flag: intentional mount signal, runs once.
   useEffect(() => setMounted(true), []);
 
   useTopBar({ title: "Design" });

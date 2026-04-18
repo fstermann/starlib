@@ -106,7 +106,10 @@ export function useWeeklyGroups(
   return useMemo(() => {
     if (tracks.length === 0) return [];
 
+    // TODO: lift "now" to caller (or freeze on mount) so useMemo body stays pure
+     
     const now = new Date();
+    // eslint-disable-next-line react-hooks/purity
     const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
     // Determine period boundaries: from two-weeks-ago-Sunday to next Sunday

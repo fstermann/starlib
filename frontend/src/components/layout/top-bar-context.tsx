@@ -6,7 +6,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -64,16 +63,10 @@ export function useTopBar(value: TopBarContent) {
   if (!setter)
     throw new Error("useTopBar must be used inside <TopBarProvider>");
 
-  // Stash the latest value in a ref. Update the ref on every render so the
-  // effect below always reads fresh content without re-running.
-  const latest = useRef(value);
-  latest.current = value;
-
-  // Push the latest value on every render (cheap: identity check inside setState
-  // would help if JSX identity were stable, but it isn't — and that's fine,
-  // because only TopBar subscribes to content, not this view).
+  // Push the latest value on every render. Only TopBar subscribes to content,
+  // so the calling view doesn't re-render from this.
   useEffect(() => {
-    setter.set(latest.current);
+    setter.set(value);
   });
 
   // Clear on unmount.

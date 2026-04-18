@@ -121,7 +121,7 @@ export function CollectionFilterBar({
       if (filterFetchTimerRef.current)
         clearTimeout(filterFetchTimerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [mode, folderPath, search, genres, keys, bpmMin, bpmMax]);
 
   function handleSearchChange(value: string) {

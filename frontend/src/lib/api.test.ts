@@ -73,13 +73,11 @@ describe("fetchApi", () => {
 
 describe("api.getAppSettings", () => {
   it("calls GET /api/settings", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ preferred_output_format: "aiff" }), {
-          status: 200,
-        }),
-      );
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ preferred_output_format: "aiff" }), {
+        status: 200,
+      }),
+    );
     vi.stubGlobal("fetch", fetchSpy);
 
     const result = await api.getAppSettings();
@@ -93,13 +91,11 @@ describe("api.getAppSettings", () => {
 
 describe("api.updateAppSettings", () => {
   it("calls PUT /api/settings with body", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ preferred_output_format: "mp3" }), {
-          status: 200,
-        }),
-      );
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ preferred_output_format: "mp3" }), {
+        status: 200,
+      }),
+    );
     vi.stubGlobal("fetch", fetchSpy);
 
     const result = await api.updateAppSettings({
