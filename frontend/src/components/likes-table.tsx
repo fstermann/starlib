@@ -121,7 +121,7 @@ function TrackRow({ track, isSelected, isExpanded, inCollection, isNew, onToggle
         <div className="size-7 shrink-0 rounded overflow-hidden bg-muted flex items-center justify-center">
           {imgUrl
             ? <img src={imgUrl} alt="" className="size-7 object-cover" loading="lazy" />
-            : <Music className="size-3.5 text-muted-foreground/50" />}
+            : <Music className="size-3.5 text-muted-foreground" />}
         </div>
 
         {/* Title */}

@@ -181,7 +181,7 @@ export default function LikeExplorerPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span tabIndex={0}>
-                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-muted-foreground/40" disabled>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-muted-foreground" disabled>
                       <ListPlus className="size-3.5" />
                       Create Playlist
                     </Button>
@@ -198,7 +198,7 @@ export default function LikeExplorerPage() {
                   variant="ghost"
                   className={cn(
                     'h-7 text-xs gap-1.5',
-                    selectedIds.size > 0 ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground/40',
+                    selectedIds.size > 0 ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground',
                   )}
                   disabled={selectedIds.size === 0}
                 >

@@ -337,7 +337,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {NAV_GROUPS.map((group) => (
               <div key={group.label} className="flex flex-col gap-0.5">
                 {!group.header && (
-                  <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+                  <p className="px-3 pb-1 text-xs font-semibold text-muted-foreground">
                     {group.label}
                   </p>
                 )}
@@ -348,7 +348,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors text-left cursor-pointer",
                       section === group.header!.id
                         ? "bg-accent text-accent-foreground"
-                        : "text-foreground/70 hover:text-foreground hover:bg-accent"
+                        : "text-foreground hover:text-foreground hover:bg-accent"
                     )}
                   >
                     <group.header.icon className="size-4 shrink-0" />
@@ -519,7 +519,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   />
 
                   {Object.keys(folderRulesets).length === 0 ? (
-                    <p className="text-xs text-muted-foreground/60 italic">
+                    <p className="text-xs text-muted-foreground italic">
                       No folder-specific rulesets configured. Add one above, or right-click a folder in the tree.
                     </p>
                   ) : (
@@ -531,7 +531,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           : path;
                         return (
                           <div key={path} className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted">
-                            <FolderOpen className="size-3.5 shrink-0 text-muted-foreground/70" />
+                            <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
                             <span className="flex-1 text-xs font-mono truncate" title={path}>
                               {displayPath}
                             </span>
@@ -546,15 +546,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               }
                             >
                               <Workflow
-                                className={`size-3 ${ruleset ? "text-primary/70" : "text-muted-foreground/50"}`}
+                                className={`size-3 ${ruleset ? "text-primary" : "text-muted-foreground"}`}
                                 {...(binding.recursive ? { strokeWidth: 2.5 } : {})}
                               />
                               {binding.recursive && (
-                                <span className="text-xs leading-none font-semibold tracking-wider uppercase text-primary/70">
+                                <span className="text-xs leading-none font-semibold text-primary">
                                   R
                                 </span>
                               )}
-                              <span className={ruleset ? "" : "italic text-muted-foreground/60"}>
+                              <span className={ruleset ? "" : "italic text-muted-foreground"}>
                                 {ruleset?.name ?? "Unknown"}
                               </span>
                             </span>
@@ -586,7 +586,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   A ruleset is a sequence of steps that run automatically when you finalize a track.
                   Each step can convert, move, or copy the file — and can reference the output of an earlier step.
                 </p>
-                <p className="text-xs text-muted-foreground/50">
+                <p className="text-xs text-muted-foreground">
                   Steps under <span className="font-medium">if converted</span> only run when the conversion actually produced a new file — useful for archiving the original.
                 </p>
                 <RulesetManager />
@@ -651,7 +651,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               : "Not installed"}
                       </span>
                       {aiAvailable && (
-                        <span className="text-xs text-muted-foreground/50">
+                        <span className="text-xs text-muted-foreground">
                           {aiStartedByUs ? "managed by Starlib" : "external"}
                         </span>
                       )}
@@ -713,15 +713,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         <p className="text-sm font-medium">Install Ollama</p>
                         <div className="flex flex-col gap-2 text-xs text-muted-foreground">
                           <p>
-                            <span className="font-medium text-foreground/80">macOS:</span>{" "}
+                            <span className="font-medium text-foreground">macOS:</span>{" "}
                             <code className="bg-muted px-1 py-0.5 rounded">brew install ollama</code>
                           </p>
                           <p>
-                            <span className="font-medium text-foreground/80">Linux:</span>{" "}
+                            <span className="font-medium text-foreground">Linux:</span>{" "}
                             <code className="bg-muted px-1 py-0.5 rounded">curl -fsSL https://ollama.com/install.sh | sh</code>
                           </p>
                           <p>
-                            <span className="font-medium text-foreground/80">Windows:</span>{" "}
+                            <span className="font-medium text-foreground">Windows:</span>{" "}
                             Download from <span className="font-mono">ollama.com/download</span>
                           </p>
                         </div>
@@ -1025,7 +1025,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 )}
 
                 {version && (
-                  <p className="text-xs text-muted-foreground/60 mt-auto">
+                  <p className="text-xs text-muted-foreground mt-auto">
                     v{version}
                   </p>
                 )}

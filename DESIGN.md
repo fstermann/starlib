@@ -113,6 +113,8 @@ Starlib's UI primitives in `src/components/ui/*` are shadcn-sourced. They refere
 --popover:             var(--surface-4);
 --popover-foreground:  var(--text);
 --primary:             var(--brand);
+--primary-hover:       var(--brand-hover);
+--primary-active:      var(--brand-active);
 --primary-foreground:  var(--text-on-accent);
 --secondary:           var(--surface-3);
 --secondary-foreground: var(--text);
@@ -125,6 +127,12 @@ Starlib's UI primitives in `src/components/ui/*` are shadcn-sourced. They refere
 --destructive-foreground: var(--text-on-danger);
 --input:               var(--border-strong);
 --ring:                var(--brand-ring);
+/* Selected-row wash — used by table rows, menu items, nav active. */
+--selected:            var(--brand-soft);
+--selected-foreground: var(--text);
+/* Tinted borders — replacements for `border-primary/40`, `border-destructive/40`. */
+--border-brand:        oklch(0.78 var(--accent-chroma) var(--accent-hue) / 0.40);
+--border-danger:       oklch(0.64 0.19 28 / 0.40);
 
 /* Sidebar tokens derive from neutrals — never from the brand accent. */
 --sidebar:                     var(--surface-2);

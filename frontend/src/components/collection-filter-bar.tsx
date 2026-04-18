@@ -188,7 +188,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-40 p-0">
           <div className="px-1 pt-1">
-            <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
               Genre
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -219,7 +219,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
                 >
                   {g}
                   {filterValues.genre_counts?.[g] !== undefined && (
-                    <span className="ml-1.5 text-muted-foreground/60">
+                    <span className="ml-1.5 text-muted-foreground">
                       ({count})
                     </span>
                   )}
@@ -248,7 +248,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-32 p-0">
           <div className="px-1 pt-1">
-            <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
               Key
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -282,7 +282,7 @@ export function CollectionFilterBar({ mode, folderPath, total, cacheLoading }: C
                 >
                   {k}
                   {filterValues.key_counts?.[k] !== undefined && (
-                    <span className="ml-1.5 text-muted-foreground/60">
+                    <span className="ml-1.5 text-muted-foreground">
                       ({count})
                     </span>
                   )}

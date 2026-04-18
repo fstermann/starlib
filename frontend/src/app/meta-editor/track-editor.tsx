@@ -849,7 +849,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                     <Button
                       variant="outline"
                       size="sm"
-                      className={`h-8 w-full justify-start text-left font-normal text-sm px-2.5 dark:bg-input/30${isChanged('release_date') ? ' border-warning/70 dark:border-warning/70' : ' dark:border-input'}${!formData.release_date ? ' text-muted-foreground' : ' text-foreground/80'}`}
+                      className={`h-8 w-full justify-start text-left font-normal text-xs px-2.5 bg-card dark:bg-muted${isChanged('release_date') ? ' border-warning/70 dark:border-warning/70' : ' dark:border-input'}${!formData.release_date ? ' text-muted-foreground' : ' text-foreground'}`}
                     >
                       <CalendarIcon className="mr-1 shrink-0" />
                       {formData.release_date
@@ -986,7 +986,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
               <textarea
                 value={formData.user_comment}
                 onChange={(e) => handleFormChange('user_comment', e.target.value)}
-                className={`min-h-16 px-2.5 py-2 text-xs rounded-md border bg-transparent dark:bg-input/30 outline-none resize-y focus:border-ring focus:ring-1 focus:ring-ring/50${isChanged('user_comment') ? ' border-warning/70' : ' border-input dark:border-input'}`}
+                className={`min-h-16 px-2.5 py-2 text-xs rounded-md border bg-card dark:bg-muted outline-none resize-y focus:border-ring focus:ring-1 focus:ring-ring/50${isChanged('user_comment') ? ' border-warning/70' : ' border-input dark:border-input'}`}
                 placeholder="—"
               />
             </div>
@@ -1077,7 +1077,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                         <img src={selectedScTrack.artwork_url} alt="" className="size-full object-cover" />
                       ) : (
                         <div className="size-full bg-accent flex items-center justify-center">
-                          <Image className="size-3 text-muted-foreground/40" />
+                          <Image className="size-3 text-muted-foreground" />
                         </div>
                       )}
                     </div>
@@ -1118,7 +1118,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                               <img src={selectedScTrack.artwork_url} alt="" className="size-full object-cover" />
                             ) : (
                               <div className="size-full bg-accent flex items-center justify-center">
-                                <Image className="size-3 text-muted-foreground/40" />
+                                <Image className="size-3 text-muted-foreground" />
                               </div>
                             )}
                           </div>
@@ -1169,7 +1169,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                               <img src={track.artwork_url} alt="" className="size-full object-cover" loading="lazy" />
                             ) : (
                               <div className="size-full bg-accent flex items-center justify-center">
-                                <Image className="size-3 text-muted-foreground/40" />
+                                <Image className="size-3 text-muted-foreground" />
                               </div>
                             )}
                           </div>
@@ -1197,7 +1197,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
               size="sm"
               className={cn(
                 'h-7 text-xs px-2.5 gap-1.5',
-                hasChanges ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground/40',
+                hasChanges ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground',
               )}
             >
               {loading ? <LogoSpinner className="size-3" /> : <Check className="size-3" />}
@@ -1216,7 +1216,7 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                       size="sm"
                       className={cn(
                         'h-7 text-xs gap-1',
-                        hasMissingRequired ? 'text-muted-foreground/40' : 'text-success hover:bg-success/10 hover:text-success',
+                        hasMissingRequired ? 'text-muted-foreground' : 'text-success hover:bg-success/10 hover:text-success',
                       )}
                     >
                       <Workflow className="size-3" />

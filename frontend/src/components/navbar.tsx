@@ -55,7 +55,7 @@ export function Navbar() {
             <Link
               key={link.href}
               href={link.href}
-              className={`px-3 py-1 rounded text-xs font-medium tracking-wide uppercase transition-colors ${
+              className={`px-3 py-1 rounded text-xs font-medium tracking-wide transition-colors ${
                 pathname.startsWith(link.href)
                   ? "text-primary bg-brand-soft"
                   : "text-muted-foreground hover:text-foreground"

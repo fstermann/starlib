@@ -87,7 +87,7 @@ export default function Home() {
                       </div>
                       <CardTitle className="text-base">{tool.title}</CardTitle>
                     </div>
-                    <span className="text-xs text-muted-foreground font-mono uppercase tracking-widest shrink-0">
+                    <span className="text-xs text-muted-foreground font-mono shrink-0">
                       Soon
                     </span>
                   </div>

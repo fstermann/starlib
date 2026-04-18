@@ -123,7 +123,7 @@ export function RulesetManager() {
             {!r.is_builtin && selectedId === r.id && (
               <button
                 onClick={() => handleDelete(r.id)}
-                className="absolute right-1 hidden group-hover:flex items-center justify-center size-5 rounded text-muted-foreground/50 hover:text-destructive"
+                className="absolute right-1 hidden group-hover:flex items-center justify-center size-5 rounded text-muted-foreground hover:text-destructive"
                 aria-label={`Delete ${r.name}`}
               >
                 <Trash2 className="size-3" />

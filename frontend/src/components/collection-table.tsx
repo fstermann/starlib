@@ -307,7 +307,7 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
       <div className={`size-7 shrink-0 rounded overflow-hidden bg-muted flex items-center justify-center ring-1 ${pendingArtworkB64 ? 'ring-primary/40' : 'ring-transparent'}`}>
         {artworkUrl
           ? <img src={artworkUrl} alt="" className="size-7 object-cover" loading="lazy" />
-          : <Music className="size-3 text-muted-foreground/50" />}
+          : <Music className="size-3 text-muted-foreground" />}
       </div>
 
       {/* Mini waveform (top-half) */}
@@ -343,7 +343,7 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
       {EDITABLE_FIELDS.map(f => (
         <div key={f.key} className={`${f.width} min-w-0 shrink-0`}>
           <input
-            className={`w-full h-7 px-1.5 text-xs rounded border bg-transparent outline-none transition-colors placeholder:text-muted-foreground/30
+            className={`w-full h-7 px-1.5 text-xs rounded border bg-transparent outline-none transition-colors placeholder:text-muted-foreground
               ${isChanged(f.key) ? 'border-warning/70 bg-warning/5' : 'border-transparent hover:border-border'}
               focus:border-ring focus:ring-1 focus:ring-ring/50`}
             value={getValue(f.key)}
@@ -371,7 +371,7 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
                     'shrink-0 size-7 flex items-center justify-center rounded-md transition-colors',
                     hasChanges
                       ? 'text-primary bg-brand-soft hover:bg-brand-soft cursor-pointer'
-                      : 'text-muted-foreground/25 cursor-default',
+                      : 'text-muted-foreground cursor-default',
                   )}
                   disabled={!hasChanges || savingRow}
                   onClick={onSaveRow}
@@ -395,7 +395,7 @@ function EditRow({ item, isSelected, isCurrent, changes, hasChanges, scStatus, s
                     'shrink-0 size-7 flex items-center justify-center rounded-md transition-colors',
                     canFinalize
                       ? 'text-success bg-success/10 hover:bg-success/20 cursor-pointer'
-                      : 'text-muted-foreground/25 cursor-default',
+                      : 'text-muted-foreground cursor-default',
                   )}
                   disabled={!canFinalize}
                   onClick={onFinalize}
@@ -1373,7 +1373,7 @@ export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFi
             size="sm"
             className={cn(
               'h-7 gap-1.5 @max-[760px]/toolbar:gap-0 @max-[760px]/toolbar:px-2',
-              totalChanges > 0 ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground/40',
+              totalChanges > 0 ? 'text-primary hover:bg-brand-soft hover:text-primary' : 'text-muted-foreground',
             )}
             disabled={totalChanges === 0 || saving}
             onClick={handleSave}
@@ -1394,7 +1394,7 @@ export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFi
                     size="sm"
                     className={cn(
                       'h-7 gap-1.5 @max-[760px]/toolbar:gap-0 @max-[760px]/toolbar:px-2',
-                      finalizeEligibleCount > 0 ? 'text-success hover:bg-success/10 hover:text-success' : 'text-muted-foreground/40',
+                      finalizeEligibleCount > 0 ? 'text-success hover:bg-success/10 hover:text-success' : 'text-muted-foreground',
                     )}
                     disabled={finalizeEligibleCount === 0}
                     onClick={handleFinalizeSelected}

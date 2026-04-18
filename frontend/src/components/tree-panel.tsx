@@ -253,9 +253,9 @@ function TreeNodeItem({
               <span className="shrink-0 size-4" />
             )}
             {isExpanded ? (
-              <FolderOpen className="size-3.5 shrink-0 text-muted-foreground/70" />
+              <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
             ) : (
-              <Folder className="size-3.5 shrink-0 text-muted-foreground/70" />
+              <Folder className="size-3.5 shrink-0 text-muted-foreground" />
             )}
             <span className="truncate flex-1">{node.name}</span>
             {ruleset && (
@@ -266,15 +266,15 @@ function TreeNodeItem({
                       className={cn(
                         'size-3',
                         resolved!.own
-                          ? 'text-primary/70'
-                          : 'text-primary/35',
+                          ? 'text-primary'
+                          : 'text-primary',
                       )}
                       {...(resolved!.own && resolved!.recursive
                         ? { strokeWidth: 2.5 }
                         : {})}
                     />
                     {resolved!.own && resolved!.recursive && (
-                      <span className="ml-0.5 text-xs leading-none font-semibold tracking-wider text-primary/70 uppercase">
+                      <span className="ml-0.5 text-xs leading-none font-semibold text-primary">
                         R
                       </span>
                     )}
@@ -286,7 +286,7 @@ function TreeNodeItem({
               </Tooltip>
             )}
             {node.track_count > 0 && (
-              <span className="shrink-0 tabular-nums text-xs text-muted-foreground/50">
+              <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
                 {node.track_count}
               </span>
             )}
@@ -300,7 +300,7 @@ function TreeNodeItem({
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="w-56">
               <ContextMenuItem
-                className="text-xs text-muted-foreground/70"
+                className="text-xs text-muted-foreground"
                 disabled={!ownBinding}
                 onSelect={(e) => {
                   e.preventDefault();

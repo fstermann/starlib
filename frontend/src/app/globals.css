@@ -85,7 +85,13 @@
   --popover:                var(--surface-4);
   --popover-foreground:     var(--text);
   --primary:                var(--brand);
+  --primary-hover:          var(--brand-hover);
+  --primary-active:         var(--brand-active);
   --primary-foreground:     var(--text-on-accent);
+  --selected:               var(--brand-soft);
+  --selected-foreground:    var(--text);
+  --border-brand:           oklch(0.78 var(--accent-chroma) var(--accent-hue) / 0.40);
+  --border-danger:          oklch(0.64 0.19 28 / 0.40);
   --secondary:              var(--surface-3);
   --secondary-foreground:   var(--text);
   --muted:                  var(--surface-3);
@@ -145,7 +151,13 @@
   --color-popover:              var(--popover);
   --color-popover-foreground:   var(--popover-foreground);
   --color-primary:              var(--primary);
+  --color-primary-hover:        var(--primary-hover);
+  --color-primary-active:       var(--primary-active);
   --color-primary-foreground:   var(--primary-foreground);
+  --color-selected:             var(--selected);
+  --color-selected-foreground:  var(--selected-foreground);
+  --color-border-brand:         var(--border-brand);
+  --color-border-danger:        var(--border-danger);
   --color-secondary:            var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted:                var(--muted);
@@ -196,6 +208,10 @@
   /* Fonts */
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+
+  /* Motion defaults — wire Tailwind's default transition to DESIGN.md §8. */
+  --default-transition-duration:        var(--dur-2);
+  --default-transition-timing-function: var(--ease-standard);
 
   /* Extra type size — DESIGN.md §3.2. All-caps field labels inside dense editors. */
   --text-2xs: 0.5625rem;

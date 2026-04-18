@@ -37,11 +37,10 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-fit items-center justify-between gap-2 rounded-md border border-input bg-card px-2.5 text-xs text-foreground whitespace-nowrap transition-[color,box-shadow,border-color] outline-none",
-        "dark:bg-[var(--surface-3)]",
-        "data-[placeholder]:text-[var(--text-subtle)]",
+        "flex w-fit items-center justify-between gap-2 rounded-md border border-input bg-card dark:bg-muted px-2.5 text-xs text-foreground whitespace-nowrap transition-[color,box-shadow,border-color] outline-none",
+        "data-[placeholder]:text-muted-foreground",
         "[&_svg:not([class*='text-'])]:text-muted-foreground",
-        "focus-visible:border-[var(--brand)] focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
         "aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "data-[size=default]:h-7 data-[size=sm]:h-6",

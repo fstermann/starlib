@@ -282,7 +282,7 @@ export function RulesetEditor({ ruleset, onChange, onSave, saving, hasPendingEdi
       <div className="px-2 pb-2 pt-1 flex flex-col gap-1.5">
         <div className="flex items-center gap-2">
           <span className="h-px flex-1 bg-info/15" />
-          <span className="text-xs font-semibold uppercase tracking-wider text-info/60">
+          <span className="text-xs font-semibold text-info/60">
             if converted
           </span>
           <span className="h-px flex-1 bg-info/15" />

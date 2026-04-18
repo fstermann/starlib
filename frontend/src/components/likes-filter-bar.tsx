@@ -180,7 +180,7 @@ export function LikesFilterBar({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-40 p-0">
           <div className="px-1 pt-1">
-            <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
               Genre
             </DropdownMenuLabel>
             <DropdownMenuSeparator />

@@ -144,7 +144,7 @@ function FormatChip({
         <span className="ml-1 opacity-50 font-mono">{quality}k</span>
       )}
       {isPreferred && (
-        <span className="ml-1 rounded bg-brand-soft px-1 text-xs font-semibold uppercase tracking-wide text-primary/70">
+        <span className="ml-1 rounded bg-brand-soft px-1 text-xs font-semibold tracking-wide text-primary">
           preferred
         </span>
       )}
@@ -204,7 +204,7 @@ function FormatChip({
         </div>
         {format === "mp3" && (
           <div className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">Bitrate</span>
+            <span className="text-xs tracking-wide text-muted-foreground">Bitrate</span>
             <div className="flex gap-1">
               {[128, 192, 256, 320].map((q) => (
                 <button
@@ -416,7 +416,7 @@ export function RuleCard({
           {...(draggable ? { ...attributes, ...listeners } : {})}
           tabIndex={-1}
           className={cn(
-            "shrink-0 text-muted-foreground/25 transition-colors group-hover:text-muted-foreground/50",
+            "shrink-0 text-muted-foreground transition-colors group-hover:text-muted-foreground",
             isBuiltin || !draggable
               ? "pointer-events-none cursor-default opacity-30"
               : "cursor-grab active:cursor-grabbing"
@@ -429,14 +429,14 @@ export function RuleCard({
 
         <div className="flex shrink-0 items-center gap-1.5 min-w-18">
           <Icon className={cn("size-3.5 shrink-0", RULE_ICON_COLORS[rule.type] ?? "text-muted-foreground")} />
-          <span className="font-medium text-foreground/90">{verb[rule.type]}</span>
+          <span className="font-medium text-foreground">{verb[rule.type]}</span>
         </div>
 
         <div className="flex shrink-0 items-center">
           {inputPicker}
         </div>
 
-        <span className="shrink-0 text-muted-foreground/60">to</span>
+        <span className="shrink-0 text-muted-foreground">to</span>
 
         <div className="flex flex-1 items-center">
           {destination}
@@ -445,7 +445,7 @@ export function RuleCard({
         {!isBuiltin && (
           <button
             onClick={onDelete}
-            className="shrink-0 cursor-pointer text-muted-foreground/20 transition-colors group-hover:text-muted-foreground/40 hover:text-destructive!"
+            className="shrink-0 cursor-pointer text-muted-foreground transition-colors group-hover:text-muted-foreground hover:text-destructive!"
             aria-label="Remove rule"
           >
             <Trash2 className="size-3.5" />

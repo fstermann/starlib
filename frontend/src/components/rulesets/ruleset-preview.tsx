@@ -28,10 +28,10 @@ export function RulesetPreview({ ruleset, missingRequired }: RulesetPreviewProps
       </div>
       {hasMissing && (
         <div className="px-3 py-2 border-b border-border bg-warning/10">
-          <p className="text-xs font-semibold uppercase tracking-wider text-warning mb-1">
+          <p className="text-xs font-semibold text-warning mb-1">
             Missing required
           </p>
-          <p className="text-xs text-foreground/90">
+          <p className="text-xs text-foreground">
             {missingRequired!.map((a) => REQUIRED_ATTR_LABEL[a]).join(', ')}
           </p>
         </div>
