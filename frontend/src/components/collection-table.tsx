@@ -1017,7 +1017,19 @@ export function CollectionTable({
         setReloading(false);
       }
     },
-    [mode, folderPath, search, genres, keys, bpmMin, bpmMax, sortBy, sortOrder],
+    [
+      mode,
+      folderPath,
+      search,
+      genres,
+      keys,
+      bpmMin,
+      bpmMax,
+      sortBy,
+      sortOrder,
+      onItemsChange,
+      onTotalChange,
+    ],
   );
 
   // Reload on mode / folderPath / filter / sort change
@@ -1133,7 +1145,7 @@ export function CollectionTable({
         return next;
       });
     },
-    [items],
+    [items, getOriginal, setChanges],
   );
 
   const applyBatchAction = useCallback(
@@ -1164,7 +1176,7 @@ export function CollectionTable({
         return next;
       });
     },
-    [items, selectedPaths],
+    [items, selectedPaths, getOriginal, setChanges],
   );
 
   // Search SC for a single item. When applyResults=true, auto-fills empty fields + SC link.
@@ -1292,7 +1304,7 @@ export function CollectionTable({
         setScStatuses((prev) => new Map(prev).set(item.file_path, "not-found"));
       }
     },
-    [],
+    [setChanges],
   );
 
   // Per-row SC search — respects autoApplyScResults config
@@ -1479,7 +1491,16 @@ export function CollectionTable({
         });
       }
     },
-    [changes, pendingArtwork, items, onEditSaved, triggerSavePulse],
+    [
+      changes,
+      pendingArtwork,
+      items,
+      onEditSaved,
+      triggerSavePulse,
+      buildUpdates,
+      pendingScLinks,
+      setChanges,
+    ],
   );
 
   const handleSave = async () => {

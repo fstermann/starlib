@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, ListPlus } from "lucide-react";
+import { ListPlus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 

@@ -23,12 +23,6 @@ import { useWeeklyFilter, type WeeklyFilterOptions } from "./use-weekly-filter";
 import { useWeeklyGroups, type GroupingMode } from "./use-weekly-groups";
 import { useWeeklyPlaylists } from "./use-weekly-playlists";
 
-function extractId(track: SCTrack): number | undefined {
-  if (!track.urn) return undefined;
-  const parts = track.urn.split(":");
-  return parseInt(parts[parts.length - 1], 10) || undefined;
-}
-
 function buildPlaylistDescription(group: {
   start: Date;
   end: Date;

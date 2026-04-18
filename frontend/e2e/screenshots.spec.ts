@@ -23,13 +23,6 @@ const SCREENSHOT_DIR = path.join(
 );
 const CACHE_FILE = path.join(__dirname, "../../.cache/screenshot-tracks.json");
 
-const MOCK_USER = {
-  id: 123456,
-  username: "dj-starlib",
-  permalink: "dj-starlib",
-  avatar_url: "https://placehold.co/200x200/1a1a2e/e94560?text=DJ",
-};
-
 // ---------------------------------------------------------------------------
 // Track data: real SoundCloud data when available, otherwise placeholders
 // ---------------------------------------------------------------------------

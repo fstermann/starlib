@@ -1,7 +1,6 @@
 "use client";
 
 import { open as openExternal } from "@tauri-apps/plugin-shell";
-import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";

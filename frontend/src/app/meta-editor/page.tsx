@@ -5,7 +5,7 @@ import {
   Download,
   Eraser,
   FolderTree,
-  Image,
+  Image as ImageIcon,
   PencilLine,
   Settings2,
   XCircle,
@@ -212,12 +212,18 @@ function MetaEditorContent() {
   }, [refreshToken]);
 
   // Track items for next-track selection
-  const [tableItems, setTableItems] = useState<TrackBrowse[]>([]);
   const tableItemsRef = useRef<TrackBrowse[]>([]);
 
   // Totals for filter bar
   const [tableTotal, setTableTotal] = useState(0);
   const [tableCacheLoading, setTableCacheLoading] = useState(false);
+  const handleTotalChange = useCallback((t: number, cl: boolean) => {
+    setTableTotal(t);
+    setTableCacheLoading(cl);
+  }, []);
+  const handleItemsChange = useCallback((items: TrackBrowse[]) => {
+    tableItemsRef.current = items;
+  }, []);
 
   // Auto-action settings
   const [autoActions, setAutoActions] = useState<AutoActions>({
@@ -239,12 +245,10 @@ function MetaEditorContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNodeId]);
 
-  // Clear player when navigating away
-  useEffect(() => {
-    return () => {
-      player.stop();
-    };
-  }, []);
+  // Clear player when navigating away. Runs the cleanup once on unmount;
+  // capturing the mount-time `player` is intentional.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => player.stop(), []);
 
   const selectNextTrack = useCallback((currentFilePath: string) => {
     const items = tableItemsRef.current;
@@ -388,7 +392,7 @@ function MetaEditorContent() {
                     htmlFor="auto-artwork"
                     className="flex cursor-pointer items-center gap-1.5 text-xs"
                   >
-                    <Image className="text-muted-foreground size-3" />
+                    <ImageIcon className="text-muted-foreground size-3" />
                     Artwork
                   </label>
                 </div>
@@ -526,15 +530,9 @@ function MetaEditorContent() {
               selectedFilePath={
                 editorOpen ? selectedFile?.file_path : undefined
               }
-              onItemsChange={useCallback((items: TrackBrowse[]) => {
-                setTableItems(items);
-                tableItemsRef.current = items;
-              }, [])}
+              onItemsChange={handleItemsChange}
               onSelect={handleTableSelect}
-              onTotalChange={(t, cl) => {
-                setTableTotal(t);
-                setTableCacheLoading(cl);
-              }}
+              onTotalChange={handleTotalChange}
               onEditSaved={() => setRefreshToken((t) => t + 1)}
               activeRuleset={activeRuleset}
               folderRulesets={folderRulesets}
@@ -556,7 +554,6 @@ function MetaEditorContent() {
             >
               <TrackEditor
                 selectedFile={selectedFile}
-                folderMode={folderMode}
                 folderRulesetId={effectiveRulesetId}
                 autoActions={autoActions}
                 onTableRefresh={() => setRefreshToken((t) => t + 1)}

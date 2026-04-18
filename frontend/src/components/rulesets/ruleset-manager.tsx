@@ -30,8 +30,11 @@ export function RulesetManager() {
     }
   }, [selectedId]);
 
+  // Load once on mount. `load` depends on `selectedId`; re-running on every
+  // selection change would re-fetch on click.
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectedRuleset = rulesets.find((r) => r.id === selectedId) ?? null;

@@ -7,7 +7,7 @@ import {
   CaseSensitive,
   Check,
   ChevronDown,
-  Image,
+  Image as ImageIcon,
   MoveRight,
   RotateCcw,
   Search,
@@ -22,7 +22,6 @@ import { useTheme } from "next-themes";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { RULE_ICON_COLORS, RULE_ICONS } from "@/components/rulesets/rule-card";
 import { RulesetPreview } from "@/components/rulesets/ruleset-preview";
@@ -86,7 +85,6 @@ export interface AutoActions {
 
 export interface TrackEditorProps {
   selectedFile: FileInfo;
-  folderMode: string;
   folderRulesetId: string | null;
   autoActions: AutoActions;
   onTableRefresh: () => void;
@@ -105,7 +103,6 @@ export interface TrackEditorProps {
 
 export function TrackEditor({
   selectedFile,
-  folderMode,
   folderRulesetId,
   autoActions,
   onTableRefresh,
@@ -292,7 +289,12 @@ export function TrackEditor({
       soundcloud_permalink: prev.soundcloud_permalink || meta.source_permalink,
     }));
     setScLinkEnabled(true);
-  }, [selectedScTrack, autoActions.autoCopyMetadata]);
+  }, [
+    selectedScTrack,
+    autoActions.autoCopyMetadata,
+    activeSource,
+    setScQueryPending,
+  ]);
 
   // Show source artwork in preview when no existing artwork
   useEffect(() => {
@@ -321,7 +323,7 @@ export function TrackEditor({
       .catch(() => {
         /* non-fatal */
       });
-  }, [selectedScTrack, autoActions.autoCopyArtwork, trackInfo?.has_artwork]);
+  }, [selectedScTrack, autoActions.autoCopyArtwork, trackInfo, activeSource]);
 
   // Update form when track info loads
   useEffect(() => {
@@ -386,6 +388,10 @@ export function TrackEditor({
       setScQuery(cleaned);
       setScQueryPending(true);
     }
+    // Intentionally only runs when trackInfo changes — this initializes the
+    // form from trackInfo + a snapshot of pendingFieldEdits. Re-running on
+    // every pending edit would overwrite the user's in-progress input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackInfo]);
 
   const reloadTrackInfo = async (file: FileInfo) => {
@@ -527,13 +533,6 @@ export function TrackEditor({
     !!formData.release_date &&
     !!formData.release_year &&
     releaseDateYear !== formData.release_year;
-
-  const formComplete =
-    !!formData.title &&
-    !!formData.artist &&
-    !!formData.genre &&
-    !!formData.release_date &&
-    !!artworkUrl;
 
   const mirrorToPending = (field: FormFieldKey, value: string) => {
     if (!trackInfo) return;
@@ -903,7 +902,7 @@ export function TrackEditor({
                         input.click();
                       }}
                     >
-                      <Image />
+                      <ImageIcon />
                     </Button>
                     {artworkUrl && (
                       <Button
@@ -943,7 +942,7 @@ export function TrackEditor({
                     />
                   ) : (
                     <div className="bg-accent hover:bg-accent flex size-full flex-col items-center justify-center gap-0.5 transition-colors">
-                      <Image className="text-muted-foreground size-3" />
+                      <ImageIcon className="text-muted-foreground size-3" />
                       <span className="text-muted-foreground text-xs">N/A</span>
                     </div>
                   )}
@@ -1773,7 +1772,7 @@ export function TrackEditor({
                         />
                       ) : (
                         <div className="bg-accent flex size-full items-center justify-center">
-                          <Image className="text-muted-foreground size-3" />
+                          <ImageIcon className="text-muted-foreground size-3" />
                         </div>
                       )}
                     </div>
@@ -1829,7 +1828,7 @@ export function TrackEditor({
                               />
                             ) : (
                               <div className="bg-accent flex size-full items-center justify-center">
-                                <Image className="text-muted-foreground size-3" />
+                                <ImageIcon className="text-muted-foreground size-3" />
                               </div>
                             )}
                           </div>
@@ -1906,7 +1905,7 @@ export function TrackEditor({
                               />
                             ) : (
                               <div className="bg-accent flex size-full items-center justify-center">
-                                <Image className="text-muted-foreground size-3" />
+                                <ImageIcon className="text-muted-foreground size-3" />
                               </div>
                             )}
                           </div>

@@ -391,6 +391,8 @@ export function LikesTable({
     return sorted;
   }, [tracks, sortBy, sortOrder]);
 
+  // React Compiler can't memoize TanStack Virtual's returned functions safely; skip.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: sortedTracks.length,
     getScrollElement: () => scrollParentRef.current,

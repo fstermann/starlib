@@ -228,6 +228,9 @@ export function WaveformPlayer() {
         audioRef.current = null;
       }
     };
+    // Only `currentTrack?.filePath` actually drives this effect; rebuilding
+    // WaveSurfer on every other currentTrack field change would thrash.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentTrack?.filePath,
     pause,

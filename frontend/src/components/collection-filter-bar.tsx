@@ -66,8 +66,6 @@ export function CollectionFilterBar({
     }
   });
 
-  const sourceKey = folderPath ?? mode;
-
   // Re-fetch filter values whenever mode/folderPath or any active filter changes.
   // Debounced so rapid filter changes don't cause double layout animations.
   useEffect(() => {
