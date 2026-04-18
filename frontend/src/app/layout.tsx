@@ -7,6 +7,8 @@ import { SetupGate } from "@/components/setup-gate";
 import { BackendGate } from "@/components/backend-gate";
 import { PlayerProvider } from "@/lib/player-context";
 import { LayoutShell } from "@/components/layout-shell";
+import { TopBar } from "@/components/layout/top-bar";
+import { TopBarProvider } from "@/components/layout/top-bar-context";
 import { WaveformPlayer } from "@/components/waveform-player";
 import { UpdateBanner } from "@/components/update-banner";
 import { LogInit } from "@/components/log-init";
@@ -50,15 +52,18 @@ export default function RootLayout({
           <BackendGate>
             <NuqsAdapter>
               <PlayerProvider>
-                <Sidebar />
-                <LayoutShell>
-                  <UpdateBanner />
-                  <SetupGate>
-                    {children}
-                  </SetupGate>
-                </LayoutShell>
-                <WaveformPlayer />
-                <Toaster />
+                <TopBarProvider>
+                  <Sidebar />
+                  <TopBar />
+                  <LayoutShell>
+                    <UpdateBanner />
+                    <SetupGate>
+                      {children}
+                    </SetupGate>
+                  </LayoutShell>
+                  <WaveformPlayer />
+                  <Toaster />
+                </TopBarProvider>
               </PlayerProvider>
             </NuqsAdapter>
           </BackendGate>

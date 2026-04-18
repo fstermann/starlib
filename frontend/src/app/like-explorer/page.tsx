@@ -12,10 +12,11 @@ import { CreatePlaylistDialog, MAX_TRACKS } from '@/components/create-playlist-d
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { PageHeader } from '@/components/page-header';
+import { useTopBar } from '@/components/layout/top-bar-context';
 import { LogoSpinner } from '@/components/logo-spinner';
 import { ListPlus, Heart, Compass } from 'lucide-react';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import type { SCUser, SCTrack } from '@/lib/soundcloud';
 
 function extractId(track: SCTrack): number | undefined {
@@ -121,34 +122,37 @@ export default function LikeExplorerPage() {
     [activeLikes.tracks, selectedIds],
   );
 
+  useTopBar({
+    title: (
+      <>
+        <span>Like Explorer</span>
+        <div className="w-px h-5 bg-border/50 shrink-0 mx-1" />
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          value={tab}
+          onValueChange={(v) => { if (v) setTab(v); }}
+          className="h-7"
+        >
+          <ToggleGroupItem value="me" className="h-7 px-2 gap-1.5 text-xs cursor-pointer"><Heart className="size-3.5" />My Likes</ToggleGroupItem>
+          <ToggleGroupItem value="explore" className="h-7 px-2 gap-1.5 text-xs cursor-pointer"><Compass className="size-3.5" />Explore</ToggleGroupItem>
+        </ToggleGroup>
+      </>
+    ),
+  });
+
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <PageHeader
-        title="Like Explorer"
-        controls={
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            value={tab}
-            onValueChange={(v) => { if (v) setTab(v); }}
-            className="h-7"
-          >
-            <ToggleGroupItem value="me" className="h-7 px-2 gap-1.5 text-xs cursor-pointer"><Heart className="size-3.5" />My Likes</ToggleGroupItem>
-            <ToggleGroupItem value="explore" className="h-7 px-2 gap-1.5 text-xs cursor-pointer"><Compass className="size-3.5" />Explore</ToggleGroupItem>
-          </ToggleGroup>
-        }
-      >
-        {/* Explore tab: user search / selected user */}
-        {tab === 'explore' && (
-          <div className="px-4 py-2">
-            {selectedUser ? (
-              <UserCard user={selectedUser} onClear={() => setSelectedUser(null)} />
-            ) : (
-              <UserSearch onSelect={setSelectedUser} />
-            )}
-          </div>
-        )}
-      </PageHeader>
+      {/* Explore tab: user search / selected user */}
+      {tab === 'explore' && (
+        <div className="px-4 py-2 border-b border-border/50">
+          {selectedUser ? (
+            <UserCard user={selectedUser} onClear={() => setSelectedUser(null)} />
+          ) : (
+            <UserSearch onSelect={setSelectedUser} />
+          )}
+        </div>
+      )}
 
       {/* Filter bar (show when we have tracks or are loading) */}
       {(activeLikes.tracks.length > 0 || activeLikes.loading) && (
@@ -177,8 +181,8 @@ export default function LikeExplorerPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span tabIndex={0}>
-                    <Button size="sm" className="h-7 text-xs" variant="default" disabled>
-                      <ListPlus className="size-3.5 mr-1" />
+                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-muted-foreground/40" disabled>
+                      <ListPlus className="size-3.5" />
                       Create Playlist
                     </Button>
                   </span>
@@ -189,8 +193,16 @@ export default function LikeExplorerPage() {
               </Tooltip>
             ) : (
               <CreatePlaylistDialog tracks={selectedTracks} trigger={
-                <Button size="sm" className="h-7 text-xs" variant={selectedIds.size > 0 ? "default" : "secondary"} disabled={selectedIds.size === 0}>
-                  <ListPlus className="size-3.5 mr-1" />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={cn(
+                    'h-7 text-xs gap-1.5',
+                    selectedIds.size > 0 ? 'text-primary hover:bg-primary/10 hover:text-primary' : 'text-muted-foreground/40',
+                  )}
+                  disabled={selectedIds.size === 0}
+                >
+                  <ListPlus className="size-3.5" />
                   Create Playlist
                 </Button>
               } />

@@ -29,6 +29,10 @@ interface PlayerContextValue {
   duration: number;
   /** Called by WaveformPlayer once the track is decoded. */
   reportDuration: (d: number) => void;
+  /** When true, the full-width bottom waveform is shown and the mini player's
+   * waveform is hidden. Toggled from the mini player's chevron. */
+  largePlayer: boolean;
+  setLargePlayer: (v: boolean | ((prev: boolean) => boolean)) => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -39,6 +43,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const currentTrackRef = useRef<PlayerTrack | null>(null);
 
   const [duration, setDuration] = useState(0);
+  const [largePlayer, setLargePlayer] = useState(false);
   const progressRef = useRef(0);
   const progressCallbacksRef = useRef<Set<(p: number) => void>>(new Set());
   const seekFnRef = useRef<((ratio: number) => void) | null>(null);
@@ -102,8 +107,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<PlayerContextValue>(() => ({
-    currentTrack, isPlaying, load, play, pause, toggle, stop, seek, reportProgress, subscribeProgress, registerSeek, duration, reportDuration,
-  }), [currentTrack, isPlaying, load, play, pause, toggle, stop, seek, reportProgress, subscribeProgress, registerSeek, duration, reportDuration]);
+    currentTrack, isPlaying, load, play, pause, toggle, stop, seek, reportProgress, subscribeProgress, registerSeek, duration, reportDuration, largePlayer, setLargePlayer,
+  }), [currentTrack, isPlaying, load, play, pause, toggle, stop, seek, reportProgress, subscribeProgress, registerSeek, duration, reportDuration, largePlayer]);
 
   return (
     <PlayerContext.Provider value={value}>

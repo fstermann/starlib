@@ -237,8 +237,8 @@ export function WeeklyGroupCard({
                 trigger={
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="h-6 text-xs px-2 gap-1 border-green-500/40 text-green-600 hover:text-green-600"
+                    variant="ghost"
+                    className="h-6 text-xs px-2 gap-1 text-emerald-600 hover:bg-emerald-600/10 hover:text-emerald-600"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <ListPlus className="size-3" />
@@ -255,8 +255,8 @@ export function WeeklyGroupCard({
                 trigger={
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="h-6 text-xs px-2 gap-1"
+                    variant="ghost"
+                    className="h-6 text-xs px-2 gap-1 text-primary hover:bg-primary/10 hover:text-primary"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <ListPlus className="size-3" />

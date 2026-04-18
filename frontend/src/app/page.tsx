@@ -33,7 +33,7 @@ export default function Home() {
       <div className="mb-16 flex flex-col items-center text-center">
         <h1 className="text-8xl font-bold tracking-tight mb-3 flex items-center gap-0">
           <span
-            className="inline-block shrink-0 bg-gradient-to-br from-primary to-chart-2"
+            className="inline-block shrink-0 bg-primary"
             style={{
               maskImage: 'url(/starlib-logo.svg)',
               WebkitMaskImage: 'url(/starlib-logo.svg)',
@@ -48,7 +48,7 @@ export default function Home() {
             }}
             aria-hidden="true"
           />
-          <span className="-ml-3 bg-gradient-to-r from-primary to-chart-2 bg-clip-text text-transparent">
+          <span className="-ml-3 text-primary">
             Starlib
           </span>
         </h1>

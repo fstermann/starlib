@@ -16,7 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CollectionFilterBar } from '@/components/collection-filter-bar';
 import { CollectionTable } from '@/components/collection-table';
 import { TreePanel } from '@/components/tree-panel';
-import { PageHeader } from '@/components/page-header';
+import { useTopBar } from '@/components/layout/top-bar-context';
 import {
   Select,
   SelectContent,
@@ -164,6 +164,13 @@ function MetaEditorContent() {
   // Table refresh signal
   const [refreshToken, setRefreshToken] = useState(0);
 
+  // Reload the folder tree whenever something changes (save, finalize, etc.)
+  // so folder track counts stay in sync.
+  useEffect(() => {
+    if (refreshToken === 0) return; // initial mount already loads the tree
+    api.getFolderTree().then(setTree).catch(() => {});
+  }, [refreshToken]);
+
   // Track items for next-track selection
   const [tableItems, setTableItems] = useState<TrackBrowse[]>([]);
   const tableItemsRef = useRef<TrackBrowse[]>([]);
@@ -263,40 +270,41 @@ function MetaEditorContent() {
     return shortcut?.name ?? '';
   })();
 
-  return (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <PageHeader
-        title="Meta Editor"
-        controls={
-          <div className="flex items-center gap-2">
-            {/* Source switcher (disabled placeholder) */}
-            <Select value="filesystem" disabled>
-              <SelectTrigger className="h-7 w-auto gap-1.5 text-[10px] font-medium tracking-widest uppercase px-3">
-                <FolderTree className="size-3" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="filesystem">Filesystem</SelectItem>
-              </SelectContent>
-            </Select>
+  useTopBar({
+    title: (
+      <>
+        <span>Meta Editor</span>
+        <div className="w-px h-5 bg-border/50 shrink-0 mx-1" />
+        <div className="flex items-center gap-2">
+          {/* Source switcher (disabled placeholder) */}
+          <Select value="filesystem" disabled>
+            <SelectTrigger className="h-7 w-auto gap-1.5 text-[10px] font-medium tracking-widest uppercase px-3">
+              <FolderTree className="size-3" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="filesystem">Filesystem</SelectItem>
+            </SelectContent>
+          </Select>
 
-            {/* Folder shortcuts */}
-            <div className="flex items-center gap-0.5">
-              {folderShortcuts.map((folder) => (
-                <Button
-                  key={folder.name}
-                  variant={activeShortcut === folder.name ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-7 px-3 text-[10px] font-medium tracking-widest uppercase cursor-pointer"
-                  onClick={() => handleFolderShortcut(folder.name)}
-                >
-                  {folder.label}
-                </Button>
-              ))}
-            </div>
+          {/* Folder shortcuts */}
+          <div className="flex items-center gap-0.5">
+            {folderShortcuts.map((folder) => (
+              <Button
+                key={folder.name}
+                variant={activeShortcut === folder.name ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-3 text-[10px] font-medium tracking-widest uppercase cursor-pointer"
+                onClick={() => handleFolderShortcut(folder.name)}
+              >
+                {folder.label}
+              </Button>
+            ))}
           </div>
-        }
-        actions={
+        </div>
+      </>
+    ),
+    actions: (
           <div className="flex items-center gap-1">
             {selectedFile && !editorOpen && (
               <button
@@ -346,9 +354,11 @@ function MetaEditorContent() {
               </PopoverContent>
             </Popover>
           </div>
-        }
-      />
+        ),
+  });
 
+  return (
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       {/* Main content: tree | table+filters | editor */}
       <div className="flex flex-1 min-h-0">
         {/* Tree panel */}
@@ -381,6 +391,8 @@ function MetaEditorContent() {
               onTotalChange={(t, cl) => { setTableTotal(t); setTableCacheLoading(cl); }}
               onEditSaved={() => setRefreshToken(t => t + 1)}
               activeRuleset={activeRuleset}
+              folderRulesets={folderRulesets}
+              rulesets={allRulesets}
               autoApplyScResults={autoActions.autoApplyScResults}
               pendingFieldEdits={pendingFieldEdits}
               setPendingFieldEdits={setPendingFieldEdits}

@@ -16,6 +16,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { TreePanelMiniPlayer } from '@/components/tree-panel-mini-player';
 
 interface TreePanelProps {
   tree: TreeNode | null;
@@ -150,7 +151,7 @@ export function TreePanel({
       )}
       style={{ width: `${width}px` }}
     >
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex-1 overflow-y-auto p-2">
         <TreeNodeItem
           node={tree}
           depth={0}
@@ -163,6 +164,7 @@ export function TreePanel({
           onSetRuleset={onSetRuleset}
         />
       </div>
+      <TreePanelMiniPlayer />
       {/* Resize handle */}
       <div
         className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors duration-150 hover:duration-300 hover:delay-150 z-10"

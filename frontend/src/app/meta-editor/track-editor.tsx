@@ -12,10 +12,6 @@ import { useSourceSearch } from './use-source-search';
 import { parseComment, serializeComment } from './utils';
 import { cn } from '@/lib/utils';
 
-const REQUIRED_ATTR_LABEL: Record<RequiredAttribute, string> = {
-  title: 'Title', artist: 'Artist', genre: 'Genre', bpm: 'BPM', key: 'Key',
-  release_date: 'Release date', remixer: 'Remixer', comment: 'Comment', artwork: 'Artwork',
-};
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -37,7 +33,8 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Calendar } from '@/components/ui/calendar';
 import { LogoSpinner } from '@/components/logo-spinner';
-import { StepBadge, RULE_ICONS, RULE_ICON_COLORS } from '@/components/rulesets/rule-card';
+import { RULE_ICONS, RULE_ICON_COLORS } from '@/components/rulesets/rule-card';
+import { RulesetPreview } from '@/components/rulesets/ruleset-preview';
 import { SoundCloudLogo } from '@/components/icons/soundcloud-logo';
 import {
   Sparkles,
@@ -1192,20 +1189,16 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
 
           {/* Actions */}
           <div className="shrink-0 border-t border-border/50 px-3 py-2.5 flex items-center gap-1">
-            <div
-              className={`size-2 rounded-full shrink-0 ${trackInfo.is_ready ? 'bg-chart-1' : 'bg-amber-400'}`}
-              title={[
-                ...(trackInfo.missing_fields.length ? [`Missing: ${trackInfo.missing_fields.join(', ')}`] : []),
-                ...(trackInfo.issues.length ? [trackInfo.issues.join(' · ')] : []),
-              ].join('\n') || 'Ready'}
-            />
-
             {/* Save */}
             <Button
               onClick={handleSave}
               disabled={!hasChanges || loading}
+              variant="ghost"
               size="sm"
-              className="h-7 text-xs px-2.5 gap-1.5"
+              className={cn(
+                'h-7 text-xs px-2.5 gap-1.5',
+                hasChanges ? 'text-primary hover:bg-primary/10 hover:text-primary' : 'text-muted-foreground/40',
+              )}
             >
               {loading ? <LogoSpinner className="size-3" /> : <Check className="size-3" />}
               Save
@@ -1219,56 +1212,22 @@ export function TrackEditor({ selectedFile, folderMode, folderRulesetId, autoAct
                     <Button
                       onClick={handleFinalize}
                       disabled={loading || hasMissingRequired}
+                      variant="ghost"
                       size="sm"
                       className={cn(
-                        "h-7 text-xs px-2.5 gap-1.5 text-white font-semibold",
-                        hasMissingRequired
-                          ? "bg-muted-foreground/40 hover:bg-muted-foreground/40"
-                          : "bg-emerald-600 hover:bg-emerald-700",
+                        'h-7 text-xs gap-1',
+                        hasMissingRequired ? 'text-muted-foreground/40' : 'text-emerald-600 hover:bg-emerald-600/10 hover:text-emerald-600',
                       )}
                     >
                       <Workflow className="size-3" />
-                      Apply Rules
+                      Apply rules
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="top" sideOffset={6} showArrow={false} className="p-0 max-w-64 bg-popover text-popover-foreground border">
-                    <div className="px-3 py-2 border-b border-border">
-                      <p className="text-xs font-medium">{activeRuleset.name}</p>
-                    </div>
-                    {hasMissingRequired && (
-                      <div className="px-3 py-2 border-b border-border bg-amber-500/10">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-500 mb-1">
-                          Missing required
-                        </p>
-                        <p className="text-xs text-foreground/90">
-                          {missingRequiredAttrs.map((a) => REQUIRED_ATTR_LABEL[a]).join(', ')}
-                        </p>
-                      </div>
-                    )}
-                    <div className="py-1.5 flex flex-col gap-0.5 px-1.5">
-                      {activeRuleset.rules.map((rule, i) => {
-                        const Icon = RULE_ICONS[rule.type];
-                        const folderParam = rule.params.folder as string | undefined;
-                        const formatParam = rule.params.format as string | undefined;
-                        const detail = rule.type === 'convert'
-                          ? formatParam ? formatParam.toUpperCase() : 'preferred'
-                          : folderParam ? `${folderParam}/` : '';
-                        const isConditional = rule.requires.length > 0;
-                        return (
-                          <div key={i} className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${isConditional ? 'ml-4 border-l-2 border-blue-400/30 pl-2.5' : ''}`}>
-                            <StepBadge step={i + 1} type={rule.type} />
-                            <Icon className={`size-3.5 shrink-0 ${RULE_ICON_COLORS[rule.type]}`} />
-                            <span className="capitalize">{rule.type}</span>
-                            {detail && <span className="font-mono text-[10px] opacity-70">{detail}</span>}
-                            {isConditional && (
-                              <span className="text-[9px] rounded bg-blue-400/20 text-blue-300 px-1 font-medium">
-                                if converted
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <RulesetPreview
+                      ruleset={activeRuleset}
+                      missingRequired={hasMissingRequired ? missingRequiredAttrs : undefined}
+                    />
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
