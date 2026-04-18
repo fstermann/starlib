@@ -1496,7 +1496,7 @@ export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFi
           return sortKey ? (
             <button
               key={f.key}
-              className={`${f.width} min-w-0 shrink-0 flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer`}
+              className={`${f.width} min-w-0 shrink-0 flex items-center gap-0.5 uppercase hover:text-foreground transition-colors cursor-pointer`}
               onClick={() => handleSort(sortKey)}
             >
               {f.label}
@@ -1510,7 +1510,7 @@ export function CollectionTable({ mode, folderPath, scrollToFilePath, selectedFi
         })}
         {/* Added date header — sortable by mtime */}
         <button
-          className="w-20 shrink-0 flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer"
+          className="w-20 shrink-0 flex items-center gap-0.5 uppercase hover:text-foreground transition-colors cursor-pointer"
           onClick={() => handleSort('mtime')}
         >
           Added
