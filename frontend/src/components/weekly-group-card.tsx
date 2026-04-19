@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  ListPlus,
-} from "lucide-react";
+import { CheckCircle2, ExternalLink, ListPlus } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import type { WeekGroup } from "@/app/weekly/use-weekly-groups";
@@ -28,7 +22,6 @@ interface WeeklyGroupCardProps {
   onDeselectAll: (ids: number[]) => void;
   collectionIds?: Set<number>;
   existingPlaylist?: SCPlaylist;
-  defaultExpanded?: boolean;
   playlistDescription: string;
   onPlaylistsReload?: () => void;
   trackType?: "track" | "set" | null;
@@ -56,12 +49,10 @@ export function WeeklyGroupCard({
   onDeselectAll,
   collectionIds,
   existingPlaylist,
-  defaultExpanded = false,
   playlistDescription,
   onPlaylistsReload,
   trackType,
 }: WeeklyGroupCardProps) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
   const [showOnlyNew, setShowOnlyNew] = useState<boolean | null>(null);
 
   // URNs already in the existing playlist
@@ -190,26 +181,9 @@ export function WeeklyGroupCard({
     : `${filteredTracks.length} track${filteredTracks.length !== 1 ? "s" : ""}`;
 
   return (
-    <div
-      className={cn(
-        "border-border overflow-hidden rounded-lg border",
-        group.isCurrent && "border-primary/50",
-      )}
-    >
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Header */}
-      <div
-        className={cn(
-          "hover:bg-muted flex h-10 cursor-pointer items-center gap-2 px-3 transition-colors select-none",
-          group.isCurrent && "bg-brand-soft",
-        )}
-        onClick={() => setExpanded(!expanded)}
-      >
-        {expanded ? (
-          <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
-        ) : (
-          <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
-        )}
-
+      <div className="flex h-10 items-center gap-2 px-3 select-none">
         <span className="min-w-0 flex-1 truncate text-xs font-medium">
           {labelParts.title}
         </span>
@@ -235,7 +209,6 @@ export function WeeklyGroupCard({
               href={playlistUrl}
               target="_blank"
               rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
               className={cn(!playlistUrl && "pointer-events-none")}
             >
               <Badge
@@ -259,12 +232,11 @@ export function WeeklyGroupCard({
                     ? "text-muted-foreground border-border hover:border-border"
                     : "text-success border-success/40 hover:bg-success/10",
               )}
-              onClick={(e) => {
-                e.stopPropagation();
+              onClick={() =>
                 setShowOnlyNew((v) =>
                   v === null ? true : v === true ? false : null,
-                );
-              }}
+                )
+              }
             >
               +{newTracks.length} new
             </Badge>
@@ -274,66 +246,58 @@ export function WeeklyGroupCard({
             {groupSelectedCount > 0 && ` · ${groupSelectedCount} selected`}
           </span>
 
-          {expanded &&
-            (canAppend ? (
-              <AppendTracksDialog
-                newTracks={newTracks}
-                existingPlaylist={existingPlaylist!}
-                onAppended={onPlaylistsReload}
-                trigger={
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-success hover:bg-success/10 hover:text-success h-6 gap-1 px-2 text-xs"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <ListPlus className="size-3" />
-                    Append {newTracks.length}
-                  </Button>
-                }
-              />
-            ) : !existingPlaylist ? (
-              <CreatePlaylistDialog
-                tracks={tracksForPlaylist}
-                defaultTitle={group.playlistTitle}
-                defaultDescription={playlistDescription}
-                onCreated={onPlaylistsReload}
-                trigger={
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-primary hover:bg-brand-soft hover:text-primary h-6 gap-1 px-2 text-xs"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <ListPlus className="size-3" />
-                    {selectedTracks.length > 0
-                      ? `Create (${selectedTracks.length})`
-                      : "Create playlist"}
-                  </Button>
-                }
-              />
-            ) : null)}
+          {canAppend ? (
+            <AppendTracksDialog
+              newTracks={newTracks}
+              existingPlaylist={existingPlaylist!}
+              onAppended={onPlaylistsReload}
+              trigger={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-success hover:bg-success/10 hover:text-success h-6 gap-1 px-2 text-xs"
+                >
+                  <ListPlus className="size-3" />
+                  Append {newTracks.length}
+                </Button>
+              }
+            />
+          ) : !existingPlaylist ? (
+            <CreatePlaylistDialog
+              tracks={tracksForPlaylist}
+              defaultTitle={group.playlistTitle}
+              defaultDescription={playlistDescription}
+              onCreated={onPlaylistsReload}
+              trigger={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-primary hover:bg-brand-soft hover:text-primary h-6 gap-1 px-2 text-xs"
+                >
+                  <ListPlus className="size-3" />
+                  {selectedTracks.length > 0
+                    ? `Create (${selectedTracks.length})`
+                    : "Create playlist"}
+                </Button>
+              }
+            />
+          ) : null}
         </div>
       </div>
 
       {/* Track table */}
-      {expanded && (
-        <div
-          className="border-border border-t"
-          style={{ height: Math.min(visibleTracks.length * 48 + 32, 420) }}
-        >
-          <LikesTable
-            tracks={visibleTracks}
-            selectedIds={selectedIds}
-            onToggleSelect={onToggleSelect}
-            onRangeSelect={onRangeSelect}
-            onSelectAll={handleSelectAll}
-            onDeselectAll={handleDeselectAll}
-            collectionIds={collectionIds}
-            newTrackUrns={newTrackUrns}
-          />
-        </div>
-      )}
+      <div className="min-h-0 flex-1">
+        <LikesTable
+          tracks={visibleTracks}
+          selectedIds={selectedIds}
+          onToggleSelect={onToggleSelect}
+          onRangeSelect={onRangeSelect}
+          onSelectAll={handleSelectAll}
+          onDeselectAll={handleDeselectAll}
+          collectionIds={collectionIds}
+          newTrackUrns={newTrackUrns}
+        />
+      </div>
     </div>
   );
 }

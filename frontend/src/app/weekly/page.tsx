@@ -20,8 +20,18 @@ import {
 
 import { useFollowingsTracks } from "./use-followings-tracks";
 import { useWeeklyFilter, type WeeklyFilterOptions } from "./use-weekly-filter";
-import { useWeeklyGroups, type GroupingMode } from "./use-weekly-groups";
+import {
+  useWeeklyGroups,
+  type GroupingMode,
+  type WeekGroup,
+} from "./use-weekly-groups";
 import { useWeeklyPlaylists } from "./use-weekly-playlists";
+import {
+  WeeklyTreePanel,
+  weekNodeId,
+  type OrphanEntry,
+  type WeekEntry,
+} from "./weekly-tree-panel";
 
 function buildPlaylistDescription(group: {
   start: Date;
@@ -58,6 +68,9 @@ export default function WeeklyPage() {
     parse: (v) => (v === "biweekly" ? "biweekly" : "weekly"),
     serialize: (v) => v,
   });
+  const [selectedId, setSelectedId] = useQueryState("node", {
+    defaultValue: "",
+  });
 
   const { tracks, loading, loaded, error, reload } = useFollowingsTracks();
   const {
@@ -87,7 +100,7 @@ export default function WeeklyPage() {
   const [excludeOwnLikes, setExcludeOwnLikes] = useState(true);
   const [trackType, setTrackType] = useState<"track" | "set" | null>("track");
 
-  // Liked track IDs — fetched lazily when the filter is first enabled
+  // Liked track IDs
   const [likedTrackIds, setLikedTrackIds] = useState<Set<number> | null>(null);
   useEffect(() => {
     if (!excludeOwnLikes || likedTrackIds !== null) return;
@@ -116,18 +129,29 @@ export default function WeeklyPage() {
     };
   }, [excludeOwnLikes, likedTrackIds]);
 
-  const filterOptions: WeeklyFilterOptions = {
-    search,
-    genres,
-    minDuration,
-    maxDuration,
-    trackType,
-    excludeSeen,
-    inCollection,
-    excludeOwnLikes,
-  };
+  const filterOptions: WeeklyFilterOptions = useMemo(
+    () => ({
+      search,
+      genres,
+      minDuration,
+      maxDuration,
+      trackType,
+      excludeSeen,
+      inCollection,
+      excludeOwnLikes,
+    }),
+    [
+      search,
+      genres,
+      minDuration,
+      maxDuration,
+      trackType,
+      excludeSeen,
+      inCollection,
+      excludeOwnLikes,
+    ],
+  );
 
-  // Apply filter to all tracks to get availableGenres and filtered counts
   const { filteredTracks: allFilteredTracks, availableGenres } =
     useWeeklyFilter(
       tracks,
@@ -146,7 +170,7 @@ export default function WeeklyPage() {
     }));
   }, [groups, allFilteredTracks]);
 
-  // Global selection state (across all groups)
+  // Global selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const toggleSelect = useCallback((id: number) => {
@@ -182,7 +206,6 @@ export default function WeeklyPage() {
     });
   }, []);
 
-  // Build playlist title map: playlistTitle -> SCPlaylist
   const playlistByTitle = useMemo(() => {
     const map = new Map<string, SCPlaylist>();
     for (const pl of weeklyPlaylists) {
@@ -191,34 +214,139 @@ export default function WeeklyPage() {
     return map;
   }, [weeklyPlaylists]);
 
-  // Playlists that don't match any feed group (outside the 2-week feed window)
+  // Orphan playlists (outside 2-week feed window)
   const orphanGroups = useMemo(() => {
     const feedPlaylistTitles = new Set(groups.map((g) => g.playlistTitle));
-    return (
-      weeklyPlaylists
-        .filter((pl) => !feedPlaylistTitles.has((pl.title ?? "").trim()))
-        .map((pl) => {
-          const createdAt = (pl as Record<string, unknown>).created_at as
-            | string
-            | undefined;
-          const date = createdAt ? new Date(createdAt) : new Date(0);
-          return {
-            group: {
-              key: `orphan-${(pl as Record<string, unknown>).urn ?? pl.title}`,
-              label: (pl.title ?? "").trim(),
-              playlistTitle: (pl.title ?? "").trim(),
-              start: date,
-              end: date,
-              tracks: [],
-              isCurrent: false,
-            },
-            filteredTracks: [] as SCTrack[],
-          };
-        })
-        // Sort most-recent first by created_at
-        .sort((a, b) => b.group.start.getTime() - a.group.start.getTime())
-    );
+    return weeklyPlaylists
+      .filter((pl) => !feedPlaylistTitles.has((pl.title ?? "").trim()))
+      .map((pl) => {
+        const createdAt = (pl as Record<string, unknown>).created_at as
+          | string
+          | undefined;
+        const date = createdAt ? new Date(createdAt) : new Date(0);
+        const key = `orphan-${(pl as Record<string, unknown>).urn ?? pl.title}`;
+        const title = (pl.title ?? "").trim();
+        const group: WeekGroup = {
+          key,
+          label: title,
+          playlistTitle: title,
+          start: date,
+          end: date,
+          tracks: [],
+          isCurrent: false,
+        };
+        return { group, filteredTracks: [] as SCTrack[] };
+      })
+      .sort((a, b) => b.group.start.getTime() - a.group.start.getTime());
   }, [weeklyPlaylists, groups]);
+
+  // Only show groups that have tracks or an existing playlist
+  const visibleGroups = useMemo(
+    () =>
+      groupsWithFilteredTracks.filter(
+        ({ filteredTracks, group }) =>
+          filteredTracks.length > 0 || playlistByTitle.has(group.playlistTitle),
+      ),
+    [groupsWithFilteredTracks, playlistByTitle],
+  );
+
+  // Active weeks tree entries. trackCount is the total the user would see if
+  // they opened this week (existing playlist size + new feed tracks). Filters
+  // like "exclude seen" intentionally do NOT shrink this total — it's the
+  // actionable size of the week, not the filtered feed slice.
+  const weekEntries: WeekEntry[] = useMemo(
+    () =>
+      visibleGroups.map(({ group, filteredTracks }) => {
+        const pl = playlistByTitle.get(group.playlistTitle);
+        if (!pl) {
+          return {
+            group,
+            hasPlaylist: false,
+            newCount: 0,
+            trackCount: filteredTracks.length,
+          };
+        }
+        const existingUrns = new Set<string>();
+        for (const t of pl.tracks ?? []) {
+          if (t.urn) existingUrns.add(t.urn);
+        }
+        const existingCount = pl.track_count ?? pl.tracks?.length ?? 0;
+        const newCount = filteredTracks.reduce(
+          (n, t) => n + (t.urn && !existingUrns.has(t.urn) ? 1 : 0),
+          0,
+        );
+        return {
+          group,
+          hasPlaylist: true,
+          newCount,
+          trackCount: existingCount + newCount,
+        };
+      }),
+    [visibleGroups, playlistByTitle],
+  );
+
+  // Past Weeks tree entries. Apply the same filter predicate to the orphan
+  // playlist's own tracks so counts line up with what the table would show.
+  // newCount uses the filtered feed slice within a ~week window of the
+  // playlist — typically 0 since the feed only spans ~2 weeks.
+  const orphanEntries: OrphanEntry[] = useMemo(() => {
+    const WEEK_MS = 7 * 86400000;
+    return orphanGroups.map(({ group }) => {
+      const pl = playlistByTitle.get(group.playlistTitle);
+      const plTracks = pl?.tracks ?? [];
+      const existingCount = pl?.track_count ?? plTracks.length;
+
+      let newCount = 0;
+      if (pl) {
+        const existingUrns = new Set<string>();
+        for (const t of plTracks) {
+          if (t.urn) existingUrns.add(t.urn);
+        }
+        const anchor = group.start.getTime();
+        const start = anchor - WEEK_MS;
+        const end = anchor + 86400000;
+        for (const t of allFilteredTracks) {
+          if (!t.urn || existingUrns.has(t.urn)) continue;
+          const ts = t.created_at ? Date.parse(t.created_at) : 0;
+          if (ts >= start && ts <= end) newCount++;
+        }
+      }
+
+      return {
+        key: group.key,
+        title: group.label,
+        trackCount: existingCount + newCount,
+        newCount,
+      };
+    });
+  }, [orphanGroups, playlistByTitle, allFilteredTracks]);
+
+  const visibleWeekGroups = useMemo(
+    () => visibleGroups.map(({ group }) => group),
+    [visibleGroups],
+  );
+
+  // Default selection: first visible group (current week wins)
+  useEffect(() => {
+    if (selectedId) return;
+    const current = visibleWeekGroups.find((g) => g.isCurrent);
+    const first = current ?? visibleWeekGroups[0];
+    if (first) setSelectedId(weekNodeId(first.key));
+  }, [selectedId, visibleWeekGroups, setSelectedId]);
+
+  // Resolve the selected entry (week or orphan)
+  const selectedEntry = useMemo(() => {
+    if (!selectedId) return null;
+    if (selectedId.startsWith("week:")) {
+      const key = selectedId.slice("week:".length);
+      return visibleGroups.find(({ group }) => group.key === key) ?? null;
+    }
+    if (selectedId.startsWith("orphan:")) {
+      const key = selectedId.slice("orphan:".length);
+      return orphanGroups.find(({ group }) => group.key === key) ?? null;
+    }
+    return null;
+  }, [selectedId, visibleGroups, orphanGroups]);
 
   const totalFilteredCount = allFilteredTracks.length;
   const selectedCount = selectedIds.size;
@@ -254,105 +382,104 @@ export default function WeeklyPage() {
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <LikesFilterBar
-        search={search}
-        onSearchChange={setSearch}
-        genres={genres}
-        onGenresChange={setGenres}
-        availableGenres={availableGenres}
-        minDuration={minDuration}
-        maxDuration={maxDuration}
-        onMinDurationChange={setMinDuration}
-        onMaxDurationChange={setMaxDuration}
-        trackType={trackType}
-        onTrackTypeChange={setTrackType}
-        excludeMyLikes={excludeSeen}
-        onExcludeMyLikesChange={setExcludeSeen}
-        showExcludeMyLikes={true}
-        excludeMyLikesLabel="Exclude previously added"
-        excludeOwnLikes={excludeOwnLikes}
-        onExcludeOwnLikesChange={setExcludeOwnLikes}
-        showExcludeOwnLikes={true}
-        inCollection={inCollection}
-        onInCollectionChange={setInCollection}
-        showInCollection={collectionIds.size > 0}
-        filteredCount={totalFilteredCount}
-        totalCount={tracks.length}
-        loading={loading}
-        selectedCount={selectedCount}
+    <div className="flex min-h-0 flex-1">
+      <WeeklyTreePanel
+        weeks={weekEntries}
+        orphans={orphanEntries}
+        selectedId={selectedId ?? ""}
+        onSelect={setSelectedId}
       />
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-        {error && <div className="text-destructive px-1 text-sm">{error}</div>}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <LikesFilterBar
+          search={search}
+          onSearchChange={setSearch}
+          genres={genres}
+          onGenresChange={setGenres}
+          availableGenres={availableGenres}
+          minDuration={minDuration}
+          maxDuration={maxDuration}
+          onMinDurationChange={setMinDuration}
+          onMaxDurationChange={setMaxDuration}
+          trackType={trackType}
+          onTrackTypeChange={setTrackType}
+          excludeMyLikes={excludeSeen}
+          onExcludeMyLikesChange={setExcludeSeen}
+          showExcludeMyLikes={true}
+          excludeMyLikesLabel="Exclude previously added"
+          excludeOwnLikes={excludeOwnLikes}
+          onExcludeOwnLikesChange={setExcludeOwnLikes}
+          showExcludeOwnLikes={true}
+          inCollection={inCollection}
+          onInCollectionChange={setInCollection}
+          showInCollection={collectionIds.size > 0}
+          filteredCount={totalFilteredCount}
+          totalCount={tracks.length}
+          loading={loading}
+          selectedCount={selectedCount}
+        />
 
-        {loading && tracks.length === 0 && (
-          <div className="text-muted-foreground flex h-48 flex-col items-center justify-center gap-3">
-            <LogoSpinner />
-            <span className="text-sm">
-              Loading tracks from followed artists…
-            </span>
-          </div>
-        )}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {error && (
+            <div className="text-destructive px-1 text-sm">{error}</div>
+          )}
 
-        {!loading && tracks.length === 0 && !error && (
-          <div className="text-muted-foreground flex h-48 flex-col items-center justify-center gap-2">
-            <CalendarDays className="size-8 opacity-30" />
-            <span className="text-sm">
-              No tracks found in the last 2 weeks.
-            </span>
-          </div>
-        )}
+          {loading && tracks.length === 0 && (
+            <div className="text-muted-foreground flex h-48 flex-col items-center justify-center gap-3">
+              <LogoSpinner />
+              <span className="text-sm">
+                Loading tracks from followed artists…
+              </span>
+            </div>
+          )}
 
-        {groupsWithFilteredTracks
-          .filter(
-            ({ filteredTracks, group }) =>
-              filteredTracks.length > 0 ||
-              playlistByTitle.has(group.playlistTitle),
-          )
-          .map(({ group, filteredTracks }, i) => (
+          {!loading && tracks.length === 0 && !error && (
+            <div className="text-muted-foreground flex h-48 flex-col items-center justify-center gap-2">
+              <CalendarDays className="size-8 opacity-30" />
+              <span className="text-sm">
+                No tracks found in the last 2 weeks.
+              </span>
+            </div>
+          )}
+
+          {!loading && tracks.length > 0 && !selectedEntry && (
+            <div className="text-muted-foreground flex h-48 flex-col items-center justify-center gap-2">
+              <CalendarDays className="size-8 opacity-30" />
+              <span className="text-sm">Select a week from the sidebar.</span>
+            </div>
+          )}
+
+          {selectedEntry && (
             <WeeklyGroupCard
-              key={group.key}
-              group={group}
-              filteredTracks={filteredTracks}
+              key={selectedEntry.group.key}
+              group={selectedEntry.group}
+              filteredTracks={selectedEntry.filteredTracks}
               selectedIds={selectedIds}
               onToggleSelect={toggleSelect}
               onRangeSelect={rangeSelect}
               onSelectAll={selectGroupAll}
               onDeselectAll={deselectGroup}
               collectionIds={collectionIds}
-              existingPlaylist={playlistByTitle.get(group.playlistTitle)}
-              defaultExpanded={i === 0}
-              playlistDescription={buildPlaylistDescription(group)}
+              existingPlaylist={playlistByTitle.get(
+                selectedEntry.group.playlistTitle,
+              )}
+              playlistDescription={
+                selectedEntry.group.start.getTime() > 0
+                  ? buildPlaylistDescription(selectedEntry.group)
+                  : ""
+              }
               onPlaylistsReload={reloadPlaylists}
               trackType={trackType}
             />
-          ))}
+          )}
 
-        {orphanGroups.map(({ group, filteredTracks }) => (
-          <WeeklyGroupCard
-            key={group.key}
-            group={group}
-            filteredTracks={filteredTracks}
-            selectedIds={selectedIds}
-            onToggleSelect={toggleSelect}
-            onRangeSelect={rangeSelect}
-            onSelectAll={selectGroupAll}
-            onDeselectAll={deselectGroup}
-            collectionIds={collectionIds}
-            existingPlaylist={playlistByTitle.get(group.playlistTitle)}
-            defaultExpanded={false}
-            playlistDescription=""
-            onPlaylistsReload={reloadPlaylists}
-          />
-        ))}
-
-        {loading && tracks.length > 0 && (
-          <div className="text-muted-foreground flex items-center gap-2 px-1 py-2 text-xs">
-            <LogoSpinner className="size-4" />
-            Loading more… ({loaded.toLocaleString()} so far)
-          </div>
-        )}
+          {loading && tracks.length > 0 && (
+            <div className="text-muted-foreground mt-3 flex items-center gap-2 px-1 py-2 text-xs">
+              <LogoSpinner className="size-4" />
+              Loading more… ({loaded.toLocaleString()} so far)
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -24,6 +24,55 @@ function extractId(track: SCTrack): number | undefined {
   return parseInt(parts[parts.length - 1], 10) || undefined;
 }
 
+/**
+ * Builds a pure predicate that applies the filter options to a single track.
+ * Use this when you need to filter tracks outside of `useWeeklyFilter` (e.g.
+ * counting filtered tracks per playlist for the tree view).
+ */
+export function makeWeeklyFilterPredicate(
+  options: WeeklyFilterOptions,
+  seenTrackIds?: Set<number>,
+  collectionIds?: Set<number>,
+  likedTrackIds?: Set<number>,
+): (track: SCTrack) => boolean {
+  const searchLower = options.search.toLowerCase().trim();
+  return (track) => {
+    if (searchLower) {
+      const title = (track.title ?? "").toLowerCase();
+      const artist = (track.user?.username ?? "").toLowerCase();
+      if (!title.includes(searchLower) && !artist.includes(searchLower))
+        return false;
+    }
+    if (options.genres.length > 0) {
+      if (!track.genre || !options.genres.includes(track.genre)) return false;
+    }
+    if (track.duration != null) {
+      const durationSec = track.duration / 1000;
+      if (options.minDuration != null && durationSec < options.minDuration)
+        return false;
+      if (options.maxDuration != null && durationSec > options.maxDuration)
+        return false;
+      if (options.trackType === "track" && durationSec >= 720) return false;
+      if (options.trackType === "set" && durationSec < 720) return false;
+    }
+    if (options.excludeSeen && seenTrackIds) {
+      const id = extractId(track);
+      if (id && seenTrackIds.has(id)) return false;
+    }
+    if (options.inCollection !== null && collectionIds) {
+      const id = extractId(track);
+      const isInCollection = id != null && collectionIds.has(id);
+      if (options.inCollection && !isInCollection) return false;
+      if (!options.inCollection && isInCollection) return false;
+    }
+    if (options.excludeOwnLikes && likedTrackIds) {
+      const id = extractId(track);
+      if (id && likedTrackIds.has(id)) return false;
+    }
+    return true;
+  };
+}
+
 export function useWeeklyFilter(
   tracks: SCTrack[],
   options: WeeklyFilterOptions,
@@ -40,62 +89,14 @@ export function useWeeklyFilter(
   }, [tracks]);
 
   const filteredTracks = useMemo(() => {
-    const searchLower = options.search.toLowerCase().trim();
-    return tracks.filter((track) => {
-      if (searchLower) {
-        const title = (track.title ?? "").toLowerCase();
-        const artist = (track.user?.username ?? "").toLowerCase();
-        if (!title.includes(searchLower) && !artist.includes(searchLower))
-          return false;
-      }
-
-      if (options.genres.length > 0) {
-        if (!track.genre || !options.genres.includes(track.genre)) return false;
-      }
-
-      if (track.duration != null) {
-        const durationSec = track.duration / 1000;
-        if (options.minDuration != null && durationSec < options.minDuration)
-          return false;
-        if (options.maxDuration != null && durationSec > options.maxDuration)
-          return false;
-        if (options.trackType === "track" && durationSec >= 720) return false;
-        if (options.trackType === "set" && durationSec < 720) return false;
-      }
-
-      if (options.excludeSeen && seenTrackIds) {
-        const id = extractId(track);
-        if (id && seenTrackIds.has(id)) return false;
-      }
-
-      if (options.inCollection !== null && collectionIds) {
-        const id = extractId(track);
-        const isInCollection = id != null && collectionIds.has(id);
-        if (options.inCollection && !isInCollection) return false;
-        if (!options.inCollection && isInCollection) return false;
-      }
-
-      if (options.excludeOwnLikes && likedTrackIds) {
-        const id = extractId(track);
-        if (id && likedTrackIds.has(id)) return false;
-      }
-
-      return true;
-    });
-  }, [
-    tracks,
-    options.search,
-    options.genres,
-    options.minDuration,
-    options.maxDuration,
-    options.trackType,
-    options.excludeSeen,
-    seenTrackIds,
-    options.inCollection,
-    collectionIds,
-    options.excludeOwnLikes,
-    likedTrackIds,
-  ]);
+    const predicate = makeWeeklyFilterPredicate(
+      options,
+      seenTrackIds,
+      collectionIds,
+      likedTrackIds,
+    );
+    return tracks.filter(predicate);
+  }, [tracks, options, seenTrackIds, collectionIds, likedTrackIds]);
 
   return { filteredTracks, availableGenres };
 }

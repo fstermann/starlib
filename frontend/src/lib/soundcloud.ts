@@ -232,6 +232,7 @@ export async function getFeedTracksPage(
 export async function getMyPlaylists(
   limit = 50,
   nextHref?: string,
+  showTracks = true,
 ): Promise<SCPlaylists> {
   if (nextHref) {
     const token = await ensureValidToken();
@@ -245,10 +246,72 @@ export async function getMyPlaylists(
   const client = await getClient();
   const { data, error } = await client.GET("/me/playlists", {
     params: {
-      query: { limit, show_tracks: true, linked_partitioning: true } as never,
+      query: {
+        limit,
+        show_tracks: showTracks,
+        linked_partitioning: true,
+      } as never,
     },
   });
   if (error)
     throw new Error(`Failed to fetch playlists: ${JSON.stringify(error)}`);
   return data as SCPlaylists;
+}
+
+export async function getUserPlaylists(
+  userUrn: string,
+  limit = 50,
+  nextHref?: string,
+  showTracks = true,
+): Promise<SCPlaylists> {
+  if (nextHref) {
+    const token = await ensureValidToken();
+    const resp = await fetch(nextHref, {
+      headers: { Authorization: `OAuth ${token}` },
+    });
+    if (!resp.ok)
+      throw new Error(`Failed to fetch playlists page: ${resp.status}`);
+    return (await resp.json()) as SCPlaylists;
+  }
+  const client = await getClient();
+  const { data, error } = await client.GET("/users/{user_urn}/playlists", {
+    params: {
+      path: { user_urn: userUrn },
+      query: {
+        limit,
+        show_tracks: showTracks,
+        linked_partitioning: true,
+      } as never,
+    },
+  });
+  if (error)
+    throw new Error(`Failed to fetch user playlists: ${JSON.stringify(error)}`);
+  return data as SCPlaylists;
+}
+
+export async function getPlaylistTracks(
+  playlistUrn: string,
+  nextHref?: string,
+): Promise<SCTracks> {
+  if (nextHref) {
+    const token = await ensureValidToken();
+    const resp = await fetch(nextHref, {
+      headers: { Authorization: `OAuth ${token}` },
+    });
+    if (!resp.ok)
+      throw new Error(`Failed to fetch playlist tracks page: ${resp.status}`);
+    return (await resp.json()) as SCTracks;
+  }
+  const client = await getClient();
+  const { data, error } = await client.GET("/playlists/{playlist_urn}/tracks", {
+    params: {
+      path: { playlist_urn: playlistUrn },
+      query: { linked_partitioning: true } as never,
+    },
+  });
+  if (error)
+    throw new Error(
+      `Failed to fetch playlist tracks: ${JSON.stringify(error)}`,
+    );
+  return data as SCTracks;
 }
