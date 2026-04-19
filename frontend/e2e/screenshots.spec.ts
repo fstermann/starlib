@@ -342,7 +342,7 @@ async function mockScreenshotApi(page: Page) {
     }),
   );
 
-  // SoundCloud track search (used by meta editor SC panel — return empty to avoid errors)
+  // SoundCloud track search (used by the library SC panel — return empty to avoid errors)
   await page.route("https://api.soundcloud.com/tracks*", (route) =>
     route.fulfill({
       status: 200,

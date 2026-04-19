@@ -63,7 +63,7 @@ const MOCK_TRACK_INFO = {
   issues: [],
 };
 
-test.describe("Meta editor waveform visibility", () => {
+test.describe("Library waveform visibility", () => {
   test.beforeEach(async ({ page }) => {
     // Override file listing to return one file (mode-based and path-based)
     await page.route("**/api/metadata/folders/*/browse*", (route) =>
@@ -124,13 +124,13 @@ test.describe("Meta editor waveform visibility", () => {
   }) => {
     await selectFileAndWaitForPlayer(page);
 
-    // Switch from 'prepare' to 'collection' via folder shortcut button
-    await page.getByRole("button", { name: "Collection" }).click();
+    // Switch from 'prepare' to 'collection' via the pinned shortcut row
+    await page.getByRole("button", { name: "Collection", exact: true }).click();
 
     await expect(page.getByTestId("waveform-player")).not.toBeVisible();
   });
 
-  test("waveform is hidden when navigating away from meta editor", async ({
+  test("waveform is hidden when navigating away from library", async ({
     page,
   }) => {
     await selectFileAndWaitForPlayer(page);
@@ -146,7 +146,7 @@ test.describe("Meta editor waveform visibility", () => {
   });
 });
 
-test.describe("Meta editor track playback", () => {
+test.describe("Library track playback", () => {
   test.beforeEach(async ({ page }) => {
     await page.route("**/api/metadata/folders/*/browse*", (route) =>
       route.fulfill({
