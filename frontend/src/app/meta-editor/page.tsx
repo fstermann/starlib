@@ -17,7 +17,6 @@ import { CollectionFilterBar } from "@/components/collection-filter-bar";
 import { CollectionTable } from "@/components/collection-table";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { useTopBar } from "@/components/layout/top-bar-context";
-import { TreePanel } from "@/components/tree-panel";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -46,6 +45,7 @@ import { searchParams } from "@/lib/search-params";
 import { useResizable } from "@/lib/use-resizable";
 import { cn } from "@/lib/utils";
 
+import { MetaEditorTreePanel } from "./meta-editor-tree-panel";
 import { TrackEditor, type AutoActions } from "./track-editor";
 
 function MetaEditorContent() {
@@ -504,7 +504,7 @@ function MetaEditorContent() {
       {/* Main content: tree | table+filters | editor */}
       <div className="flex min-h-0 flex-1">
         {/* Tree panel */}
-        <TreePanel
+        <MetaEditorTreePanel
           tree={tree}
           selectedId={selectedNodeId ?? ""}
           onSelect={handleTreeSelect}

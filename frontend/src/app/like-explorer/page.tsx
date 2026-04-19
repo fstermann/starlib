@@ -25,8 +25,21 @@ import { api } from "@/lib/api";
 import type { SCTrack, SCUser } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
+import {
+  LIKES_NODE_ID,
+  LikesTreePanel,
+  playlistNodeId,
+  PLAYLISTS_GROUP_ID,
+} from "./likes-tree-panel";
+import { useCombinedPlaylistsTracks } from "./use-combined-playlists-tracks";
 import { useLikes } from "./use-likes";
-import { useLikesFilter } from "./use-likes-filter";
+import {
+  makeLikesFilterPredicate,
+  useLikesFilter,
+  type LikesFilterOptions,
+} from "./use-likes-filter";
+import { usePlaylistTracks } from "./use-playlist-tracks";
+import { useUserPlaylists } from "./use-user-playlists";
 
 function extractId(track: SCTrack): number | undefined {
   if (!track.urn) return undefined;
@@ -36,16 +49,48 @@ function extractId(track: SCTrack): number | undefined {
 
 export default function LikeExplorerPage() {
   const [tab, setTab] = useQueryState("tab", { defaultValue: "me" });
+  const [nodeId, setNodeId] = useQueryState("node", {
+    defaultValue: LIKES_NODE_ID,
+  });
 
   // User search state (Explore tab)
   const [selectedUser, setSelectedUser] = useState<SCUser | null>(null);
 
-  // Determine which user to fetch likes for
-  const exploreUrn = selectedUser?.urn ?? null;
-  const myLikes = useLikes("me");
-  const exploreLikes = useLikes(tab === "explore" ? exploreUrn : null);
+  // Which SoundCloud user we're currently viewing
+  const activeUrn: string | "me" | null =
+    tab === "me" ? "me" : (selectedUser?.urn ?? null);
 
+  const myLikes = useLikes("me");
+  const exploreLikes = useLikes(tab === "explore" ? activeUrn : null);
   const activeLikes = tab === "me" ? myLikes : exploreLikes;
+
+  const { playlists } = useUserPlaylists(activeUrn);
+
+  // Selection mode
+  const isPlaylistView = nodeId?.startsWith("pl:") ?? false;
+  const isAllPlaylistsView = nodeId === PLAYLISTS_GROUP_ID;
+
+  const selectedPlaylist = useMemo(() => {
+    if (!isPlaylistView) return null;
+    return (
+      playlists.find((pl) => playlistNodeId(pl.urn ?? "") === nodeId) ?? null
+    );
+  }, [playlists, nodeId, isPlaylistView]);
+
+  const playlistTracks = usePlaylistTracks(
+    isPlaylistView ? (selectedPlaylist?.urn ?? null) : null,
+  );
+
+  const allPlaylistUrns = useMemo(
+    () =>
+      playlists
+        .map((pl) => pl.urn)
+        .filter((u): u is string => typeof u === "string"),
+    [playlists],
+  );
+  const combinedPlaylistTracks = useCombinedPlaylistsTracks(
+    isAllPlaylistsView ? allPlaylistUrns : null,
+  );
 
   // My liked track IDs for "exclude my likes" filter
   const myLikedIds = useMemo(() => {
@@ -63,8 +108,66 @@ export default function LikeExplorerPage() {
     api
       .getCollectionSoundcloudIds()
       .then((ids) => setCollectionIds(new Set(ids)))
-      .catch(() => {}); // non-critical — column just stays empty
+      .catch(() => {});
   }, []);
+
+  // Reset selection to Likes when the active user changes
+  useEffect(() => {
+    setNodeId(LIKES_NODE_ID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeUrn]);
+
+  // ----- Filter state (lifted so the tree can show filtered counts) -----
+  const [search, setSearch] = useState("");
+  const [genres, setGenres] = useState<string[]>([]);
+  const [minDuration, setMinDuration] = useState<number | null>(null);
+  const [maxDuration, setMaxDuration] = useState<number | null>(null);
+  const [excludeMyLikes, setExcludeMyLikes] = useState(false);
+  const [inCollection, setInCollection] = useState<boolean | null>(null);
+
+  const filterOptions: LikesFilterOptions = useMemo(
+    () => ({
+      search,
+      genres,
+      minDuration,
+      maxDuration,
+      excludeMyLikes,
+      inCollection,
+    }),
+    [search, genres, minDuration, maxDuration, excludeMyLikes, inCollection],
+  );
+
+  const filterPredicate = useMemo(
+    () =>
+      makeLikesFilterPredicate(
+        filterOptions,
+        tab === "explore" ? myLikedIds : undefined,
+        collectionIds,
+      ),
+    [filterOptions, tab, myLikedIds, collectionIds],
+  );
+
+  // Filtered counts for tree nodes
+  const likesCount = useMemo(
+    () => activeLikes.tracks.filter(filterPredicate).length,
+    [activeLikes.tracks, filterPredicate],
+  );
+  const combinedCount = useMemo(
+    () => combinedPlaylistTracks.tracks.filter(filterPredicate).length,
+    [combinedPlaylistTracks.tracks, filterPredicate],
+  );
+  // Filtered count for the selected playlist (we only have its tracks loaded).
+  const selectedPlaylistCount = useMemo(
+    () => playlistTracks.tracks.filter(filterPredicate).length,
+    [playlistTracks.tracks, filterPredicate],
+  );
+  const perPlaylistCount = useMemo(() => {
+    const m = new Map<string, number>();
+    if (selectedPlaylist?.urn) {
+      m.set(selectedPlaylist.urn, selectedPlaylistCount);
+    }
+    return m;
+  }, [selectedPlaylist?.urn, selectedPlaylistCount]);
 
   useTopBar({
     title: (
@@ -99,6 +202,11 @@ export default function LikeExplorerPage() {
     ),
   });
 
+  const storageKey =
+    tab === "me" ? "like-explorer:me" : "like-explorer:explore";
+
+  const viewingUser = tab === "explore" && !selectedUser;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Explore tab: user search / selected user */}
@@ -115,44 +223,109 @@ export default function LikeExplorerPage() {
         </div>
       )}
 
-      <LikeTabView
-        key={tab}
-        tab={tab}
-        activeLikes={activeLikes}
-        myLikedIds={myLikedIds}
-        collectionIds={collectionIds}
-        hasSelectedUser={selectedUser != null}
-      />
+      <div className="flex min-h-0 flex-1">
+        {!viewingUser && (
+          <LikesTreePanel
+            playlists={playlists}
+            selectedId={nodeId ?? LIKES_NODE_ID}
+            onSelect={setNodeId}
+            storageKey={storageKey}
+            likesCount={likesCount}
+            combinedCount={combinedCount}
+            perPlaylistFilteredCount={perPlaylistCount}
+          />
+        )}
+
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <LikesView
+            tab={tab}
+            activeLikes={activeLikes}
+            playlistTracks={playlistTracks}
+            combinedPlaylistTracks={combinedPlaylistTracks}
+            isPlaylistView={isPlaylistView}
+            isAllPlaylistsView={isAllPlaylistsView}
+            myLikedIds={myLikedIds}
+            collectionIds={collectionIds}
+            hasSelectedUser={selectedUser != null}
+            search={search}
+            onSearchChange={setSearch}
+            genres={genres}
+            onGenresChange={setGenres}
+            minDuration={minDuration}
+            onMinDurationChange={setMinDuration}
+            maxDuration={maxDuration}
+            onMaxDurationChange={setMaxDuration}
+            excludeMyLikes={excludeMyLikes}
+            onExcludeMyLikesChange={setExcludeMyLikes}
+            inCollection={inCollection}
+            onInCollectionChange={setInCollection}
+          />
+        </div>
+      </div>
     </div>
   );
 }
 
-type LikeTabViewProps = {
+interface LikesViewProps {
   tab: string;
   activeLikes: ReturnType<typeof useLikes>;
+  playlistTracks: ReturnType<typeof usePlaylistTracks>;
+  combinedPlaylistTracks: ReturnType<typeof useCombinedPlaylistsTracks>;
+  isPlaylistView: boolean;
+  isAllPlaylistsView: boolean;
   myLikedIds: Set<number>;
   collectionIds: Set<number>;
   hasSelectedUser: boolean;
-};
 
-function LikeTabView({
+  // Filter state (lifted)
+  search: string;
+  onSearchChange: (v: string) => void;
+  genres: string[];
+  onGenresChange: (v: string[]) => void;
+  minDuration: number | null;
+  onMinDurationChange: (v: number | null) => void;
+  maxDuration: number | null;
+  onMaxDurationChange: (v: number | null) => void;
+  excludeMyLikes: boolean;
+  onExcludeMyLikesChange: (v: boolean) => void;
+  inCollection: boolean | null;
+  onInCollectionChange: (v: boolean | null) => void;
+}
+
+function LikesView({
   tab,
   activeLikes,
+  playlistTracks,
+  combinedPlaylistTracks,
+  isPlaylistView,
+  isAllPlaylistsView,
   myLikedIds,
   collectionIds,
   hasSelectedUser,
-}: LikeTabViewProps) {
-  // Filter state — resets on tab switch via `key={tab}` on this component.
-  const [search, setSearch] = useState("");
-  const [genres, setGenres] = useState<string[]>([]);
-  const [minDuration, setMinDuration] = useState<number | null>(null);
-  const [maxDuration, setMaxDuration] = useState<number | null>(null);
-  const [excludeMyLikes, setExcludeMyLikes] = useState(false);
-  const [inCollection, setInCollection] = useState<boolean | null>(null);
+  search,
+  onSearchChange,
+  genres,
+  onGenresChange,
+  minDuration,
+  onMinDurationChange,
+  maxDuration,
+  onMaxDurationChange,
+  excludeMyLikes,
+  onExcludeMyLikesChange,
+  inCollection,
+  onInCollectionChange,
+}: LikesViewProps) {
+  // Selection state stays local — filters live at the page level.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
+  const sourceTracks = isPlaylistView
+    ? playlistTracks.tracks
+    : isAllPlaylistsView
+      ? combinedPlaylistTracks.tracks
+      : activeLikes.tracks;
+
   const { filteredTracks, availableGenres } = useLikesFilter(
-    activeLikes.tracks,
+    sourceTracks,
     { search, genres, minDuration, maxDuration, excludeMyLikes, inCollection },
     tab === "explore" ? myLikedIds : undefined,
     collectionIds,
@@ -188,35 +361,51 @@ function LikeTabView({
 
   const selectedTracks = useMemo(
     () =>
-      activeLikes.tracks.filter((t) => {
+      sourceTracks.filter((t) => {
         const id = extractId(t);
         return id != null && selectedIds.has(id);
       }),
-    [activeLikes.tracks, selectedIds],
+    [sourceTracks, selectedIds],
   );
+
+  const loading = isPlaylistView
+    ? playlistTracks.loading
+    : isAllPlaylistsView
+      ? combinedPlaylistTracks.loading
+      : activeLikes.loading;
+  const error = isPlaylistView
+    ? playlistTracks.error
+    : isAllPlaylistsView
+      ? combinedPlaylistTracks.error
+      : activeLikes.error;
+  const loadedCount = isPlaylistView
+    ? playlistTracks.tracks.length
+    : isAllPlaylistsView
+      ? combinedPlaylistTracks.tracks.length
+      : activeLikes.loaded;
 
   return (
     <>
-      {(activeLikes.tracks.length > 0 || activeLikes.loading) && (
+      {(sourceTracks.length > 0 || loading) && (
         <LikesFilterBar
           search={search}
-          onSearchChange={setSearch}
+          onSearchChange={onSearchChange}
           genres={genres}
-          onGenresChange={setGenres}
+          onGenresChange={onGenresChange}
           availableGenres={availableGenres}
           minDuration={minDuration}
           maxDuration={maxDuration}
-          onMinDurationChange={setMinDuration}
-          onMaxDurationChange={setMaxDuration}
+          onMinDurationChange={onMinDurationChange}
+          onMaxDurationChange={onMaxDurationChange}
           excludeMyLikes={excludeMyLikes}
-          onExcludeMyLikesChange={setExcludeMyLikes}
+          onExcludeMyLikesChange={onExcludeMyLikesChange}
           showExcludeMyLikes={tab === "explore"}
           inCollection={inCollection}
-          onInCollectionChange={setInCollection}
+          onInCollectionChange={onInCollectionChange}
           showInCollection={collectionIds.size > 0}
           filteredCount={filteredTracks.length}
-          totalCount={activeLikes.tracks.length}
-          loading={activeLikes.loading}
+          totalCount={sourceTracks.length}
+          loading={loading}
           selectedCount={selectedIds.size}
           actions={
             selectedIds.size > MAX_TRACKS ? (
@@ -264,14 +453,14 @@ function LikeTabView({
       )}
 
       <div className="relative min-h-0 flex-1">
-        {activeLikes.loading && activeLikes.tracks.length === 0 ? (
+        {loading && sourceTracks.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-4">
             <LogoSpinner className="size-16" />
             <p className="text-muted-foreground text-sm">Loading tracks…</p>
           </div>
-        ) : activeLikes.error ? (
+        ) : error ? (
           <div className="flex h-full flex-col items-center justify-center gap-2">
-            <p className="text-destructive text-sm">{activeLikes.error}</p>
+            <p className="text-destructive text-sm">{error}</p>
             <button
               className="text-primary cursor-pointer text-xs underline"
               onClick={activeLikes.reload}
@@ -285,10 +474,14 @@ function LikeTabView({
               Search for a user to explore their likes
             </p>
           </div>
-        ) : activeLikes.tracks.length === 0 && !activeLikes.loading ? (
+        ) : sourceTracks.length === 0 && !loading ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-muted-foreground text-sm">
-              No liked tracks found
+              {isPlaylistView
+                ? "This playlist is empty"
+                : isAllPlaylistsView
+                  ? "No playlists"
+                  : "No liked tracks found"}
             </p>
           </div>
         ) : (
@@ -303,11 +496,11 @@ function LikeTabView({
           />
         )}
 
-        {activeLikes.loading && activeLikes.tracks.length > 0 && (
+        {loading && sourceTracks.length > 0 && (
           <div className="bg-card border-border absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-1.5 shadow-lg">
             <LogoSpinner className="size-4" />
             <span className="text-muted-foreground text-xs">
-              Loading… {activeLikes.loaded} tracks
+              Loading… {loadedCount} tracks
             </span>
           </div>
         )}
