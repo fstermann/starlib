@@ -4,33 +4,24 @@ import {
   ArrowUp,
   Download,
   Eraser,
-  FolderTree,
   Image as ImageIcon,
   PencilLine,
   Settings2,
   XCircle,
 } from "lucide-react";
 import { useQueryState } from "nuqs";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CollectionFilterBar } from "@/components/collection-filter-bar";
 import { CollectionTable } from "@/components/collection-table";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { useTopBar } from "@/components/layout/top-bar-context";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   api,
   type FileInfo,
@@ -45,10 +36,11 @@ import { searchParams } from "@/lib/search-params";
 import { useResizable } from "@/lib/use-resizable";
 import { cn } from "@/lib/utils";
 
-import { MetaEditorTreePanel } from "./meta-editor-tree-panel";
+import { FilesystemTreePanel } from "./filesystem-tree-panel";
+import { LibraryTitle } from "./library-title";
 import { TrackEditor, type AutoActions } from "./track-editor";
 
-function MetaEditorContent() {
+export function FilesystemView() {
   // Selected tree node (absolute folder path). Empty string = not yet loaded.
   const [selectedNodeId, setSelectedNodeId] = useQueryState(
     "nodeId",
@@ -162,16 +154,6 @@ function MetaEditorContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Handle folder shortcut click — find the tree node ID and select it
-  const handleFolderShortcut = useCallback(
-    (folderName: string) => {
-      if (!rootFolder) return;
-      const nodeId = `${rootFolder}/${folderName}`;
-      handleTreeSelect(nodeId);
-    },
-    [rootFolder, handleTreeSelect],
-  );
-
   // Handle ruleset assignment from tree context menu
   const handleSetRuleset = useCallback(
     async (path: string, rulesetId: string | null, recursive: boolean) => {
@@ -185,6 +167,87 @@ function MetaEditorContent() {
       setFolderRulesets(data.folder_rulesets);
     },
     [],
+  );
+
+  // Persist shortcut changes to settings. Also migrates legacy rows where an
+  // absolute path was written into `name` (pre-`path`-field): moves the path
+  // into `path` and replaces `name` with the basename.
+  const saveShortcuts = useCallback(async (next: FolderConfig[]) => {
+    const normalized = next.map((f, i) => {
+      const base = { ...f, order: i };
+      if (!base.path && base.name.startsWith("/")) {
+        const basename = base.name.split("/").filter(Boolean).pop() ?? "folder";
+        return { ...base, name: basename, path: base.name };
+      }
+      return base;
+    });
+    await api.updateFoldersConfig({ folders: normalized });
+    setFolderShortcuts(normalized.filter((f) => f.visible));
+    window.dispatchEvent(new CustomEvent("folders-config-changed"));
+  }, []);
+
+  const handleTogglePin = useCallback(
+    async (path: string, label: string, pinned: boolean) => {
+      const current = (await api.getFoldersConfig()).folders;
+      const pathOf = (f: FolderConfig) => {
+        if (f.path) return f.path;
+        if (f.name.startsWith("/")) return f.name;
+        return `${rootFolder}/${f.name}`;
+      };
+      const existingIdx = current.findIndex((f) => pathOf(f) === path);
+
+      let next: FolderConfig[];
+      if (pinned) {
+        if (existingIdx >= 0) {
+          next = current.map((f, i) =>
+            i === existingIdx ? { ...f, visible: true } : f,
+          );
+        } else {
+          // New pin. `name` is the basename, disambiguated on collision so the
+          // stable id stays unique. `path` is the authoritative field.
+          const basename = path.split("/").filter(Boolean).pop() ?? "folder";
+          const taken = new Set(current.map((f) => f.name));
+          let name = basename;
+          let i = 2;
+          while (taken.has(name)) name = `${basename}-${i++}`;
+          next = [
+            ...current,
+            { name, label, visible: true, order: current.length, path },
+          ];
+        }
+      } else {
+        if (existingIdx < 0) return;
+        next = current.map((f, i) =>
+          i === existingIdx ? { ...f, visible: false } : f,
+        );
+      }
+      await saveShortcuts(next);
+    },
+    [rootFolder, saveShortcuts],
+  );
+
+  const handleReorderShortcuts = useCallback(
+    async (ids: string[]) => {
+      const current = (await api.getFoldersConfig()).folders;
+      const idOf = (f: FolderConfig) => f.path ?? f.name;
+      const byId = new Map(current.map((f) => [idOf(f), f]));
+      const visibleOrdered = ids
+        .map((id) => byId.get(id))
+        .filter((f): f is FolderConfig => !!f);
+      const hidden = current.filter((f) => !ids.includes(idOf(f)));
+      await saveShortcuts([...visibleOrdered, ...hidden]);
+    },
+    [saveShortcuts],
+  );
+
+  const handleRenameShortcut = useCallback(
+    async (id: string, label: string) => {
+      const current = (await api.getFoldersConfig()).folders;
+      const idOf = (f: FolderConfig) => f.path ?? f.name;
+      const next = current.map((f) => (idOf(f) === id ? { ...f, label } : f));
+      await saveShortcuts(next);
+    },
+    [saveShortcuts],
   );
 
   // Track selection
@@ -311,49 +374,8 @@ function MetaEditorContent() {
     return shortcut?.name ?? "prepare";
   })();
 
-  // Which shortcut is active?
-  const activeShortcut = (() => {
-    if (!selectedNodeId || !rootFolder) return "";
-    const shortcut = folderShortcuts.find(
-      (f) => `${rootFolder}/${f.name}` === selectedNodeId,
-    );
-    return shortcut?.name ?? "";
-  })();
-
   useTopBar({
-    title: (
-      <>
-        <span>Meta Editor</span>
-        <div className="bg-border mx-1 h-5 w-px shrink-0" />
-        <div className="flex items-center gap-2">
-          {/* Source switcher (disabled placeholder) */}
-          <Select value="filesystem" disabled>
-            <SelectTrigger className="h-7 w-auto gap-1.5 px-3 text-xs font-medium">
-              <FolderTree className="size-3" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="filesystem">Filesystem</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {/* Folder shortcuts */}
-          <div className="flex items-center gap-0.5">
-            {folderShortcuts.map((folder) => (
-              <Button
-                key={folder.name}
-                variant={activeShortcut === folder.name ? "secondary" : "ghost"}
-                size="sm"
-                className="h-7 cursor-pointer px-3 text-xs font-medium"
-                onClick={() => handleFolderShortcut(folder.name)}
-              >
-                {folder.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-      </>
-    ),
+    title: <LibraryTitle />,
     actions: (
       <div className="flex items-center gap-1">
         {selectedFile && !editorOpen && (
@@ -504,13 +526,18 @@ function MetaEditorContent() {
       {/* Main content: tree | table+filters | editor */}
       <div className="flex min-h-0 flex-1">
         {/* Tree panel */}
-        <MetaEditorTreePanel
+        <FilesystemTreePanel
           tree={tree}
           selectedId={selectedNodeId ?? ""}
           onSelect={handleTreeSelect}
           folderRulesets={folderRulesets}
           rulesets={allRulesets}
           onSetRuleset={handleSetRuleset}
+          shortcuts={folderShortcuts}
+          rootFolder={rootFolder}
+          onTogglePin={handleTogglePin}
+          onReorderShortcuts={handleReorderShortcuts}
+          onRenameShortcut={handleRenameShortcut}
         />
 
         {/* Table + editor split */}
@@ -574,13 +601,5 @@ function MetaEditorContent() {
         </div>
       </div>
     </div>
-  );
-}
-
-export default function MetaEditorPage() {
-  return (
-    <Suspense>
-      <MetaEditorContent />
-    </Suspense>
   );
 }

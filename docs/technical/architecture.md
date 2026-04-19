@@ -55,7 +55,8 @@ The frontend is a **Next.js / React** application built with TypeScript and shad
 frontend/src/
 ├── app/           # Next.js app router pages
 │   ├── auth/      # OAuth callback handling
-│   ├── meta-editor/ # Track metadata editor
+│   ├── library/   # Library — filesystem + SoundCloud sources
+│   ├── weekly/    # Weekly favorites
 │   └── setup/     # Initial setup flow
 ├── components/    # Reusable UI components
 ├── generated/     # Auto-generated SoundCloud API types

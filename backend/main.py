@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
     # Kick off initial mtime-comparison scan for each configured folder
     folders_config = folder_config_service.load_folders()
     for fc in folders_config.folders:
-        folder = root / fc.name
+        folder = Path(fc.path) if fc.path else root / fc.name
         if folder.is_dir():
             logger.info("Starting index scan for %s", folder)
             ensure_folder_indexed(folder)

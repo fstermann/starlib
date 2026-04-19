@@ -52,7 +52,7 @@ function FolderRow({
     transition,
     isDragging,
   } = useSortable({
-    id: folder.name,
+    id: folder.path ?? folder.name,
   });
   const style = { transform: CSS.Transform.toString(transform), transition };
 
@@ -107,7 +107,7 @@ function FolderRow({
           placeholder="Label"
         />
 
-        {/* Folder name badge */}
+        {/* Folder path badge */}
         <Tooltip>
           <TooltipTrigger asChild>
             <span
@@ -116,11 +116,13 @@ function FolderRow({
                 !folder.visible && "opacity-40",
               )}
             >
-              {folder.name}/
+              {folder.path ?? `${folder.name}/`}
             </span>
           </TooltipTrigger>
-          <TooltipContent side="top">
-            Subdirectory name in your music library root
+          <TooltipContent side="top" className="max-w-xs break-all">
+            {folder.path
+              ? `Pinned from: ${folder.path}`
+              : "Subdirectory name in your music library root"}
           </TooltipContent>
         </Tooltip>
 
@@ -225,11 +227,13 @@ export function FolderConfigManager() {
     }
   }
 
+  const idOf = (f: FolderConfig) => f.path ?? f.name;
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIdx = folders.findIndex((f) => f.name === String(active.id));
-    const newIdx = folders.findIndex((f) => f.name === String(over.id));
+    const oldIdx = folders.findIndex((f) => idOf(f) === String(active.id));
+    const newIdx = folders.findIndex((f) => idOf(f) === String(over.id));
     const reordered = arrayMove(folders, oldIdx, newIdx).map((f, i) => ({
       ...f,
       order: i,
@@ -237,17 +241,17 @@ export function FolderConfigManager() {
     save(reordered);
   }
 
-  function handleChange(name: string, updated: FolderConfig) {
-    const next = folders.map((f) => (f.name === name ? updated : f));
+  function handleChange(id: string, updated: FolderConfig) {
+    const next = folders.map((f) => (idOf(f) === id ? updated : f));
     save(next);
   }
 
-  function handleDelete(name: string) {
-    save(folders.filter((f) => f.name !== name));
+  function handleDelete(id: string) {
+    save(folders.filter((f) => idOf(f) !== id));
   }
 
   function handleAdd(name: string, label: string) {
-    if (folders.some((f) => f.name === name)) {
+    if (folders.some((f) => f.name === name && !f.path)) {
       toast.error(`Folder "${name}" already exists`);
       return;
     }
@@ -258,7 +262,7 @@ export function FolderConfigManager() {
     save(next);
   }
 
-  const ids = folders.map((f) => f.name);
+  const ids = folders.map(idOf);
 
   return (
     <div className="flex flex-col gap-4">
@@ -278,14 +282,17 @@ export function FolderConfigManager() {
         >
           <SortableContext items={ids} strategy={verticalListSortingStrategy}>
             <div className="flex flex-col gap-1.5">
-              {folders.map((folder) => (
-                <FolderRow
-                  key={folder.name}
-                  folder={folder}
-                  onChange={(updated) => handleChange(folder.name, updated)}
-                  onDelete={() => handleDelete(folder.name)}
-                />
-              ))}
+              {folders.map((folder) => {
+                const id = idOf(folder);
+                return (
+                  <FolderRow
+                    key={id}
+                    folder={folder}
+                    onChange={(updated) => handleChange(id, updated)}
+                    onDelete={() => handleDelete(id)}
+                  />
+                );
+              })}
             </div>
           </SortableContext>
         </DndContext>

@@ -18,7 +18,7 @@ uv run python -m backend.main     # backend → :8000
 cd frontend && npm run dev        # frontend → :3000
 ```
 
-Frontend routes: `/meta-editor`, `/like-explorer`, `/weekly`, `/design` (dev-only showcase), `/auth/*`, `/setup/*`.
+Frontend routes: `/library` (filesystem + SoundCloud sources via `?source=`), `/weekly`, `/design` (dev-only showcase), `/auth/*`, `/setup/*`.
 
 ## Conventions
 
@@ -26,6 +26,7 @@ Frontend routes: `/meta-editor`, `/like-explorer`, `/weekly`, `/design` (dev-onl
 - **Frontend styling**: see the Design section below — `DESIGN.md` is the spec, `.claude/skills/styling/SKILL.md` is the how-to.
 - **UI primitives** in `frontend/src/components/ui/*` are shadcn-sourced; leave their token vocabulary alone. Feature components use the primitive tokens from `globals.css`.
 - **Package manager**: `npm` in `frontend/`, `uv` for Python, `cargo` for `desktop/`.
+- **Ship model**: Starlib is a Tauri desktop app — there are no public URLs, no bookmarks, no shared deep-links. When renaming routes, URL query values, localStorage keys, or similar persisted identifiers, just rename them cleanly. Don't leave backwards-compatibility aliases, legacy key shims, or "preserve old keys so bookmarks don't break" comments — those concerns don't apply here.
 
 ## Quality gates
 

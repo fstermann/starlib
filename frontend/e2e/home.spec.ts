@@ -9,20 +9,12 @@ test.describe("Home page", () => {
     ).toBeVisible();
   });
 
-  test("displays Meta Editor card as available", async ({ page }) => {
+  test("displays Library card as available", async ({ page }) => {
     await page.goto("/");
     const main = page.locator("main");
-    const card = main.getByRole("link", { name: /Meta Editor/i });
+    const card = main.getByRole("link", { name: /Library/i });
     await expect(card).toBeVisible();
-    await expect(card).toHaveAttribute("href", "/meta-editor");
-  });
-
-  test("displays Like Explorer card as available", async ({ page }) => {
-    await page.goto("/");
-    const main = page.locator("main");
-    const card = main.getByRole("link", { name: /Like Explorer/i });
-    await expect(card).toBeVisible();
-    await expect(card).toHaveAttribute("href", "/like-explorer");
+    await expect(card).toHaveAttribute("href", "/library");
   });
 
   test("displays Weekly Favorites card as available", async ({ page }) => {
@@ -33,10 +25,10 @@ test.describe("Home page", () => {
     await expect(card).toHaveAttribute("href", "/weekly");
   });
 
-  test("navigates to meta editor when clicking the card", async ({ page }) => {
+  test("navigates to library when clicking the card", async ({ page }) => {
     await page.goto("/");
     const main = page.locator("main");
-    await main.getByRole("link", { name: /Meta Editor/i }).click();
-    await expect(page).toHaveURL(/\/meta-editor/);
+    await main.getByRole("link", { name: /Library/i }).click();
+    await expect(page).toHaveURL(/\/library/);
   });
 });

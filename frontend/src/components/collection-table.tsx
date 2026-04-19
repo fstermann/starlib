@@ -18,7 +18,7 @@ import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { serializeComment } from "@/app/meta-editor/utils";
+import { serializeComment } from "@/app/library/utils";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { MiniWaveform } from "@/components/mini-waveform";

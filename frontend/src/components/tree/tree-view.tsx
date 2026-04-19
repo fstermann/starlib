@@ -14,6 +14,7 @@ export function TreeView<N extends TreeNodeShape<N>>({
   renderIcon,
   renderBadge,
   wrapNode,
+  header,
   footer,
   storageKey,
   width,
@@ -43,6 +44,7 @@ export function TreeView<N extends TreeNodeShape<N>>({
       style={{ width: `${panelWidth}px` }}
     >
       <div className="flex-1 overflow-y-auto p-2">
+        {header}
         {tree ? (
           hideRoot ? (
             tree.children.map((child) => (

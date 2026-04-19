@@ -29,7 +29,7 @@ Connect your SoundCloud account and configure the app.
 
 ### Features
 
-Explore the Meta Editor, Like Explorer, and Weekly Favorites.
+Explore the Library and Weekly Favorites.
 
 [Features :material-arrow-right:](features.md){ .md-button }
 </div>

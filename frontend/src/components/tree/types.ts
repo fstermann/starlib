@@ -13,6 +13,8 @@ export interface TreeViewProps<N extends TreeNodeShape<N>> {
   renderIcon?: (node: N, expanded: boolean) => ReactNode;
   renderBadge?: (node: N) => ReactNode;
   wrapNode?: (node: N, row: ReactNode) => ReactNode;
+  /** Rendered above the tree (inside the scroll area). */
+  header?: ReactNode;
   footer?: ReactNode;
   storageKey: string;
   width?: { default?: number; min?: number; max?: number; storageKey?: string };
