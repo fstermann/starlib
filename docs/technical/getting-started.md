@@ -69,39 +69,51 @@ Once the backend is running, interactive API docs are available at:
 - **Swagger UI:** [localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc:** [localhost:8000/redoc](http://localhost:8000/redoc)
 
-## CLI
+## Make targets
 
-Starlib ships a `starlib` command for common dev tasks.
+Common dev tasks live in the repo-root `Makefile`. Run `make help` to list them.
 
-### Installation
+### Run
 
-Install it once as a global uv tool so it's available in every shell:
+| Target | Description |
+|--------|-------------|
+| `make dev` | Run backend and frontend together (Ctrl-C stops both) |
+| `make backend` | Run the FastAPI backend on `:8000` |
+| `make frontend` | Run the Next.js frontend on `:3000` |
+| `make docs` | Serve the Zensical docs on `:8200` |
 
-```bash
-uv tool install --editable .
-uv tool update-shell   # adds ~/.local/bin to PATH (restart shell after)
-```
+### Quality
 
-After restarting your shell, `starlib` is available globally.
+| Target | Depends on | Description |
+|--------|------------|-------------|
+| `make check` | `lint` + `format-check` + `typecheck` + `test` | Full CI-equivalent gate |
+| `make lint` | `lint-be` + `lint-fe` | Ruff + ESLint |
+| `make lint-be` | — | `ruff check` |
+| `make lint-fe` | — | `npm run lint` |
+| `make format` | — | Write formatting: Ruff + Prettier |
+| `make format-check` | — | Check formatting without writing |
+| `make typecheck` | — | mypy + `tsc --noEmit` |
+| `make test` | `test-be` + `test-fe` | Backend + frontend unit tests |
+| `make test-be` | — | `pytest tests/` |
+| `make test-fe` | — | `vitest run` |
+| `make test-e2e` | — | Playwright e2e suite |
 
-### Commands
+### Assets & build
 
-| Command | Description |
-|---------|-------------|
-| `starlib screenshot` | Capture all documentation screenshots |
+| Target | Depends on | Description |
+|--------|------------|-------------|
+| `make generate` | — | Regenerate SoundCloud + backend OpenAPI TS clients |
+| `make icons` | — | Generate desktop icons from `assets/starlib-dark-grad.png` (override with `ICON_SOURCE=...`) |
+| `make screenshot` | — | Capture all documentation screenshots |
+| `make build` | — | Build the full desktop app (sidecar + frontend + Tauri) |
+| `make run` | `build` | Build then launch the desktop app |
 
-#### `starlib screenshot`
+### `make screenshot`
 
 Fetches fresh track metadata from the iTunes Search API, then runs the Playwright screenshot suite (`screenshots.spec.ts`) and writes PNGs to `docs/assets/images/screenshots/`. The track cache is stored in `.cache/screenshot-tracks.json`.
 
 ```bash
-starlib screenshot
+make screenshot
 ```
 
-Make sure the frontend dev server is running (`cd frontend && npm run dev`) before capturing screenshots, or let Playwright start it automatically via `reuseExistingServer`.
-
-## Running tests
-
-```bash
-uv run python -m pytest tests/ -v
-```
+Make sure the frontend dev server is running (`make frontend`) before capturing screenshots, or let Playwright start it automatically via `reuseExistingServer`.

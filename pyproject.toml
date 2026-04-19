@@ -48,11 +48,8 @@ desktop = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[project.scripts]
-starlib = "starlib.cli:main"
-
 [tool.hatch.build.targets.wheel]
-packages = ["backend", "soundcloud_tools", "starlib"]
+packages = ["backend", "soundcloud_tools"]
 
 [tool.ruff]
 line-length = 120
