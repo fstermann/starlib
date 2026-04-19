@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Disc3, Music2, Search, Tag, Timer } from "lucide-react";
+import { Cloud, Disc3, Music2, Search, Tag, Timer } from "lucide-react";
 
 import type { FilterAttribute } from "@/lib/filters/schema";
 
@@ -39,6 +39,7 @@ const REGISTRY: Record<string, FilterDisplay> = {
   },
   bpm: { icon: Disc3 },
   duration: { icon: Timer, format: formatDuration },
+  soundcloud_linked: { icon: Cloud, label: "SoundCloud" },
 };
 
 function humanize(id: string): string {

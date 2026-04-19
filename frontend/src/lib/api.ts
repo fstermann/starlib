@@ -75,6 +75,7 @@ export interface BrowseParams {
   bpm_max?: number;
   date_from?: string;
   date_to?: string;
+  has_soundcloud_id?: boolean;
   sort_by?:
     | "title"
     | "artist"
@@ -83,6 +84,7 @@ export interface BrowseParams {
     | "key"
     | "release_date"
     | "file_name"
+    | "folder"
     | "mtime";
   sort_order?: "asc" | "desc";
 }
@@ -469,6 +471,8 @@ export const api = {
     if (params.bpm_max !== undefined) qs.set("bpm_max", String(params.bpm_max));
     if (params.date_from) qs.set("date_from", params.date_from);
     if (params.date_to) qs.set("date_to", params.date_to);
+    if (params.has_soundcloud_id !== undefined)
+      qs.set("has_soundcloud_id", String(params.has_soundcloud_id));
     if (params.sort_by) qs.set("sort_by", params.sort_by);
     if (params.sort_order) qs.set("sort_order", params.sort_order);
     const url = `${API_BASE_URL}/api/metadata/folders/${mode}/browse?${qs.toString()}`;
@@ -596,6 +600,8 @@ export const api = {
     if (params.bpm_max !== undefined) qs.set("bpm_max", String(params.bpm_max));
     if (params.date_from) qs.set("date_from", params.date_from);
     if (params.date_to) qs.set("date_to", params.date_to);
+    if (params.has_soundcloud_id !== undefined)
+      qs.set("has_soundcloud_id", String(params.has_soundcloud_id));
     if (params.sort_by) qs.set("sort_by", params.sort_by);
     if (params.sort_order) qs.set("sort_order", params.sort_order);
     const url = `${API_BASE_URL}/api/metadata/folders/browse-path?${qs.toString()}`;

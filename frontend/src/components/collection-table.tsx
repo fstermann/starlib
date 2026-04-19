@@ -1,15 +1,12 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { motion } from "framer-motion";
 import {
-  ArrowDown,
   Check,
   ChevronDown,
   ChevronsUpDown,
   ChevronUp,
   Eraser,
-  MoveRight,
   Music,
   PencilLine,
   Workflow,
@@ -31,7 +28,6 @@ import {
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { MiniWaveform } from "@/components/mini-waveform";
-import { RULE_ICON_COLORS, RULE_ICONS } from "@/components/rulesets/rule-card";
 import { RulesetPreview } from "@/components/rulesets/ruleset-preview";
 import {
   AlertDialog,
@@ -46,11 +42,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -72,14 +63,12 @@ import {
   type FolderRulesetBinding,
   type RequiredAttribute,
   type Ruleset,
-  type RuleType,
   type TrackBrowse,
   type TrackInfoUpdateRequest,
 } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
 import { searchParams } from "@/lib/search-params";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
-import type { SourceMetadata, SourceTrack } from "@/lib/sources/types";
 import { parseRemix, removeMix } from "@/lib/string-utils";
 import { cn } from "@/lib/utils";
 
@@ -100,29 +89,49 @@ type EditableField =
   | "original_artist"
   | "mix_name";
 
-/** Fields shown in edit mode. `virtual` fields are not API fields — they're used for title composition. */
-// Fixed widths so columns keep their shape when the left grid cell narrows
-// (e.g. editor panel open) — horizontal scroll handles overflow instead.
-const EDITABLE_FIELDS: {
-  key: EditableField;
+/** Field key universe for the column system. Editable keys map to track
+ * metadata fields; "folder" + "soundcloud_linked" are read-only columns. */
+type FieldKey = EditableField | "folder" | "soundcloud_linked";
+
+/** Fields shown in the table — editable or read-only. Order here is the
+ * default render order; user reorders persist via the column-prefs store.
+ * Fixed widths so columns keep their shape when the left grid cell narrows
+ * (e.g. editor panel open) — horizontal scroll handles overflow instead. */
+const COLUMN_FIELDS: {
+  key: FieldKey;
   label: string;
   defaultWidth: number;
+  editable: boolean;
 }[] = [
-  { key: "title", label: "Title", defaultWidth: 256 },
-  { key: "artist", label: "Artist", defaultWidth: 192 },
-  { key: "genre", label: "Genre", defaultWidth: 112 },
-  { key: "bpm", label: "BPM", defaultWidth: 56 },
-  { key: "key", label: "Key", defaultWidth: 56 },
-  { key: "remixer", label: "Remixer", defaultWidth: 128 },
-  { key: "original_artist", label: "Orig. Artist", defaultWidth: 112 },
-  { key: "mix_name", label: "Mix", defaultWidth: 80 },
-  { key: "release_date", label: "Release", defaultWidth: 96 },
+  { key: "folder", label: "Folder", defaultWidth: 96, editable: false },
+  {
+    key: "soundcloud_linked",
+    label: "SC",
+    defaultWidth: 36,
+    editable: false,
+  },
+  { key: "title", label: "Title", defaultWidth: 256, editable: true },
+  { key: "artist", label: "Artist", defaultWidth: 192, editable: true },
+  { key: "genre", label: "Genre", defaultWidth: 112, editable: true },
+  { key: "bpm", label: "BPM", defaultWidth: 56, editable: true },
+  { key: "key", label: "Key", defaultWidth: 56, editable: true },
+  { key: "remixer", label: "Remixer", defaultWidth: 128, editable: true },
+  {
+    key: "original_artist",
+    label: "Orig. Artist",
+    defaultWidth: 112,
+    editable: true,
+  },
+  { key: "mix_name", label: "Mix", defaultWidth: 80, editable: true },
+  { key: "release_date", label: "Release", defaultWidth: 96, editable: true },
 ];
 
-type ResolvedField = (typeof EDITABLE_FIELDS)[number] & { width: number };
+type ResolvedField = (typeof COLUMN_FIELDS)[number] & { width: number };
 
 export const FILESYSTEM_COLUMN_DEFS: import("@/lib/columns/types").ColumnDef[] =
   [
+    { id: "folder", header: "Folder" },
+    { id: "soundcloud_linked", header: "SoundCloud" },
     { id: "title", header: "Title", required: true },
     { id: "artist", header: "Artist" },
     { id: "genre", header: "Genre" },
@@ -155,7 +164,6 @@ interface CollectionTableProps {
    * only when the tree cursor is on the bound folder. */
   folderRulesets?: Record<string, FolderRulesetBinding>;
   rulesets?: Ruleset[];
-  autoApplyScResults?: boolean;
   /** Shared pending field edits per file (keyed by file_path). Lifted to the
    * page so the single-track editor and the batch table stay in sync. */
   pendingFieldEdits: Map<string, Record<string, string>>;
@@ -176,8 +184,9 @@ interface CollectionTableProps {
   onColumnWidthReset?: (id: string) => void;
 }
 
-/** Sortable fields mapped to EDITABLE_FIELDS keys where applicable */
-const SORTABLE_FIELDS: Partial<Record<EditableField, SortBy>> = {
+/** Sortable fields mapped to COLUMN_FIELDS keys where applicable */
+const SORTABLE_FIELDS: Partial<Record<FieldKey, SortBy>> = {
+  folder: "folder",
   title: "title",
   artist: "artist",
   genre: "genre",
@@ -270,15 +279,84 @@ function SortIcon({
   );
 }
 
-/* ─── Row ─── */
+/** Cell that displays as plain text. Click on a non-current row activates
+ * it; click again (now that the row is current) enters edit mode. Enter/blur
+ * commit; Escape reverts. */
+function EditableCell({
+  value,
+  onCommit,
+  onActivate,
+  isCurrent,
+  placeholder,
+  isChanged,
+  width,
+}: {
+  value: string;
+  onCommit: (next: string) => void;
+  onActivate: () => void;
+  isCurrent: boolean;
+  placeholder: string;
+  isChanged: boolean;
+  width: number;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
 
-type ScStatus = "idle" | "searching" | "found" | "not-found";
-
-interface ScData {
-  results: SourceTrack[];
-  selectedIndex: number;
-  meta: SourceMetadata;
+  return (
+    <div
+      className="min-w-0 shrink-0"
+      style={{ width }}
+      data-row-noselect
+      onClick={() => {
+        if (editing) return;
+        if (isCurrent) {
+          setDraft(value);
+          setEditing(true);
+        } else {
+          onActivate();
+        }
+      }}
+    >
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={() => {
+            if (draft !== value) onCommit(draft);
+            setEditing(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.currentTarget.blur();
+            } else if (e.key === "Escape") {
+              setEditing(false);
+            }
+          }}
+          placeholder={placeholder}
+          data-row-noselect
+          className={`placeholder:text-text-subtle border-ring ring-ring/50 h-7 w-full rounded border bg-transparent px-1.5 text-xs ring-1 outline-none`}
+        />
+      ) : (
+        <span
+          title={value || placeholder}
+          className={cn(
+            "block h-7 truncate rounded border px-1.5 py-1 text-xs leading-5",
+            isChanged
+              ? "border-warning/70 bg-warning/5"
+              : "group-hover/row:border-border border-transparent",
+            !value && "text-text-subtle",
+          )}
+        >
+          {value || placeholder}
+        </span>
+      )}
+    </div>
+  );
 }
+
+/* ─── Row ─── */
 
 interface EditRowProps {
   item: TrackBrowse;
@@ -286,55 +364,17 @@ interface EditRowProps {
   isCurrent: boolean;
   changes: Partial<Record<EditableField, string>>;
   hasChanges: boolean;
-  scStatus?: ScStatus;
-  scData?: ScData;
   onToggleSelect: (shiftKey: boolean) => void;
   onFieldChange: (field: EditableField, value: string) => void;
-  onApplyScField: (field: EditableField, value: string) => void;
-  onApplyAllScFields: () => void;
-  onSelectScTrack: (index: number) => void;
-  onSearchSc: () => void;
   onSelect: () => void;
-  onSaveRow: () => void;
-  onFinalize: () => void;
-  savingRow: boolean;
   justSaved: boolean;
   pendingArtworkB64?: string;
-  hasScLink?: boolean;
-  scLinkChanged?: boolean;
-  activeRuleset?: Ruleset | null;
+  /** True if track has a SoundCloud link (saved or pending). */
+  isScLinked?: boolean;
   /** When set, show a Folder column with the path relative to this root. */
   folderPath?: string;
-  /** Skip per-row framer-motion in large tables (too expensive at scale). */
-  reduceMotion?: boolean;
   /** Column defs filtered to only visible ones, in render order, with resolved widths. */
   visibleFields: ResolvedField[];
-}
-
-function ScFieldRow({
-  label,
-  scValue,
-  currentValue,
-  onApply,
-}: {
-  label: string;
-  scValue?: string;
-  currentValue: string;
-  onApply: () => void;
-}) {
-  if (!scValue || scValue === currentValue) return null;
-  return (
-    <div className="flex items-center gap-2 py-0.5 text-xs">
-      <span className="text-muted-foreground w-14 shrink-0">{label}</span>
-      <span className="text-foreground flex-1 truncate">{scValue}</span>
-      <button
-        className="text-primary hover:bg-brand-soft shrink-0 cursor-pointer rounded-sm px-1.5 py-0.5 text-xs font-medium transition-colors"
-        onClick={onApply}
-      >
-        Apply
-      </button>
-    </div>
-  );
 }
 
 function EditRow({
@@ -342,26 +382,13 @@ function EditRow({
   isSelected,
   isCurrent,
   changes,
-  hasChanges,
-  scStatus,
-  scData,
   onToggleSelect,
   onFieldChange,
-  onApplyScField,
-  onApplyAllScFields,
-  onSelectScTrack,
-  onSearchSc,
   onSelect,
-  onSaveRow,
-  onFinalize,
-  savingRow,
   justSaved,
   pendingArtworkB64,
-  hasScLink,
-  scLinkChanged,
-  activeRuleset,
+  isScLinked,
   folderPath,
-  reduceMotion,
   visibleFields,
 }: EditRowProps) {
   const artworkUrl = item.has_artwork
@@ -380,63 +407,29 @@ function EditRow({
 
   const isChanged = (field: EditableField): boolean => field in changes;
 
-  const required = activeRuleset?.required_attributes ?? [];
-  const missingForFinalize = getMissingAttributes(item, required);
-  const canFinalize = missingForFinalize.length === 0;
-
-  // Row hover is tracked in React so framer-motion can react to it.
-  // Delayed so scrolling past rows doesn't flash the pill on every row.
-  const [isHovered, setIsHovered] = useState(false);
-  const hoverTimerRef = useRef<number | null>(null);
-  const scTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const scOpenViaContextRef = useRef(false);
-
-  // Pill visibility + shape:
-  //   - hidden: no state, no hover → nothing rendered
-  //   - compact: one icon summarising the most relevant action
-  //   - full: all three icons, shown on hover, selection, current-playing
-  const hasScSignal = !!scStatus || scLinkChanged;
-  const pillActive = hasChanges || isSelected || isCurrent || hasScSignal;
-  const showPill = pillActive || isHovered;
-  const showFull = isHovered || isSelected || isCurrent;
-
-  // Priority: unsaved changes > SC activity > ready-to-finalize > fallback save.
-  const primaryKey: "save" | "sc" | "apply" = hasChanges
-    ? "save"
-    : hasScSignal
-      ? "sc"
-      : canFinalize && activeRuleset?.rules.length
-        ? "apply"
-        : "save";
-
   return (
     <div
       role="row"
       aria-current={isCurrent ? "true" : undefined}
       className={cn(
-        "group/row border-border relative flex h-10 items-center gap-1.5 border-b pr-0 pl-3 transition-colors",
+        "group/row border-border relative flex h-10 cursor-pointer items-center gap-1.5 border-b pr-0 pl-3 transition-colors",
         isCurrent && "bg-[var(--brand-soft)]",
         isSelected && !isCurrent && "bg-[var(--surface-3)]",
         !isCurrent && !isSelected && "hover:bg-[var(--surface-3)]",
         justSaved && "saved-pulse",
       )}
-      onMouseEnter={() => {
-        if (hoverTimerRef.current) window.clearTimeout(hoverTimerRef.current);
-        // Pill already visible (compact) → expand to full immediately.
-        // Otherwise wait briefly so scroll-pasts don't flash the pill.
-        if (pillActive) setIsHovered(true);
-        else
-          hoverTimerRef.current = window.setTimeout(
-            () => setIsHovered(true),
-            180,
-          );
-      }}
-      onMouseLeave={() => {
-        if (hoverTimerRef.current) {
-          window.clearTimeout(hoverTimerRef.current);
-          hoverTimerRef.current = null;
+      onClick={(e) => {
+        // Row click only opens the single-track editor / player.
+        // Multi-select is exclusively driven by the checkbox column.
+        const t = e.target as HTMLElement;
+        if (
+          t.closest(
+            'input, textarea, button, [role="menuitem"], [role="menuitemcheckbox"], [data-row-noselect]',
+          )
+        ) {
+          return;
         }
-        setIsHovered(false);
+        onSelect();
       }}
     >
       {isCurrent && (
@@ -491,45 +484,54 @@ function EditRow({
         />
       </div>
 
-      {/* File name — click to open single editor */}
-      <span
-        data-file-path={item.file_path}
-        className="text-muted-foreground hover:text-foreground w-48 shrink-0 cursor-pointer truncate text-xs transition-colors"
-        title={item.file_name}
-        onClick={onSelect}
-      >
-        {item.file_name}
-      </span>
-
-      {/* Folder column (only in tree/path mode) */}
-      {folderPath && (
-        <span
-          className="text-muted-foreground w-36 shrink-0 truncate text-xs"
-          title={item.folder ?? ""}
-        >
-          {item.folder && folderPath
-            ? item.folder.startsWith(folderPath)
-              ? item.folder.slice(folderPath.length + 1) || "."
-              : item.folder
-            : "—"}
-        </span>
-      )}
-
-      {/* Editable fields */}
-      {visibleFields.map((f) => (
-        <div
-          key={f.key}
-          className="min-w-0 shrink-0"
-          style={{ width: f.width }}
-        >
-          <input
-            className={`placeholder:text-text-subtle h-7 w-full rounded border bg-transparent px-1.5 text-xs transition-colors outline-none ${isChanged(f.key) ? "border-warning/70 bg-warning/5" : "hover:border-border border-transparent"} focus:border-ring focus:ring-ring/50 focus:ring-1`}
-            value={getValue(f.key)}
-            onChange={(e) => onFieldChange(f.key, e.target.value)}
+      {/* Column cells — order driven by visibleFields (user-reorderable). */}
+      {visibleFields.map((f) => {
+        if (f.key === "folder") {
+          return (
+            <span
+              key={f.key}
+              className="text-muted-foreground min-w-0 shrink-0 truncate text-xs"
+              style={{ width: f.width }}
+              title={item.folder ?? ""}
+            >
+              {item.folder && folderPath
+                ? item.folder.startsWith(folderPath)
+                  ? item.folder.slice(folderPath.length + 1) || "."
+                  : item.folder
+                : "—"}
+            </span>
+          );
+        }
+        if (f.key === "soundcloud_linked") {
+          return (
+            <div
+              key={f.key}
+              className="flex shrink-0 items-center justify-center"
+              style={{ width: f.width }}
+              title={isScLinked ? "Linked to SoundCloud" : "Not linked"}
+            >
+              <SoundCloudLogo
+                className={cn(
+                  "size-3.5",
+                  isScLinked ? "text-primary" : "text-muted-foreground/40",
+                )}
+              />
+            </div>
+          );
+        }
+        return (
+          <EditableCell
+            key={f.key}
+            value={getValue(f.key as EditableField)}
+            onCommit={(v) => onFieldChange(f.key as EditableField, v)}
+            onActivate={onSelect}
+            isCurrent={isCurrent}
             placeholder={f.label}
+            isChanged={isChanged(f.key as EditableField)}
+            width={f.width}
           />
-        </div>
-      ))}
+        );
+      })}
 
       {/* Added date (read-only) */}
       <span className="text-muted-foreground w-20 shrink-0 text-xs tabular-nums">
@@ -538,356 +540,14 @@ function EditRow({
           : "—"}
       </span>
 
-      {/* Per-row actions — floating pill. The sticky wrapper is 0-wide so it
-          never contributes to row layout; the inner element is absolutely
-          positioned and overlays whatever is beneath. */}
-      {(() => {
-        const saveBtn = (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-md transition-colors",
-                    hasChanges
-                      ? "text-primary bg-brand-soft hover:bg-brand-soft cursor-pointer"
-                      : "text-muted-foreground cursor-default",
-                  )}
-                  disabled={!hasChanges || savingRow}
-                  onClick={onSaveRow}
-                >
-                  {savingRow ? (
-                    <LogoSpinner className="size-3.5" />
-                  ) : (
-                    <Check className="size-3.5" />
-                  )}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="left">
-                {hasChanges ? "Save this track" : "No changes"}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        );
-
-        const applyBtn = activeRuleset?.rules.length ? (
-          <TooltipProvider delayDuration={400} disableHoverableContent>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-md transition-colors",
-                    canFinalize
-                      ? "text-primary bg-primary/10 hover:bg-primary/20 cursor-pointer"
-                      : "text-muted-foreground cursor-default",
-                  )}
-                  disabled={!canFinalize}
-                  onClick={onFinalize}
-                >
-                  <Workflow className="size-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent
-                side="left"
-                sideOffset={6}
-                showArrow={false}
-                className="bg-popover text-popover-foreground max-w-64 border p-0"
-              >
-                <RulesetPreview
-                  ruleset={activeRuleset}
-                  missingRequired={canFinalize ? undefined : missingForFinalize}
-                />
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : null;
-
-        const scBtn = (
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                ref={scTriggerRef}
-                className={cn(
-                  "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors",
-                  scLinkChanged ? "ring-primary/40 ring-1" : "",
-                  scStatus === "searching" || hasScLink || scStatus === "found"
-                    ? "text-primary bg-brand-soft hover:bg-brand-soft"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent",
-                )}
-                onClick={(e) => {
-                  if (scOpenViaContextRef.current) {
-                    scOpenViaContextRef.current = false;
-                    return;
-                  }
-                  if (!scStatus) {
-                    e.preventDefault();
-                    onSearchSc();
-                  }
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  scOpenViaContextRef.current = true;
-                  scTriggerRef.current?.click();
-                }}
-                title={
-                  scStatus === "searching"
-                    ? "Searching SoundCloud..."
-                    : hasScLink
-                      ? "SoundCloud linked"
-                      : scStatus === "found"
-                        ? "SoundCloud match found"
-                        : scStatus === "not-found"
-                          ? "No SoundCloud match"
-                          : "Search SoundCloud"
-                }
-              >
-                {scStatus === "searching" ? (
-                  <LogoSpinner className="size-3.5" />
-                ) : (
-                  <SoundCloudLogo
-                    className={cn(
-                      "size-3.5",
-                      scStatus === "not-found" && !hasScLink
-                        ? "opacity-50"
-                        : "",
-                    )}
-                  />
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              className="w-80 p-3"
-              align="end"
-              side="left"
-              collisionPadding={16}
-            >
-              {scStatus === "searching" && (
-                <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                  <LogoSpinner className="size-3" /> Searching...
-                </div>
-              )}
-              {scStatus === "not-found" && (
-                <p className="text-muted-foreground text-xs">
-                  No SoundCloud results found.
-                </p>
-              )}
-              {!scStatus && (
-                <div className="flex flex-col gap-2">
-                  <p className="text-muted-foreground text-xs">
-                    No SoundCloud search yet.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1 text-xs"
-                    onClick={onSearchSc}
-                  >
-                    <SoundCloudLogo className="size-3" />
-                    Search SoundCloud
-                  </Button>
-                </div>
-              )}
-              {scData &&
-                scStatus === "found" &&
-                (() => {
-                  const selected = scData.results[scData.selectedIndex];
-                  return (
-                    <div className="space-y-3">
-                      {/* Result selector */}
-                      <Select
-                        value={String(scData.selectedIndex)}
-                        onValueChange={(v) => onSelectScTrack(parseInt(v, 10))}
-                      >
-                        <SelectTrigger className="h-7 w-full text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent position="popper" className="max-w-64">
-                          {scData.results.map((r, i) => (
-                            <SelectItem
-                              key={r.id}
-                              value={String(i)}
-                              className="text-xs"
-                            >
-                              <span className="truncate">
-                                {r.title ?? "Untitled"} —{" "}
-                                {r.username ?? "Unknown"}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-
-                      {/* Selected track info + artwork */}
-                      {selected && (
-                        <div className="flex items-center gap-3">
-                          {selected.artwork_url && (
-                            <img
-                              src={selected.artwork_url}
-                              alt=""
-                              className="border-border size-12 shrink-0 rounded-md border object-cover"
-                            />
-                          )}
-                          <div className="text-muted-foreground min-w-0 flex-1 text-xs">
-                            <p className="text-foreground truncate text-sm font-medium">
-                              {selected.title}
-                            </p>
-                            <p className="truncate">{selected.username}</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Per-field apply */}
-                      {(() => {
-                        const scRemix = scData.meta.title
-                          ? parseRemix(scData.meta.title)
-                          : null;
-                        return (
-                          <div className="border-border space-y-0.5 border-t pt-2">
-                            <ScFieldRow
-                              label="Title"
-                              scValue={scData.meta.title}
-                              currentValue={getValue("title")}
-                              onApply={() =>
-                                onApplyScField("title", scData.meta.title ?? "")
-                              }
-                            />
-                            <ScFieldRow
-                              label="Artist"
-                              scValue={scData.meta.artist}
-                              currentValue={getValue("artist")}
-                              onApply={() =>
-                                onApplyScField(
-                                  "artist",
-                                  scData.meta.artist ?? "",
-                                )
-                              }
-                            />
-                            <ScFieldRow
-                              label="Genre"
-                              scValue={scData.meta.genre}
-                              currentValue={getValue("genre")}
-                              onApply={() =>
-                                onApplyScField("genre", scData.meta.genre ?? "")
-                              }
-                            />
-                            <ScFieldRow
-                              label="Date"
-                              scValue={scData.meta.release_date}
-                              currentValue={getValue("release_date")}
-                              onApply={() =>
-                                onApplyScField(
-                                  "release_date",
-                                  scData.meta.release_date ?? "",
-                                )
-                              }
-                            />
-                            {scRemix && (
-                              <>
-                                <ScFieldRow
-                                  label="Remixer"
-                                  scValue={scRemix.remixer}
-                                  currentValue={getValue("remixer")}
-                                  onApply={() =>
-                                    onApplyScField("remixer", scRemix.remixer)
-                                  }
-                                />
-                                <ScFieldRow
-                                  label="Mix"
-                                  scValue={scRemix.mixName}
-                                  currentValue={getValue("mix_name")}
-                                  onApply={() =>
-                                    onApplyScField("mix_name", scRemix.mixName)
-                                  }
-                                />
-                                <ScFieldRow
-                                  label="Orig. Art."
-                                  scValue={scData.meta.artist}
-                                  currentValue={getValue("original_artist")}
-                                  onApply={() =>
-                                    onApplyScField(
-                                      "original_artist",
-                                      scData.meta.artist ?? "",
-                                    )
-                                  }
-                                />
-                              </>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Apply all */}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="mt-1 h-7 w-full gap-1.5 text-xs"
-                        onClick={onApplyAllScFields}
-                      >
-                        <ArrowDown className="size-3" />
-                        Apply all fields
-                      </Button>
-                    </div>
-                  );
-                })()}
-            </PopoverContent>
-          </Popover>
-        );
-
-        const primaryBtn =
-          primaryKey === "apply" && applyBtn
-            ? applyBtn
-            : primaryKey === "sc"
-              ? scBtn
-              : saveBtn;
-
-        return (
-          <div
-            className={cn(
-              "sticky right-0 ml-auto h-full w-0 shrink-0 transition-opacity duration-150 ease-out",
-              !showPill && "pointer-events-none opacity-0",
-            )}
-          >
-            {reduceMotion ? (
-              <div
-                className={cn(
-                  "border-border bg-card absolute top-1/2 right-3 flex -translate-y-1/2 items-center gap-1 rounded-md border shadow-[var(--shadow-2)] transition-[transform,padding] duration-150 ease-out hover:scale-110",
-                  showFull ? "p-1" : "p-0.5 [&_button]:size-6 [&_svg]:size-3",
-                )}
-              >
-                {showFull ? (
-                  <>
-                    {saveBtn}
-                    {applyBtn}
-                    {scBtn}
-                  </>
-                ) : (
-                  primaryBtn
-                )}
-              </div>
-            ) : (
-              <motion.div
-                layout
-                whileHover={{ scale: 1.15 }}
-                transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
-                className={cn(
-                  "border-border bg-card absolute top-1/2 right-3 flex origin-right -translate-y-1/2 items-center gap-1 rounded-md border shadow-[var(--shadow-2)]",
-                  showFull ? "p-1" : "p-0.5 [&_button]:size-6 [&_svg]:size-3",
-                )}
-              >
-                {showFull ? (
-                  <>
-                    {saveBtn}
-                    {applyBtn}
-                    {scBtn}
-                  </>
-                ) : (
-                  primaryBtn
-                )}
-              </motion.div>
-            )}
-          </div>
-        );
-      })()}
+      {/* File name — moved to the end; folder is more relevant in tree view */}
+      <span
+        data-file-path={item.file_path}
+        className="text-muted-foreground w-32 shrink-0 truncate text-xs"
+        title={item.file_name}
+      >
+        {item.file_name}
+      </span>
     </div>
   );
 }
@@ -925,7 +585,6 @@ export function CollectionTable({
   activeRuleset,
   folderRulesets,
   rulesets,
-  autoApplyScResults,
   pendingFieldEdits,
   setPendingFieldEdits,
   isColumnVisible,
@@ -940,18 +599,18 @@ export function CollectionTable({
     [isColumnVisible],
   );
   const orderedFields = useMemo(() => {
-    if (!columnOrder?.length) return EDITABLE_FIELDS;
-    const byId = new Map(EDITABLE_FIELDS.map((f) => [f.key, f]));
+    if (!columnOrder?.length) return COLUMN_FIELDS;
+    const byId = new Map(COLUMN_FIELDS.map((f) => [f.key, f]));
     const seen = new Set<string>();
-    const out: typeof EDITABLE_FIELDS = [];
+    const out: typeof COLUMN_FIELDS = [];
     for (const id of columnOrder) {
-      const f = byId.get(id as EditableField);
+      const f = byId.get(id as FieldKey);
       if (f && !seen.has(id)) {
         out.push(f);
         seen.add(id);
       }
     }
-    for (const f of EDITABLE_FIELDS) {
+    for (const f of COLUMN_FIELDS) {
       if (!seen.has(f.key)) out.push(f);
     }
     return out;
@@ -962,12 +621,13 @@ export function CollectionTable({
   const visibleFields = useMemo<ResolvedField[]>(
     () =>
       orderedFields
+        .filter((f) => f.key !== "folder" || !!folderPath)
         .filter((f) => colVisible(f.key))
         .map((f) => ({
           ...f,
           width: liveWidths[f.key] ?? columnWidths?.[f.key] ?? f.defaultWidth,
         })),
-    [orderedFields, colVisible, columnWidths, liveWidths],
+    [orderedFields, colVisible, columnWidths, liveWidths, folderPath],
   );
   const [sortBy, setSortBy] = useQueryState("sort", searchParams.sort);
   const [sortOrder, setSortOrder] = useQueryState("order", searchParams.order);
@@ -984,6 +644,11 @@ export function CollectionTable({
   );
   const [bpmMin] = useQueryState("bpmMin", parseAsInteger);
   const [bpmMax] = useQueryState("bpmMax", parseAsInteger);
+  // SoundCloud-link bool filter (writes "true" / "false" to the URL via the
+  // shared filter hook; null = unset / show all).
+  const [scLinkedRaw] = useQueryState("soundcloud_linked", parseAsString);
+  const scLinked: boolean | undefined =
+    scLinkedRaw === "true" ? true : scLinkedRaw === "false" ? false : undefined;
   const [items, setItems] = useState<TrackBrowse[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -1012,7 +677,6 @@ export function CollectionTable({
   >;
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
-  const [savingRows, setSavingRows] = useState<Set<string>>(new Set());
   const [pulseRows, setPulseRows] = useState<Set<string>>(new Set());
   const pulseTimersRef = useRef<Map<string, number>>(new Map());
   const triggerSavePulse = useCallback((filePath: string) => {
@@ -1060,12 +724,9 @@ export function CollectionTable({
     onConfirm: () => void;
   }>({ open: false, title: "", message: "", onConfirm: () => {} });
 
-  // SoundCloud auto-fill
+  // SoundCloud auto-fill (background only — surfaces via the SoundCloud
+  // column once the link is persisted; no per-row search UI in the table).
   const [scAutoFill, setScAutoFill] = useState(false);
-  const [scStatuses, setScStatuses] = useState<Map<string, ScStatus>>(
-    new Map(),
-  );
-  const [scDataMap, setScDataMap] = useState<Map<string, ScData>>(new Map());
   const scProcessedRef = useRef<Set<string>>(new Set());
 
   const rowHeight = EDIT_ROW_HEIGHT;
@@ -1102,6 +763,7 @@ export function CollectionTable({
           keys: keys.length ? keys : undefined,
           bpm_min: bpmMin ?? undefined,
           bpm_max: bpmMax ?? undefined,
+          has_soundcloud_id: scLinked,
           sort_by: overrideSortBy ?? sortBy,
           sort_order: overrideSortOrder ?? sortOrder,
           page: pageNum,
@@ -1141,6 +803,7 @@ export function CollectionTable({
       keys,
       bpmMin,
       bpmMax,
+      scLinked,
       sortBy,
       sortOrder,
       onItemsChange,
@@ -1149,7 +812,7 @@ export function CollectionTable({
   );
 
   // Reload on mode / folderPath / filter / sort change
-  const filtersKey = `${mode}|${folderPath ?? ""}|${search}|${genres.join(",")}|${keys.join(",")}|${bpmMin}|${bpmMax}|${sortBy}|${sortOrder}`;
+  const filtersKey = `${mode}|${folderPath ?? ""}|${search}|${genres.join(",")}|${keys.join(",")}|${bpmMin}|${bpmMax}|${scLinked ?? ""}|${sortBy}|${sortOrder}`;
   useEffect(() => {
     // Cancel any in-flight request from the previous mode/filters
     abortRef.current?.abort(
@@ -1298,8 +961,6 @@ export function CollectionTable({
   // Search SC for a single item. When applyResults=true, auto-fills empty fields + SC link.
   const searchScForItem = useCallback(
     async (item: TrackBrowse, applyResults: boolean) => {
-      setScStatuses((prev) => new Map(prev).set(item.file_path, "searching"));
-
       const query = removeMix(
         item.file_name
           .replace(/\.(mp3|aiff|wav)$/i, "")
@@ -1308,30 +969,13 @@ export function CollectionTable({
           .trim(),
       );
 
-      if (!query) {
-        setScStatuses((prev) => new Map(prev).set(item.file_path, "not-found"));
-        return;
-      }
+      if (!query) return;
 
       try {
         const results = await soundCloudSource.searchTracks(query);
-
-        if (results.length === 0) {
-          setScStatuses((prev) =>
-            new Map(prev).set(item.file_path, "not-found"),
-          );
-          return;
-        }
+        if (results.length === 0) return;
 
         const meta = soundCloudSource.extractMetadata(results[0]);
-        setScStatuses((prev) => new Map(prev).set(item.file_path, "found"));
-        setScDataMap((prev) =>
-          new Map(prev).set(item.file_path, {
-            results,
-            selectedIndex: 0,
-            meta,
-          }),
-        );
 
         if (!applyResults) return;
 
@@ -1417,21 +1061,11 @@ export function CollectionTable({
           }
         }
       } catch {
-        setScStatuses((prev) => new Map(prev).set(item.file_path, "not-found"));
+        // Search failed — silent; the SoundCloud column reflects the
+        // persisted link state, not transient search errors.
       }
     },
     [setChanges],
-  );
-
-  // Per-row SC search — respects autoApplyScResults config
-  const handleSearchSc = useCallback(
-    (filePath: string) => {
-      const item = items.find((i) => i.file_path === filePath);
-      if (!item) return;
-      scProcessedRef.current.add(filePath);
-      searchScForItem(item, autoApplyScResults ?? false);
-    },
-    [items, searchScForItem, autoApplyScResults],
   );
 
   // Batch SC auto-fill: search for all items sequentially
@@ -1453,81 +1087,6 @@ export function CollectionTable({
       cancelled = true;
     };
   }, [scAutoFill, items, searchScForItem]);
-
-  // SC: select a different result for a row
-  const handleSelectScTrack = useCallback(
-    (filePath: string, index: number) => {
-      setScDataMap((prev) => {
-        const data = prev.get(filePath);
-        if (!data) return prev;
-        const next = new Map(prev);
-        const selectedTrack = data.results[index];
-        const meta = selectedTrack
-          ? soundCloudSource.extractMetadata(selectedTrack)
-          : data.meta;
-        next.set(filePath, { ...data, selectedIndex: index, meta });
-        // Update pending SC link if already set
-        if (meta.source_id && pendingScLinks.has(filePath)) {
-          const comment = serializeComment(
-            meta.source_id,
-            meta.source_permalink ?? "",
-          );
-          setPendingScLinks((p) => new Map(p).set(filePath, comment));
-        }
-        return next;
-      });
-    },
-    [pendingScLinks],
-  );
-
-  // SC: apply a single field from the SC match — also sets SC link
-  const handleApplyScField = useCallback(
-    (filePath: string, field: EditableField, value: string) => {
-      if (value) updateField(filePath, field, value);
-      // Set SC link when applying any field
-      const data = scDataMap.get(filePath);
-      if (data?.meta.source_id) {
-        const comment = serializeComment(
-          data.meta.source_id,
-          data.meta.source_permalink ?? "",
-        );
-        setPendingScLinks((prev) => new Map(prev).set(filePath, comment));
-      }
-    },
-    [updateField, scDataMap],
-  );
-
-  // SC: apply all available fields from the SC match + set SC link
-  const handleApplyAllScFields = useCallback(
-    (filePath: string) => {
-      const data = scDataMap.get(filePath);
-      if (!data) return;
-      const { meta } = data;
-      if (meta.title) updateField(filePath, "title", meta.title);
-      if (meta.artist) updateField(filePath, "artist", meta.artist);
-      if (meta.genre) updateField(filePath, "genre", meta.genre);
-      if (meta.release_date)
-        updateField(filePath, "release_date", meta.release_date);
-      if (meta.title) {
-        const remix = parseRemix(meta.title);
-        if (remix) {
-          updateField(filePath, "remixer", remix.remixer);
-          updateField(filePath, "mix_name", remix.mixName);
-          if (meta.artist)
-            updateField(filePath, "original_artist", meta.artist);
-        }
-      }
-      // Set SC link
-      if (meta.source_id) {
-        const comment = serializeComment(
-          meta.source_id,
-          meta.source_permalink ?? "",
-        );
-        setPendingScLinks((prev) => new Map(prev).set(filePath, comment));
-      }
-    },
-    [scDataMap, updateField],
-  );
 
   // Build TrackInfoUpdateRequest from field changes + optional artwork/starlib link
   const buildUpdates = useCallback(
@@ -1555,68 +1114,6 @@ export function CollectionTable({
       return updates;
     },
     [],
-  );
-
-  // Per-row save
-  const handleSaveRow = useCallback(
-    async (filePath: string) => {
-      const fileChanges = changes.get(filePath);
-      const artworkB64 = pendingArtwork.get(filePath);
-      const scComment = pendingScLinks.get(filePath);
-      if (!fileChanges && !artworkB64 && !scComment) return;
-
-      setSavingRows((prev) => new Set(prev).add(filePath));
-
-      const updates = buildUpdates(fileChanges ?? {}, artworkB64, scComment);
-
-      try {
-        const result = await api.batchUpdateTrackInfo([
-          { file_path: filePath, updates },
-        ]);
-        if (result.results[0]?.success) {
-          toast.success(
-            `Updated ${items.find((i) => i.file_path === filePath)?.file_name ?? "track"}`,
-          );
-          setChanges((prev) => {
-            const next = new Map(prev);
-            next.delete(filePath);
-            return next;
-          });
-          setPendingArtwork((prev) => {
-            const next = new Map(prev);
-            next.delete(filePath);
-            return next;
-          });
-          setPendingScLinks((prev) => {
-            const next = new Map(prev);
-            next.delete(filePath);
-            return next;
-          });
-          triggerSavePulse(filePath);
-          onEditSaved?.();
-        } else {
-          toast.error(result.results[0]?.message ?? "Save failed");
-        }
-      } catch {
-        toast.error("Save failed");
-      } finally {
-        setSavingRows((prev) => {
-          const next = new Set(prev);
-          next.delete(filePath);
-          return next;
-        });
-      }
-    },
-    [
-      changes,
-      pendingArtwork,
-      items,
-      onEditSaved,
-      triggerSavePulse,
-      buildUpdates,
-      pendingScLinks,
-      setChanges,
-    ],
   );
 
   const handleSave = async () => {
@@ -1699,66 +1196,6 @@ export function CollectionTable({
       });
     },
     [items],
-  );
-
-  const renderStepsToast = useCallback(
-    (
-      trackName: string,
-      steps: { type: string; status: string; message: string }[],
-    ) => (
-      <div className="flex flex-col gap-1">
-        <span className="text-sm font-medium">{trackName}</span>
-        {steps.length > 0 && (
-          <div className="mt-0.5 flex flex-col gap-0.5">
-            {steps.map((step, i) => {
-              const Icon = RULE_ICONS[step.type as RuleType] ?? MoveRight;
-              const color =
-                RULE_ICON_COLORS[step.type as RuleType] ??
-                "text-muted-foreground";
-              return (
-                <div
-                  key={i}
-                  className="text-muted-foreground flex items-center gap-1.5 text-xs"
-                >
-                  <Icon
-                    className={`size-3 shrink-0 ${step.status === "skipped" ? "opacity-30" : color}`}
-                  />
-                  <span
-                    className={
-                      step.status === "skipped" ? "line-through opacity-50" : ""
-                    }
-                  >
-                    {step.message}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    ),
-    [],
-  );
-
-  const handleFinalizeRow = useCallback(
-    async (filePath: string) => {
-      const item = items.find((i) => i.file_path === filePath);
-      const name = item?.title || item?.file_name || filePath;
-      const toastId = toast.loading(`Applying rules to "${name}"…`);
-      try {
-        const result = await api.finalizeTrack(filePath, {});
-        toast.success(renderStepsToast(name, result.steps ?? []), {
-          id: toastId,
-        });
-        onEditSaved?.();
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to apply rules",
-          { id: toastId },
-        );
-      }
-    },
-    [items, onEditSaved, renderStepsToast],
   );
 
   const runFinalizeSelected = useCallback(
@@ -2057,8 +1494,6 @@ export function CollectionTable({
               setScAutoFill(false);
             } else {
               scProcessedRef.current = new Set();
-              setScStatuses(new Map());
-              setScDataMap(new Map());
               setScAutoFill(true);
             }
           }}
@@ -2109,24 +1544,15 @@ export function CollectionTable({
             <div className="w-7 shrink-0" />
             {/* Waveform spacer */}
             <div className="w-20 shrink-0" />
-            {/* File name header */}
-            <button
-              className="hover:text-foreground flex w-48 shrink-0 cursor-pointer items-center gap-0.5 transition-colors"
-              onClick={() => handleSort("file_name")}
-            >
-              File
-              <SortIcon col="file_name" sortBy={sortBy} sortOrder={sortOrder} />
-            </button>
-            {/* Folder header (only in tree/path mode) */}
-            {folderPath && <span className="w-36 shrink-0">Folder</span>}
-            {/* Field headers — drag-reorderable; sortable where applicable */}
+            {/* Field headers — drag-reorderable; sortable where applicable.
+                Folder participates here too (when in tree/path mode). */}
             <SortableColumnHeader
               ids={visibleFields.map((f) => f.key)}
               onOrderChange={(nextIds) => {
                 if (!onColumnOrderChange) return;
                 // Merge the reordered visible ids with any hidden ids so
                 // hidden columns retain their relative position.
-                const hidden = EDITABLE_FIELDS.map((f) => f.key).filter(
+                const hidden = COLUMN_FIELDS.map((f) => f.key).filter(
                   (k) => !visibleFields.some((v) => v.key === k),
                 );
                 onColumnOrderChange([...nextIds, ...hidden]);
@@ -2180,6 +1606,14 @@ export function CollectionTable({
               Added
               <SortIcon col="mtime" sortBy={sortBy} sortOrder={sortOrder} />
             </button>
+            {/* File name header — moved to the end */}
+            <button
+              className="hover:text-foreground flex w-32 shrink-0 cursor-pointer items-center gap-0.5 transition-colors"
+              onClick={() => handleSort("file_name")}
+            >
+              File
+              <SortIcon col="file_name" sortBy={sortBy} sortOrder={sortOrder} />
+            </button>
           </div>
 
           {/* Virtualized row surface */}
@@ -2218,8 +1652,6 @@ export function CollectionTable({
                           pendingArtwork.has(item.file_path) ||
                           pendingScLinks.has(item.file_path)
                         }
-                        scStatus={scStatuses.get(item.file_path)}
-                        scData={scDataMap.get(item.file_path)}
                         onToggleSelect={(shiftKey) =>
                           toggleSelect(
                             item.file_path,
@@ -2230,36 +1662,14 @@ export function CollectionTable({
                         onFieldChange={(field, value) =>
                           updateField(item.file_path, field, value)
                         }
-                        onApplyScField={(field, value) =>
-                          handleApplyScField(item.file_path, field, value)
-                        }
-                        onApplyAllScFields={() =>
-                          handleApplyAllScFields(item.file_path)
-                        }
-                        onSelectScTrack={(index) =>
-                          handleSelectScTrack(item.file_path, index)
-                        }
-                        onSearchSc={() => handleSearchSc(item.file_path)}
                         onSelect={() => handleSelect(item)}
-                        onSaveRow={() => handleSaveRow(item.file_path)}
-                        onFinalize={() => handleFinalizeRow(item.file_path)}
-                        savingRow={savingRows.has(item.file_path)}
                         justSaved={pulseRows.has(item.file_path)}
                         pendingArtworkB64={pendingArtwork.get(item.file_path)}
-                        hasScLink={
+                        isScLinked={
                           !!item.soundcloud_id ||
                           pendingScLinks.has(item.file_path)
                         }
-                        scLinkChanged={pendingScLinks.has(item.file_path)}
-                        activeRuleset={
-                          resolveRulesetForFile(
-                            item.file_path,
-                            folderRulesets,
-                            rulesets,
-                          ) ?? activeRuleset
-                        }
                         folderPath={folderPath}
-                        reduceMotion={total > 500}
                         visibleFields={visibleFields}
                       />
                     ) : (

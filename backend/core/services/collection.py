@@ -480,6 +480,7 @@ def list_and_filter_tracks(
     sort_by: str = "file_name",
     sort_order: str = "asc",
     recursive: bool = False,
+    has_soundcloud_id: bool | None = None,
 ) -> list:
     """
     List, filter, and sort tracks via SQL. Returns sqlite3.Row items.
@@ -528,6 +529,7 @@ def list_and_filter_tracks(
         bpm_max=bpm_max,
         start_date=start_date,
         end_date=end_date,
+        has_soundcloud_id=has_soundcloud_id,
         sort_by=sort_by,
         sort_order=sort_order,
     )

@@ -147,7 +147,8 @@ def browse_by_path(
     bpm_max: int | None = Query(None, ge=0),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|mtime)$"),
+    has_soundcloud_id: bool | None = Query(None),
+    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$"),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
     """Browse tracks by absolute folder path with optional recursion."""
@@ -176,6 +177,7 @@ def browse_by_path(
             bpm_max=bpm_max,
             start_date=date_from,
             end_date=date_to,
+            has_soundcloud_id=has_soundcloud_id,
             sort_by=sort_by,
             sort_order=sort_order,
             recursive=recursive,
@@ -321,7 +323,8 @@ def browse_folder_files(
     bpm_max: int | None = Query(None, ge=0, description="Maximum BPM"),
     date_from: date | None = Query(None, description="Earliest release date (YYYY-MM-DD)"),
     date_to: date | None = Query(None, description="Latest release date (YYYY-MM-DD)"),
-    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|mtime)$"),
+    has_soundcloud_id: bool | None = Query(None, description="Filter by SoundCloud link presence"),
+    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$"),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
     """Browse tracks in a folder with filtering, sorting, and pagination.
@@ -351,6 +354,7 @@ def browse_folder_files(
             bpm_max=bpm_max,
             start_date=date_from,
             end_date=date_to,
+            has_soundcloud_id=has_soundcloud_id,
             sort_by=sort_by,
             sort_order=sort_order,
         )

@@ -57,6 +57,7 @@ _SORT_COLS: dict[str, str] = {
     "remixer": "remixer",
     "mix_name": "mix_name",
     "file_name": "file_name",
+    "folder": "folder",
     "mtime": "mtime",
 }
 _NULLABLE_SORT_COLS = {"bpm", "release_date", "release_year"}
@@ -207,7 +208,7 @@ def _folder_clause(folder: Path, recursive: bool = False):
     return Track.folder == folder_str
 
 
-def _apply_filters(
+def _apply_filters(  # noqa: C901
     stmt: Select,
     *,
     folder: Path | None = None,
@@ -220,6 +221,7 @@ def _apply_filters(
     start_date: date | None = None,
     end_date: date | None = None,
     artists: list[str] | None = None,
+    has_soundcloud_id: bool | None = None,
 ) -> Select:
     if folder is not None:
         stmt = stmt.where(_folder_clause(folder, recursive))
@@ -235,6 +237,8 @@ def _apply_filters(
         stmt = stmt.where(Track.release_date >= str(start_date))
     if end_date is not None:
         stmt = stmt.where(Track.release_date <= str(end_date))
+    if has_soundcloud_id is not None:
+        stmt = stmt.where(Track.soundcloud_id.is_not(None) if has_soundcloud_id else Track.soundcloud_id.is_(None))
     if artists:
         clauses = [Track.artist_str.like(f"%{a}%") for a in artists]
         stmt = stmt.where(or_(*clauses))
@@ -257,6 +261,7 @@ def get_tracks(
     bpm_max: int | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
+    has_soundcloud_id: bool | None = None,
     sort_by: str = "file_name",
     sort_order: str = "asc",
 ):
@@ -273,6 +278,7 @@ def get_tracks(
         bpm_max=bpm_max,
         start_date=start_date,
         end_date=end_date,
+        has_soundcloud_id=has_soundcloud_id,
     )
 
     sort_col_name = _SORT_COLS.get(sort_by, "file_name")

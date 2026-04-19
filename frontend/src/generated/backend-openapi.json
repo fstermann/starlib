@@ -509,12 +509,28 @@
             }
           },
           {
+            "name": "has_soundcloud_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Soundcloud Id"
+            }
+          },
+          {
             "name": "sort_by",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|mtime)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -971,12 +987,30 @@
             "description": "Latest release date (YYYY-MM-DD)"
           },
           {
+            "name": "has_soundcloud_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by SoundCloud link presence",
+              "title": "Has Soundcloud Id"
+            },
+            "description": "Filter by SoundCloud link presence"
+          },
+          {
             "name": "sort_by",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|mtime)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -3441,6 +3475,17 @@
             "type": "integer",
             "title": "Order",
             "default": 0
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
           }
         },
         "type": "object",
