@@ -370,16 +370,16 @@ export function FilesystemTreePanel({
             }}
           >
             {isPinned ? (
-              <PinOff className="mr-2 size-3.5" />
+              <PinOff className="size-3.5" />
             ) : (
-              <Pin className="mr-2 size-3.5 -rotate-45" />
+              <Pin className="size-3.5 -rotate-45" />
             )}
             {isPinned ? "Remove shortcut" : "Pin as shortcut"}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuSub>
-            <ContextMenuSubTrigger className="text-xs">
-              <Workflow className="mr-2 size-3.5" />
+            <ContextMenuSubTrigger className="gap-2 text-xs">
+              <Workflow className="size-3.5" />
               Ruleset
             </ContextMenuSubTrigger>
             <ContextMenuSubContent className="w-56">

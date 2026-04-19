@@ -60,21 +60,25 @@ export function RulesetPreview({
           return (
             <div
               key={i}
-              className={`flex items-center gap-2 rounded px-1.5 py-1 text-xs ${
+              className={`flex flex-col gap-0.5 rounded px-1.5 py-1 text-xs ${
                 isConditional ? "border-info/30 ml-4 border-l-2 pl-2.5" : ""
               }`}
             >
-              <StepBadge step={i + 1} type={rule.type} />
-              <Icon
-                className={`size-3.5 shrink-0 ${RULE_ICON_COLORS[rule.type]}`}
-              />
-              <span className="capitalize">{rule.type}</span>
-              {detail && (
-                <span className="font-mono text-xs opacity-70">{detail}</span>
-              )}
+              <div className="flex items-center gap-2">
+                <StepBadge step={i + 1} type={rule.type} />
+                <Icon
+                  className={`size-3.5 shrink-0 ${RULE_ICON_COLORS[rule.type]}`}
+                />
+                <span className="capitalize">{rule.type}</span>
+                {detail && (
+                  <span className="truncate font-mono text-xs opacity-70">
+                    {detail}
+                  </span>
+                )}
+              </div>
               {isConditional && (
-                <span className="bg-info/20 text-info rounded px-1 text-xs font-medium">
-                  if converted
+                <span className="text-info ml-6 text-[0.7rem] font-medium whitespace-nowrap opacity-80">
+                  ↳ if converted
                 </span>
               )}
             </div>

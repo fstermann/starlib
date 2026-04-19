@@ -28,7 +28,7 @@
   /* ── Text ramp — light (DESIGN.md §2.4) ──────────────────────────────────── */
   --text: oklch(0.205 var(--base-chroma) var(--base-hue));
   --text-muted: oklch(0.44 var(--base-chroma) var(--base-hue));
-  --text-subtle: oklch(0.605 var(--base-chroma) var(--base-hue));
+  --text-subtle: oklch(0.7 var(--base-chroma) var(--base-hue));
   --text-on-accent: oklch(0.145 0 0);
   --text-on-danger: oklch(0.985 0 0);
 
@@ -128,7 +128,7 @@
 
   --text: oklch(0.92 var(--base-chroma) var(--base-hue));
   --text-muted: oklch(0.7 var(--base-chroma) var(--base-hue));
-  --text-subtle: oklch(0.54 var(--base-chroma) var(--base-hue));
+  --text-subtle: oklch(0.42 var(--base-chroma) var(--base-hue));
 
   --border: oklch(0.26 var(--base-chroma) var(--base-hue));
   --border-strong: oklch(0.31 var(--base-chroma) var(--base-hue));

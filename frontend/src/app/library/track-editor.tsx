@@ -1964,7 +1964,7 @@ export function TrackEditor({
                         "h-7 gap-1 text-xs",
                         hasMissingRequired
                           ? "text-muted-foreground"
-                          : "text-success hover:bg-success/10 hover:text-success",
+                          : "text-primary hover:bg-primary/10 hover:text-primary",
                       )}
                     >
                       <Workflow className="size-3" />

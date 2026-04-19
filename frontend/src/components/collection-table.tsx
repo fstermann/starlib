@@ -196,7 +196,7 @@ function RulesetBadge({ ruleset }: { ruleset: Ruleset }) {
     <TooltipProvider delayDuration={200} disableHoverableContent>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="border-success/30 bg-success/10 text-success inline-flex cursor-default items-center gap-1 rounded border px-1.5 py-0.5 align-middle text-xs font-medium">
+          <span className="border-primary/30 bg-primary/10 text-primary inline-flex cursor-default items-center gap-1 rounded border px-1.5 py-0.5 align-middle text-xs font-medium">
             <Workflow className="size-3" />
             {ruleset.name}
           </span>
@@ -474,7 +474,7 @@ function EditRow({
       {EDITABLE_FIELDS.map((f) => (
         <div key={f.key} className={`${f.width} min-w-0 shrink-0`}>
           <input
-            className={`placeholder:text-muted-foreground h-7 w-full rounded border bg-transparent px-1.5 text-xs transition-colors outline-none ${isChanged(f.key) ? "border-warning/70 bg-warning/5" : "hover:border-border border-transparent"} focus:border-ring focus:ring-ring/50 focus:ring-1`}
+            className={`placeholder:text-text-subtle h-7 w-full rounded border bg-transparent px-1.5 text-xs transition-colors outline-none ${isChanged(f.key) ? "border-warning/70 bg-warning/5" : "hover:border-border border-transparent"} focus:border-ring focus:ring-ring/50 focus:ring-1`}
             value={getValue(f.key)}
             onChange={(e) => onFieldChange(f.key, e.target.value)}
             placeholder={f.label}
@@ -529,7 +529,7 @@ function EditRow({
                   className={cn(
                     "flex size-7 shrink-0 items-center justify-center rounded-md transition-colors",
                     canFinalize
-                      ? "text-success bg-success/10 hover:bg-success/20 cursor-pointer"
+                      ? "text-primary bg-primary/10 hover:bg-primary/20 cursor-pointer"
                       : "text-muted-foreground cursor-default",
                   )}
                   disabled={!canFinalize}
@@ -1891,7 +1891,7 @@ export function CollectionTable({
                   className={cn(
                     "h-7 gap-1.5 @max-[760px]/toolbar:gap-0 @max-[760px]/toolbar:px-2",
                     finalizeEligibleCount > 0
-                      ? "text-success hover:bg-success/10 hover:text-success"
+                      ? "text-primary hover:bg-primary/10 hover:text-primary"
                       : "text-muted-foreground",
                   )}
                   disabled={finalizeEligibleCount === 0}

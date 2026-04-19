@@ -367,7 +367,7 @@ export function DesignShowcase() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1.5 text-xs text-emerald-600 hover:bg-emerald-600/10 hover:text-emerald-600"
+                className="text-primary hover:bg-primary/10 hover:text-primary h-7 gap-1.5 text-xs"
               >
                 Apply rules
               </Button>
