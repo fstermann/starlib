@@ -70,3 +70,43 @@ export async function setSetting<K extends keyof Settings>(
     // ignore
   }
 }
+
+/**
+ * Feature-scoped persistent value. Use for per-view preferences (column
+ * visibility, etc.) that don't warrant a slot on the `Settings` type.
+ * Keys should be namespaced, e.g. `columns.library.filesystem`.
+ */
+export async function getRaw<T>(key: string, fallback: T): Promise<T> {
+  if (isTauri()) {
+    const store = await getTauriStore();
+    const val = await store.get<T>(key);
+    return val ?? fallback;
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const val = parsed[key];
+      if (val !== undefined) return val as T;
+    }
+  } catch {
+    // ignore
+  }
+  return fallback;
+}
+
+export async function setRaw<T>(key: string, value: T): Promise<void> {
+  if (isTauri()) {
+    const store = await getTauriStore();
+    await store.set(key, value);
+    return;
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const current: Record<string, unknown> = raw ? JSON.parse(raw) : {};
+    current[key] = value;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+  } catch {
+    // ignore
+  }
+}

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 
+import type { FilterState } from "@/lib/filters/schema";
 import type { SCTrack } from "@/lib/soundcloud";
 
 export interface LikesFilterOptions {
@@ -9,6 +10,30 @@ export interface LikesFilterOptions {
   maxDuration: number | null;
   excludeMyLikes: boolean;
   inCollection: boolean | null; // null = any, true = in collection, false = not in collection
+}
+
+/** Translate a schema-driven FilterState into the legacy LikesFilterOptions
+ *  shape so the existing `makeLikesFilterPredicate` can still be reused
+ *  verbatim. Keeps weekly/ and other callers compatible. */
+export function filterStateToLikesOptions(
+  state: FilterState,
+): LikesFilterOptions {
+  const duration = (state.duration as
+    | [number | null, number | null]
+    | undefined) ?? [null, null];
+  return {
+    search: (state.search as string | undefined) ?? "",
+    genres: (state.genre as string[] | undefined) ?? [],
+    minDuration: duration[0],
+    maxDuration: duration[1],
+    excludeMyLikes: state.exclude_my_likes === true,
+    inCollection:
+      state.in_collection === true
+        ? true
+        : state.in_collection === false
+          ? false
+          : null,
+  };
 }
 
 type UseLikesFilterOptions = LikesFilterOptions;

@@ -10,8 +10,13 @@ import {
   Music,
   ShoppingCart,
 } from "lucide-react";
+import * as React from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 
+import {
+  SortableColumnHeader,
+  SortableHeaderCell,
+} from "@/components/columns/sortable-columns";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
@@ -20,6 +25,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
+import type { ColumnDef } from "@/lib/columns/types";
 import type { SCTrack } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
@@ -30,23 +36,204 @@ const DESCRIPTION_HEIGHT = 120;
 type SortKey = "title" | "artist" | "genre" | "duration" | "playback_count";
 type SortOrder = "asc" | "desc";
 
-interface Column {
-  key: SortKey;
-  label: string;
-  className: string;
+/** A single source of truth for likes-table columns. Drives both the header
+ *  row and the per-track body row, making columns drag-reorderable.
+ *  Sort is optional (the Links pseudo-column isn't sortable). */
+interface LikesCol {
+  id: string;
+  header: string;
+  sortKey?: SortKey;
+  required?: boolean;
+  defaultWidth: number;
+  /** Style classes applied to the cell (no width — that's inline). */
+  cellClassName: string;
+  /** Custom header rendering (e.g. icon + text for Links). Optional. */
+  renderHeader?: () => React.ReactNode;
+  renderBody: (ctx: {
+    track: SCTrack;
+    isExpanded: boolean;
+    inCollection: boolean;
+    isNew: boolean;
+  }) => React.ReactNode;
 }
 
-const COLUMNS: Column[] = [
-  { key: "title", label: "Title", className: "flex-3 min-w-0" },
-  { key: "artist", label: "Artist", className: "flex-2 min-w-0" },
-  { key: "genre", label: "Genre", className: "w-24 shrink-0" },
-  { key: "duration", label: "Length", className: "w-16 shrink-0 text-right" },
+const LIKES_COLUMNS: LikesCol[] = [
   {
-    key: "playback_count",
-    label: "Plays",
-    className: "w-16 shrink-0 text-right",
+    id: "title",
+    header: "Title",
+    sortKey: "title",
+    required: true,
+    defaultWidth: 320,
+    cellClassName: "flex min-w-0 shrink-0 items-center gap-1.5",
+    renderBody: ({ track, isExpanded, isNew }) => (
+      <>
+        <span
+          className={`truncate text-xs leading-tight font-medium ${isExpanded ? "text-primary" : ""}`}
+        >
+          {track.title || "—"}
+        </span>
+        {isNew && (
+          <span className="shrink-0 rounded bg-[var(--brand-soft)] px-1 py-0.5 text-xs leading-none font-semibold text-[var(--brand)]">
+            NEW
+          </span>
+        )}
+      </>
+    ),
+  },
+  {
+    id: "artist",
+    header: "Artist",
+    sortKey: "artist",
+    defaultWidth: 200,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.user?.username || "—"}</>,
+  },
+  {
+    id: "genre",
+    header: "Genre",
+    sortKey: "genre",
+    defaultWidth: 96,
+    cellClassName: "text-muted-foreground shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.genre || "—"}</>,
+  },
+  {
+    id: "duration",
+    header: "Length",
+    sortKey: "duration",
+    defaultWidth: 64,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatDuration(track.duration)}</>,
+  },
+  {
+    id: "playback_count",
+    header: "Plays",
+    sortKey: "playback_count",
+    defaultWidth: 64,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.playback_count)}</>,
+  },
+  {
+    id: "links",
+    header: "Links",
+    defaultWidth: 112,
+    cellClassName: "shrink-0",
+    renderHeader: () => (
+      <div className="flex items-center justify-center gap-1">
+        <FolderCheck className="size-3 opacity-50" />
+        <span className="text-xs opacity-50">Links</span>
+      </div>
+    ),
+    renderBody: ({ track, inCollection }) => (
+      <div
+        className={`flex items-center justify-between ${inCollection ? "opacity-35" : ""}`}
+      >
+        <div
+          className="flex size-5 items-center justify-center"
+          title={inCollection ? "In collection" : undefined}
+        >
+          {inCollection && <FolderCheck className="text-primary size-3.5" />}
+        </div>
+        <TooltipProvider>
+          {track.download_url ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href={track.download_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Download className="size-3" />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>Download</TooltipContent>
+            </Tooltip>
+          ) : (
+            <div className="size-5" />
+          )}
+          {track.purchase_url ? (
+            (() => {
+              const icon = purchaseIcon(track.purchase_url);
+              return (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <a
+                      href={track.purchase_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {icon ? (
+                        <img
+                          src={icon.src}
+                          alt={icon.alt}
+                          className="size-3.5"
+                        />
+                      ) : (
+                        <ShoppingCart className="size-3" />
+                      )}
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {track.purchase_title || icon?.alt || "Buy"}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })()
+          ) : (
+            <div className="size-5" />
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <a
+                href={`https://bandcamp.com/search?q=${encodeURIComponent(searchQuery(track))}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex size-5 items-center justify-center opacity-40 transition-opacity hover:opacity-100"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img
+                  src="/icons/bandcamp.svg"
+                  alt="Bandcamp"
+                  className="size-3.5"
+                />
+              </a>
+            </TooltipTrigger>
+            <TooltipContent>Search Bandcamp</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <a
+                href={`https://www.beatport.com/search?q=${encodeURIComponent(searchQuery(track))}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex size-5 items-center justify-center opacity-40 transition-opacity hover:opacity-100"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img
+                  src="/icons/beatport.svg"
+                  alt="Beatport"
+                  className="size-3.5"
+                />
+              </a>
+            </TooltipTrigger>
+            <TooltipContent>Search Beatport</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    ),
   },
 ];
+
+export const LIKES_COLUMN_DEFS: ColumnDef[] = LIKES_COLUMNS.map((c) => ({
+  id: c.id,
+  header: c.header,
+  required: c.required,
+}));
 
 function SortIcon({
   col,
@@ -113,6 +300,9 @@ function purchaseIcon(url: string): { src: string; alt: string } | null {
   return null;
 }
 
+/** A column enriched with its resolved pixel width. */
+type ResolvedLikesCol = LikesCol & { width: number };
+
 interface TrackRowProps {
   track: SCTrack;
   isSelected: boolean;
@@ -121,6 +311,8 @@ interface TrackRowProps {
   isNew?: boolean;
   onToggleSelect: (shiftKey: boolean) => void;
   onExpand: () => void;
+  /** Columns filtered and ordered per user preferences, with resolved widths. */
+  visibleColumns: ResolvedLikesCol[];
 }
 
 function TrackRow({
@@ -131,6 +323,7 @@ function TrackRow({
   isNew,
   onToggleSelect,
   onExpand,
+  visibleColumns,
 }: TrackRowProps) {
   const imgUrl = artworkUrl(track);
 
@@ -177,140 +370,21 @@ function TrackRow({
           )}
         </div>
 
-        {/* Title */}
-        <div className="flex min-w-0 flex-3 items-center gap-1.5">
-          <span
-            className={`truncate text-xs leading-tight font-medium ${isExpanded ? "text-primary" : ""}`}
-          >
-            {track.title || "—"}
-          </span>
-          {isNew && (
-            <span className="shrink-0 rounded bg-[var(--brand-soft)] px-1 py-0.5 text-xs leading-none font-semibold text-[var(--brand)]">
-              NEW
-            </span>
-          )}
-        </div>
-
-        {/* Artist */}
-        <span className="text-muted-foreground min-w-0 flex-2 truncate text-xs">
-          {track.user?.username || "—"}
-        </span>
-
-        {/* Genre */}
-        <span className="text-muted-foreground w-24 shrink-0 truncate text-xs">
-          {track.genre || "—"}
-        </span>
-
-        {/* Duration */}
-        <span className="text-muted-foreground w-16 shrink-0 text-right text-xs tabular-nums">
-          {formatDuration(track.duration)}
-        </span>
-
-        {/* Play count */}
-        <span className="text-muted-foreground w-16 shrink-0 text-right text-xs tabular-nums">
-          {formatPlays(track.playback_count)}
-        </span>
-
-        {/* Links group: Collection + Download + Buy/Search */}
-        <div
-          className={`flex w-28 shrink-0 items-center justify-between ${inCollection ? "opacity-35" : ""}`}
-        >
+        {/* Reorderable column cells */}
+        {visibleColumns.map((col) => (
           <div
-            className="flex size-5 items-center justify-center"
-            title={inCollection ? "In collection" : undefined}
+            key={col.id}
+            className={col.cellClassName}
+            style={{ width: col.width }}
           >
-            {inCollection && <FolderCheck className="text-primary size-3.5" />}
+            {col.renderBody({
+              track,
+              isExpanded,
+              inCollection,
+              isNew: isNew ?? false,
+            })}
           </div>
-          <TooltipProvider>
-            {track.download_url ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <a
-                    href={track.download_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Download className="size-3" />
-                  </a>
-                </TooltipTrigger>
-                <TooltipContent>Download</TooltipContent>
-              </Tooltip>
-            ) : (
-              <div className="size-5" />
-            )}
-            {track.purchase_url ? (
-              (() => {
-                const icon = purchaseIcon(track.purchase_url);
-                return (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <a
-                        href={track.purchase_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {icon ? (
-                          <img
-                            src={icon.src}
-                            alt={icon.alt}
-                            className="size-3.5"
-                          />
-                        ) : (
-                          <ShoppingCart className="size-3" />
-                        )}
-                      </a>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {track.purchase_title || icon?.alt || "Buy"}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })()
-            ) : (
-              <div className="size-5" />
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <a
-                  href={`https://bandcamp.com/search?q=${encodeURIComponent(searchQuery(track))}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex size-5 items-center justify-center opacity-40 transition-opacity hover:opacity-100"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <img
-                    src="/icons/bandcamp.svg"
-                    alt="Bandcamp"
-                    className="size-3.5"
-                  />
-                </a>
-              </TooltipTrigger>
-              <TooltipContent>Search Bandcamp</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <a
-                  href={`https://www.beatport.com/search?q=${encodeURIComponent(searchQuery(track))}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex size-5 items-center justify-center opacity-40 transition-opacity hover:opacity-100"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <img
-                    src="/icons/beatport.svg"
-                    alt="Beatport"
-                    className="size-3.5"
-                  />
-                </a>
-              </TooltipTrigger>
-              <TooltipContent>Search Beatport</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
+        ))}
       </div>
 
       {/* Expanded detail: player + description */}
@@ -347,6 +421,18 @@ interface LikesTableProps {
   onDeselectAll: () => void;
   collectionIds?: Set<number>;
   newTrackUrns?: Set<string>;
+  /** Per-column visibility. When omitted, all columns render. */
+  isColumnVisible?: (id: string) => boolean;
+  /** User-chosen column order by id. */
+  columnOrder?: string[];
+  /** Persist a new column order. */
+  onColumnOrderChange?: (ids: string[]) => void;
+  /** User-resized widths (px) by column id. Missing = use default. */
+  columnWidths?: Record<string, number>;
+  /** Persist a width on resize commit. */
+  onColumnWidthChange?: (id: string, width: number) => void;
+  /** Reset a single column's width to its default (double-click handle). */
+  onColumnWidthReset?: (id: string) => void;
 }
 
 export function LikesTable({
@@ -358,7 +444,39 @@ export function LikesTable({
   onDeselectAll,
   collectionIds,
   newTrackUrns,
+  isColumnVisible,
+  columnOrder,
+  onColumnOrderChange,
+  columnWidths,
+  onColumnWidthChange,
+  onColumnWidthReset,
 }: LikesTableProps) {
+  const colVisible = React.useCallback(
+    (id: string) => (isColumnVisible ? isColumnVisible(id) : true),
+    [isColumnVisible],
+  );
+  const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
+  const visibleColumns = React.useMemo<ResolvedLikesCol[]>(() => {
+    const byId = new Map(LIKES_COLUMNS.map((c) => [c.id, c]));
+    const seen = new Set<string>();
+    const ordered: LikesCol[] = [];
+    for (const id of columnOrder ?? []) {
+      const c = byId.get(id);
+      if (c && !seen.has(id)) {
+        ordered.push(c);
+        seen.add(id);
+      }
+    }
+    for (const c of LIKES_COLUMNS) {
+      if (!seen.has(c.id)) ordered.push(c);
+    }
+    return ordered
+      .filter((c) => colVisible(c.id))
+      .map((c) => ({
+        ...c,
+        width: liveWidths[c.id] ?? columnWidths?.[c.id] ?? c.defaultWidth,
+      }));
+  }, [columnOrder, colVisible, columnWidths, liveWidths]);
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -392,7 +510,7 @@ export function LikesTable({
   }, [tracks, sortBy, sortOrder]);
 
   // React Compiler can't memoize TanStack Virtual's returned functions safely; skip.
-  // eslint-disable-next-line react-hooks/incompatible-library
+
   const virtualizer = useVirtualizer({
     count: sortedTracks.length,
     getScrollElement: () => scrollParentRef.current,
@@ -465,23 +583,55 @@ export function LikesTable({
           />
         </div>
         <div className="size-8 shrink-0" />
-        {COLUMNS.map((col) => (
-          <button
-            key={col.key}
-            className={`flex items-center gap-0.5 ${col.className} hover:text-foreground cursor-pointer transition-colors`}
-            onClick={() => handleSort(col.key)}
-          >
-            {col.label}
-            <SortIcon col={col.key} sortBy={sortBy} sortOrder={sortOrder} />
-          </button>
-        ))}
-        <div
-          className="flex w-28 shrink-0 items-center justify-center gap-1"
-          title="Links"
+        <SortableColumnHeader
+          ids={visibleColumns.map((c) => c.id)}
+          onOrderChange={(nextIds) => {
+            if (!onColumnOrderChange) return;
+            const hidden = LIKES_COLUMNS.map((c) => c.id).filter(
+              (id) => !visibleColumns.some((v) => v.id === id),
+            );
+            onColumnOrderChange([...nextIds, ...hidden]);
+          }}
         >
-          <FolderCheck className="size-3 opacity-50" />
-          <span className="text-xs opacity-50">Links</span>
-        </div>
+          {visibleColumns.map((col) => (
+            <SortableHeaderCell
+              key={col.id}
+              id={col.id}
+              className={col.cellClassName}
+              style={{ width: col.width }}
+              onResize={(w, phase) => {
+                if (phase === "drag") {
+                  setLiveWidths((p) => ({ ...p, [col.id]: w }));
+                } else {
+                  onColumnWidthChange?.(col.id, w);
+                  setLiveWidths((p) => {
+                    const { [col.id]: _omit, ...rest } = p;
+                    return rest;
+                  });
+                }
+              }}
+              onResetWidth={() => onColumnWidthReset?.(col.id)}
+            >
+              {col.renderHeader ? (
+                col.renderHeader()
+              ) : col.sortKey ? (
+                <button
+                  className="hover:text-foreground flex w-full cursor-pointer items-center gap-0.5 transition-colors"
+                  onClick={() => col.sortKey && handleSort(col.sortKey)}
+                >
+                  {col.header}
+                  <SortIcon
+                    col={col.sortKey}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                  />
+                </button>
+              ) : (
+                <span>{col.header}</span>
+              )}
+            </SortableHeaderCell>
+          ))}
+        </SortableColumnHeader>
       </div>
 
       {/* Virtual scroll */}
@@ -547,6 +697,7 @@ export function LikesTable({
                     }
                   }}
                   onExpand={() => handleExpand(track)}
+                  visibleColumns={visibleColumns}
                 />
               </div>
             );

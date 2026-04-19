@@ -10,10 +10,15 @@ import {
   XCircle,
 } from "lucide-react";
 import { useQueryState } from "nuqs";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type * as React from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { CollectionFilterBar } from "@/components/collection-filter-bar";
-import { CollectionTable } from "@/components/collection-table";
+import {
+  CollectionTable,
+  FILESYSTEM_COLUMN_DEFS,
+} from "@/components/collection-table";
+import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
+import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { useTopBar } from "@/components/layout/top-bar-context";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,6 +36,9 @@ import {
   type TrackBrowse,
   type TreeNode,
 } from "@/lib/api";
+import { useColumnPrefs } from "@/lib/columns/use-column-prefs";
+import { useFilterSchema } from "@/lib/filters/use-filter-schema";
+import { useFilterState } from "@/lib/filters/use-filter-state";
 import { usePlayer } from "@/lib/player-context";
 import { searchParams } from "@/lib/search-params";
 import { useResizable } from "@/lib/use-resizable";
@@ -288,6 +296,12 @@ export function FilesystemView() {
     tableItemsRef.current = items;
   }, []);
 
+  // Column visibility prefs (persisted per view)
+  const columnPrefs = useColumnPrefs(
+    "library.filesystem",
+    FILESYSTEM_COLUMN_DEFS,
+  );
+
   // Auto-action settings
   const [autoActions, setAutoActions] = useState<AutoActions>({
     autoCopyArtwork: true,
@@ -544,11 +558,23 @@ export function FilesystemView() {
         <div className="flex min-h-0 min-w-0 flex-1">
           {/* Center: filter + table */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <CollectionFilterBar
+            <FilesystemFiltersToolbar
               mode={folderMode}
               folderPath={selectedNodeId ?? undefined}
-              total={tableTotal}
+              filtered={tableTotal}
+              total={findNodeTrackCount(tree, selectedNodeId) ?? tableTotal}
               cacheLoading={tableCacheLoading}
+              actions={
+                <ColumnVisibilityMenu
+                  columns={FILESYSTEM_COLUMN_DEFS}
+                  isVisible={columnPrefs.isVisible}
+                  setHidden={columnPrefs.setHidden}
+                  onResetVisibility={columnPrefs.resetVisibility}
+                  onResetOrder={columnPrefs.resetOrder}
+                  onResetWidths={columnPrefs.resetWidths}
+                  className="text-muted-foreground h-7 gap-1.5 text-xs"
+                />
+              }
             />
             <CollectionTable
               mode={folderMode}
@@ -567,6 +593,12 @@ export function FilesystemView() {
               autoApplyScResults={autoActions.autoApplyScResults}
               pendingFieldEdits={pendingFieldEdits}
               setPendingFieldEdits={setPendingFieldEdits}
+              isColumnVisible={columnPrefs.isVisible}
+              columnOrder={columnPrefs.prefs.order}
+              onColumnOrderChange={columnPrefs.setOrder}
+              columnWidths={columnPrefs.prefs.widths}
+              onColumnWidthChange={columnPrefs.setWidth}
+              onColumnWidthReset={columnPrefs.resetWidth}
             />
           </div>
           {/* Right: editor panel */}
@@ -601,5 +633,113 @@ export function FilesystemView() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Filesystem filter toolbar. Owns the URL-backed filter state and fetches a
+ * conditioned filter schema (dependent counts + BPM range) from the backend.
+ * Renders the shared <FiltersToolbar> with filesystem-specific inputs.
+ */
+/** Only render "loading…" if the active state persists > delayMs. */
+function DelayedLoading({
+  active,
+  delayMs = 500,
+}: {
+  active: boolean;
+  delayMs?: number;
+}) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    const t = setTimeout(() => setShow(true), delayMs);
+    return () => {
+      clearTimeout(t);
+      setShow(false);
+    };
+  }, [active, delayMs]);
+  if (!show) return null;
+  return <span className="text-muted-foreground">loading…</span>;
+}
+
+function findNodeTrackCount(
+  root: TreeNode | null,
+  nodeId: string | null,
+): number | null {
+  if (!root || !nodeId) return null;
+  const stack: TreeNode[] = [root];
+  while (stack.length) {
+    const node = stack.pop()!;
+    if (node.id === nodeId) return node.track_count;
+    for (const c of node.children) stack.push(c);
+  }
+  return null;
+}
+
+function FilesystemFiltersToolbar({
+  mode,
+  folderPath,
+  filtered,
+  total,
+  cacheLoading,
+  actions,
+}: {
+  mode: string;
+  folderPath: string | undefined;
+  filtered: number;
+  total: number;
+  cacheLoading: boolean;
+  actions?: React.ReactNode;
+}) {
+  // Seed schema: enumerates every attribute this source supports. Needed so
+  // useFilterState binds URL parsers upfront (before the backend responds with
+  // actual options/counts). The backend response enriches options & ranges.
+  const seedSchema = useMemo(
+    () => ({
+      source: "filesystem",
+      attributes: [
+        { id: "search", label: "Search", kind: "text" as const },
+        { id: "genre", label: "Genre", kind: "enum" as const, options: [] },
+        {
+          id: "key",
+          label: "Key",
+          kind: "enum" as const,
+          options: [],
+          sortHint: "camelot" as const,
+        },
+        {
+          id: "bpm",
+          label: "BPM",
+          kind: "range" as const,
+          min: 0,
+          max: 0,
+          step: 1,
+        },
+      ],
+    }),
+    [],
+  );
+
+  const { state, set, clearAll } = useFilterState(seedSchema);
+  const { schema: fetchedSchema, loading } = useFilterSchema({
+    source: "filesystem",
+    mode,
+    folderPath,
+    state,
+  });
+
+  const schema = fetchedSchema ?? seedSchema;
+
+  return (
+    <FiltersToolbar
+      schema={schema}
+      state={state}
+      onChange={set}
+      onClearAll={clearAll}
+      filtered={filtered}
+      total={total}
+      actions={actions}
+      trailing={<DelayedLoading active={cacheLoading || loading} />}
+    />
   );
 }
