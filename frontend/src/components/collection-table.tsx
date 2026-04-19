@@ -14,11 +14,20 @@ import {
   PencilLine,
   Workflow,
 } from "lucide-react";
-import { useQueryState } from "nuqs";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  parseAsArrayOf,
+  parseAsInteger,
+  parseAsString,
+  useQueryState,
+} from "nuqs";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { serializeComment } from "@/app/library/utils";
+import {
+  SortableColumnHeader,
+  SortableHeaderCell,
+} from "@/components/columns/sortable-columns";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { MiniWaveform } from "@/components/mini-waveform";
@@ -94,17 +103,35 @@ type EditableField =
 /** Fields shown in edit mode. `virtual` fields are not API fields — they're used for title composition. */
 // Fixed widths so columns keep their shape when the left grid cell narrows
 // (e.g. editor panel open) — horizontal scroll handles overflow instead.
-const EDITABLE_FIELDS: { key: EditableField; label: string; width: string }[] =
+const EDITABLE_FIELDS: {
+  key: EditableField;
+  label: string;
+  defaultWidth: number;
+}[] = [
+  { key: "title", label: "Title", defaultWidth: 256 },
+  { key: "artist", label: "Artist", defaultWidth: 192 },
+  { key: "genre", label: "Genre", defaultWidth: 112 },
+  { key: "bpm", label: "BPM", defaultWidth: 56 },
+  { key: "key", label: "Key", defaultWidth: 56 },
+  { key: "remixer", label: "Remixer", defaultWidth: 128 },
+  { key: "original_artist", label: "Orig. Artist", defaultWidth: 112 },
+  { key: "mix_name", label: "Mix", defaultWidth: 80 },
+  { key: "release_date", label: "Release", defaultWidth: 96 },
+];
+
+type ResolvedField = (typeof EDITABLE_FIELDS)[number] & { width: number };
+
+export const FILESYSTEM_COLUMN_DEFS: import("@/lib/columns/types").ColumnDef[] =
   [
-    { key: "title", label: "Title", width: "w-64" },
-    { key: "artist", label: "Artist", width: "w-48" },
-    { key: "genre", label: "Genre", width: "w-28" },
-    { key: "bpm", label: "BPM", width: "w-14" },
-    { key: "key", label: "Key", width: "w-14" },
-    { key: "remixer", label: "Remixer", width: "w-32" },
-    { key: "original_artist", label: "Orig. Artist", width: "w-28" },
-    { key: "mix_name", label: "Mix", width: "w-20" },
-    { key: "release_date", label: "Release", width: "w-24" },
+    { id: "title", header: "Title", required: true },
+    { id: "artist", header: "Artist" },
+    { id: "genre", header: "Genre" },
+    { id: "bpm", header: "BPM" },
+    { id: "key", header: "Key" },
+    { id: "remixer", header: "Remixer" },
+    { id: "original_artist", header: "Orig. Artist" },
+    { id: "mix_name", header: "Mix" },
+    { id: "release_date", header: "Release" },
   ];
 
 /** Fields not stored in the API — remix composition helpers (not remixer itself, which is a real field) */
@@ -135,6 +162,18 @@ interface CollectionTableProps {
   setPendingFieldEdits: React.Dispatch<
     React.SetStateAction<Map<string, Record<string, string>>>
   >;
+  /** Per-column visibility. When omitted, every column renders. */
+  isColumnVisible?: (id: string) => boolean;
+  /** Column order by id. When omitted, defs' natural order is used. */
+  columnOrder?: string[];
+  /** Persist a new column order (called after a drag). */
+  onColumnOrderChange?: (ids: string[]) => void;
+  /** User-resized widths (px) by column id. Missing = use default. */
+  columnWidths?: Record<string, number>;
+  /** Persist a width on resize commit. */
+  onColumnWidthChange?: (id: string, width: number) => void;
+  /** Reset a single column's width to its default (double-click handle). */
+  onColumnWidthReset?: (id: string) => void;
 }
 
 /** Sortable fields mapped to EDITABLE_FIELDS keys where applicable */
@@ -266,6 +305,10 @@ interface EditRowProps {
   activeRuleset?: Ruleset | null;
   /** When set, show a Folder column with the path relative to this root. */
   folderPath?: string;
+  /** Skip per-row framer-motion in large tables (too expensive at scale). */
+  reduceMotion?: boolean;
+  /** Column defs filtered to only visible ones, in render order, with resolved widths. */
+  visibleFields: ResolvedField[];
 }
 
 function ScFieldRow({
@@ -318,6 +361,8 @@ function EditRow({
   scLinkChanged,
   activeRuleset,
   folderPath,
+  reduceMotion,
+  visibleFields,
 }: EditRowProps) {
   const artworkUrl = item.has_artwork
     ? api.getArtworkUrl(item.file_path)
@@ -471,8 +516,12 @@ function EditRow({
       )}
 
       {/* Editable fields */}
-      {EDITABLE_FIELDS.map((f) => (
-        <div key={f.key} className={`${f.width} min-w-0 shrink-0`}>
+      {visibleFields.map((f) => (
+        <div
+          key={f.key}
+          className="min-w-0 shrink-0"
+          style={{ width: f.width }}
+        >
           <input
             className={`placeholder:text-text-subtle h-7 w-full rounded border bg-transparent px-1.5 text-xs transition-colors outline-none ${isChanged(f.key) ? "border-warning/70 bg-warning/5" : "hover:border-border border-transparent"} focus:border-ring focus:ring-ring/50 focus:ring-1`}
             value={getValue(f.key)}
@@ -798,25 +847,44 @@ function EditRow({
               !showPill && "pointer-events-none opacity-0",
             )}
           >
-            <motion.div
-              layout
-              whileHover={{ scale: 1.15 }}
-              transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
-              className={cn(
-                "border-border bg-card absolute top-1/2 right-3 flex origin-right -translate-y-1/2 items-center gap-1 rounded-md border shadow-[var(--shadow-2)]",
-                showFull ? "p-1" : "p-0.5 [&_button]:size-6 [&_svg]:size-3",
-              )}
-            >
-              {showFull ? (
-                <>
-                  {saveBtn}
-                  {applyBtn}
-                  {scBtn}
-                </>
-              ) : (
-                primaryBtn
-              )}
-            </motion.div>
+            {reduceMotion ? (
+              <div
+                className={cn(
+                  "border-border bg-card absolute top-1/2 right-3 flex -translate-y-1/2 items-center gap-1 rounded-md border shadow-[var(--shadow-2)] transition-[transform,padding] duration-150 ease-out hover:scale-110",
+                  showFull ? "p-1" : "p-0.5 [&_button]:size-6 [&_svg]:size-3",
+                )}
+              >
+                {showFull ? (
+                  <>
+                    {saveBtn}
+                    {applyBtn}
+                    {scBtn}
+                  </>
+                ) : (
+                  primaryBtn
+                )}
+              </div>
+            ) : (
+              <motion.div
+                layout
+                whileHover={{ scale: 1.15 }}
+                transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
+                className={cn(
+                  "border-border bg-card absolute top-1/2 right-3 flex origin-right -translate-y-1/2 items-center gap-1 rounded-md border shadow-[var(--shadow-2)]",
+                  showFull ? "p-1" : "p-0.5 [&_button]:size-6 [&_svg]:size-3",
+                )}
+              >
+                {showFull ? (
+                  <>
+                    {saveBtn}
+                    {applyBtn}
+                    {scBtn}
+                  </>
+                ) : (
+                  primaryBtn
+                )}
+              </motion.div>
+            )}
           </div>
         );
       })()}
@@ -860,14 +928,62 @@ export function CollectionTable({
   autoApplyScResults,
   pendingFieldEdits,
   setPendingFieldEdits,
+  isColumnVisible,
+  columnOrder,
+  onColumnOrderChange,
+  columnWidths,
+  onColumnWidthChange,
+  onColumnWidthReset,
 }: CollectionTableProps) {
+  const colVisible = useCallback(
+    (id: string) => (isColumnVisible ? isColumnVisible(id) : true),
+    [isColumnVisible],
+  );
+  const orderedFields = useMemo(() => {
+    if (!columnOrder?.length) return EDITABLE_FIELDS;
+    const byId = new Map(EDITABLE_FIELDS.map((f) => [f.key, f]));
+    const seen = new Set<string>();
+    const out: typeof EDITABLE_FIELDS = [];
+    for (const id of columnOrder) {
+      const f = byId.get(id as EditableField);
+      if (f && !seen.has(id)) {
+        out.push(f);
+        seen.add(id);
+      }
+    }
+    for (const f of EDITABLE_FIELDS) {
+      if (!seen.has(f.key)) out.push(f);
+    }
+    return out;
+  }, [columnOrder]);
+  // Live widths during an active resize drag. Overlays `columnWidths` until
+  // the drag commits (pointer-up), which then persists via onColumnWidthChange.
+  const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
+  const visibleFields = useMemo<ResolvedField[]>(
+    () =>
+      orderedFields
+        .filter((f) => colVisible(f.key))
+        .map((f) => ({
+          ...f,
+          width: liveWidths[f.key] ?? columnWidths?.[f.key] ?? f.defaultWidth,
+        })),
+    [orderedFields, colVisible, columnWidths, liveWidths],
+  );
   const [sortBy, setSortBy] = useQueryState("sort", searchParams.sort);
   const [sortOrder, setSortOrder] = useQueryState("order", searchParams.order);
-  const [search] = useQueryState("search", searchParams.search);
-  const [genres] = useQueryState("genres", searchParams.genres);
-  const [keys] = useQueryState("keys", searchParams.keys);
-  const [bpmMin] = useQueryState("bpmMin", searchParams.bpmMin);
-  const [bpmMax] = useQueryState("bpmMax", searchParams.bpmMax);
+  // Filter state: URL-backed via the shared filter hook. Keys match attribute
+  // ids from the filter schema (singular: genre, key).
+  const [search] = useQueryState("search", parseAsString.withDefault(""));
+  const [genres] = useQueryState(
+    "genre",
+    parseAsArrayOf(parseAsString).withDefault([]),
+  );
+  const [keys] = useQueryState(
+    "key",
+    parseAsArrayOf(parseAsString).withDefault([]),
+  );
+  const [bpmMin] = useQueryState("bpmMin", parseAsInteger);
+  const [bpmMax] = useQueryState("bpmMax", parseAsInteger);
   const [items, setItems] = useState<TrackBrowse[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -1786,13 +1902,14 @@ export function CollectionTable({
       {/* Edit-mode toolbar */}
       {/* Toolbar */}
       <div className="border-border bg-muted @container/toolbar flex shrink-0 items-center gap-2 overflow-hidden border-b px-3 py-1.5">
-        <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-          {selectedPaths.size > 0
-            ? `${selectedPaths.size} selected`
-            : `${items.length} tracks`}
-        </span>
-
-        <div className="bg-border mx-1 h-4 w-px" />
+        {selectedPaths.size > 0 && (
+          <>
+            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+              {selectedPaths.size} selected
+            </span>
+            <div className="bg-border mx-1 h-4 w-px" />
+          </>
+        )}
 
         {/* Batch actions */}
         <Select value={batchField} onValueChange={setBatchField}>
@@ -1800,7 +1917,7 @@ export function CollectionTable({
             <SelectValue placeholder="Field" />
           </SelectTrigger>
           <SelectContent>
-            {EDITABLE_FIELDS.map((f) => (
+            {visibleFields.map((f) => (
               <SelectItem key={f.key} value={f.key} className="text-xs">
                 {f.label}
               </SelectItem>
@@ -2002,28 +2119,59 @@ export function CollectionTable({
             </button>
             {/* Folder header (only in tree/path mode) */}
             {folderPath && <span className="w-36 shrink-0">Folder</span>}
-            {/* Field headers — sortable where applicable */}
-            {EDITABLE_FIELDS.map((f) => {
-              const sortKey = SORTABLE_FIELDS[f.key];
-              return sortKey ? (
-                <button
-                  key={f.key}
-                  className={`${f.width} hover:text-foreground flex min-w-0 shrink-0 cursor-pointer items-center gap-0.5 transition-colors`}
-                  onClick={() => handleSort(sortKey)}
-                >
-                  {f.label}
-                  <SortIcon
-                    col={sortKey}
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                  />
-                </button>
-              ) : (
-                <span key={f.key} className={`${f.width} min-w-0 shrink-0`}>
-                  {f.label}
-                </span>
-              );
-            })}
+            {/* Field headers — drag-reorderable; sortable where applicable */}
+            <SortableColumnHeader
+              ids={visibleFields.map((f) => f.key)}
+              onOrderChange={(nextIds) => {
+                if (!onColumnOrderChange) return;
+                // Merge the reordered visible ids with any hidden ids so
+                // hidden columns retain their relative position.
+                const hidden = EDITABLE_FIELDS.map((f) => f.key).filter(
+                  (k) => !visibleFields.some((v) => v.key === k),
+                );
+                onColumnOrderChange([...nextIds, ...hidden]);
+              }}
+            >
+              {visibleFields.map((f) => {
+                const sortKey = SORTABLE_FIELDS[f.key];
+                return (
+                  <SortableHeaderCell
+                    key={f.key}
+                    id={f.key}
+                    className="min-w-0 shrink-0"
+                    style={{ width: f.width }}
+                    onResize={(w, phase) => {
+                      if (phase === "drag") {
+                        setLiveWidths((p) => ({ ...p, [f.key]: w }));
+                      } else {
+                        onColumnWidthChange?.(f.key, w);
+                        setLiveWidths((p) => {
+                          const { [f.key]: _omit, ...rest } = p;
+                          return rest;
+                        });
+                      }
+                    }}
+                    onResetWidth={() => onColumnWidthReset?.(f.key)}
+                  >
+                    {sortKey ? (
+                      <button
+                        className="hover:text-foreground flex w-full cursor-pointer items-center gap-0.5 transition-colors"
+                        onClick={() => handleSort(sortKey)}
+                      >
+                        {f.label}
+                        <SortIcon
+                          col={sortKey}
+                          sortBy={sortBy}
+                          sortOrder={sortOrder}
+                        />
+                      </button>
+                    ) : (
+                      <span>{f.label}</span>
+                    )}
+                  </SortableHeaderCell>
+                );
+              })}
+            </SortableColumnHeader>
             {/* Added date header — sortable by mtime */}
             <button
               className="hover:text-foreground flex w-20 shrink-0 cursor-pointer items-center gap-0.5 transition-colors"
@@ -2057,8 +2205,6 @@ export function CollectionTable({
                       left: 0,
                       right: 0,
                       transform: `translateY(${virtualRow.start}px)`,
-                      transition: "transform 320ms cubic-bezier(0.2, 0, 0, 1)",
-                      willChange: "transform",
                     }}
                   >
                     {item ? (
@@ -2113,6 +2259,8 @@ export function CollectionTable({
                           ) ?? activeRuleset
                         }
                         folderPath={folderPath}
+                        reduceMotion={total > 500}
+                        visibleFields={visibleFields}
                       />
                     ) : (
                       <SkeletonRow />

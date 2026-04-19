@@ -1,9 +1,4 @@
-import {
-  parseAsArrayOf,
-  parseAsInteger,
-  parseAsString,
-  parseAsStringLiteral,
-} from "nuqs";
+import { parseAsString, parseAsStringLiteral } from "nuqs";
 
 /** Legacy constant kept for reference; tabs are now driven by the folder config API. */
 export const FOLDER_MODES = ["prepare", "collection", "cleaned"] as const;
@@ -23,15 +18,13 @@ export type FolderMode = string;
 export type SortField = (typeof SORT_FIELDS)[number];
 export type SortOrder = (typeof SORT_ORDERS)[number];
 
-/** URL param parsers for all shareable page state. */
+/**
+ * Non-filter URL params. Filter params (search, genre, key, bpmMin, bpmMax,
+ * etc.) are derived from the filter schema at runtime via `useFilterState`.
+ */
 export const searchParams = {
   mode: parseAsString.withDefault("prepare"),
   nodeId: parseAsString.withDefault(""),
-  search: parseAsString.withDefault(""),
-  genres: parseAsArrayOf(parseAsString).withDefault([]),
-  keys: parseAsArrayOf(parseAsString).withDefault([]),
-  bpmMin: parseAsInteger,
-  bpmMax: parseAsInteger,
   sort: parseAsStringLiteral(SORT_FIELDS).withDefault("mtime"),
   order: parseAsStringLiteral(SORT_ORDERS).withDefault("desc"),
 };

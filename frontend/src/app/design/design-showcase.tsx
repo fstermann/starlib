@@ -3,6 +3,8 @@
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
+import { FilterPrimitivesShowcase } from "@/app/design/filter-primitives-showcase";
+import { FiltersToolbarShowcase } from "@/app/design/filters-toolbar-showcase";
 import { useTopBar } from "@/components/layout/top-bar-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -620,6 +622,22 @@ export function DesignShowcase() {
               ))}
             </div>
           </SubSection>
+        </Section>
+
+        <Section
+          id="filter-primitives"
+          title="Filter primitives"
+          specRef="unified filter system — Phase 1"
+        >
+          <FilterPrimitivesShowcase />
+        </Section>
+
+        <Section
+          id="filters-toolbar"
+          title="Filters toolbar"
+          specRef="unified filter system — Phase 3"
+        >
+          <FiltersToolbarShowcase />
         </Section>
 
         <Section

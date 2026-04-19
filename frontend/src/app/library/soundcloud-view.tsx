@@ -4,13 +4,14 @@ import { Compass, Heart, ListPlus } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
 import {
   CreatePlaylistDialog,
   MAX_TRACKS,
 } from "@/components/create-playlist-dialog";
+import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { useTopBar } from "@/components/layout/top-bar-context";
-import { LikesFilterBar } from "@/components/likes-filter-bar";
-import { LikesTable } from "@/components/likes-table";
+import { LIKES_COLUMN_DEFS, LikesTable } from "@/components/likes-table";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -22,6 +23,10 @@ import {
 import { UserCard } from "@/components/user-card";
 import { UserSearch } from "@/components/user-search";
 import { api } from "@/lib/api";
+import { useColumnPrefs } from "@/lib/columns/use-column-prefs";
+import type { FilterSchemaResponse } from "@/lib/filters/schema";
+import { useFilterSchema } from "@/lib/filters/use-filter-schema";
+import { useFilterState } from "@/lib/filters/use-filter-state";
 import type { SCTrack, SCUser } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
@@ -35,12 +40,28 @@ import {
 import { useCombinedPlaylistsTracks } from "./use-combined-playlists-tracks";
 import { useLikes } from "./use-likes";
 import {
+  filterStateToLikesOptions,
   makeLikesFilterPredicate,
   useLikesFilter,
-  type LikesFilterOptions,
 } from "./use-likes-filter";
 import { usePlaylistTracks } from "./use-playlist-tracks";
 import { useUserPlaylists } from "./use-user-playlists";
+
+/** Hide attributes that don't apply to the current tab/context. */
+function filterSchemaForTab(
+  schema: FilterSchemaResponse,
+  tab: string,
+  hasCollection: boolean,
+): FilterSchemaResponse {
+  return {
+    ...schema,
+    attributes: schema.attributes.filter((a) => {
+      if (a.id === "exclude_my_likes") return tab === "discover";
+      if (a.id === "in_collection") return hasCollection;
+      return true;
+    }),
+  };
+}
 
 function extractId(track: SCTrack): number | undefined {
   if (!track.urn) return undefined;
@@ -119,23 +140,39 @@ export function SoundcloudView() {
   }, [activeUrn]);
 
   // ----- Filter state (lifted so the tree can show filtered counts) -----
-  const [search, setSearch] = useState("");
-  const [genres, setGenres] = useState<string[]>([]);
-  const [minDuration, setMinDuration] = useState<number | null>(null);
-  const [maxDuration, setMaxDuration] = useState<number | null>(null);
-  const [excludeMyLikes, setExcludeMyLikes] = useState(false);
-  const [inCollection, setInCollection] = useState<boolean | null>(null);
-
-  const filterOptions: LikesFilterOptions = useMemo(
+  // Seed schema fixes the attribute set so URL parsers stay bound even when
+  // the data-derived schema (options/counts) changes with track source.
+  const seedSchema = useMemo<FilterSchemaResponse>(
     () => ({
-      search,
-      genres,
-      minDuration,
-      maxDuration,
-      excludeMyLikes,
-      inCollection,
+      source: "soundcloud",
+      attributes: [
+        { id: "search", label: "Search", kind: "text" },
+        { id: "genre", label: "Genre", kind: "enum", options: [] },
+        {
+          id: "duration",
+          label: "Duration",
+          kind: "range",
+          min: 0,
+          max: 0,
+          step: 15,
+          formatHint: "duration",
+        },
+        { id: "in_collection", label: "In collection", kind: "bool" },
+        { id: "exclude_my_likes", label: "Exclude my likes", kind: "bool" },
+      ],
     }),
-    [search, genres, minDuration, maxDuration, excludeMyLikes, inCollection],
+    [],
+  );
+
+  const {
+    state: filterState,
+    set: setFilter,
+    clearAll: clearFilters,
+  } = useFilterState(seedSchema);
+
+  const filterOptions = useMemo(
+    () => filterStateToLikesOptions(filterState),
+    [filterState],
   );
 
   const filterPredicate = useMemo(
@@ -246,18 +283,11 @@ export function SoundcloudView() {
             myLikedIds={myLikedIds}
             collectionIds={collectionIds}
             hasSelectedUser={selectedUser != null}
-            search={search}
-            onSearchChange={setSearch}
-            genres={genres}
-            onGenresChange={setGenres}
-            minDuration={minDuration}
-            onMinDurationChange={setMinDuration}
-            maxDuration={maxDuration}
-            onMaxDurationChange={setMaxDuration}
-            excludeMyLikes={excludeMyLikes}
-            onExcludeMyLikesChange={setExcludeMyLikes}
-            inCollection={inCollection}
-            onInCollectionChange={setInCollection}
+            seedSchema={seedSchema}
+            filterState={filterState}
+            onFilterChange={setFilter}
+            onClearFilters={clearFilters}
+            filterOptions={filterOptions}
           />
         </div>
       </div>
@@ -276,19 +306,14 @@ interface LikesViewProps {
   collectionIds: Set<number>;
   hasSelectedUser: boolean;
 
-  // Filter state (lifted)
-  search: string;
-  onSearchChange: (v: string) => void;
-  genres: string[];
-  onGenresChange: (v: string[]) => void;
-  minDuration: number | null;
-  onMinDurationChange: (v: number | null) => void;
-  maxDuration: number | null;
-  onMaxDurationChange: (v: number | null) => void;
-  excludeMyLikes: boolean;
-  onExcludeMyLikesChange: (v: boolean) => void;
-  inCollection: boolean | null;
-  onInCollectionChange: (v: boolean | null) => void;
+  seedSchema: FilterSchemaResponse;
+  filterState: import("@/lib/filters/schema").FilterState;
+  onFilterChange: (
+    id: string,
+    value: import("@/lib/filters/schema").FilterValue,
+  ) => void;
+  onClearFilters: () => void;
+  filterOptions: import("./use-likes-filter").LikesFilterOptions;
 }
 
 function LikesView({
@@ -301,21 +326,16 @@ function LikesView({
   myLikedIds,
   collectionIds,
   hasSelectedUser,
-  search,
-  onSearchChange,
-  genres,
-  onGenresChange,
-  minDuration,
-  onMinDurationChange,
-  maxDuration,
-  onMaxDurationChange,
-  excludeMyLikes,
-  onExcludeMyLikesChange,
-  inCollection,
-  onInCollectionChange,
+  seedSchema,
+  filterState,
+  onFilterChange,
+  onClearFilters,
+  filterOptions,
 }: LikesViewProps) {
   // Selection state stays local — filters live at the page level.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const columnPrefs = useColumnPrefs("library.soundcloud", LIKES_COLUMN_DEFS);
 
   const sourceTracks = isPlaylistView
     ? playlistTracks.tracks
@@ -323,12 +343,29 @@ function LikesView({
       ? combinedPlaylistTracks.tracks
       : activeLikes.tracks;
 
-  const { filteredTracks, availableGenres } = useLikesFilter(
+  const { filteredTracks } = useLikesFilter(
     sourceTracks,
-    { search, genres, minDuration, maxDuration, excludeMyLikes, inCollection },
+    filterOptions,
     tab === "discover" ? myLikedIds : undefined,
     collectionIds,
   );
+
+  // Data-derived schema: enriches the seed with genre options/counts and a
+  // real duration range computed from the current sourceTracks.
+  const { schema: enrichedSchema } = useFilterSchema({
+    source: "soundcloud",
+    tracks: sourceTracks,
+  });
+  const schema = useMemo<FilterSchemaResponse>(() => {
+    if (!enrichedSchema) return seedSchema;
+    // Replace seed attributes with enriched ones where available; append any
+    // seed-only attributes the enriched adapter didn't emit (e.g. booleans).
+    const byId = new Map(enrichedSchema.attributes.map((a) => [a.id, a]));
+    return {
+      source: "soundcloud",
+      attributes: seedSchema.attributes.map((a) => byId.get(a.id) ?? a),
+    };
+  }, [seedSchema, enrichedSchema]);
 
   const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
@@ -386,67 +423,65 @@ function LikesView({
   return (
     <>
       {(sourceTracks.length > 0 || loading) && (
-        <LikesFilterBar
-          search={search}
-          onSearchChange={onSearchChange}
-          genres={genres}
-          onGenresChange={onGenresChange}
-          availableGenres={availableGenres}
-          minDuration={minDuration}
-          maxDuration={maxDuration}
-          onMinDurationChange={onMinDurationChange}
-          onMaxDurationChange={onMaxDurationChange}
-          excludeMyLikes={excludeMyLikes}
-          onExcludeMyLikesChange={onExcludeMyLikesChange}
-          showExcludeMyLikes={tab === "discover"}
-          inCollection={inCollection}
-          onInCollectionChange={onInCollectionChange}
-          showInCollection={collectionIds.size > 0}
-          filteredCount={filteredTracks.length}
-          totalCount={sourceTracks.length}
-          loading={loading}
-          selectedCount={selectedIds.size}
+        <FiltersToolbar
+          schema={filterSchemaForTab(schema, tab, collectionIds.size > 0)}
+          state={filterState}
+          onChange={onFilterChange}
+          onClearAll={onClearFilters}
+          filtered={filteredTracks.length}
+          total={sourceTracks.length}
           actions={
-            selectedIds.size > MAX_TRACKS ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span tabIndex={0}>
+            <>
+              <ColumnVisibilityMenu
+                columns={LIKES_COLUMN_DEFS}
+                isVisible={columnPrefs.isVisible}
+                setHidden={columnPrefs.setHidden}
+                onResetVisibility={columnPrefs.resetVisibility}
+                onResetOrder={columnPrefs.resetOrder}
+                onResetWidths={columnPrefs.resetWidths}
+                className="text-muted-foreground h-7 gap-1.5 text-xs"
+              />
+              {selectedIds.size > MAX_TRACKS ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={0}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground h-7 gap-1.5 text-xs"
+                        disabled
+                      >
+                        <ListPlus className="size-3.5" />
+                        Create Playlist
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Too many tracks selected — limit is {MAX_TRACKS}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <CreatePlaylistDialog
+                  tracks={selectedTracks}
+                  trigger={
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="text-muted-foreground h-7 gap-1.5 text-xs"
-                      disabled
+                      className={cn(
+                        "h-7 gap-1.5 text-xs",
+                        selectedIds.size > 0
+                          ? "text-primary hover:bg-brand-soft hover:text-primary"
+                          : "text-muted-foreground",
+                      )}
+                      disabled={selectedIds.size === 0}
                     >
                       <ListPlus className="size-3.5" />
                       Create Playlist
                     </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Too many tracks selected — limit is {MAX_TRACKS}
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              <CreatePlaylistDialog
-                tracks={selectedTracks}
-                trigger={
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className={cn(
-                      "h-7 gap-1.5 text-xs",
-                      selectedIds.size > 0
-                        ? "text-primary hover:bg-brand-soft hover:text-primary"
-                        : "text-muted-foreground",
-                    )}
-                    disabled={selectedIds.size === 0}
-                  >
-                    <ListPlus className="size-3.5" />
-                    Create Playlist
-                  </Button>
-                }
-              />
-            )
+                  }
+                />
+              )}
+            </>
           }
         />
       )}
@@ -492,6 +527,12 @@ function LikesView({
             onSelectAll={selectAllFiltered}
             onDeselectAll={deselectAll}
             collectionIds={collectionIds}
+            isColumnVisible={columnPrefs.isVisible}
+            columnOrder={columnPrefs.prefs.order}
+            onColumnOrderChange={columnPrefs.setOrder}
+            columnWidths={columnPrefs.prefs.widths}
+            onColumnWidthChange={columnPrefs.setWidth}
+            onColumnWidthReset={columnPrefs.resetWidth}
           />
         )}
 
