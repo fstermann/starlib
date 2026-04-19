@@ -72,7 +72,7 @@ where `--s2-l` flips per theme. Surfaces never pick up the accent hue or chroma.
 | ------------------ | ----------------------------------- | --------- | -------- |
 | `--text`           | Primary body text                   | 0.205     | 0.920    |
 | `--text-muted`     | Secondary text, metadata            | 0.440     | 0.700    |
-| `--text-subtle`    | Placeholders, disabled, decorative  | 0.605     | 0.540    |
+| `--text-subtle`    | Placeholders, disabled, decorative  | 0.700     | 0.420    |
 | `--text-on-accent` | Text on accent fill                 | 0.145     | 0.145    |
 | `--text-on-danger` | Text on danger fill                 | 0.985     | 0.985    |
 
