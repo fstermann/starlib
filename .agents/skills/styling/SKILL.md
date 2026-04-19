@@ -30,7 +30,7 @@ If the two ever disagree, DESIGN.md wins and this skill gets updated.
 
 - [ ] Run `npm run dev` in `frontend/` and visually check the change in light **and** dark mode.
 - [ ] Check the change in `/design` if it touches tokens or a primitive used broadly.
-- [ ] Check every view that renders the changed component (grep for imports). Table changes in particular bleed into `/meta-editor`, `/like-explorer`, `/weekly`.
+- [ ] Check every view that renders the changed component (grep for imports). Table changes in particular bleed into `/library` (both filesystem and SoundCloud sources) and `/weekly`.
 - [ ] Type-check: `npm run typecheck` (or whatever the repo uses). Typecheck clean is the floor, not the ceiling — type correctness is not visual correctness.
 - [ ] If DESIGN.md implementation drifted to match what you wrote (rather than the other way around), update DESIGN.md in the same change. Do not leave the spec stale.
 

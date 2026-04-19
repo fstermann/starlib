@@ -13,7 +13,7 @@ interface User {
   avatar_url: string | null;
 }
 
-const NAV_LINKS = [{ href: "/meta-editor", label: "Meta Editor" }];
+const NAV_LINKS = [{ href: "/library", label: "Library" }];
 
 export function Navbar() {
   const pathname = usePathname();

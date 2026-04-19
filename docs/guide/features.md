@@ -1,14 +1,23 @@
 # Features
 
-Starlib has three main tools, accessible from the sidebar or the home screen.
+Starlib has two main tools, accessible from the sidebar or the home screen.
 
 <figure markdown="span" style="text-align: center;">
   ![Home screen](../assets/images/screenshots/home.png){ width="90%" }
 </figure>
 
-## :material-tag-edit: Meta Editor
+## :material-library: Library
 
-The metadata editor lets you edit ID3/AIFF tags on your local audio files and enrich them with data from SoundCloud.
+The Library is one view for your whole music collection, with two **sources** you switch between at the top of the page:
+
+- **Filesystem** — local audio files, with metadata editing
+- **SoundCloud** — your likes and playlists, plus Discover for browsing other users
+
+The source switcher is a segmented pill in the top bar. The active source shows its icon + label; the inactive one appears as an icon and expands to reveal its label on hover.
+
+### :material-folder-open: Filesystem source
+
+Edit ID3/AIFF tags on your local audio files and enrich them with data from SoundCloud.
 
 - Browse files in your music folder
 - Search SoundCloud to find matching tracks
@@ -17,10 +26,10 @@ The metadata editor lets you edit ID3/AIFF tags on your local audio files and en
 - Apply metadata from SoundCloud to local files
 
 <figure markdown="span" style="text-align: center;">
-  ![Meta Editor](../assets/images/screenshots/meta-editor.png){ width="90%" }
+  ![Library — Filesystem](../assets/images/screenshots/library.png){ width="90%" }
 </figure>
 
-### Workflow
+#### Workflow
 
 1. Select a folder from the **folder tree** on the left, or a file from the table.
 2. Search SoundCloud for the track (or let Starlib match it automatically).
@@ -28,13 +37,29 @@ The metadata editor lets you edit ID3/AIFF tags on your local audio files and en
 4. Click **Save** to write the tags to the file.
 5. When the track is ready (all required fields filled), click **Apply Rules** to finalize.
 
-### Folder tree
+#### Folder tree
 
 The left pane shows a tree of every folder that contains indexed tracks. Each folder displays a recursive track count on the right edge. A :material-sitemap: icon appears next to folders that have a ruleset bound to them; the icon is stronger when the binding is recursive (applies to sub-folders) and muted when inherited from an ancestor.
 
-**Right-click a folder** to assign or change its ruleset. The submenu lets you pick any ruleset, clear the binding, or toggle **Apply to sub-folders** (recursive inheritance).
+**Right-click a folder** to:
 
-### Batch edit
+- **Pin as shortcut / Remove shortcut** — see [Pinned shortcuts](#pinned-shortcuts) below
+- **Ruleset** submenu — assign, change, or clear the binding; toggle **Apply to sub-folders**
+
+#### Pinned shortcuts
+
+A **Pinned** section above the folder tree holds quick-access links to folders you use often. Pin any folder (at any depth, not just top-level) via right-click → **Pin as shortcut**.
+
+Each pinned row supports:
+
+- **Drag handle** (appears on hover) — reorder shortcuts by dragging
+- **Label** — click to jump to the folder; double-click (or pencil icon) to rename in place; `Enter` commits, `Esc` cancels
+- **Tooltip** — hover a shortcut to see the path it points to, relative to your music library root
+- **Unpin** (:material-pin-off:) — removes the shortcut (the folder itself is untouched)
+
+Tree nodes that are pinned show a small :material-pin: indicator in the tree below.
+
+#### Batch edit
 
 The table supports bulk operations across many tracks:
 
@@ -43,21 +68,36 @@ The table supports bulk operations across many tracks:
 
 Per-row **Save** (:material-check:) and **Apply rules** (:material-sitemap:) buttons live in a pinned action column that floats over the right edge of the table with a frosted-glass background.
 
-### Apply Rules
+#### Apply Rules
 
 Once a track has all required metadata, the **Apply Rules** button appears. Clicking it runs the active ruleset — a sequence of steps that convert, move, or copy the file automatically.
 
 Click the :material-information-outline: icon next to the button to preview which steps will run before confirming.
 
-#### Required attributes
+##### Required attributes
 
 A ruleset can declare which track attributes must be populated before it will run — these are the **required attributes**. Apply Rules is gated when any of them are missing; hovering the disabled button lists exactly what's missing.
 
 The built-in **Classic** ruleset requires **title, artist, genre, release date, and artwork**. Custom rulesets can declare their own set (or none, to disable the gate entirely).
 
+### :material-soundcloud: SoundCloud source
+
+Browse your SoundCloud library and discover music from other users. Switch the source tab to **SoundCloud** and use the sub-tabs in the top bar:
+
+| Sub-tab | Description |
+|---------|-------------|
+| **My Library** | Your likes and playlists on SoundCloud |
+| **Discover** | Search for another user and browse their library, with an option to exclude tracks you've already liked |
+
+Both sub-tabs share the same filter/table UX: filter by genre, duration, and collection status; see at a glance which tracks are already in your local collection; select tracks to build a playlist and publish it to SoundCloud.
+
+<figure markdown="span" style="text-align: center;">
+  ![Library — SoundCloud](../assets/images/screenshots/library-soundcloud.png){ width="90%" }
+</figure>
+
 ### Settings
 
-The Meta Editor is configured through **Settings** (gear icon in the sidebar). The settings dialog has three relevant sections: **Folders**, **Rulesets**, and **Meta Editor**.
+The Library is configured through **Settings** (gear icon in the sidebar). Relevant sections: **Folders**, **Rulesets**, and **Library**.
 
 #### Music Library Root
 
@@ -65,20 +105,20 @@ Under **Settings > Folders**, set the root directory that contains all your musi
 
 ![Folder settings](../assets/images/screenshots/settings-folders.png)
 
-#### Folder Shortcuts
+#### Folder shortcuts
 
-Below the root path, configure which folders appear as quick-access shortcuts in the meta editor header. Each shortcut maps to a subdirectory in your music library root.
+The **Folders** section in Settings lists every pinned shortcut alongside the built-in ones (Prepare / Collection / Cleaned). You can also pin shortcuts directly from the tree context menu (see [Pinned shortcuts](#pinned-shortcuts)).
 
 | Column | Description |
 |--------|-------------|
-| :material-eye: | Toggle visibility — hidden folders are not shown in the meta editor |
-| **Label** | Display name shown in the shortcut bar |
-| **Folder** | Subdirectory name on disk |
+| :material-eye: | Toggle visibility — hidden shortcuts don't appear in the tree panel |
+| **Label** | Display name shown in the tree panel Pinned section |
+| **Folder** | Either a subdirectory name relative to the music root, or an absolute path for shortcuts pinned from anywhere in the tree |
 
 Per-folder rulesets are configured in the **Folder rulesets** section below, or via right-click in the folder tree.
 
 !!! note
-    Removing a folder shortcut only hides it from the meta editor — it does not delete the folder or any tracks on disk.
+    Removing a shortcut only hides it from the tree panel — it does not delete the folder or any tracks on disk.
 
 #### Folder rulesets
 
@@ -120,32 +160,11 @@ Classic requires **title, artist, genre, release date, and artwork** before it c
 
 #### Preferred Output Format
 
-Under **Settings > Meta Editor**, choose the default format used by convert rules set to "preferred". This can be overridden per-rule.
+Under **Settings > Library**, choose the default format used by convert rules set to "preferred". This can be overridden per-rule.
 
 #### Ollama (LLM Integration)
 
 Under **Settings > Ollama**, connect a local Ollama instance for LLM-powered features. See the [Ollama setup guide](ollama.md) for installation and configuration.
-
-## :material-heart: Like Explorer
-
-Browse and explore liked tracks, both yours and other users'.
-
-- View all your liked tracks with filtering and sorting
-- Search for other SoundCloud users and browse their likes
-- Filter by genre, duration, and collection status
-- Create playlists from selected tracks
-- See which tracks are already in your collection
-
-<figure markdown="span" style="text-align: center;">
-  ![Like Explorer](../assets/images/screenshots/like-explorer.png){ width="90%" }
-</figure>
-
-### Tabs
-
-| Tab | Description |
-|-----|-------------|
-| **My Likes** | Your liked tracks on SoundCloud |
-| **Explore** | Search other users and browse their likes, with an option to exclude tracks you've already liked |
 
 ## :material-calendar-week: Weekly Favorites
 

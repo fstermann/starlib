@@ -20,7 +20,8 @@ frontend/src/
 │   ├── layout.tsx     # Root layout
 │   ├── page.tsx       # Home page
 │   ├── auth/          # OAuth callback page
-│   ├── meta-editor/   # Metadata editor page
+│   ├── library/       # Library page (filesystem + SoundCloud sources)
+│   ├── weekly/        # Weekly favorites
 │   └── setup/         # Initial setup flow
 ├── components/        # UI components (shadcn/ui based)
 ├── generated/         # Auto-generated types from SoundCloud API
@@ -47,5 +48,6 @@ npm run generate
 |-------|-------------|
 | `/` | Home / collection browser |
 | `/auth/soundcloud/callback` | OAuth callback handler |
-| `/meta-editor` | Track metadata editor |
+| `/library` | Library — filesystem metadata editor + SoundCloud likes/playlists browser (source chosen via `?source=filesystem\|soundcloud`) |
+| `/weekly` | Weekly favorites from followed artists |
 | `/setup` | Initial setup and SoundCloud connection |

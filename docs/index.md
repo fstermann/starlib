@@ -8,8 +8,7 @@ Starlib is a DJ library management app. Organise your tracks, edit metadata, and
 
 ## What can it do?
 
-- **Meta Editor:** Edit ID3/AIFF metadata on local audio files, enriched with data from SoundCloud
-- **Like Explorer:** Browse your liked tracks and discover new music from other users
+- **Library:** Two sources in one view — edit metadata on local files, or browse your SoundCloud likes and playlists (and other users' libraries under Discover)
 - **Weekly Favorites:** Discover new tracks from followed artists, grouped by calendar week
 
 ## Get started
@@ -41,7 +40,7 @@ Connect your SoundCloud account and configure the app.
 
 ### Feature tour
 
-Explore the Meta Editor, Like Explorer, and Weekly Favorites.
+Explore the Library and Weekly Favorites.
 
 [See features :material-arrow-right:](guide/features.md){ .md-button }
 </div>

@@ -113,7 +113,7 @@ test.describe("Meta editor waveform visibility", () => {
   });
 
   async function selectFileAndWaitForPlayer(page: Page) {
-    await page.goto("/meta-editor");
+    await page.goto("/library");
     await page.waitForLoadState("networkidle");
     await page.locator('[data-file-path="track.mp3"]').click();
     await expect(page.getByTestId("waveform-player")).toBeVisible();
@@ -205,7 +205,7 @@ test.describe("Meta editor track playback", () => {
   test("play button becomes enabled after selecting a track", async ({
     page,
   }) => {
-    await page.goto("/meta-editor");
+    await page.goto("/library");
     await page.waitForLoadState("networkidle");
     await page.locator('[data-file-path="track.mp3"]').click();
 
@@ -220,7 +220,7 @@ test.describe("Meta editor track playback", () => {
   });
 
   test("clicking play switches button to pause", async ({ page }) => {
-    await page.goto("/meta-editor");
+    await page.goto("/library");
     await page.waitForLoadState("networkidle");
     await page.locator('[data-file-path="track.mp3"]').click();
 

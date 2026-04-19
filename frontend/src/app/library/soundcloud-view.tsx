@@ -25,6 +25,7 @@ import { api } from "@/lib/api";
 import type { SCTrack, SCUser } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
+import { LibraryTitle } from "./library-title";
 import {
   LIKES_NODE_ID,
   LikesTreePanel,
@@ -47,13 +48,13 @@ function extractId(track: SCTrack): number | undefined {
   return parseInt(parts[parts.length - 1], 10) || undefined;
 }
 
-export default function LikeExplorerPage() {
+export function SoundcloudView() {
   const [tab, setTab] = useQueryState("tab", { defaultValue: "me" });
   const [nodeId, setNodeId] = useQueryState("node", {
     defaultValue: LIKES_NODE_ID,
   });
 
-  // User search state (Explore tab)
+  // User search state (Discover tab)
   const [selectedUser, setSelectedUser] = useState<SCUser | null>(null);
 
   // Which SoundCloud user we're currently viewing
@@ -61,8 +62,8 @@ export default function LikeExplorerPage() {
     tab === "me" ? "me" : (selectedUser?.urn ?? null);
 
   const myLikes = useLikes("me");
-  const exploreLikes = useLikes(tab === "explore" ? activeUrn : null);
-  const activeLikes = tab === "me" ? myLikes : exploreLikes;
+  const discoverLikes = useLikes(tab === "discover" ? activeUrn : null);
+  const activeLikes = tab === "me" ? myLikes : discoverLikes;
 
   const { playlists } = useUserPlaylists(activeUrn);
 
@@ -141,7 +142,7 @@ export default function LikeExplorerPage() {
     () =>
       makeLikesFilterPredicate(
         filterOptions,
-        tab === "explore" ? myLikedIds : undefined,
+        tab === "discover" ? myLikedIds : undefined,
         collectionIds,
       ),
     [filterOptions, tab, myLikedIds, collectionIds],
@@ -171,9 +172,7 @@ export default function LikeExplorerPage() {
 
   useTopBar({
     title: (
-      <>
-        <span>Like Explorer</span>
-        <div className="bg-border mx-1 h-5 w-px shrink-0" />
+      <LibraryTitle>
         <ToggleGroup
           type="single"
           variant="outline"
@@ -188,29 +187,29 @@ export default function LikeExplorerPage() {
             className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
           >
             <Heart className="size-3.5" />
-            My Likes
+            My Library
           </ToggleGroupItem>
           <ToggleGroupItem
-            value="explore"
+            value="discover"
             className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
           >
             <Compass className="size-3.5" />
-            Explore
+            Discover
           </ToggleGroupItem>
         </ToggleGroup>
-      </>
+      </LibraryTitle>
     ),
   });
 
   const storageKey =
-    tab === "me" ? "like-explorer:me" : "like-explorer:explore";
+    tab === "me" ? "library:soundcloud:me" : "library:soundcloud:discover";
 
-  const viewingUser = tab === "explore" && !selectedUser;
+  const viewingUser = tab === "discover" && !selectedUser;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Explore tab: user search / selected user */}
-      {tab === "explore" && (
+      {/* Discover tab: user search / selected user */}
+      {tab === "discover" && (
         <div className="border-border border-b px-4 py-2">
           {selectedUser ? (
             <UserCard
@@ -327,7 +326,7 @@ function LikesView({
   const { filteredTracks, availableGenres } = useLikesFilter(
     sourceTracks,
     { search, genres, minDuration, maxDuration, excludeMyLikes, inCollection },
-    tab === "explore" ? myLikedIds : undefined,
+    tab === "discover" ? myLikedIds : undefined,
     collectionIds,
   );
 
@@ -399,7 +398,7 @@ function LikesView({
           onMaxDurationChange={onMaxDurationChange}
           excludeMyLikes={excludeMyLikes}
           onExcludeMyLikesChange={onExcludeMyLikesChange}
-          showExcludeMyLikes={tab === "explore"}
+          showExcludeMyLikes={tab === "discover"}
           inCollection={inCollection}
           onInCollectionChange={onInCollectionChange}
           showInCollection={collectionIds.size > 0}
@@ -468,10 +467,10 @@ function LikesView({
               Retry
             </button>
           </div>
-        ) : tab === "explore" && !hasSelectedUser ? (
+        ) : tab === "discover" && !hasSelectedUser ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-muted-foreground text-sm">
-              Search for a user to explore their likes
+              Search for a user to discover their library
             </p>
           </div>
         ) : sourceTracks.length === 0 && !loading ? (

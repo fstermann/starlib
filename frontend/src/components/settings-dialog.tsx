@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils";
 type SectionId =
   | "general"
   | "appearance"
-  | "meta-editor"
+  | "library"
   | "folders"
   | "rulesets"
   | "ai"
@@ -87,7 +87,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Pages",
-    header: { id: "meta-editor", label: "Meta Editor", icon: Clapperboard },
+    header: { id: "library", label: "Library", icon: Clapperboard },
     items: [
       { id: "folders", label: "Folders", icon: FolderOpen, indent: true },
       { id: "rulesets", label: "Rulesets", icon: Workflow, indent: true },
@@ -426,9 +426,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </div>
             )}
 
-            {section === "meta-editor" && (
+            {section === "library" && (
               <div className="flex flex-col gap-6">
-                <h2 className="text-base font-semibold">Meta Editor</h2>
+                <h2 className="text-base font-semibold">Library</h2>
 
                 <div className="flex flex-col gap-2">
                   <Label className="text-sm">Preferred output format</Label>

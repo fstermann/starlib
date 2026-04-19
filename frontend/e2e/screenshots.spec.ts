@@ -766,21 +766,21 @@ test.describe("Documentation screenshots", () => {
     });
   });
 
-  test("meta editor — table view", async ({ page }) => {
-    await page.goto("/meta-editor");
+  test("library — filesystem table view", async ({ page }) => {
+    await page.goto("/library");
     await page.waitForLoadState("networkidle");
     // Wait for table rows to render
     const firstRow = page.locator('[role="row"][class*="border-b"]').first();
     await firstRow.waitFor({ state: "visible" });
     await page.waitForTimeout(400);
     await page.screenshot({
-      path: path.join(SCREENSHOT_DIR, "meta-editor.png"),
+      path: path.join(SCREENSHOT_DIR, "library.png"),
       fullPage: false,
     });
   });
 
-  test("meta editor — single file editor", async ({ page }) => {
-    await page.goto("/meta-editor");
+  test("library — single file editor", async ({ page }) => {
+    await page.goto("/library");
     await page.waitForLoadState("networkidle");
     // Wait for editable rows (skip the header row)
     const dataRow = page.locator('[data-index="0"]');
@@ -794,16 +794,16 @@ test.describe("Documentation screenshots", () => {
       .waitFor({ state: "visible" });
     await page.waitForTimeout(600);
     await page.screenshot({
-      path: path.join(SCREENSHOT_DIR, "meta-editor-single.png"),
+      path: path.join(SCREENSHOT_DIR, "library-single.png"),
       fullPage: false,
     });
   });
 
-  test("like explorer", async ({ page }) => {
-    await page.goto("/like-explorer");
+  test("library — soundcloud view", async ({ page }) => {
+    await page.goto("/library?source=soundcloud");
     await page.waitForLoadState("networkidle");
     await page.screenshot({
-      path: path.join(SCREENSHOT_DIR, "like-explorer.png"),
+      path: path.join(SCREENSHOT_DIR, "library-soundcloud.png"),
       fullPage: false,
     });
   });
@@ -839,7 +839,7 @@ test.describe("Documentation screenshots", () => {
   });
 
   test("settings — folders", async ({ page }) => {
-    await page.goto("/meta-editor");
+    await page.goto("/library");
     await page.waitForLoadState("networkidle");
     // Open settings dialog via sidebar button
     await page.locator('button[aria-label="Settings"]').click();
@@ -857,7 +857,7 @@ test.describe("Documentation screenshots", () => {
   });
 
   test("settings — rulesets (classic)", async ({ page }) => {
-    await page.goto("/meta-editor");
+    await page.goto("/library");
     await page.waitForLoadState("networkidle");
     // Open settings dialog
     await page.locator('button[aria-label="Settings"]').click();

@@ -53,7 +53,7 @@ function CallbackHandler() {
       localStorage.setItem("sc_user", JSON.stringify(data.user));
       sessionStorage.removeItem("oauth_state");
       window.dispatchEvent(new Event("auth-changed"));
-      router.push("/meta-editor");
+      router.push("/library?source=soundcloud");
     };
 
     const handleError = (err: unknown) => {

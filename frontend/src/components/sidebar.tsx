@@ -1,10 +1,11 @@
 "use client";
 
-import { CalendarDays, FilePen, Heart, Settings } from "lucide-react";
+import { CalendarDays, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { LibraryIcon } from "@/components/icons/library-icon";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { SettingsDialog } from "@/components/settings-dialog";
 import {
@@ -22,8 +23,7 @@ interface User {
 }
 
 const NAV_LINKS = [
-  { href: "/meta-editor", label: "Meta Editor", icon: FilePen },
-  { href: "/like-explorer", label: "Like Explorer", icon: Heart },
+  { href: "/library", label: "Library", icon: LibraryIcon },
   { href: "/weekly", label: "Weekly Favorites", icon: CalendarDays },
 ];
 

@@ -1,6 +1,7 @@
-import { CalendarDays, FilePen, Heart } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import Link from "next/link";
 
+import { LibraryIcon } from "@/components/icons/library-icon";
 import {
   Card,
   CardContent,
@@ -11,20 +12,12 @@ import {
 
 const tools = [
   {
-    href: "/meta-editor",
-    title: "Meta Editor",
+    href: "/library",
+    title: "Library",
     description:
-      "Edit ID3/AIFF metadata, BPM, key, genre, and artwork. Fetch metadata directly from SoundCloud.",
+      "Browse, edit, and organize your music across the filesystem and SoundCloud. Edit metadata, manage playlists, and explore likes.",
     available: true,
-    icon: FilePen,
-  },
-  {
-    href: "/like-explorer",
-    title: "Like Explorer",
-    description:
-      "Browse your liked tracks or explore the likes of any other profile.",
-    available: true,
-    icon: Heart,
+    icon: LibraryIcon,
   },
   {
     href: "/weekly",

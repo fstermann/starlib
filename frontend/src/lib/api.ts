@@ -252,6 +252,8 @@ export interface FolderConfig {
   label: string;
   visible: boolean;
   order: number;
+  /** Absolute path. When omitted, falls back to `<root>/<name>` (legacy). */
+  path?: string | null;
 }
 
 export interface FoldersConfig {
