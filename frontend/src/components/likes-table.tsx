@@ -597,17 +597,12 @@ export function LikesTable({
   // Report the current visible order (after sort) to callers so they can save
   // whatever the user currently sees.
   const sortedUrnsKey = useMemo(
-    () =>
-      sortedTracks
-        .map((t) => t.urn ?? "")
-        .join("|"),
+    () => sortedTracks.map((t) => t.urn ?? "").join("|"),
     [sortedTracks],
   );
   React.useEffect(() => {
     if (!onVisibleOrderChange) return;
-    const urns = sortedTracks
-      .map((t) => t.urn)
-      .filter((u): u is string => !!u);
+    const urns = sortedTracks.map((t) => t.urn).filter((u): u is string => !!u);
     onVisibleOrderChange(urns);
   }, [sortedUrnsKey, sortedTracks, onVisibleOrderChange]);
 
