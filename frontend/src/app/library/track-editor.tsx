@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Image as ImageIcon,
+  Loader2,
   MoveRight,
   RotateCcw,
   Search,
@@ -15,6 +16,7 @@ import {
   Trash2,
   Users,
   Wand2,
+  Waves,
   Workflow,
   X,
 } from "lucide-react";
@@ -69,6 +71,7 @@ import {
   removeParenthesis,
   titelize,
 } from "@/lib/string-utils";
+import { analyzeLocalBpm, isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 import { useSourceSearch } from "./use-source-search";
@@ -175,6 +178,9 @@ export function TrackEditor({
     soundcloud_permalink: "",
   });
   const [scLinkEnabled, setScLinkEnabled] = useState(true);
+
+  // BPM detection state (Rust-side analysis via Tauri invoke)
+  const [bpmAnalyzing, setBpmAnalyzing] = useState(false);
 
   // Active ruleset (shown in Apply Rules popover) — only set when the folder has one assigned
   const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
@@ -1187,6 +1193,41 @@ export function TrackEditor({
                     BPM
                   </span>
                   <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+                    {isTauri() && trackInfo && (
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={async () => {
+                          setBpmAnalyzing(true);
+                          try {
+                            const result = await analyzeLocalBpm(
+                              trackInfo.file_path,
+                            );
+                            handleFormChange(
+                              "bpm",
+                              String(Math.round(result.bpm)),
+                            );
+                            toast.success(
+                              `Detected ${Math.round(result.bpm)} BPM (${result.confidence} confidence)`,
+                            );
+                          } catch (err) {
+                            toast.error(
+                              `BPM detection failed: ${err instanceof Error ? err.message : String(err)}`,
+                            );
+                          } finally {
+                            setBpmAnalyzing(false);
+                          }
+                        }}
+                        disabled={bpmAnalyzing}
+                        title="Detect BPM from audio"
+                      >
+                        {bpmAnalyzing ? (
+                          <Loader2 className="animate-spin" />
+                        ) : (
+                          <Waves />
+                        )}
+                      </Button>
+                    )}
                     {isChanged("bpm") && (
                       <Button
                         variant="ghost"
