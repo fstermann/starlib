@@ -38,13 +38,29 @@ if [[ ! -f "$FFMPEG_BIN" ]]; then
   fi
 fi
 
-cat > "$OUT" << 'STUB'
+REPO_ROOT="$(cd "${DESKTOP_DIR}/.." && pwd)"
+
+# Ensure the project venv exists + is in sync. We call the venv's python
+# directly from the stub (not `uv run`) because Tauri's sidecar child env
+# may pick up a different Python via uv's auto-download/UV_PYTHON defaults.
+# Pinning to the venv interpreter avoids any PATH / uv-config ambiguity.
+echo "Syncing project venv via uv..."
+(cd "$REPO_ROOT" && uv sync >/dev/null)
+
+VENV_PY="${REPO_ROOT}/.venv/bin/python"
+if [[ ! -x "$VENV_PY" ]]; then
+  echo "Error: expected venv python at $VENV_PY" >&2
+  exit 1
+fi
+
+cat > "$OUT" << STUB
 #!/usr/bin/env bash
 # Dev sidecar stub — replaced by the PyInstaller binary in production builds.
-REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-cd "$REPO_ROOT"
-export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
-exec uv run python -m backend.main "$@"
+# Repo root and interpreter baked in at stub-generation time so the Tauri
+# child process doesn't depend on PATH, CWD, or uv auto-discovery.
+cd "${REPO_ROOT}"
+export PYTHONPATH="${REPO_ROOT}:\${PYTHONPATH:-}"
+exec "${VENV_PY}" -m backend.main "\$@"
 STUB
 
 chmod +x "$OUT"
