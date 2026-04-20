@@ -29,13 +29,16 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import * as React from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   SortableColumnHeader,
   SortableHeaderCell,
 } from "@/components/columns/sortable-columns";
-import { SoundcloudBpmCell } from "@/components/soundcloud-bpm-cell";
+import {
+  SoundcloudBpmCacheContext,
+  SoundcloudBpmCell,
+} from "@/components/soundcloud-bpm-cell";
 import { SoundcloudRowPlayButton } from "@/components/soundcloud-row-play-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -546,6 +549,38 @@ export function LikesTable({
   onVisibleOrderChange,
 }: LikesTableProps) {
   const reorderEnabled = !!onReorderTracks;
+
+  // Pre-fill cached BPMs for all tracks in this table in a single bulk
+  // request, rather than making one GET per visible row. The map survives
+  // re-renders; cells read it via SoundcloudBpmCacheContext.
+  const [bpmCache, setBpmCache] = useState<Map<number, number>>(new Map());
+  useEffect(() => {
+    const ids: number[] = [];
+    for (const t of tracks) {
+      if (t.urn) {
+        const parts = t.urn.split(":");
+        const id = parseInt(parts[parts.length - 1], 10);
+        if (id > 0) ids.push(id);
+      }
+    }
+    if (ids.length === 0) return;
+    let cancelled = false;
+    api
+      .getSoundcloudBpmsBulk(ids)
+      .then((resp) => {
+        if (cancelled) return;
+        const next = new Map<number, number>();
+        for (const [k, v] of Object.entries(resp.bpms)) next.set(Number(k), v);
+        setBpmCache(next);
+      })
+      .catch(() => {
+        /* Prefill is best-effort; cells fall back to metadata + Detect button. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tracks]);
+
   const colVisible = React.useCallback(
     (id: string) => (isColumnVisible ? isColumnVisible(id) : true),
     [isColumnVisible],
@@ -704,201 +739,206 @@ export function LikesTable({
     });
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* Header */}
-      <div
-        role="row"
-        className="border-border text-muted-foreground flex h-9 shrink-0 items-center gap-2 border-b bg-[var(--surface-2)] px-3 text-xs font-medium"
-      >
-        {reorderable && <div className="size-4 shrink-0" aria-hidden />}
+    <SoundcloudBpmCacheContext.Provider value={bpmCache}>
+      <div className="flex h-full min-h-0 flex-col">
+        {/* Header */}
         <div
-          className="flex w-6 shrink-0 items-center justify-center"
-          onClick={(e) => e.stopPropagation()}
+          role="row"
+          className="border-border text-muted-foreground flex h-9 shrink-0 items-center gap-2 border-b bg-[var(--surface-2)] px-3 text-xs font-medium"
         >
-          <Checkbox
-            checked={
-              allSelected ? true : someSelected ? "indeterminate" : false
-            }
-            onCheckedChange={(checked) =>
-              checked ? onSelectAll() : onDeselectAll()
-            }
-            aria-label="Select all"
-            className={cn(
-              "size-3.5 cursor-pointer",
-              "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
-              allSelected &&
-                "data-[state=checked]:bg-primary data-[state=checked]:border-primary",
-            )}
-          />
-        </div>
-        <div className="size-8 shrink-0" />
-        <SortableColumnHeader
-          ids={visibleColumns.map((c) => c.id)}
-          onOrderChange={(nextIds) => {
-            if (!onColumnOrderChange) return;
-            const hidden = LIKES_COLUMNS.map((c) => c.id).filter(
-              (id) => !visibleColumns.some((v) => v.id === id),
-            );
-            onColumnOrderChange([...nextIds, ...hidden]);
-          }}
-        >
-          {visibleColumns.map((col) => (
-            <SortableHeaderCell
-              key={col.id}
-              id={col.id}
-              className={col.cellClassName}
-              style={{ width: col.width }}
-              onResize={(w, phase) => {
-                if (phase === "drag") {
-                  setLiveWidths((p) => ({ ...p, [col.id]: w }));
-                } else {
-                  onColumnWidthChange?.(col.id, w);
-                  setLiveWidths((p) => {
-                    const { [col.id]: _omit, ...rest } = p;
-                    return rest;
-                  });
-                }
-              }}
-              onResetWidth={() => onColumnWidthReset?.(col.id)}
-            >
-              {col.renderHeader ? (
-                col.renderHeader()
-              ) : col.sortKey ? (
-                <button
-                  className="hover:text-foreground flex w-full cursor-pointer items-center gap-0.5 transition-colors"
-                  onClick={() => col.sortKey && handleSort(col.sortKey)}
-                >
-                  {col.header}
-                  <SortIcon
-                    col={col.sortKey}
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                  />
-                </button>
-              ) : (
-                <span>{col.header}</span>
+          {reorderable && <div className="size-4 shrink-0" aria-hidden />}
+          <div
+            className="flex w-6 shrink-0 items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Checkbox
+              checked={
+                allSelected ? true : someSelected ? "indeterminate" : false
+              }
+              onCheckedChange={(checked) =>
+                checked ? onSelectAll() : onDeselectAll()
+              }
+              aria-label="Select all"
+              className={cn(
+                "size-3.5 cursor-pointer",
+                "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
+                allSelected &&
+                  "data-[state=checked]:bg-primary data-[state=checked]:border-primary",
               )}
-            </SortableHeaderCell>
-          ))}
-        </SortableColumnHeader>
-      </div>
-
-      {/* Virtual scroll */}
-      <div
-        ref={scrollParentRef}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-      >
-        {(() => {
-          const body = (
-            <div
-              style={{
-                height: `${virtualizer.getTotalSize()}px`,
-                position: "relative",
-              }}
-            >
-              {virtualItems.map((virtualRow) => {
-                const track = sortedTracks[virtualRow.index];
-                if (!track) return null;
-                const id = extractId(track);
-                const sortableId = reorderable
-                  ? (track.urn ?? `__idx_${virtualRow.index}`)
-                  : undefined;
-
-                return (
-                  <div
-                    key={virtualRow.key}
-                    data-index={virtualRow.index}
-                    ref={virtualizer.measureElement}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    <TrackRow
-                      sortableId={sortableId}
-                      track={track}
-                      isSelected={selectedIds.has(id)}
-                      isExpanded={expandedId === id}
-                      inCollection={collectionIds?.has(id) ?? false}
-                      isNew={
-                        newTrackUrns
-                          ? track.urn
-                            ? newTrackUrns.has(track.urn)
-                            : false
-                          : undefined
-                      }
-                      onToggleSelect={(shiftKey) => {
-                        const currentIndex = virtualRow.index;
-                        if (shiftKey && lastSelectedIndexRef.current !== null) {
-                          const start = Math.min(
-                            lastSelectedIndexRef.current,
-                            currentIndex,
-                          );
-                          const end = Math.max(
-                            lastSelectedIndexRef.current,
-                            currentIndex,
-                          );
-                          const rangeIds = sortedTracks
-                            .slice(start, end + 1)
-                            .map(extractId)
-                            .filter(Boolean);
-                          onRangeSelect(rangeIds);
-                        } else {
-                          onToggleSelect(id);
-                          lastSelectedIndexRef.current = currentIndex;
-                        }
-                      }}
-                      onExpand={() => handleExpand(track)}
-                      visibleColumns={visibleColumns}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          );
-          if (!reorderable) return body;
-          return (
-            <DndContext
-              sensors={dndSensors}
-              collisionDetection={closestCenter}
-              onDragStart={handleReorderDragStart}
-              onDragEnd={handleReorderDragEnd}
-              onDragCancel={() => setActiveDragId(null)}
-            >
-              <SortableContext
-                items={sortableIds}
-                strategy={verticalListSortingStrategy}
+            />
+          </div>
+          <div className="size-8 shrink-0" />
+          <SortableColumnHeader
+            ids={visibleColumns.map((c) => c.id)}
+            onOrderChange={(nextIds) => {
+              if (!onColumnOrderChange) return;
+              const hidden = LIKES_COLUMNS.map((c) => c.id).filter(
+                (id) => !visibleColumns.some((v) => v.id === id),
+              );
+              onColumnOrderChange([...nextIds, ...hidden]);
+            }}
+          >
+            {visibleColumns.map((col) => (
+              <SortableHeaderCell
+                key={col.id}
+                id={col.id}
+                className={col.cellClassName}
+                style={{ width: col.width }}
+                onResize={(w, phase) => {
+                  if (phase === "drag") {
+                    setLiveWidths((p) => ({ ...p, [col.id]: w }));
+                  } else {
+                    onColumnWidthChange?.(col.id, w);
+                    setLiveWidths((p) => {
+                      const { [col.id]: _omit, ...rest } = p;
+                      return rest;
+                    });
+                  }
+                }}
+                onResetWidth={() => onColumnWidthReset?.(col.id)}
               >
-                {body}
-              </SortableContext>
-              <DragOverlay>
-                {activeDragTrack ? (
-                  <div className="bg-[var(--surface-2)] opacity-95 shadow-lg">
-                    <TrackRowInner
-                      track={activeDragTrack}
-                      isSelected={false}
-                      isExpanded={false}
-                      inCollection={false}
-                      isNew={false}
-                      onToggleSelect={() => undefined}
-                      onExpand={() => undefined}
-                      visibleColumns={visibleColumns}
-                      dragHandle={{
-                        attributes: {},
-                        listeners: undefined,
-                        isDragging: false,
-                      }}
+                {col.renderHeader ? (
+                  col.renderHeader()
+                ) : col.sortKey ? (
+                  <button
+                    className="hover:text-foreground flex w-full cursor-pointer items-center gap-0.5 transition-colors"
+                    onClick={() => col.sortKey && handleSort(col.sortKey)}
+                  >
+                    {col.header}
+                    <SortIcon
+                      col={col.sortKey}
+                      sortBy={sortBy}
+                      sortOrder={sortOrder}
                     />
-                  </div>
-                ) : null}
-              </DragOverlay>
-            </DndContext>
-          );
-        })()}
+                  </button>
+                ) : (
+                  <span>{col.header}</span>
+                )}
+              </SortableHeaderCell>
+            ))}
+          </SortableColumnHeader>
+        </div>
+
+        {/* Virtual scroll */}
+        <div
+          ref={scrollParentRef}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        >
+          {(() => {
+            const body = (
+              <div
+                style={{
+                  height: `${virtualizer.getTotalSize()}px`,
+                  position: "relative",
+                }}
+              >
+                {virtualItems.map((virtualRow) => {
+                  const track = sortedTracks[virtualRow.index];
+                  if (!track) return null;
+                  const id = extractId(track);
+                  const sortableId = reorderable
+                    ? (track.urn ?? `__idx_${virtualRow.index}`)
+                    : undefined;
+
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      data-index={virtualRow.index}
+                      ref={virtualizer.measureElement}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      <TrackRow
+                        sortableId={sortableId}
+                        track={track}
+                        isSelected={selectedIds.has(id)}
+                        isExpanded={expandedId === id}
+                        inCollection={collectionIds?.has(id) ?? false}
+                        isNew={
+                          newTrackUrns
+                            ? track.urn
+                              ? newTrackUrns.has(track.urn)
+                              : false
+                            : undefined
+                        }
+                        onToggleSelect={(shiftKey) => {
+                          const currentIndex = virtualRow.index;
+                          if (
+                            shiftKey &&
+                            lastSelectedIndexRef.current !== null
+                          ) {
+                            const start = Math.min(
+                              lastSelectedIndexRef.current,
+                              currentIndex,
+                            );
+                            const end = Math.max(
+                              lastSelectedIndexRef.current,
+                              currentIndex,
+                            );
+                            const rangeIds = sortedTracks
+                              .slice(start, end + 1)
+                              .map(extractId)
+                              .filter(Boolean);
+                            onRangeSelect(rangeIds);
+                          } else {
+                            onToggleSelect(id);
+                            lastSelectedIndexRef.current = currentIndex;
+                          }
+                        }}
+                        onExpand={() => handleExpand(track)}
+                        visibleColumns={visibleColumns}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            );
+            if (!reorderable) return body;
+            return (
+              <DndContext
+                sensors={dndSensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleReorderDragStart}
+                onDragEnd={handleReorderDragEnd}
+                onDragCancel={() => setActiveDragId(null)}
+              >
+                <SortableContext
+                  items={sortableIds}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {body}
+                </SortableContext>
+                <DragOverlay>
+                  {activeDragTrack ? (
+                    <div className="bg-[var(--surface-2)] opacity-95 shadow-lg">
+                      <TrackRowInner
+                        track={activeDragTrack}
+                        isSelected={false}
+                        isExpanded={false}
+                        inCollection={false}
+                        isNew={false}
+                        onToggleSelect={() => undefined}
+                        onExpand={() => undefined}
+                        visibleColumns={visibleColumns}
+                        dragHandle={{
+                          attributes: {},
+                          listeners: undefined,
+                          isDragging: false,
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            );
+          })()}
+        </div>
       </div>
-    </div>
+    </SoundcloudBpmCacheContext.Provider>
   );
 }
