@@ -16,6 +16,14 @@ export interface BpmResult {
 }
 
 /**
+ * Run BPM detection on a local audio file. Resolves with the detection
+ * result; rejects with a human-readable string on decode / analysis failure.
+ */
+export async function analyzeLocalBpm(path: string): Promise<BpmResult> {
+  return invoke<BpmResult>("analyze_local_bpm", { path });
+}
+
+/**
  * Run BPM detection on a SoundCloud track. The Client-Credentials `token` is
  * fetched from the Python backend (see `api.getSoundcloudClientToken`) and
  * passed through — the Rust layer doesn't manage auth state.
