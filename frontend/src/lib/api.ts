@@ -754,6 +754,17 @@ export const api = {
       }),
     });
   },
+
+  async getLocalBpmCandidates(
+    folder: string,
+    recursive = true,
+  ): Promise<{ file_paths: string[] }> {
+    const qs = new URLSearchParams({
+      folder,
+      recursive: String(recursive),
+    });
+    return fetchApi(`/api/bpm/local/candidates?${qs.toString()}`);
+  },
   // ==================== SoundCloud ====================
 
   async getSoundcloudStreamUrl(
