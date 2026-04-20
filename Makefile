@@ -1,4 +1,4 @@
-.PHONY: help dev backend frontend docs icons screenshot build run \
+.PHONY: help dev tauri-dev backend frontend docs icons screenshot build run \
 	lint lint-fe lint-be format format-check typecheck \
 	test test-fe test-be test-e2e check generate
 
@@ -16,6 +16,7 @@ help:
 	@echo ""
 	@echo "  Run:"
 	@echo "    make dev           Run backend and frontend together"
+	@echo "    make tauri-dev     Run the Tauri WebView with hot-reload (for testing invoke commands)"
 	@echo "    make backend       Run FastAPI backend (:8000)"
 	@echo "    make frontend      Run Next.js frontend (:3000)"
 	@echo "    make docs          Serve Zensical docs (:8200)"
@@ -44,6 +45,10 @@ dev:
 		uv run python -m backend.main & \
 		(cd $(FRONTEND_DIR) && npm run dev) & \
 		wait
+
+tauri-dev:
+	@echo "==> Starting Tauri dev window (builds the sidecar first time)..."
+	cd $(DESKTOP_DIR) && npm run desktop:dev
 
 backend:
 	uv run python -m backend.main
