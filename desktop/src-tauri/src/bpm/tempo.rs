@@ -5,11 +5,56 @@
 //! to integer-lag BPMs, and returns a confidence bucket derived from peak
 //! sharpness.
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 
 use super::types::{ALGORITHM_VERSION, BpmOptions, BpmResult, Confidence};
+
+/// Combine multiple single-shot BPM results into one consensus estimate.
+///
+/// Returns the median BPM. Confidence is derived from window agreement
+/// spread: High if all within ±2 BPM of the median, Medium if within ±5,
+/// else Low. `corrected_from` on the consensus result is the pre-correction
+/// median in case any octave correction was applied.
+pub fn consensus(results: &[BpmResult]) -> Result<BpmResult> {
+    if results.is_empty() {
+        return Err(anyhow!("consensus requires at least one result"));
+    }
+    let mut bpms: Vec<f32> = results.iter().map(|r| r.bpm).collect();
+    bpms.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = bpms[bpms.len() / 2];
+
+    let max_dev = bpms
+        .iter()
+        .map(|b| (b - median).abs())
+        .fold(0.0_f32, f32::max);
+    let confidence = if max_dev <= 2.0 {
+        Confidence::High
+    } else if max_dev <= 5.0 {
+        Confidence::Medium
+    } else {
+        Confidence::Low
+    };
+
+    // Consensus doesn't "correct" itself — correction already happened per
+    // window. Expose any pre-correction median for debugging if every run
+    // carries a corrected_from value.
+    let corrected_from = if results.iter().all(|r| r.corrected_from.is_some()) {
+        let mut pre: Vec<f32> = results.iter().map(|r| r.corrected_from.unwrap()).collect();
+        pre.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        Some(pre[pre.len() / 2])
+    } else {
+        None
+    };
+
+    Ok(BpmResult {
+        bpm: median,
+        confidence,
+        corrected_from,
+        algorithm_version: ALGORITHM_VERSION,
+    })
+}
 
 /// Analyse PCM samples (mono, at `sr`) and return a BPM estimate.
 pub fn analyze(samples: &[f32], sr: u32, options: &BpmOptions) -> Result<BpmResult> {
@@ -224,5 +269,44 @@ mod tests {
         let (corrected, from) = apply_octave_correction(128.0);
         assert_eq!(corrected, 128.0);
         assert_eq!(from, None);
+    }
+
+    fn result(bpm: f32) -> BpmResult {
+        BpmResult {
+            bpm,
+            confidence: Confidence::Medium,
+            corrected_from: None,
+            algorithm_version: ALGORITHM_VERSION,
+        }
+    }
+
+    #[test]
+    fn consensus_tight_cluster_is_high_confidence() {
+        let c = consensus(&[result(127.0), result(128.0), result(128.5)]).unwrap();
+        assert_eq!(c.bpm, 128.0);
+        assert_eq!(c.confidence, Confidence::High);
+    }
+
+    #[test]
+    fn consensus_moderate_spread_is_medium() {
+        let c = consensus(&[result(125.0), result(128.0), max_dev_helper()]).unwrap();
+        assert_eq!(c.bpm, 128.0);
+        assert_eq!(c.confidence, Confidence::Medium);
+    }
+
+    fn max_dev_helper() -> BpmResult {
+        result(132.0) // 4 BPM from median 128 → Medium (≤5)
+    }
+
+    #[test]
+    fn consensus_wide_spread_is_low() {
+        let c = consensus(&[result(120.0), result(128.0), result(140.0)]).unwrap();
+        assert_eq!(c.bpm, 128.0);
+        assert_eq!(c.confidence, Confidence::Low); // 12 BPM from median
+    }
+
+    #[test]
+    fn consensus_empty_errors() {
+        assert!(consensus(&[]).is_err());
     }
 }

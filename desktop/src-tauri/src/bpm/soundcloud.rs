@@ -17,13 +17,17 @@ use reqwest::Client;
 use serde::Deserialize;
 use url::Url;
 
+use super::tempo::consensus;
+use super::types::AnalysisMode;
 use super::{analyze_bytes, types::BpmOptions, types::BpmResult};
 
 const API_BASE: &str = "https://api.soundcloud.com";
-/// Window offset into the track (percent of duration). 30% lands past the
-/// intro on typical electronic tracks — matches A2's default.
-const OFFSET_PCT: f32 = 30.0;
-/// Analysis window length in seconds.
+/// Single-shot offset. 30% lands past the intro on typical electronic tracks.
+const DEFAULT_OFFSET_PCT: f32 = 30.0;
+/// Consensus-mode offsets. Catch intro-heavy, breakdown-in-middle, and
+/// outro-fade tracks by sampling spread across the body.
+const CONSENSUS_OFFSETS_PCT: &[f32] = &[25.0, 50.0, 75.0];
+/// Analysis window length in seconds (per window).
 const SNIPPET_SECONDS: f32 = 15.0;
 
 #[derive(Deserialize)]
@@ -33,15 +37,42 @@ struct StreamsResponse {
 }
 
 /// Analyze a SoundCloud track via its HLS stream and return a BPM estimate.
+///
+/// When `options.mode == Consensus`, runs the pipeline three times at
+/// different offsets through the track (25% / 50% / 75%) and returns the
+/// median — ~3× network cost, more robust against breakdowns and intro
+/// sections. Single mode (default) hits a single ~15 s window at 30%.
 pub async fn analyze_sc_track(track_id: u64, token: &str, options: &BpmOptions) -> Result<BpmResult> {
     let http = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .context("reqwest client build")?;
 
-    // 1. /streams → get the HLS playlist URL
+    // Resolve the playlist once; reuse across offsets in consensus mode.
+    let playlist = resolve_playlist(&http, token, track_id).await?;
+    let offsets: &[f32] = match options.mode {
+        AnalysisMode::Single => &[DEFAULT_OFFSET_PCT],
+        AnalysisMode::Consensus => CONSENSUS_OFFSETS_PCT,
+    };
+
+    let mut results = Vec::with_capacity(offsets.len());
+    for &off in offsets {
+        let raw = fetch_window_bytes(&http, &playlist, off).await?;
+        let fmt = if playlist.init_url.is_some() { "mp4" } else { "aac" };
+        results.push(analyze_bytes(&raw, Some(fmt), options)?);
+    }
+
+    if results.len() == 1 {
+        Ok(results.into_iter().next().unwrap())
+    } else {
+        consensus(&results)
+    }
+}
+
+/// Hit /streams, follow the redirect to the signed CDN m3u8, parse it.
+async fn resolve_playlist(http: &Client, token: &str, track_id: u64) -> Result<Playlist> {
     let streams_url = format!("{API_BASE}/tracks/{track_id}/streams");
-    let streams: StreamsResponse = sc_get(&http, token, &streams_url)
+    let streams: StreamsResponse = sc_get(http, token, &streams_url)
         .await?
         .json()
         .await
@@ -51,16 +82,19 @@ pub async fn analyze_sc_track(track_id: u64, token: &str, options: &BpmOptions) 
         .or(streams.hls_mp3_128_url)
         .ok_or_else(|| anyhow!("no HLS variant available for track {track_id}"))?;
 
-    // 2. Fetch the m3u8 (redirect to the signed CDN needs the OAuth header)
-    let m3u8_resp = sc_get(&http, token, &hls_url).await?;
+    let m3u8_resp = sc_get(http, token, &hls_url).await?;
     let final_url = m3u8_resp.url().clone();
     let m3u8_text = m3u8_resp.text().await.context("read m3u8 body")?;
-    let playlist = parse_m3u8(&m3u8_text, &final_url);
+    Ok(parse_m3u8(&m3u8_text, &final_url))
+}
 
-    // 3. Pick a window of segments; init.mp4 (fMP4 CMAF) is fetched alongside
-    let seg_urls = select_segments(&playlist.entries, OFFSET_PCT, SNIPPET_SECONDS);
+/// Download `init.mp4` + the segments covering a window starting at
+/// `offset_pct` of the track, concatenated into one byte buffer ready for
+/// the symphonia fMP4 decoder.
+async fn fetch_window_bytes(http: &Client, playlist: &Playlist, offset_pct: f32) -> Result<Vec<u8>> {
+    let seg_urls = select_segments(&playlist.entries, offset_pct, SNIPPET_SECONDS);
     if seg_urls.is_empty() {
-        return Err(anyhow!("no segments selected from m3u8"));
+        return Err(anyhow!("no segments selected from m3u8 at offset {offset_pct}%"));
     }
     let mut fetch_urls: Vec<String> = Vec::with_capacity(seg_urls.len() + 1);
     if let Some(init) = &playlist.init_url {
@@ -68,7 +102,6 @@ pub async fn analyze_sc_track(track_id: u64, token: &str, options: &BpmOptions) 
     }
     fetch_urls.extend(seg_urls);
 
-    // 4. Concurrent download of init + segments; concatenate the bytes
     let bodies = join_all(fetch_urls.iter().map(|u| {
         let http = http.clone();
         async move {
@@ -87,11 +120,7 @@ pub async fn analyze_sc_track(track_id: u64, token: &str, options: &BpmOptions) 
     for b in bodies {
         raw.extend(b?);
     }
-
-    // 5. Hand the bytes to the BPM pipeline. fMP4 when init.mp4 was prepended;
-    //    ADTS AAC otherwise (rare on modern SoundCloud but we fall back).
-    let fmt = if playlist.init_url.is_some() { "mp4" } else { "aac" };
-    analyze_bytes(&raw, Some(fmt), options)
+    Ok(raw)
 }
 
 // ---------- SC API helpers ----------
