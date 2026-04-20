@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Waves } from "lucide-react";
-import { useState } from "react";
+import React, { useContext, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,14 @@ interface Props {
   /** SoundCloud-metadata BPM from the track object; often null for user uploads. */
   metadataBpm: number | null | undefined;
 }
+
+/** Lookup table of track_id → cached BPM, provided by the table that pre-fills
+ * the page's visible rows in one bulk call (see likes-table.tsx). A null value
+ * means "pre-fill attempted but no row in the cache"; an entry missing
+ * entirely means pre-fill hasn't resolved yet. */
+export const SoundcloudBpmCacheContext = React.createContext<
+  Map<number, number>
+>(new Map());
 
 /** BPM cell for SoundCloud library rows.
  *
@@ -26,8 +34,10 @@ interface Props {
 export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
   const [analyzedBpm, setAnalyzedBpm] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const bpmCache = useContext(SoundcloudBpmCacheContext);
 
-  const displayBpm = analyzedBpm ?? metadataBpm ?? null;
+  const cachedBpm = bpmCache.get(trackId);
+  const displayBpm = analyzedBpm ?? cachedBpm ?? metadataBpm ?? null;
 
   async function handleAnalyze() {
     if (!isTauri() || !trackId || loading) return;

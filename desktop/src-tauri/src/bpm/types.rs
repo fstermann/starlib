@@ -28,6 +28,20 @@ pub struct BpmResult {
     pub algorithm_version: u16,
 }
 
+/// Analysis strategy — single-shot or multi-window consensus.
+///
+/// `Consensus` runs the single-shot analyzer on three windows at 25%, 50%
+/// and 75% of the track (or the source-provided range) and returns the
+/// median, with confidence derived from agreement spread. Cost is ~3× but
+/// catches breakdowns / intro-heavy tracks where a single 15s window can
+/// land in a tempo-ambiguous section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnalysisMode {
+    #[default]
+    Single,
+    Consensus,
+}
+
 /// Tunables for the BPM analysis pipeline.
 #[derive(Debug, Clone)]
 pub struct BpmOptions {
@@ -40,6 +54,8 @@ pub struct BpmOptions {
     pub min_bpm: f32,
     /// Maximum BPM considered during autocorrelation search.
     pub max_bpm: f32,
+    /// Single-shot vs multi-window consensus.
+    pub mode: AnalysisMode,
 }
 
 impl Default for BpmOptions {
@@ -49,6 +65,7 @@ impl Default for BpmOptions {
             target_sr: 22050,
             min_bpm: 60.0,
             max_bpm: 200.0,
+            mode: AnalysisMode::Single,
         }
     }
 }

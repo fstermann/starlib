@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use crate::bpm::types::AnalysisMode;
 use crate::bpm::{self, BpmOptions, Confidence};
 
 /// JSON representation of a `BpmResult` across the invoke boundary.
@@ -61,8 +62,15 @@ pub async fn analyze_local_bpm(path: String) -> Result<BpmResponse, String> {
 /// command doesn't touch credentials. See
 /// ``backend/api/bpm.py::get_soundcloud_client_token``.
 #[tauri::command]
-pub async fn analyze_sc_bpm(track_id: u64, token: String) -> Result<BpmResponse, String> {
-    let options = BpmOptions::default();
+pub async fn analyze_sc_bpm(
+    track_id: u64,
+    token: String,
+    consensus: Option<bool>,
+) -> Result<BpmResponse, String> {
+    let mut options = BpmOptions::default();
+    if consensus.unwrap_or(false) {
+        options.mode = AnalysisMode::Consensus;
+    }
     let result = bpm::soundcloud::analyze_sc_track(track_id, &token, &options)
         .await
         .map_err(|e| e.to_string())?;
