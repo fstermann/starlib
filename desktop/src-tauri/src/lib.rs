@@ -171,7 +171,20 @@ pub fn run() {
 
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // When a deep link (starlib://…) fires and macOS launches the
+            // registered packaged .app while the dev binary is already
+            // running, single_instance forwards the new instance's argv here
+            // and exits the second instance. The URL is in that argv. Re-emit
+            // it as a `deep-link` Tauri event so the frontend listener picks
+            // it up the same way it would from the deep_link plugin's native
+            // handler.
+            for arg in argv.iter().skip(1) {
+                if arg.starts_with("starlib://") {
+                    log::info!("[deep-link] forwarded via single_instance: {arg}");
+                    let _ = app.emit("deep-link", arg.as_str());
+                }
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_focus();
             }

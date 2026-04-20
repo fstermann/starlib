@@ -27,6 +27,8 @@ export function DeepLinkListener() {
       }
     };
 
+    let unlistenEvent: (() => void) | undefined;
+
     import("@tauri-apps/plugin-deep-link").then(async (mod) => {
       unlisten = await mod.onOpenUrl((urls) => {
         for (const u of urls) handleUrl(u);
@@ -38,8 +40,20 @@ export function DeepLinkListener() {
       }
     });
 
+    // Also listen for the `deep-link` Tauri event. The Rust side emits this
+    // both from the deep_link plugin's native handler AND from the
+    // single_instance callback when macOS launches the registered packaged
+    // app while this process holds the single-instance lock (argv forwarding).
+    // Without this the dev session misses OAuth callbacks.
+    import("@tauri-apps/api/event").then(async (mod) => {
+      unlistenEvent = await mod.listen<string>("deep-link", (event) => {
+        handleUrl(event.payload);
+      });
+    });
+
     return () => {
       unlisten?.();
+      unlistenEvent?.();
     };
   }, [router]);
 
