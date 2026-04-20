@@ -21,7 +21,11 @@ async function fetchSoundcloudPeaks(
   n: number,
 ): Promise<number[] | null> {
   try {
-    const resp = await fetch(url);
+    // SoundCloud's waveform_url typically points at a PNG
+    // (e.g. `https://wave.sndcdn.com/xxx_m.png`). The same path with a
+    // `.json` extension returns the sample array we actually want.
+    const jsonUrl = url.replace(/\.png(\?|$)/, ".json$1");
+    const resp = await fetch(jsonUrl);
     if (!resp.ok) return null;
     const data = (await resp.json()) as { samples?: unknown };
     const samples = data.samples;

@@ -24,6 +24,9 @@ export interface PlayerTrack {
   /** Opaque handle callers can use to refresh the stream URL (e.g. on 403).
    * Typically the SoundCloud track id. */
   streamRefreshKey?: string | number;
+  /** External URL the track originates from (e.g. SoundCloud permalink).
+   * Rendered as a link next to the title in the mini player. */
+  permalinkUrl?: string;
 }
 
 interface PlayerContextValue {

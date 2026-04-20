@@ -14,6 +14,8 @@ interface SoundcloudRowPlayButtonProps {
   artist?: string;
   /** Pre-rendered SoundCloud waveform URL, if known. */
   waveformUrl?: string;
+  /** SoundCloud permalink URL for the track. */
+  permalinkUrl?: string;
   className?: string;
 }
 
@@ -24,6 +26,7 @@ export function SoundcloudRowPlayButton({
   title,
   artist,
   waveformUrl,
+  permalinkUrl,
   className,
 }: SoundcloudRowPlayButtonProps) {
   const { currentTrack, isPlaying, play, toggle } = usePlayer();
@@ -50,6 +53,7 @@ export function SoundcloudRowPlayButton({
         streamUrl: url,
         waveformUrl,
         streamRefreshKey: trackId,
+        permalinkUrl,
       });
     } catch (err) {
       console.error("Failed to start SoundCloud playback:", err);
