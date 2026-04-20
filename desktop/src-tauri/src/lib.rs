@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+pub mod bpm;
+
 /// Returns the app config directory used by both the Rust and Python layers.
 /// Matches `platformdirs.user_config_path("com.starlib.Starlib")`.
 fn app_config_dir() -> PathBuf {
