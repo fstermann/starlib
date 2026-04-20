@@ -47,7 +47,7 @@ def _cols(db: Path, table: str) -> set[str]:
 def test_fresh_db_upgrades_to_head(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
     cache_db.init_db(db)
-    assert _rev(db) == "0002"
+    assert _rev(db) == "0003"
     assert {"tracks", "peaks", "alembic_version"} <= _tables(db)
 
 
@@ -108,7 +108,7 @@ def test_legacy_db_bootstrap_then_head(tmp_path: Path) -> None:
         "duration",
     ):
         assert col in tracks_cols, f"missing column after bootstrap: {col}"
-    assert _rev(db) == "0002"
+    assert _rev(db) == "0003"
 
 
 def test_backup_created_on_bootstrap(tmp_path: Path) -> None:

@@ -22,7 +22,7 @@ from sqlalchemy import Select, String, delete, func, or_, select
 
 from backend.core.db.engine import get_engine, init_engine
 from backend.core.db.migrations import run_migrations
-from backend.core.db.models import Peaks, Track
+from backend.core.db.models import Peaks, SoundcloudTrackBpm, Track
 from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,45 @@ def upsert_track(
 def delete_track(file_path: Path) -> None:
     with get_engine().begin() as conn:
         conn.execute(delete(Track).where(Track.file_path == str(file_path)))
+
+
+def upsert_sc_bpm(track_id: int, bpm: int, algorithm_version: int, analyzed_at: float) -> None:
+    """Insert or replace the cached BPM for a SoundCloud track."""
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    row = {
+        "track_id": track_id,
+        "bpm": bpm,
+        "algorithm_version": algorithm_version,
+        "analyzed_at": analyzed_at,
+    }
+    stmt = sqlite_insert(SoundcloudTrackBpm.__table__).values(row)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[SoundcloudTrackBpm.__table__.c.track_id],
+        set_={c: stmt.excluded[c] for c in row if c != "track_id"},
+    )
+    with get_engine().begin() as conn:
+        conn.execute(stmt)
+
+
+def get_sc_bpm(track_id: int) -> dict | None:
+    """Return the cached BPM row for a SoundCloud track or None."""
+    with get_engine().connect() as conn:
+        row = conn.execute(select(SoundcloudTrackBpm).where(SoundcloudTrackBpm.track_id == track_id)).mappings().first()
+    return dict(row) if row else None
+
+
+def get_sc_bpms(track_ids: list[int]) -> dict[int, int]:
+    """Bulk lookup: returns {track_id: bpm} for any tracks found in cache."""
+    if not track_ids:
+        return {}
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            select(SoundcloudTrackBpm.track_id, SoundcloudTrackBpm.bpm).where(
+                SoundcloudTrackBpm.track_id.in_(track_ids)
+            )
+        ).all()
+    return {int(r[0]): int(r[1]) for r in rows}
 
 
 def get_track_mtime(file_path: Path) -> float | None:
