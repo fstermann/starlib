@@ -44,6 +44,23 @@ class LocalBpmResponse(BaseModel):
     algorithm_version: int
 
 
+class LocalCandidatesResponse(BaseModel):
+    """Absolute file paths of indexed tracks without a cached BPM."""
+
+    file_paths: list[str]
+
+
+@router.get("/local/candidates", response_model=LocalCandidatesResponse)
+def get_local_candidates(folder: str, recursive: bool = True) -> LocalCandidatesResponse:
+    """Return indexed-but-unanalyzed tracks in `folder` for the batch runner.
+
+    Filters to tracks with `bpm IS NULL` in cache_db. `recursive=True` (default)
+    walks subdirectories, matching the library view's usual display scope.
+    """
+    paths = cache_db.get_tracks_missing_bpm(Path(folder), recursive=recursive)
+    return LocalCandidatesResponse(file_paths=paths)
+
+
 @router.post("/local", response_model=LocalBpmResponse)
 def save_local_bpm(payload: LocalBpmPayload) -> LocalBpmResponse:
     """Persist a BPM value for a local track.

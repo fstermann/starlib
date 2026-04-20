@@ -45,9 +45,15 @@ fn to_response(r: bpm::BpmResult) -> BpmResponse {
 /// take ~50 ms on a typical track); Tauri invoke handlers can be called from
 /// async contexts so no extra wrapper is needed for responsiveness.
 #[tauri::command]
-pub async fn analyze_local_bpm(path: String) -> Result<BpmResponse, String> {
+pub async fn analyze_local_bpm(
+    path: String,
+    consensus: Option<bool>,
+) -> Result<BpmResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let options = BpmOptions::default();
+        let mut options = BpmOptions::default();
+        if consensus.unwrap_or(false) {
+            options.mode = AnalysisMode::Consensus;
+        }
         let result = bpm::local::analyze_local_file(&PathBuf::from(&path), 30.0, 15.0, &options)
             .map_err(|e| e.to_string())?;
         Ok::<_, String>(to_response(result))

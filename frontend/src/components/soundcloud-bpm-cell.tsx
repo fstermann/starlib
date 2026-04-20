@@ -1,9 +1,13 @@
 "use client";
 
 import { Loader2, Waves } from "lucide-react";
-import React, { useContext, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import {
+  SC_BPM_UPDATED_EVENT,
+  type ScBpmUpdatedDetail,
+} from "@/components/soundcloud-batch-analyze-button";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { analyzeScBpm, isTauri } from "@/lib/tauri";
@@ -38,6 +42,18 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
 
   const cachedBpm = bpmCache.get(trackId);
   const displayBpm = analyzedBpm ?? cachedBpm ?? metadataBpm ?? null;
+
+  // Listen for batch-analyze results so visible rows fill in live.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<ScBpmUpdatedDetail>).detail;
+      if (detail?.trackId === trackId) {
+        setAnalyzedBpm(detail.bpm);
+      }
+    };
+    window.addEventListener(SC_BPM_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(SC_BPM_UPDATED_EVENT, handler);
+  }, [trackId]);
 
   async function handleAnalyze() {
     if (!isTauri() || !trackId || loading) return;

@@ -13,6 +13,7 @@ import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { useTopBar } from "@/components/layout/top-bar-context";
 import { LIKES_COLUMN_DEFS, LikesTable } from "@/components/likes-table";
 import { LogoSpinner } from "@/components/logo-spinner";
+import { SoundcloudBatchAnalyzeButton } from "@/components/soundcloud-batch-analyze-button";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -432,6 +433,10 @@ function LikesView({
           total={sourceTracks.length}
           actions={
             <>
+              <SoundcloudBatchAnalyzeButton
+                tracks={filteredTracks}
+                className="text-muted-foreground h-7 gap-1.5 text-xs"
+              />
               <ColumnVisibilityMenu
                 columns={LIKES_COLUMN_DEFS}
                 isVisible={columnPrefs.isVisible}

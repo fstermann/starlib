@@ -206,6 +206,15 @@ def get_all_tracks(folder: Path):
         return result.mappings().all()
 
 
+def get_tracks_missing_bpm(folder: Path, recursive: bool = False) -> list[str]:
+    """Return file_paths of indexed tracks in `folder` that have no BPM value."""
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            select(Track.file_path).where(_folder_clause(folder, recursive=recursive), Track.bpm.is_(None))
+        ).all()
+    return [str(r[0]) for r in rows]
+
+
 def invalidate_folder(folder: Path) -> None:
     with get_engine().begin() as conn:
         conn.execute(delete(Track).where(Track.folder == str(folder)))

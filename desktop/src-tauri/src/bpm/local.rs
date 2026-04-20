@@ -9,14 +9,22 @@ use std::path::Path;
 
 use anyhow::{Result, anyhow};
 
+use super::tempo::consensus;
+use super::types::AnalysisMode;
 use super::{decode, tempo, types::BpmOptions, types::BpmResult};
 
+const CONSENSUS_OFFSETS_PCT: &[f32] = &[25.0, 50.0, 75.0];
+
 /// Analyse a snippet of `path` and return a BPM estimate.
+///
+/// In `AnalysisMode::Consensus` the PCM is decoded once and three windows
+/// are analyzed at 25/50/75% offsets — CPU cost triples, but the full-file
+/// decode (the slow part) only runs once. No extra disk I/O over single mode.
 ///
 /// # Parameters
 /// - `offset_pct`: start of the analysis window as a percent of track length
 ///   (clamped to `[0, 100]`). 30 is a reasonable default for electronic music
-///   — past the intro, inside the first main section.
+///   — past the intro, inside the first main section. Ignored in consensus mode.
 /// - `snippet_s`: window length in seconds. Shorter = faster, less accurate.
 pub fn analyze_local_file(
     path: &Path,
@@ -26,17 +34,37 @@ pub fn analyze_local_file(
 ) -> Result<BpmResult> {
     let pcm = decode::decode_file(path, options)?;
     let sr = options.target_sr;
-    let total_samples = pcm.len();
-    if total_samples == 0 {
+    if pcm.is_empty() {
         return Err(anyhow!("decoded PCM is empty"));
     }
+
+    match options.mode {
+        AnalysisMode::Single => analyze_window(&pcm, sr, offset_pct, snippet_s, options),
+        AnalysisMode::Consensus => {
+            let results: Vec<BpmResult> = CONSENSUS_OFFSETS_PCT
+                .iter()
+                .map(|&off| analyze_window(&pcm, sr, off, snippet_s, options))
+                .collect::<Result<_>>()?;
+            consensus(&results)
+        }
+    }
+}
+
+fn analyze_window(
+    pcm: &[f32],
+    sr: u32,
+    offset_pct: f32,
+    snippet_s: f32,
+    options: &BpmOptions,
+) -> Result<BpmResult> {
+    let total_samples = pcm.len();
     let total_s = total_samples as f32 / sr as f32;
     let start_s = (total_s * offset_pct.clamp(0.0, 100.0) / 100.0).max(0.0);
     let start = ((start_s * sr as f32) as usize).min(total_samples);
     let end = (((start_s + snippet_s) * sr as f32) as usize).min(total_samples);
     let window: &[f32] = if start >= end {
         // Track shorter than the requested window / offset — analyse what we have.
-        &pcm
+        pcm
     } else {
         &pcm[start..end]
     };
