@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-import { MiniWaveform } from "@/components/mini-waveform";
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
 import { cn } from "@/lib/utils";
@@ -87,23 +86,27 @@ export function TreePanelMiniPlayer() {
           </span>
         </button>
 
-        {/* Title + (animated) waveform */}
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="truncate text-xs" title={titleText}>
-            {titleText}
-          </div>
-          <div
-            className={cn(
-              "w-full transition-[height,opacity] duration-200 ease-out",
-              largePlayer ? "h-0 opacity-0" : "h-4 opacity-100",
-            )}
-          >
-            {!largePlayer && (
-              <MiniWaveform
-                track={currentTrack}
-                className="h-full w-full"
-                halfHeight
-              />
+        {/* Title + artist */}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-xs" title={titleText}>
+              {titleText}
+            </span>
+            {currentTrack.permalinkUrl && (
+              <a
+                href={currentTrack.permalinkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+                title="Open on SoundCloud"
+                aria-label="Open on SoundCloud"
+              >
+                <img
+                  src="/icons/soundcloud.svg"
+                  alt=""
+                  className="size-3 dark:invert"
+                />
+              </a>
             )}
           </div>
           {artistText && (

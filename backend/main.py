@@ -20,6 +20,7 @@ from backend.api.folder_config import router as folder_config_router
 from backend.api.metadata import router as metadata_router
 from backend.api.rulesets import router as rulesets_router
 from backend.api.setup import router as setup_router
+from backend.api.soundcloud import router as soundcloud_router
 from backend.config import get_backend_settings
 from backend.core.services import app_settings as app_settings_service
 from backend.core.services import cache_db, watcher
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
     app.include_router(folder_config_router)
     app.include_router(app_settings_router)
     app.include_router(ai_router)
+    app.include_router(soundcloud_router)
 
     add_pagination(app)
 

@@ -738,4 +738,12 @@ export const api = {
   async deleteAnthropicApiKey(): Promise<AiSettings> {
     return fetchApi("/api/ai/anthropic/credentials", { method: "DELETE" });
   },
+
+  // ==================== SoundCloud ====================
+
+  async getSoundcloudStreamUrl(
+    trackId: number | string,
+  ): Promise<{ url: string; expires_at: string }> {
+    return fetchApi(`/api/soundcloud/tracks/${trackId}/stream`);
+  },
 };

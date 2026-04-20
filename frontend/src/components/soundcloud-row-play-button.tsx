@@ -1,0 +1,84 @@
+"use client";
+
+import { Loader2, Pause, Play } from "lucide-react";
+import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
+import { usePlayer } from "@/lib/player-context";
+import { cn } from "@/lib/utils";
+
+interface SoundcloudRowPlayButtonProps {
+  trackId: number | string;
+  title?: string;
+  artist?: string;
+  /** Pre-rendered SoundCloud waveform URL, if known. */
+  waveformUrl?: string;
+  /** SoundCloud permalink URL for the track. */
+  permalinkUrl?: string;
+  className?: string;
+}
+
+/** Small icon-only play button for a SoundCloud row. Fetches a short-lived
+ * HLS stream URL from the backend and hands it to the shared player. */
+export function SoundcloudRowPlayButton({
+  trackId,
+  title,
+  artist,
+  waveformUrl,
+  permalinkUrl,
+  className,
+}: SoundcloudRowPlayButtonProps) {
+  const { currentTrack, isPlaying, play, toggle } = usePlayer();
+  const [loading, setLoading] = useState(false);
+
+  const trackKey = `soundcloud:${trackId}`;
+  const isCurrent = currentTrack?.filePath === trackKey;
+  const isActive = isCurrent && isPlaying;
+
+  async function handleClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (isCurrent) {
+      toggle();
+      return;
+    }
+    setLoading(true);
+    try {
+      const { url } = await api.getSoundcloudStreamUrl(trackId);
+      play({
+        filePath: trackKey,
+        fileName: title ?? String(trackId),
+        title,
+        artist,
+        streamUrl: url,
+        waveformUrl,
+        streamRefreshKey: trackId,
+        permalinkUrl,
+      });
+    } catch (err) {
+      console.error("Failed to start SoundCloud playback:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      aria-label={isActive ? "Pause" : "Play"}
+      disabled={loading}
+      onClick={handleClick}
+      className={cn(isActive && "text-primary", className)}
+    >
+      {loading ? (
+        <Loader2 className="animate-spin" />
+      ) : isActive ? (
+        <Pause />
+      ) : (
+        <Play />
+      )}
+    </Button>
+  );
+}
