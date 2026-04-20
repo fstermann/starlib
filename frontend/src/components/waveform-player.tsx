@@ -1,10 +1,92 @@
 "use client";
 
+import Hls from "hls.js";
 import { useEffect, useRef, useState } from "react";
 import type WaveSurferType from "wavesurfer.js";
 
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
+
+/** Heuristic: URL is an HLS playlist (by extension). */
+function isHlsUrl(url: string): boolean {
+  const noQuery = url.split("?")[0] ?? url;
+  return noQuery.endsWith(".m3u8");
+}
+
+/** Fetch SoundCloud's pre-rendered waveform JSON (samples in 0..1000) and
+ * resample into `n` normalized peaks in 0..1. Returns null on any failure so
+ * callers can fall back to a flat placeholder. */
+async function fetchSoundcloudPeaks(
+  url: string,
+  n: number,
+): Promise<number[] | null> {
+  try {
+    // SoundCloud's waveform_url typically points at a PNG
+    // (e.g. `https://wave.sndcdn.com/xxx_m.png`). The same path with a
+    // `.json` extension returns the sample array we actually want.
+    const jsonUrl = url.replace(/\.png(\?|$)/, ".json$1");
+    const resp = await fetch(jsonUrl);
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as { samples?: unknown };
+    const samples = data.samples;
+    if (!Array.isArray(samples) || samples.length === 0) return null;
+    let max = 0;
+    for (const v of samples) {
+      if (typeof v === "number" && v > max) max = v;
+    }
+    if (max === 0) return null;
+    const out = new Array<number>(n);
+    for (let i = 0; i < n; i++) {
+      const start = Math.floor((i * samples.length) / n);
+      const end = Math.max(
+        start + 1,
+        Math.floor(((i + 1) * samples.length) / n),
+      );
+      let peak = 0;
+      for (let j = start; j < end && j < samples.length; j++) {
+        const v = samples[j];
+        if (typeof v === "number" && v > peak) peak = v;
+      }
+      out[i] = peak / max;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Attach a URL to an <audio> element using hls.js when needed. Returns an
+ * Hls instance (or null) that the caller must destroy on teardown. */
+function attachAudioSource(
+  audio: HTMLAudioElement,
+  url: string,
+  opts: { onExpired?: () => void },
+): Hls | null {
+  if (!isHlsUrl(url)) {
+    audio.src = url;
+    return null;
+  }
+  if (Hls.isSupported()) {
+    const hls = new Hls();
+    hls.loadSource(url);
+    hls.attachMedia(audio);
+    hls.on(Hls.Events.ERROR, (_evt, data) => {
+      if (!data.fatal) return;
+      const status = data.response?.code;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && status === 403) {
+        opts.onExpired?.();
+      }
+    });
+    return hls;
+  }
+  if (audio.canPlayType("application/vnd.apple.mpegurl")) {
+    // Safari / WKWebView native HLS.
+    audio.src = url;
+    return null;
+  }
+  console.warn("HLS playback is not supported in this browser");
+  return null;
+}
 
 function formatTime(s: number): string {
   if (!isFinite(s) || s < 0) return "0:00";
@@ -41,7 +123,9 @@ export function WaveformPlayer() {
     if (!currentTrack) return;
 
     let ws: WaveSurferType | null = null;
+    let hls: Hls | null = null;
     let cancelled = false;
+    let retriedStreamRefresh = false;
 
     setReady(false);
     setCurrentTime(0);
@@ -64,9 +148,21 @@ export function WaveformPlayer() {
         Math.max(50, Math.ceil(containerWidth / (BAR_WIDTH + BAR_GAP))),
       );
 
-      // Fetch peaks from the backend so WaveSurfer doesn't need to decode
-      // the audio via AudioContext (which fails in sandboxed WKWebView).
-      const peaks = await api.getFilePeaks(currentTrack!.filePath, numPeaks);
+      // For local files we fetch pre-computed peaks from the backend so
+      // WaveSurfer doesn't need to decode via AudioContext (which fails in
+      // sandboxed WKWebView). For SoundCloud streams we use the track's
+      // pre-rendered waveform JSON (`waveform_url` on the track object)
+      // when available, falling back to a flat placeholder otherwise.
+      const isStream = !!currentTrack!.streamUrl;
+      let peaks: number[];
+      if (isStream) {
+        const scPeaks = currentTrack!.waveformUrl
+          ? await fetchSoundcloudPeaks(currentTrack!.waveformUrl, numPeaks)
+          : null;
+        peaks = scPeaks ?? new Array(numPeaks).fill(0.5);
+      } else {
+        peaks = await api.getFilePeaks(currentTrack!.filePath, numPeaks);
+      }
       if (cancelled || !containerRef.current) return;
 
       // Use an <audio> element for playback so WaveSurfer uses the native
@@ -74,9 +170,33 @@ export function WaveformPlayer() {
       // omitted: peaks are pre-fetched so no Web Audio decoding is needed, and
       // CORS mode on the <audio> element can cause playback failures in the
       // Tauri WKWebView when the WebKit media assertion (RBS) is unavailable.
-      const audio = new Audio(api.getAudioUrl(currentTrack!.filePath));
+      const audio = new Audio();
       audio.preload = "metadata";
       audioRef.current = audio;
+
+      const sourceUrl =
+        currentTrack!.streamUrl ?? api.getAudioUrl(currentTrack!.filePath);
+
+      const onStreamExpired = async () => {
+        if (retriedStreamRefresh || !currentTrack!.streamRefreshKey) return;
+        retriedStreamRefresh = true;
+        try {
+          const fresh = await api.getSoundcloudStreamUrl(
+            currentTrack!.streamRefreshKey,
+          );
+          if (cancelled) return;
+          hls?.destroy();
+          hls = attachAudioSource(audio, fresh.url, {
+            onExpired: () => {
+              console.error("HLS stream expired twice — giving up");
+            },
+          });
+        } catch (err) {
+          console.error("Failed to refresh HLS stream URL:", err);
+        }
+      };
+
+      hls = attachAudioSource(audio, sourceUrl, { onExpired: onStreamExpired });
 
       // Wait until audio.duration is a finite positive number before creating
       // WaveSurfer. For AIFF files (served as transcoded WAV), loadedmetadata
@@ -222,6 +342,8 @@ export function WaveformPlayer() {
       reportDuration(0);
       ws?.destroy();
       wsRef.current = null;
+      hls?.destroy();
+      hls = null;
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";

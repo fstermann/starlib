@@ -754,4 +754,11 @@ export const api = {
       }),
     });
   },
+  // ==================== SoundCloud ====================
+
+  async getSoundcloudStreamUrl(
+    trackId: number | string,
+  ): Promise<{ url: string; expires_at: string }> {
+    return fetchApi(`/api/soundcloud/tracks/${trackId}/stream`);
+  },
 };

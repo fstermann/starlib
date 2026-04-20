@@ -3,6 +3,7 @@
 import { Heart, ListMusic } from "lucide-react";
 import { useMemo } from "react";
 
+import { TreePanelMiniPlayer } from "@/components/tree-panel-mini-player";
 import { TreeView } from "@/components/tree/tree-view";
 import type { SCPlaylist } from "@/lib/soundcloud";
 
@@ -93,6 +94,7 @@ export function LikesTreePanel({
       onSelect={onSelect}
       storageKey={storageKey}
       hideRoot
+      footer={<TreePanelMiniPlayer />}
       renderIcon={(node) => {
         if (node.kind === "likes") {
           return <Heart className="text-muted-foreground size-3.5 shrink-0" />;

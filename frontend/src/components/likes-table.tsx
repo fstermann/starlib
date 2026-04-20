@@ -35,6 +35,7 @@ import {
   SortableColumnHeader,
   SortableHeaderCell,
 } from "@/components/columns/sortable-columns";
+import { SoundcloudRowPlayButton } from "@/components/soundcloud-row-play-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
@@ -48,7 +49,6 @@ import type { SCTrack } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
 const ROW_HEIGHT = 48;
-const IFRAME_HEIGHT = 166;
 const DESCRIPTION_HEIGHT = 120;
 
 type SortKey = "title" | "artist" | "genre" | "duration" | "playback_count";
@@ -351,6 +351,7 @@ function TrackRowInner({
   dragHandle,
 }: TrackRowProps) {
   const imgUrl = artworkUrl(track);
+  const scTrackId = extractId(track);
 
   return (
     <div>
@@ -409,6 +410,19 @@ function TrackRowInner({
           )}
         </div>
 
+        {/* Play button — streams via the backend HLS endpoint. */}
+        {scTrackId ? (
+          <SoundcloudRowPlayButton
+            trackId={scTrackId}
+            title={track.title ?? undefined}
+            artist={track.user?.username ?? undefined}
+            waveformUrl={track.waveform_url ?? undefined}
+            permalinkUrl={track.permalink_url ?? undefined}
+          />
+        ) : (
+          <div className="size-6 shrink-0" />
+        )}
+
         {/* Reorderable column cells */}
         {visibleColumns.map((col) => (
           <div
@@ -426,25 +440,12 @@ function TrackRowInner({
         ))}
       </div>
 
-      {/* Expanded detail: player + description */}
-      {isExpanded && (
-        <div className="border-border bg-muted space-y-2 border-b px-3 py-2">
-          {track.permalink_url && (
-            <iframe
-              width="100%"
-              height={IFRAME_HEIGHT}
-              scrolling="no"
-              frameBorder="no"
-              allow="autoplay"
-              src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(track.permalink_url)}&color=${encodeURIComponent("#bde752")}&auto_play=false&buying=false&sharing=false&download=false&show_artwork=true&show_playcount=false&show_user=true&hide_related=true&show_comments=false&show_reposts=false&show_teaser=false&visual=true`}
-              className="overflow-hidden rounded-lg"
-            />
-          )}
-          {track.description && (
-            <p className="text-muted-foreground max-w-prose text-xs whitespace-pre-line">
-              {track.description}
-            </p>
-          )}
+      {/* Expanded detail: description */}
+      {isExpanded && track.description && (
+        <div className="border-border bg-muted border-b px-3 py-2">
+          <p className="text-muted-foreground max-w-prose text-xs whitespace-pre-line">
+            {track.description}
+          </p>
         </div>
       )}
     </div>
@@ -654,10 +655,8 @@ export function LikesTable({
         const track = sortedTracks[index];
         const id = track ? extractId(track) : 0;
         if (id !== expandedId) return ROW_HEIGHT;
-        let h = ROW_HEIGHT + 16; // padding
-        if (track?.permalink_url) h += IFRAME_HEIGHT;
-        if (track?.description) h += DESCRIPTION_HEIGHT;
-        return h;
+        if (!track?.description) return ROW_HEIGHT;
+        return ROW_HEIGHT + 16 + DESCRIPTION_HEIGHT;
       },
       [sortedTracks, expandedId],
     ),
