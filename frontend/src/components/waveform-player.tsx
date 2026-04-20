@@ -1,10 +1,50 @@
 "use client";
 
+import Hls from "hls.js";
 import { useEffect, useRef, useState } from "react";
 import type WaveSurferType from "wavesurfer.js";
 
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
+
+/** Heuristic: URL is an HLS playlist (by extension). */
+function isHlsUrl(url: string): boolean {
+  const noQuery = url.split("?")[0] ?? url;
+  return noQuery.endsWith(".m3u8");
+}
+
+/** Attach a URL to an <audio> element using hls.js when needed. Returns an
+ * Hls instance (or null) that the caller must destroy on teardown. */
+function attachAudioSource(
+  audio: HTMLAudioElement,
+  url: string,
+  opts: { onExpired?: () => void },
+): Hls | null {
+  if (!isHlsUrl(url)) {
+    audio.src = url;
+    return null;
+  }
+  if (Hls.isSupported()) {
+    const hls = new Hls();
+    hls.loadSource(url);
+    hls.attachMedia(audio);
+    hls.on(Hls.Events.ERROR, (_evt, data) => {
+      if (!data.fatal) return;
+      const status = data.response?.code;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && status === 403) {
+        opts.onExpired?.();
+      }
+    });
+    return hls;
+  }
+  if (audio.canPlayType("application/vnd.apple.mpegurl")) {
+    // Safari / WKWebView native HLS.
+    audio.src = url;
+    return null;
+  }
+  console.warn("HLS playback is not supported in this browser");
+  return null;
+}
 
 function formatTime(s: number): string {
   if (!isFinite(s) || s < 0) return "0:00";
@@ -41,7 +81,9 @@ export function WaveformPlayer() {
     if (!currentTrack) return;
 
     let ws: WaveSurferType | null = null;
+    let hls: Hls | null = null;
     let cancelled = false;
+    let retriedStreamRefresh = false;
 
     setReady(false);
     setCurrentTime(0);
@@ -64,9 +106,14 @@ export function WaveformPlayer() {
         Math.max(50, Math.ceil(containerWidth / (BAR_WIDTH + BAR_GAP))),
       );
 
-      // Fetch peaks from the backend so WaveSurfer doesn't need to decode
-      // the audio via AudioContext (which fails in sandboxed WKWebView).
-      const peaks = await api.getFilePeaks(currentTrack!.filePath, numPeaks);
+      // For local files we fetch pre-computed peaks from the backend so
+      // WaveSurfer doesn't need to decode via AudioContext (which fails in
+      // sandboxed WKWebView). For streaming sources (SoundCloud HLS) we
+      // can't peek decoded samples, so we render a flat placeholder.
+      const isStream = !!currentTrack!.streamUrl;
+      const peaks = isStream
+        ? new Array(numPeaks).fill(0.5)
+        : await api.getFilePeaks(currentTrack!.filePath, numPeaks);
       if (cancelled || !containerRef.current) return;
 
       // Use an <audio> element for playback so WaveSurfer uses the native
@@ -74,9 +121,33 @@ export function WaveformPlayer() {
       // omitted: peaks are pre-fetched so no Web Audio decoding is needed, and
       // CORS mode on the <audio> element can cause playback failures in the
       // Tauri WKWebView when the WebKit media assertion (RBS) is unavailable.
-      const audio = new Audio(api.getAudioUrl(currentTrack!.filePath));
+      const audio = new Audio();
       audio.preload = "metadata";
       audioRef.current = audio;
+
+      const sourceUrl =
+        currentTrack!.streamUrl ?? api.getAudioUrl(currentTrack!.filePath);
+
+      const onStreamExpired = async () => {
+        if (retriedStreamRefresh || !currentTrack!.streamRefreshKey) return;
+        retriedStreamRefresh = true;
+        try {
+          const fresh = await api.getSoundcloudStreamUrl(
+            currentTrack!.streamRefreshKey,
+          );
+          if (cancelled) return;
+          hls?.destroy();
+          hls = attachAudioSource(audio, fresh.url, {
+            onExpired: () => {
+              console.error("HLS stream expired twice — giving up");
+            },
+          });
+        } catch (err) {
+          console.error("Failed to refresh HLS stream URL:", err);
+        }
+      };
+
+      hls = attachAudioSource(audio, sourceUrl, { onExpired: onStreamExpired });
 
       // Wait until audio.duration is a finite positive number before creating
       // WaveSurfer. For AIFF files (served as transcoded WAV), loadedmetadata
@@ -222,6 +293,8 @@ export function WaveformPlayer() {
       reportDuration(0);
       ws?.destroy();
       wsRef.current = null;
+      hls?.destroy();
+      hls = null;
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";

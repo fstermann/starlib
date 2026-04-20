@@ -14,6 +14,16 @@ export interface PlayerTrack {
   fileName: string;
   title?: string;
   artist?: string;
+  /** When set, WaveformPlayer loads this URL directly (local file path is
+   * ignored for audio). `.m3u8` URLs are played via hls.js. Used for
+   * SoundCloud HLS playback where there is no local file. */
+  streamUrl?: string;
+  /** Pre-rendered waveform image URL (SoundCloud `waveform_url`). When set,
+   * WaveformPlayer skips backend peak decoding and uses a placeholder. */
+  waveformUrl?: string;
+  /** Opaque handle callers can use to refresh the stream URL (e.g. on 403).
+   * Typically the SoundCloud track id. */
+  streamRefreshKey?: string | number;
 }
 
 interface PlayerContextValue {
