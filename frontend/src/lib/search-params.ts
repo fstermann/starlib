@@ -10,6 +10,7 @@ export const SORT_FIELDS = [
   "key",
   "release_date",
   "file_name",
+  "folder",
   "mtime",
 ] as const;
 export const SORT_ORDERS = ["asc", "desc"] as const;

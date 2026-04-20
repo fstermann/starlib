@@ -1611,6 +1611,8 @@ export interface components {
              * @default 0
              */
             order: number;
+            /** Path */
+            path?: string | null;
         };
         /**
          * FolderRulesetBinding
@@ -2337,6 +2339,7 @@ export interface operations {
                 bpm_max?: number | null;
                 date_from?: string | null;
                 date_to?: string | null;
+                has_soundcloud_id?: boolean | null;
                 sort_by?: string;
                 sort_order?: string;
                 /** @description Page number */
@@ -2463,6 +2466,8 @@ export interface operations {
                 date_from?: string | null;
                 /** @description Latest release date (YYYY-MM-DD) */
                 date_to?: string | null;
+                /** @description Filter by SoundCloud link presence */
+                has_soundcloud_id?: boolean | null;
                 sort_by?: string;
                 sort_order?: string;
                 /** @description Page number */

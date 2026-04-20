@@ -785,8 +785,9 @@ test.describe("Documentation screenshots", () => {
     // Wait for editable rows (skip the header row)
     const dataRow = page.locator('[data-index="0"]');
     await dataRow.waitFor({ state: "visible" });
-    // Click the filename span (has cursor-pointer + hover:text-foreground classes)
-    const fileName = dataRow.locator("span.cursor-pointer").first();
+    // The whole row is clickable; target the file-name cell which is a plain span
+    // (no button/checkbox) so the row's onClick handler fires and opens the editor.
+    const fileName = dataRow.locator("[data-file-path]").first();
     await fileName.click();
     // Wait for the single-file editor panel to settle (uses data-slot="input" from shadcn Input component)
     await page

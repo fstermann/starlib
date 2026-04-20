@@ -590,7 +590,6 @@ export function FilesystemView() {
               activeRuleset={activeRuleset}
               folderRulesets={folderRulesets}
               rulesets={allRulesets}
-              autoApplyScResults={autoActions.autoApplyScResults}
               pendingFieldEdits={pendingFieldEdits}
               setPendingFieldEdits={setPendingFieldEdits}
               isColumnVisible={columnPrefs.isVisible}

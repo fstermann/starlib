@@ -81,6 +81,7 @@ function adapt(values: FilterValues): FilterSchemaResponse {
             },
           ]
         : []),
+      { id: "soundcloud_linked", label: "SoundCloud", kind: "bool" as const },
     ],
   };
 }
