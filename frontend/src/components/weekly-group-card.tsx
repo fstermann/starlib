@@ -1,7 +1,14 @@
 "use client";
 
-import { CheckCircle2, ExternalLink, ListPlus } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import {
+  CheckCircle2,
+  ExternalLink,
+  ListPlus,
+  RotateCcw,
+  Save,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import type { WeekGroup } from "@/app/weekly/use-weekly-groups";
 import { AppendTracksDialog } from "@/components/append-tracks-dialog";
@@ -9,7 +16,11 @@ import { CreatePlaylistDialog } from "@/components/create-playlist-dialog";
 import { LikesTable } from "@/components/likes-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { SCPlaylist, SCTrack } from "@/lib/soundcloud";
+import {
+  addTracksToPlaylist,
+  type SCPlaylist,
+  type SCTrack,
+} from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
 interface WeeklyGroupCardProps {
@@ -54,6 +65,13 @@ export function WeeklyGroupCard({
   trackType,
 }: WeeklyGroupCardProps) {
   const [showOnlyNew, setShowOnlyNew] = useState<boolean | null>(null);
+  // User-defined track order override. When non-null, displayTracks is
+  // rearranged to match. Reset when the underlying playlist/feed changes.
+  const [orderedUrns, setOrderedUrns] = useState<string[] | null>(null);
+  const [savingOrder, setSavingOrder] = useState(false);
+  // URN order currently rendered by LikesTable (after its internal sort).
+  // Updated via onVisibleOrderChange. This is what gets saved.
+  const [visibleOrder, setVisibleOrder] = useState<string[]>([]);
 
   // URNs already in the existing playlist
   const existingUrns = useMemo(() => {
@@ -77,8 +95,9 @@ export function WeeklyGroupCard({
     });
   }, [group.tracks, existingUrns, trackType]);
 
-  // Merged display: all tracks (existing + new) sorted newest first by created_at
-  const displayTracks = useMemo(() => {
+  // Merged display: the playlist's stored order (source of truth) followed by
+  // any new feed tracks not yet in the playlist, sorted newest first.
+  const baseDisplayTracks = useMemo(() => {
     if (!existingPlaylist) return filteredTracks;
     const SET_THRESHOLD = 720_000;
     const existingFiltered = (existingPlaylist.tracks ?? []).filter((t) => {
@@ -86,13 +105,44 @@ export function WeeklyGroupCard({
       if (trackType === "set") return (t.duration ?? 0) >= SET_THRESHOLD;
       return true;
     });
-    const merged = [...existingFiltered, ...newTracks];
-    return merged.sort((a, b) => {
+    const newSorted = [...newTracks].sort((a, b) => {
       const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
       const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
       return tb - ta;
     });
+    return [...existingFiltered, ...newSorted];
   }, [existingPlaylist, newTracks, filteredTracks, trackType]);
+
+  // Apply user reorder override, keeping any tracks not in the override appended.
+  const displayTracks = useMemo(() => {
+    if (!orderedUrns) return baseDisplayTracks;
+    const byUrn = new Map<string, SCTrack>();
+    for (const t of baseDisplayTracks) {
+      if (t.urn) byUrn.set(t.urn, t);
+    }
+    const out: SCTrack[] = [];
+    const consumed = new Set<string>();
+    for (const urn of orderedUrns) {
+      const t = byUrn.get(urn);
+      if (t) {
+        out.push(t);
+        consumed.add(urn);
+      }
+    }
+    for (const t of baseDisplayTracks) {
+      if (!t.urn || !consumed.has(t.urn)) out.push(t);
+    }
+    return out;
+  }, [baseDisplayTracks, orderedUrns]);
+
+  // Reset any pending reorder when the underlying list identity changes.
+  const baseKey = useMemo(
+    () => baseDisplayTracks.map((t) => t.urn ?? "").join("|"),
+    [baseDisplayTracks],
+  );
+  useEffect(() => {
+    setOrderedUrns(null);
+  }, [baseKey]);
 
   const newTrackUrns = useMemo(
     () =>
@@ -133,8 +183,85 @@ export function WeeklyGroupCard({
     return selectedIds.has(id);
   });
 
-  const tracksForPlaylist =
-    selectedTracks.length > 0 ? selectedTracks : filteredTracks;
+  // Tracks used when creating a new playlist. Respect the user's selection if
+  // any; otherwise use the order the table is currently showing (sort + drag).
+  const tracksForPlaylist = useMemo(() => {
+    if (selectedTracks.length > 0) return selectedTracks;
+    if (visibleOrder.length > 0) {
+      const byUrn = new Map<string, SCTrack>();
+      for (const t of displayTracks) if (t.urn) byUrn.set(t.urn, t);
+      const ordered: SCTrack[] = [];
+      for (const urn of visibleOrder) {
+        const t = byUrn.get(urn);
+        if (t) ordered.push(t);
+      }
+      if (ordered.length > 0) return ordered;
+    }
+    return filteredTracks;
+  }, [selectedTracks, visibleOrder, displayTracks, filteredTracks]);
+
+  // The playlist's existing track order (source of truth we'd be overwriting).
+  const existingPlaylistUrnOrder = useMemo(() => {
+    if (!existingPlaylist) return [] as string[];
+    return (existingPlaylist.tracks ?? [])
+      .map((t) => t.urn)
+      .filter((u): u is string => !!u);
+  }, [existingPlaylist]);
+
+  // URN list we'd send if the user hits Update playlist: whatever the table
+  // currently shows (sorted + any drag reorder), falling back to the computed
+  // display order while the callback hasn't reported yet.
+  const saveUrnOrder = useMemo(() => {
+    if (visibleOrder.length > 0) return visibleOrder;
+    return displayTracks.map((t) => t.urn).filter((u): u is string => !!u);
+  }, [visibleOrder, displayTracks]);
+
+  const orderChanged =
+    existingPlaylistUrnOrder.length !== saveUrnOrder.length ||
+    existingPlaylistUrnOrder.some((urn, i) => urn !== saveUrnOrder[i]);
+
+  const handleReorderTracks = useCallback(
+    (newOrder: string[]) => {
+      // The callback receives the new order of *visible* urns only. Splice
+      // that order back into the full display list so hidden tracks keep
+      // their relative positions.
+      const visibleSet = new Set(newOrder);
+      const fullCurrent = displayTracks
+        .map((t) => t.urn)
+        .filter((u): u is string => !!u);
+      const it = newOrder[Symbol.iterator]();
+      const next: string[] = [];
+      for (const urn of fullCurrent) {
+        if (visibleSet.has(urn)) {
+          const { value } = it.next();
+          if (value) next.push(value);
+        } else {
+          next.push(urn);
+        }
+      }
+      setOrderedUrns(next);
+    },
+    [displayTracks],
+  );
+
+  const handleResetOrder = useCallback(() => setOrderedUrns(null), []);
+
+  const handleSaveOrder = useCallback(async () => {
+    if (!existingPlaylist?.urn) return;
+    setSavingOrder(true);
+    try {
+      await addTracksToPlaylist(existingPlaylist.urn, saveUrnOrder);
+      toast.success(`Order saved to "${existingPlaylist.title}"`);
+      setOrderedUrns(null);
+      onPlaylistsReload?.();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update playlist order",
+      );
+    } finally {
+      setSavingOrder(false);
+    }
+  }, [existingPlaylist, saveUrnOrder, onPlaylistsReload]);
   const totalDuration = getTotalDuration(displayTracks);
   const playlistUrl = existingPlaylist
     ? ((existingPlaylist as Record<string, unknown>).permalink_url as
@@ -246,6 +373,46 @@ export function WeeklyGroupCard({
             {groupSelectedCount > 0 && ` · ${groupSelectedCount} selected`}
           </span>
 
+          {orderChanged && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleResetOrder}
+              disabled={savingOrder}
+              className="text-muted-foreground hover:text-foreground h-6 gap-1 px-2 text-xs"
+            >
+              <RotateCcw className="size-3" />
+              Reset
+            </Button>
+          )}
+          {existingPlaylist && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleSaveOrder}
+              disabled={
+                savingOrder || (!orderChanged && newTracks.length === 0)
+              }
+              title={
+                orderChanged && newTracks.length > 0
+                  ? `Save reorder and append ${newTracks.length} new track${newTracks.length !== 1 ? "s" : ""}`
+                  : orderChanged
+                    ? "Save the new track order to SoundCloud"
+                    : newTracks.length > 0
+                      ? `Append ${newTracks.length} new track${newTracks.length !== 1 ? "s" : ""} to the playlist`
+                      : "Reorder tracks or wait for new tracks"
+              }
+              className="text-primary hover:bg-brand-soft hover:text-primary h-6 gap-1 px-2 text-xs disabled:opacity-40"
+            >
+              <Save className="size-3" />
+              {savingOrder
+                ? "Saving…"
+                : newTracks.length > 0 && !orderChanged
+                  ? `Append ${newTracks.length}`
+                  : "Update playlist"}
+            </Button>
+          )}
+
           {canAppend ? (
             <AppendTracksDialog
               newTracks={newTracks}
@@ -296,6 +463,8 @@ export function WeeklyGroupCard({
           onDeselectAll={handleDeselectAll}
           collectionIds={collectionIds}
           newTrackUrns={newTrackUrns}
+          onReorderTracks={handleReorderTracks}
+          onVisibleOrderChange={setVisibleOrder}
         />
       </div>
     </div>

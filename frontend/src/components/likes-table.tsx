@@ -1,5 +1,22 @@
 "use client";
 
+import {
+  closestCenter,
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronDown,
@@ -7,6 +24,7 @@ import {
   ChevronUp,
   Download,
   FolderCheck,
+  GripVertical,
   Music,
   ShoppingCart,
 } from "lucide-react";
@@ -313,9 +331,15 @@ interface TrackRowProps {
   onExpand: () => void;
   /** Columns filtered and ordered per user preferences, with resolved widths. */
   visibleColumns: ResolvedLikesCol[];
+  /** When set, the row renders a drag handle and participates in SortableContext. */
+  dragHandle?: {
+    attributes: React.HTMLAttributes<HTMLButtonElement>;
+    listeners: React.DOMAttributes<HTMLButtonElement> | undefined;
+    isDragging: boolean;
+  };
 }
 
-function TrackRow({
+function TrackRowInner({
   track,
   isSelected,
   isExpanded,
@@ -324,6 +348,7 @@ function TrackRow({
   onToggleSelect,
   onExpand,
   visibleColumns,
+  dragHandle,
 }: TrackRowProps) {
   const imgUrl = artworkUrl(track);
 
@@ -332,7 +357,7 @@ function TrackRow({
       <div
         role="row"
         tabIndex={0}
-        className={`border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isSelected ? "bg-[var(--brand-soft)]" : isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"}`}
+        className={`border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isSelected ? "bg-[var(--brand-soft)]" : isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
         onClick={onExpand}
         onKeyDown={(e) => {
           if (e.key === "Enter") onExpand();
@@ -342,6 +367,20 @@ function TrackRow({
           }
         }}
       >
+        {/* Drag handle */}
+        {dragHandle && (
+          <button
+            {...dragHandle.attributes}
+            {...dragHandle.listeners}
+            tabIndex={-1}
+            aria-label="Drag to reorder"
+            onClick={(e) => e.stopPropagation()}
+            className="text-muted-foreground/50 hover:text-foreground flex size-4 shrink-0 cursor-grab items-center justify-center active:cursor-grabbing"
+          >
+            <GripVertical className="size-3" />
+          </button>
+        )}
+
         {/* Checkbox */}
         <div
           className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
@@ -412,6 +451,37 @@ function TrackRow({
   );
 }
 
+function SortableTrackRow(props: TrackRowProps & { sortableId: string }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.sortableId });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      <TrackRowInner
+        {...props}
+        dragHandle={{ attributes, listeners, isDragging }}
+      />
+    </div>
+  );
+}
+
+function TrackRow(props: TrackRowProps & { sortableId?: string }) {
+  const { sortableId, ...rest } = props;
+  if (sortableId) {
+    return <SortableTrackRow {...rest} sortableId={sortableId} />;
+  }
+  return <TrackRowInner {...rest} />;
+}
+
 interface LikesTableProps {
   tracks: SCTrack[];
   selectedIds: Set<number>;
@@ -433,6 +503,13 @@ interface LikesTableProps {
   onColumnWidthChange?: (id: string, width: number) => void;
   /** Reset a single column's width to its default (double-click handle). */
   onColumnWidthReset?: (id: string) => void;
+  /** When provided, rows become drag-reorderable. Called with the new URN order
+   *  after each drag. Enabling this forces the natural track order (sort is
+   *  cleared and sort controls are disabled). */
+  onReorderTracks?: (orderedUrns: string[]) => void;
+  /** Reports the current *visible* URN order (after sort). Fires whenever
+   *  the sorted display changes so callers can save whatever the user sees. */
+  onVisibleOrderChange?: (orderedUrns: string[]) => void;
 }
 
 export function LikesTable({
@@ -450,7 +527,10 @@ export function LikesTable({
   columnWidths,
   onColumnWidthChange,
   onColumnWidthReset,
+  onReorderTracks,
+  onVisibleOrderChange,
 }: LikesTableProps) {
+  const reorderEnabled = !!onReorderTracks;
   const colVisible = React.useCallback(
     (id: string) => (isColumnVisible ? isColumnVisible(id) : true),
     [isColumnVisible],
@@ -509,6 +589,66 @@ export function LikesTable({
     return sorted;
   }, [tracks, sortBy, sortOrder]);
 
+  // Row reordering is only active when no column sort is applied — otherwise
+  // the user's drag target (sorted position) wouldn't map to a meaningful
+  // underlying order.
+  const reorderable = reorderEnabled && !sortBy;
+
+  // Report the current visible order (after sort) to callers so they can save
+  // whatever the user currently sees.
+  const sortedUrnsKey = useMemo(
+    () =>
+      sortedTracks
+        .map((t) => t.urn ?? "")
+        .join("|"),
+    [sortedTracks],
+  );
+  React.useEffect(() => {
+    if (!onVisibleOrderChange) return;
+    const urns = sortedTracks
+      .map((t) => t.urn)
+      .filter((u): u is string => !!u);
+    onVisibleOrderChange(urns);
+  }, [sortedUrnsKey, sortedTracks, onVisibleOrderChange]);
+
+  const sortableIds = useMemo(
+    () =>
+      reorderable ? sortedTracks.map((t, i) => t.urn ?? `__idx_${i}`) : [],
+    [reorderable, sortedTracks],
+  );
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  );
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const activeDragTrack = useMemo(
+    () =>
+      activeDragId
+        ? (sortedTracks.find(
+            (t, i) => (t.urn ?? `__idx_${i}`) === activeDragId,
+          ) ?? null)
+        : null,
+    [activeDragId, sortedTracks],
+  );
+
+  function handleReorderDragStart(e: DragStartEvent) {
+    setActiveDragId(String(e.active.id));
+  }
+
+  function handleReorderDragEnd(e: DragEndEvent) {
+    setActiveDragId(null);
+    const { active, over } = e;
+    if (!over || active.id === over.id || !onReorderTracks) return;
+    const ids = sortableIds;
+    const oldIdx = ids.indexOf(String(active.id));
+    const newIdx = ids.indexOf(String(over.id));
+    if (oldIdx < 0 || newIdx < 0) return;
+    const nextIds = arrayMove(ids, oldIdx, newIdx).filter(
+      (id) => !id.startsWith("__idx_"),
+    );
+    onReorderTracks(nextIds);
+  }
+
   // React Compiler can't memoize TanStack Virtual's returned functions safely; skip.
 
   const virtualizer = useVirtualizer({
@@ -562,6 +702,7 @@ export function LikesTable({
         role="row"
         className="border-border text-muted-foreground flex h-9 shrink-0 items-center gap-2 border-b bg-[var(--surface-2)] px-3 text-xs font-medium"
       >
+        {reorderable && <div className="size-4 shrink-0" aria-hidden />}
         <div
           className="flex w-6 shrink-0 items-center justify-center"
           onClick={(e) => e.stopPropagation()}
@@ -639,70 +780,116 @@ export function LikesTable({
         ref={scrollParentRef}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
-        <div
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-            position: "relative",
-          }}
-        >
-          {virtualItems.map((virtualRow) => {
-            const track = sortedTracks[virtualRow.index];
-            if (!track) return null;
-            const id = extractId(track);
+        {(() => {
+          const body = (
+            <div
+              style={{
+                height: `${virtualizer.getTotalSize()}px`,
+                position: "relative",
+              }}
+            >
+              {virtualItems.map((virtualRow) => {
+                const track = sortedTracks[virtualRow.index];
+                if (!track) return null;
+                const id = extractId(track);
+                const sortableId = reorderable
+                  ? (track.urn ?? `__idx_${virtualRow.index}`)
+                  : undefined;
 
-            return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
+                return (
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <TrackRow
+                      sortableId={sortableId}
+                      track={track}
+                      isSelected={selectedIds.has(id)}
+                      isExpanded={expandedId === id}
+                      inCollection={collectionIds?.has(id) ?? false}
+                      isNew={
+                        newTrackUrns
+                          ? track.urn
+                            ? newTrackUrns.has(track.urn)
+                            : false
+                          : undefined
+                      }
+                      onToggleSelect={(shiftKey) => {
+                        const currentIndex = virtualRow.index;
+                        if (shiftKey && lastSelectedIndexRef.current !== null) {
+                          const start = Math.min(
+                            lastSelectedIndexRef.current,
+                            currentIndex,
+                          );
+                          const end = Math.max(
+                            lastSelectedIndexRef.current,
+                            currentIndex,
+                          );
+                          const rangeIds = sortedTracks
+                            .slice(start, end + 1)
+                            .map(extractId)
+                            .filter(Boolean);
+                          onRangeSelect(rangeIds);
+                        } else {
+                          onToggleSelect(id);
+                          lastSelectedIndexRef.current = currentIndex;
+                        }
+                      }}
+                      onExpand={() => handleExpand(track)}
+                      visibleColumns={visibleColumns}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          );
+          if (!reorderable) return body;
+          return (
+            <DndContext
+              sensors={dndSensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleReorderDragStart}
+              onDragEnd={handleReorderDragEnd}
+              onDragCancel={() => setActiveDragId(null)}
+            >
+              <SortableContext
+                items={sortableIds}
+                strategy={verticalListSortingStrategy}
               >
-                <TrackRow
-                  track={track}
-                  isSelected={selectedIds.has(id)}
-                  isExpanded={expandedId === id}
-                  inCollection={collectionIds?.has(id) ?? false}
-                  isNew={
-                    newTrackUrns
-                      ? track.urn
-                        ? newTrackUrns.has(track.urn)
-                        : false
-                      : undefined
-                  }
-                  onToggleSelect={(shiftKey) => {
-                    const currentIndex = virtualRow.index;
-                    if (shiftKey && lastSelectedIndexRef.current !== null) {
-                      const start = Math.min(
-                        lastSelectedIndexRef.current,
-                        currentIndex,
-                      );
-                      const end = Math.max(
-                        lastSelectedIndexRef.current,
-                        currentIndex,
-                      );
-                      const rangeIds = sortedTracks
-                        .slice(start, end + 1)
-                        .map(extractId)
-                        .filter(Boolean);
-                      onRangeSelect(rangeIds);
-                    } else {
-                      onToggleSelect(id);
-                      lastSelectedIndexRef.current = currentIndex;
-                    }
-                  }}
-                  onExpand={() => handleExpand(track)}
-                  visibleColumns={visibleColumns}
-                />
-              </div>
-            );
-          })}
-        </div>
+                {body}
+              </SortableContext>
+              <DragOverlay>
+                {activeDragTrack ? (
+                  <div className="bg-[var(--surface-2)] opacity-95 shadow-lg">
+                    <TrackRowInner
+                      track={activeDragTrack}
+                      isSelected={false}
+                      isExpanded={false}
+                      inCollection={false}
+                      isNew={false}
+                      onToggleSelect={() => undefined}
+                      onExpand={() => undefined}
+                      visibleColumns={visibleColumns}
+                      dragHandle={{
+                        attributes: {},
+                        listeners: undefined,
+                        isDragging: false,
+                      }}
+                    />
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          );
+        })()}
       </div>
     </div>
   );
