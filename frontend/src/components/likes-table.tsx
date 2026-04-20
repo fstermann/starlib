@@ -35,6 +35,7 @@ import {
   SortableColumnHeader,
   SortableHeaderCell,
 } from "@/components/columns/sortable-columns";
+import { SoundcloudRowPlayButton } from "@/components/soundcloud-row-play-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
@@ -351,6 +352,7 @@ function TrackRowInner({
   dragHandle,
 }: TrackRowProps) {
   const imgUrl = artworkUrl(track);
+  const scTrackId = extractId(track);
 
   return (
     <div>
@@ -408,6 +410,18 @@ function TrackRowInner({
             <Music className="text-muted-foreground size-3.5" />
           )}
         </div>
+
+        {/* Play button — streams via the backend HLS endpoint. */}
+        {scTrackId ? (
+          <SoundcloudRowPlayButton
+            trackId={scTrackId}
+            title={track.title ?? undefined}
+            artist={track.user?.username ?? undefined}
+            waveformUrl={track.waveform_url ?? undefined}
+          />
+        ) : (
+          <div className="size-6 shrink-0" />
+        )}
 
         {/* Reorderable column cells */}
         {visibleColumns.map((col) => (
