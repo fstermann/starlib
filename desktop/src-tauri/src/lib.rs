@@ -180,7 +180,10 @@ pub fn run() {
     }
 
     builder
-        .invoke_handler(tauri::generate_handler![commands::analyze_local_bpm])
+        .invoke_handler(tauri::generate_handler![
+            commands::analyze_local_bpm,
+            commands::analyze_sc_bpm,
+        ])
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([

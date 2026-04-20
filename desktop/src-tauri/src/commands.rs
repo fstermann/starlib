@@ -10,13 +10,13 @@ use serde::Serialize;
 
 use crate::bpm::{self, BpmOptions, Confidence};
 
+/// JSON representation of a `BpmResult` across the invoke boundary.
 #[derive(Serialize)]
-pub struct LocalBpmResponse {
-    /// Detected BPM. Rounded at persistence time by the backend, but kept
-    /// as float here for algorithm-version migrations / debugging.
+pub struct BpmResponse {
+    /// Detected BPM as float. Backend rounds to int at persistence time.
     pub bpm: f32,
     pub confidence: &'static str,
-    /// Original pre-correction BPM when octave correction kicked in.
+    /// Original pre-correction BPM when octave correction fired.
     pub corrected_from: Option<f32>,
     pub algorithm_version: u16,
 }
@@ -29,24 +29,42 @@ fn confidence_str(c: Confidence) -> &'static str {
     }
 }
 
+fn to_response(r: bpm::BpmResult) -> BpmResponse {
+    BpmResponse {
+        bpm: r.bpm,
+        confidence: confidence_str(r.confidence),
+        corrected_from: r.corrected_from,
+        algorithm_version: r.algorithm_version,
+    }
+}
+
 /// Analyze BPM for a local audio file.
 ///
 /// Runs synchronously on a blocking thread (the decode + analyze together
 /// take ~50 ms on a typical track); Tauri invoke handlers can be called from
 /// async contexts so no extra wrapper is needed for responsiveness.
 #[tauri::command]
-pub async fn analyze_local_bpm(path: String) -> Result<LocalBpmResponse, String> {
+pub async fn analyze_local_bpm(path: String) -> Result<BpmResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let options = BpmOptions::default();
         let result = bpm::local::analyze_local_file(&PathBuf::from(&path), 30.0, 15.0, &options)
             .map_err(|e| e.to_string())?;
-        Ok::<_, String>(LocalBpmResponse {
-            bpm: result.bpm,
-            confidence: confidence_str(result.confidence),
-            corrected_from: result.corrected_from,
-            algorithm_version: result.algorithm_version,
-        })
+        Ok::<_, String>(to_response(result))
     })
     .await
     .map_err(|e| format!("analysis task failed: {e}"))?
+}
+
+/// Analyze BPM for a SoundCloud track via its HLS stream.
+///
+/// The OAuth Client-Credentials token is supplied by the caller; this
+/// command doesn't touch credentials. See
+/// ``backend/api/bpm.py::get_soundcloud_client_token``.
+#[tauri::command]
+pub async fn analyze_sc_bpm(track_id: u64, token: String) -> Result<BpmResponse, String> {
+    let options = BpmOptions::default();
+    let result = bpm::soundcloud::analyze_sc_track(track_id, &token, &options)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(to_response(result))
 }

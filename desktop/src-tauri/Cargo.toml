@@ -34,6 +34,8 @@ tokio = { version = "1", features = ["time"] }
 symphonia = { version = "0.5", features = ["aac", "isomp4", "mp3", "flac", "wav", "vorbis"] }
 rustfft = "6"
 anyhow = "1"
+futures = "0.3"
+url = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

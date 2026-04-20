@@ -104,8 +104,8 @@ def create_app() -> FastAPI:
     app.include_router(folder_config_router)
     app.include_router(app_settings_router)
     app.include_router(ai_router)
-    app.include_router(bpm_router)
     app.include_router(soundcloud_router)
+    app.include_router(bpm_router)
 
     add_pagination(app)
 

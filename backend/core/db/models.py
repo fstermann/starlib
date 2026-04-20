@@ -69,6 +69,22 @@ class Peaks(SQLModel, table=True):
     mtime: float
 
 
+class SoundcloudTrackBpm(SQLModel, table=True):
+    """Cached BPM results for SoundCloud tracks.
+
+    Analysis runs in the Rust/Tauri layer; this row stores the result so we
+    don't redo it on every library scroll. Cache invalidation on algorithm
+    changes is done via an alembic migration that ``DELETE``s the table —
+    no per-row version column needed.
+    """
+
+    __tablename__ = "soundcloud_track_bpm"  # type: ignore[assignment]
+
+    track_id: int = Field(primary_key=True)
+    bpm: int
+    analyzed_at: float  # unix epoch seconds
+
+
 # ---------------------------------------------------------------------------
 # Registry parity — fail loudly at import time if a SIMPLE_TAG_FIELDS entry
 # doesn't have a matching Track column.

@@ -761,4 +761,29 @@ export const api = {
   ): Promise<{ url: string; expires_at: string }> {
     return fetchApi(`/api/soundcloud/tracks/${trackId}/stream`);
   },
+
+  // ==================== BPM ====================
+
+  async getSoundcloudClientToken(): Promise<{ token: string }> {
+    return fetchApi("/api/bpm/soundcloud-client-token");
+  },
+
+  async saveSoundcloudBpm(
+    trackId: number,
+    bpm: number,
+  ): Promise<{ track_id: number; bpm: number }> {
+    return fetchApi("/api/bpm/soundcloud", {
+      method: "POST",
+      body: JSON.stringify({ track_id: trackId, bpm }),
+    });
+  },
+
+  async getSoundcloudBpmsBulk(
+    trackIds: number[],
+  ): Promise<{ bpms: Record<string, number> }> {
+    return fetchApi("/api/bpm/soundcloud/bulk", {
+      method: "POST",
+      body: JSON.stringify({ track_ids: trackIds }),
+    });
+  },
 };

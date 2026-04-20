@@ -35,6 +35,7 @@ import {
   SortableColumnHeader,
   SortableHeaderCell,
 } from "@/components/columns/sortable-columns";
+import { SoundcloudBpmCell } from "@/components/soundcloud-bpm-cell";
 import { SoundcloudRowPlayButton } from "@/components/soundcloud-row-play-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -122,6 +123,19 @@ const LIKES_COLUMNS: LikesCol[] = [
     cellClassName:
       "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
     renderBody: ({ track }) => <>{formatDuration(track.duration)}</>,
+  },
+  {
+    id: "bpm",
+    header: "BPM",
+    defaultWidth: 56,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => (
+      <SoundcloudBpmCell
+        trackId={extractId(track)}
+        metadataBpm={track.bpm ?? null}
+      />
+    ),
   },
   {
     id: "playback_count",
