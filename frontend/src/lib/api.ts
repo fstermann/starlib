@@ -739,6 +739,21 @@ export const api = {
     return fetchApi("/api/ai/anthropic/credentials", { method: "DELETE" });
   },
 
+  // BPM
+  async saveLocalBpm(
+    filePath: string,
+    bpm: number,
+    algorithmVersion: number,
+  ): Promise<{ file_path: string; bpm: number; algorithm_version: number }> {
+    return fetchApi("/api/bpm/local", {
+      method: "POST",
+      body: JSON.stringify({
+        file_path: filePath,
+        bpm,
+        algorithm_version: algorithmVersion,
+      }),
+    });
+  },
   // ==================== SoundCloud ====================
 
   async getSoundcloudStreamUrl(

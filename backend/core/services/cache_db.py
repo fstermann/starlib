@@ -18,7 +18,7 @@ import logging
 from datetime import date
 from pathlib import Path
 
-from sqlalchemy import Select, String, delete, func, or_, select
+from sqlalchemy import Select, String, delete, func, or_, select, update
 
 from backend.core.db.engine import get_engine, init_engine
 from backend.core.db.migrations import run_migrations
@@ -141,6 +141,14 @@ def upsert_track(
     stmt = stmt.on_conflict_do_update(index_elements=[Track.__table__.c.file_path], set_=update_cols)
     with engine.begin() as conn:
         conn.execute(stmt)
+
+
+def update_track_bpm(file_path: Path, bpm: int) -> bool:
+    """Update the cached BPM for a track. Returns True if a row was updated."""
+    stmt = update(Track).where(Track.file_path == str(file_path)).values(bpm=bpm)
+    with get_engine().begin() as conn:
+        result = conn.execute(stmt)
+    return result.rowcount > 0
 
 
 def delete_track(file_path: Path) -> None:
