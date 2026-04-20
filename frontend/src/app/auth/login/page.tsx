@@ -93,6 +93,14 @@ export default function LoginPage() {
         localStorage.setItem("sc_user", JSON.stringify(result.user));
         sessionStorage.removeItem("oauth_state");
         window.dispatchEvent(new Event("auth-changed"));
+        // Bring the Starlib window back to the front — the user is currently
+        // looking at the "you can close this tab" page in their browser.
+        try {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          await getCurrentWindow().setFocus();
+        } catch (err) {
+          console.warn("focus on self failed:", err);
+        }
         router.push("/library?source=soundcloud");
       } else {
         window.location.href = data.authorization_url;
