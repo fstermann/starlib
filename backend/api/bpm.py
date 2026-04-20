@@ -29,13 +29,11 @@ class SoundcloudBpmPayload(BaseModel):
 
     track_id: int = Field(..., gt=0)
     bpm: float = Field(..., gt=0)
-    algorithm_version: int = Field(..., ge=1)
 
 
 class SoundcloudBpmResponse(BaseModel):
     track_id: int
     bpm: int
-    algorithm_version: int
 
 
 class ClientTokenResponse(BaseModel):
@@ -56,15 +54,10 @@ def save_soundcloud_bpm(payload: SoundcloudBpmPayload) -> SoundcloudBpmResponse:
     cache_db.upsert_sc_bpm(
         track_id=payload.track_id,
         bpm=bpm_int,
-        algorithm_version=payload.algorithm_version,
         analyzed_at=time.time(),
     )
-    logger.info("saved sc bpm=%d for track_id=%s (algo v%d)", bpm_int, payload.track_id, payload.algorithm_version)
-    return SoundcloudBpmResponse(
-        track_id=payload.track_id,
-        bpm=bpm_int,
-        algorithm_version=payload.algorithm_version,
-    )
+    logger.info("saved sc bpm=%d for track_id=%s", bpm_int, payload.track_id)
+    return SoundcloudBpmResponse(track_id=payload.track_id, bpm=bpm_int)
 
 
 @router.get("/soundcloud/{track_id}", response_model=SoundcloudBpmResponse | None)
@@ -73,11 +66,7 @@ def get_soundcloud_bpm(track_id: int) -> SoundcloudBpmResponse | None:
     row = cache_db.get_sc_bpm(track_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No cached BPM for this track")
-    return SoundcloudBpmResponse(
-        track_id=int(row["track_id"]),
-        bpm=int(row["bpm"]),
-        algorithm_version=int(row["algorithm_version"]),
-    )
+    return SoundcloudBpmResponse(track_id=int(row["track_id"]), bpm=int(row["bpm"]))
 
 
 class BulkBpmRequest(BaseModel):

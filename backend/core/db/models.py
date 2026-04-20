@@ -73,16 +73,15 @@ class SoundcloudTrackBpm(SQLModel, table=True):
     """Cached BPM results for SoundCloud tracks.
 
     Analysis runs in the Rust/Tauri layer; this row stores the result so we
-    don't redo it on every library scroll. ``algorithm_version`` is bumped
-    whenever the Rust tempo pipeline changes in a way that invalidates
-    earlier results.
+    don't redo it on every library scroll. Cache invalidation on algorithm
+    changes is done via an alembic migration that ``DELETE``s the table —
+    no per-row version column needed.
     """
 
     __tablename__ = "soundcloud_track_bpm"  # type: ignore[assignment]
 
     track_id: int = Field(primary_key=True)
     bpm: int
-    algorithm_version: int
     analyzed_at: float  # unix epoch seconds
 
 

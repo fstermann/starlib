@@ -756,15 +756,10 @@ export const api = {
   async saveSoundcloudBpm(
     trackId: number,
     bpm: number,
-    algorithmVersion: number,
-  ): Promise<{ track_id: number; bpm: number; algorithm_version: number }> {
+  ): Promise<{ track_id: number; bpm: number }> {
     return fetchApi("/api/bpm/soundcloud", {
       method: "POST",
-      body: JSON.stringify({
-        track_id: trackId,
-        bpm,
-        algorithm_version: algorithmVersion,
-      }),
+      body: JSON.stringify({ track_id: trackId, bpm }),
     });
   },
 

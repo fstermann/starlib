@@ -27,7 +27,6 @@ def upgrade() -> None:
         "soundcloud_track_bpm",
         sa.Column("track_id", sa.Integer(), primary_key=True, nullable=False),
         sa.Column("bpm", sa.Integer(), nullable=False),
-        sa.Column("algorithm_version", sa.Integer(), nullable=False),
         sa.Column("analyzed_at", sa.Float(), nullable=False),
     )
 

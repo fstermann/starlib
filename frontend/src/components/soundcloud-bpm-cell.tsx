@@ -36,11 +36,7 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
       const { token } = await api.getSoundcloudClientToken();
       const result = await analyzeScBpm(trackId, token);
       const rounded = Math.round(result.bpm);
-      await api.saveSoundcloudBpm(
-        trackId,
-        result.bpm,
-        result.algorithm_version,
-      );
+      await api.saveSoundcloudBpm(trackId, result.bpm);
       setAnalyzedBpm(rounded);
       toast.success(
         `Detected ${rounded} BPM (${result.confidence} confidence)`,

@@ -148,14 +148,13 @@ def delete_track(file_path: Path) -> None:
         conn.execute(delete(Track).where(Track.file_path == str(file_path)))
 
 
-def upsert_sc_bpm(track_id: int, bpm: int, algorithm_version: int, analyzed_at: float) -> None:
+def upsert_sc_bpm(track_id: int, bpm: int, analyzed_at: float) -> None:
     """Insert or replace the cached BPM for a SoundCloud track."""
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
     row = {
         "track_id": track_id,
         "bpm": bpm,
-        "algorithm_version": algorithm_version,
         "analyzed_at": analyzed_at,
     }
     stmt = sqlite_insert(SoundcloudTrackBpm.__table__).values(row)
