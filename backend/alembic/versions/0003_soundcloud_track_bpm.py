@@ -23,10 +23,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Note: `algorithm_version` is dropped by 0004. Kept here so this matches
+    # what actually shipped to dev machines at 0003-head — rewriting history
+    # would leave those installs with a column the current chain doesn't
+    # know how to remove.
     op.create_table(
         "soundcloud_track_bpm",
         sa.Column("track_id", sa.Integer(), primary_key=True, nullable=False),
         sa.Column("bpm", sa.Integer(), nullable=False),
+        sa.Column("algorithm_version", sa.Integer(), nullable=False),
         sa.Column("analyzed_at", sa.Float(), nullable=False),
     )
 
