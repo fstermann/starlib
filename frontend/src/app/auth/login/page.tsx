@@ -95,9 +95,20 @@ export default function LoginPage() {
         window.dispatchEvent(new Event("auth-changed"));
         // Bring the Starlib window back to the front — the user is currently
         // looking at the "you can close this tab" page in their browser.
+        // macOS throttles cross-app focus stealing hard; combine unminimize +
+        // show + setFocus for best-effort activation, then bounce the dock
+        // icon via requestUserAttention(Critical) which is explicitly
+        // permitted for user-attention cues even when activation is refused.
         try {
-          const { getCurrentWindow } = await import("@tauri-apps/api/window");
-          await getCurrentWindow().setFocus();
+          const { getCurrentWindow, UserAttentionType } =
+            await import("@tauri-apps/api/window");
+          const w = getCurrentWindow();
+          await w.unminimize().catch(() => {});
+          await w.show().catch(() => {});
+          await w.setFocus().catch(() => {});
+          await w
+            .requestUserAttention(UserAttentionType.Critical)
+            .catch(() => {});
         } catch (err) {
           console.warn("focus on self failed:", err);
         }
