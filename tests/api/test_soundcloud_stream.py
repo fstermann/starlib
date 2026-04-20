@@ -4,6 +4,7 @@ Covers:
 - Successful fetch returns `url` + `expires_at` from the upstream `/streams` payload.
 - Second call within TTL is served from the in-memory cache (upstream hit once).
 - Expired cache entries trigger a refetch.
+- Missing HLS variant surfaces a 404.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from backend.api import soundcloud as soundcloud_api
 
 
 def _mock_response(status_code: int = 200, json_data: dict | None = None, headers: dict | None = None):
-    """Build a lightweight stand-in for `requests.Response`."""
+    """Build a lightweight stand-in for `httpx.Response`."""
 
     return SimpleNamespace(
         status_code=status_code,
@@ -48,22 +49,40 @@ def reset_cache():
     soundcloud_api._reset_cache_for_tests()
 
 
+@pytest.fixture(autouse=True)
+def fake_oauth():
+    """Short-circuit OAuth so tests don't need real SoundCloud credentials."""
+
+    with (
+        patch.object(
+            soundcloud_api,
+            "get_settings",
+            return_value=SimpleNamespace(
+                client_id="cid",
+                client_secret="secret",
+                has_oauth_credentials=lambda: True,
+            ),
+        ),
+        patch.object(soundcloud_api.OAuthManager, "get_access_token", return_value="faketoken"),
+    ):
+        yield
+
+
 def test_returns_stream_url_and_expiry(client: TestClient) -> None:
     """Happy path: endpoint returns the HLS URL + ISO expiry."""
 
     expires_epoch = int(time.time()) + 1800  # 30 min in the future
     signed_cdn = f"https://playback.media-streaming.soundcloud.cloud/test.m3u8?expires={expires_epoch}&sig=abc"
 
-    async def fake_make_request(method, url, **kwargs):
+    async def fake_http_get(url, *, token, follow_redirects):
         if url.endswith("/streams"):
             return _mock_response(
                 status_code=200,
                 json_data={"hls_aac_160_url": "https://api.soundcloud.com/streams/redirect"},
             )
-        # Redirect hop
         return _mock_response(status_code=302, headers={"Location": signed_cdn})
 
-    with patch.object(soundcloud_api.Client, "make_request", new=AsyncMock(side_effect=fake_make_request)):
+    with patch.object(soundcloud_api, "_http_get", new=AsyncMock(side_effect=fake_http_get)):
         resp = client.get("/api/soundcloud/tracks/12345/stream")
 
     assert resp.status_code == 200
@@ -78,7 +97,7 @@ def test_cache_hit_skips_upstream_call(client: TestClient) -> None:
 
     signed_cdn = f"https://playback.media-streaming.soundcloud.cloud/test.m3u8?expires={int(time.time()) + 1800}"
 
-    async def fake_make_request(method, url, **kwargs):
+    async def fake_http_get(url, *, token, follow_redirects):
         if url.endswith("/streams"):
             return _mock_response(
                 status_code=200,
@@ -86,8 +105,8 @@ def test_cache_hit_skips_upstream_call(client: TestClient) -> None:
             )
         return _mock_response(status_code=302, headers={"Location": signed_cdn})
 
-    mock = AsyncMock(side_effect=fake_make_request)
-    with patch.object(soundcloud_api.Client, "make_request", new=mock):
+    mock = AsyncMock(side_effect=fake_http_get)
+    with patch.object(soundcloud_api, "_http_get", new=mock):
         r1 = client.get("/api/soundcloud/tracks/42/stream")
         r2 = client.get("/api/soundcloud/tracks/42/stream")
 
@@ -107,7 +126,7 @@ def test_cache_expiry_triggers_refetch(client: TestClient) -> None:
 
     call_state = {"n": 0}
 
-    async def fake_make_request(method, url, **kwargs):
+    async def fake_http_get(url, *, token, follow_redirects):
         if url.endswith("/streams"):
             return _mock_response(
                 status_code=200,
@@ -117,7 +136,7 @@ def test_cache_expiry_triggers_refetch(client: TestClient) -> None:
         loc = signed_cdn_1 if call_state["n"] == 1 else signed_cdn_2
         return _mock_response(status_code=302, headers={"Location": loc})
 
-    with patch.object(soundcloud_api.Client, "make_request", new=AsyncMock(side_effect=fake_make_request)):
+    with patch.object(soundcloud_api, "_http_get", new=AsyncMock(side_effect=fake_http_get)):
         r1 = client.get("/api/soundcloud/tracks/99/stream")
         assert r1.json()["url"] == signed_cdn_1
 
@@ -131,10 +150,10 @@ def test_cache_expiry_triggers_refetch(client: TestClient) -> None:
 def test_missing_hls_variant_returns_404(client: TestClient) -> None:
     """Upstream without any HLS URL should surface a 404."""
 
-    async def fake_make_request(method, url, **kwargs):
+    async def fake_http_get(url, *, token, follow_redirects):
         return _mock_response(status_code=200, json_data={"preview_url": "nope"})
 
-    with patch.object(soundcloud_api.Client, "make_request", new=AsyncMock(side_effect=fake_make_request)):
+    with patch.object(soundcloud_api, "_http_get", new=AsyncMock(side_effect=fake_http_get)):
         resp = client.get("/api/soundcloud/tracks/7/stream")
 
     assert resp.status_code == 404

@@ -1,7 +1,7 @@
 """SoundCloud HLS stream URL endpoint.
 
 Provides a signed, short-lived HLS playlist URL for a SoundCloud track,
-fetched from the public SoundCloud API via OAuth client credentials.
+fetched from the public SoundCloud API via OAuth Client Credentials.
 Responses are cached in-memory for ~30 minutes to avoid hammering the
 upstream API and to keep client playback start-up snappy.
 """
@@ -15,17 +15,22 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from soundcloud_tools.client import Client
+from soundcloud_tools.oauth import OAuthManager
+from soundcloud_tools.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/soundcloud", tags=["soundcloud"])
 
-# Default cache TTL (seconds). Signed CDN URLs from SoundCloud typically
-# live for ~1 hour; we refresh every 30 minutes to be safe.
+# Client-Credentials OAuth tokens are rejected by api-v2.soundcloud.com; the
+# public API at api.soundcloud.com accepts them.
+_PUBLIC_API_BASE = "https://api.soundcloud.com"
+
+# Default cache TTL (seconds). Signed CDN URLs live ~1 hour; refresh at 30 min.
 _DEFAULT_TTL_SECONDS = 30 * 60
 
 
@@ -59,32 +64,55 @@ def _extract_expires_from_url(url: str) -> float | None:
     return None
 
 
-async def _fetch_stream_url(track_id: int, client: Client | None = None) -> tuple[str, float]:
+async def _http_get(url: str, *, token: str, follow_redirects: bool) -> httpx.Response:
+    """Authenticated GET against the SoundCloud public API.
+
+    Uses only the `Authorization: OAuth <token>` header — deliberately omits
+    the web-client `client_id`/`app_version` query params that the
+    ``soundcloud_tools.Client`` injects, because the public API drops the
+    Authorization header and returns 401 when those are present.
+    """
+    headers = {"Authorization": f"OAuth {token}", "Accept": "application/json"}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        return await client.get(url, headers=headers, follow_redirects=follow_redirects)
+
+
+async def _fetch_stream_url(track_id: int) -> tuple[str, float]:
     """Fetch a fresh HLS stream URL for a track from the SoundCloud API.
 
     Parameters
     ----------
     track_id : int
         SoundCloud track id.
-    client : Client, optional
-        SoundCloud API client. Creates a default client when omitted.
 
     Returns
     -------
     tuple[str, float]
-        `(url, expires_at)` where `expires_at` is a unix epoch timestamp.
+        ``(url, expires_at)`` where ``expires_at`` is a unix epoch timestamp.
 
     Raises
     ------
     HTTPException
         404 if no HLS variant is available; 502 on upstream errors.
     """
-    if client is None:
-        client = Client()
-
-    url = client.make_url("tracks/{track_id}/streams", track_id=str(track_id))
+    settings = get_settings()
+    if not settings.has_oauth_credentials():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="SoundCloud OAuth credentials not configured",
+        )
     try:
-        response = await client.make_request("GET", url, allow_redirects=False)
+        token = OAuthManager(settings.client_id, settings.client_secret).get_access_token()
+    except Exception as exc:
+        logger.exception("Failed to acquire SoundCloud OAuth token")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"SoundCloud auth error: {exc}",
+        ) from exc
+
+    streams_url = f"{_PUBLIC_API_BASE}/tracks/{track_id}/streams"
+    try:
+        response = await _http_get(streams_url, token=token, follow_redirects=True)
     except Exception as exc:  # pragma: no cover - network transport
         logger.exception("Upstream SoundCloud request failed")
         raise HTTPException(
@@ -107,13 +135,13 @@ async def _fetch_stream_url(track_id: int, client: Client | None = None) -> tupl
             detail="No HLS stream variant available for this track",
         )
 
-    # The returned URL on api.soundcloud.com redirects to the signed CDN
-    # playlist. Try to follow one hop (without downloading the playlist) to
-    # extract the signed `expires` epoch, which gives us an accurate TTL.
+    # The /streams response points to another api.soundcloud.com URL that
+    # 302s to the signed CDN playlist. Resolve the redirect without
+    # downloading the playlist so we can extract the `expires` epoch.
     final_url = stream_url
     expires_epoch: float | None = None
     try:
-        redirect_resp = await client.make_request("GET", stream_url, allow_redirects=False)
+        redirect_resp = await _http_get(stream_url, token=token, follow_redirects=False)
         loc = redirect_resp.headers.get("Location") or redirect_resp.headers.get("location")
         if loc:
             final_url = loc
@@ -142,7 +170,7 @@ async def get_track_stream(track_id: int) -> StreamUrlResponse:
     Returns
     -------
     StreamUrlResponse
-        `url` is the `.m3u8` playlist URL; `expires_at` is an ISO-8601
+        ``url`` is the ``.m3u8`` playlist URL; ``expires_at`` is an ISO-8601
         UTC timestamp after which the client should refetch.
     """
     now = time.time()
@@ -155,7 +183,6 @@ async def get_track_stream(track_id: int) -> StreamUrlResponse:
             return StreamUrlResponse(url=entry.url, expires_at=expires_dt.isoformat())
 
         url, expires_at = await _fetch_stream_url(track_id)
-        # Clamp cache TTL to our default even if upstream hands us a longer window.
         capped_expires = min(expires_at, now + _DEFAULT_TTL_SECONDS)
         _cache[track_id] = _CacheEntry(url=url, expires_at=capped_expires)
 
