@@ -13,6 +13,44 @@ function isHlsUrl(url: string): boolean {
   return noQuery.endsWith(".m3u8");
 }
 
+/** Fetch SoundCloud's pre-rendered waveform JSON (samples in 0..1000) and
+ * resample into `n` normalized peaks in 0..1. Returns null on any failure so
+ * callers can fall back to a flat placeholder. */
+async function fetchSoundcloudPeaks(
+  url: string,
+  n: number,
+): Promise<number[] | null> {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as { samples?: unknown };
+    const samples = data.samples;
+    if (!Array.isArray(samples) || samples.length === 0) return null;
+    let max = 0;
+    for (const v of samples) {
+      if (typeof v === "number" && v > max) max = v;
+    }
+    if (max === 0) return null;
+    const out = new Array<number>(n);
+    for (let i = 0; i < n; i++) {
+      const start = Math.floor((i * samples.length) / n);
+      const end = Math.max(
+        start + 1,
+        Math.floor(((i + 1) * samples.length) / n),
+      );
+      let peak = 0;
+      for (let j = start; j < end && j < samples.length; j++) {
+        const v = samples[j];
+        if (typeof v === "number" && v > peak) peak = v;
+      }
+      out[i] = peak / max;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 /** Attach a URL to an <audio> element using hls.js when needed. Returns an
  * Hls instance (or null) that the caller must destroy on teardown. */
 function attachAudioSource(
@@ -108,12 +146,19 @@ export function WaveformPlayer() {
 
       // For local files we fetch pre-computed peaks from the backend so
       // WaveSurfer doesn't need to decode via AudioContext (which fails in
-      // sandboxed WKWebView). For streaming sources (SoundCloud HLS) we
-      // can't peek decoded samples, so we render a flat placeholder.
+      // sandboxed WKWebView). For SoundCloud streams we use the track's
+      // pre-rendered waveform JSON (`waveform_url` on the track object)
+      // when available, falling back to a flat placeholder otherwise.
       const isStream = !!currentTrack!.streamUrl;
-      const peaks = isStream
-        ? new Array(numPeaks).fill(0.5)
-        : await api.getFilePeaks(currentTrack!.filePath, numPeaks);
+      let peaks: number[];
+      if (isStream) {
+        const scPeaks = currentTrack!.waveformUrl
+          ? await fetchSoundcloudPeaks(currentTrack!.waveformUrl, numPeaks)
+          : null;
+        peaks = scPeaks ?? new Array(numPeaks).fill(0.5);
+      } else {
+        peaks = await api.getFilePeaks(currentTrack!.filePath, numPeaks);
+      }
       if (cancelled || !containerRef.current) return;
 
       // Use an <audio> element for playback so WaveSurfer uses the native
