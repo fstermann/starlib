@@ -1,10 +1,12 @@
 "use client";
 
 import { open as openExternal } from "@tauri-apps/plugin-shell";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { fetchApi } from "@/lib/api";
+import { storeTokens } from "@/lib/auth";
 import { isTauri } from "@/lib/tauri";
 
 interface AuthorizeResponse {
@@ -12,33 +14,103 @@ interface AuthorizeResponse {
   state: string;
 }
 
+interface UserInfo {
+  id: number;
+  username: string;
+  permalink: string;
+  avatar_url: string | null;
+}
+
+interface CallbackResponse {
+  access_token: string;
+  refresh_token: string | null;
+  expires_in: number | null;
+  user: UserInfo;
+}
+
+const POLL_INTERVAL_MS = 1500;
+const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Poll /auth/soundcloud/result until the browser-side redirect delivers it,
+ * or we time out. Returns the tokens on success; throws on timeout / abort. */
+async function pollForOAuthResult(
+  state: string,
+  abort: AbortController,
+): Promise<CallbackResponse> {
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (abort.signal.aborted) throw new Error("Login cancelled");
+    try {
+      const result = await fetchApi<CallbackResponse>(
+        `/auth/soundcloud/result?state=${encodeURIComponent(state)}`,
+        { signal: abort.signal },
+      );
+      return result;
+    } catch (err) {
+      // 404 = not yet available, keep polling. Anything else bubbles up.
+      const anyErr = err as { status?: number };
+      if (anyErr?.status !== 404) throw err;
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  }
+  throw new Error("Login timed out. Please try again.");
+}
+
 export default function LoginPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function handleConnect() {
     setLoading(true);
     setError(null);
+    abortRef.current?.abort();
+    const abort = new AbortController();
+    abortRef.current = abort;
 
     try {
       const inTauri = isTauri();
+      // In Tauri we poll for the result from this window — browser just lands
+      // on a static "you can close this tab" page. In a plain browser, let
+      // the existing callback page handle it.
       const returnTo = inTauri
-        ? "starlib://localhost/auth/soundcloud/callback"
+        ? "http://127.0.0.1:8000/auth/soundcloud/done"
         : `${window.location.origin}/auth/soundcloud/callback`;
       const data = await fetchApi<AuthorizeResponse>(
         `/auth/soundcloud/authorize?return_to=${encodeURIComponent(returnTo)}`,
       );
       sessionStorage.setItem("oauth_state", data.state);
+
       if (inTauri) {
         await openExternal(data.authorization_url);
-        setLoading(false);
+        const result = await pollForOAuthResult(data.state, abort);
+        storeTokens(
+          result.access_token,
+          result.refresh_token,
+          result.expires_in,
+        );
+        localStorage.setItem("sc_user", JSON.stringify(result.user));
+        sessionStorage.removeItem("oauth_state");
+        window.dispatchEvent(new Event("auth-changed"));
+        router.push("/library?source=soundcloud");
       } else {
         window.location.href = data.authorization_url;
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to initiate login");
+      if ((err as Error)?.name !== "AbortError") {
+        setError(
+          err instanceof Error ? err.message : "Failed to initiate login",
+        );
+      }
+    } finally {
       setLoading(false);
     }
+  }
+
+  function handleCancel() {
+    abortRef.current?.abort();
+    setLoading(false);
   }
 
   return (
@@ -53,8 +125,17 @@ export default function LoginPage() {
           </p>
 
           <Button onClick={handleConnect} disabled={loading} className="w-full">
-            {loading ? "Opening…" : "Connect with SoundCloud"}
+            {loading ? "Waiting for SoundCloud…" : "Connect with SoundCloud"}
           </Button>
+
+          {loading && (
+            <button
+              onClick={handleCancel}
+              className="text-muted-foreground hover:text-foreground mt-3 text-xs"
+            >
+              Cancel
+            </button>
+          )}
 
           {error && <p className="text-destructive mt-4 text-sm">{error}</p>}
         </div>

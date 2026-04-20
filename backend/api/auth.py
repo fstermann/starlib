@@ -28,11 +28,27 @@ router = APIRouter(prefix="/auth/soundcloud", tags=["authentication"])
 _ALLOWED_RETURN_ORIGINS = frozenset(
     {
         "http://localhost:3000",
+        "http://127.0.0.1:8000",
         "https://tauri.localhost",
         "tauri://localhost",
         "starlib://localhost",
     }
 )
+
+_DONE_HTML = """
+<!DOCTYPE html>
+<html><head><title>Authenticated</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; text-align: center;
+         padding: 4rem 1rem; color: #111; background: #fafafa; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+  p  { color: #555; margin: 0.25rem 0; }
+</style>
+</head><body>
+  <h1>SoundCloud connected</h1>
+  <p>You can close this tab and return to Starlib.</p>
+</body></html>
+"""
 
 # Server-side storage for pending OAuth flows: state -> (code_verifier, return_to)
 _pending_oauth_flows: dict[str, tuple[str, str]] = {}
@@ -199,6 +215,16 @@ def handle_redirect(
     redirect_url = f"{return_to}{separator}state={state}"
     html = _REDIRECT_HTML_TEMPLATE.replace("{redirect_url}", redirect_url)
     return HTMLResponse(content=html)
+
+
+@router.get("/done")
+def oauth_done() -> HTMLResponse:
+    """Static "you can close this tab" page for the Tauri OAuth flow.
+
+    The Tauri client polls `/result?state=...` independently to pick up the
+    exchanged tokens, so the browser itself just needs a dead-end page.
+    """
+    return HTMLResponse(content=_DONE_HTML)
 
 
 @router.get("/result", response_model=CallbackResponse)
