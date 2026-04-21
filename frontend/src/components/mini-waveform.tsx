@@ -12,6 +12,10 @@ interface MiniWaveformProps {
   artworkReady?: boolean;
   /** Draw bars anchored to the bottom (top-half waveform style) */
   halfHeight?: boolean;
+  /** Called when the user clicks to start playback (not when seeking the
+   * currently playing track). Lets the parent install queue context before
+   * playback begins. When omitted, falls back to `toggle(track)`. */
+  onStartPlay?: () => void;
 }
 
 const BAR_COUNT = 60;
@@ -22,6 +26,7 @@ export function MiniWaveform({
   className,
   artworkReady = true,
   halfHeight = false,
+  onStartPlay,
 }: MiniWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -204,11 +209,13 @@ export function MiniWaveform({
       if (isActive) {
         const rect = e.currentTarget.getBoundingClientRect();
         seek(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+      } else if (onStartPlay) {
+        onStartPlay();
       } else {
         toggle(track);
       }
     },
-    [isActive, seek, toggle, track],
+    [isActive, seek, toggle, track, onStartPlay],
   );
 
   return (
@@ -238,7 +245,8 @@ export function MiniWaveform({
           className="flex h-full w-full items-center gap-px"
           onClick={(e) => {
             e.stopPropagation();
-            toggle(track);
+            if (onStartPlay) onStartPlay();
+            else toggle(track);
           }}
           style={{ cursor: "pointer" }}
         >

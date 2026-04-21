@@ -35,6 +35,13 @@ export function useResizable({
     try {
       localStorage.setItem(storageKey, String(width));
     } catch {}
+    try {
+      window.dispatchEvent(
+        new CustomEvent("resizable-width-change", {
+          detail: { storageKey, width },
+        }),
+      );
+    } catch {}
   }, [width, storageKey]);
 
   const handleResizeStart = useCallback(
@@ -77,4 +84,33 @@ export function useResizable({
   }, [defaultWidth]);
 
   return { width, isAnimating, handleResizeStart, handleDoubleClick };
+}
+
+/** Read-only subscriber for a resizable width stored under `storageKey`.
+ * Returns the current persisted width, and stays in sync with live drags from
+ * any `useResizable({ storageKey })` instance in the same tab. */
+export function useResizableWidth(
+  storageKey: string,
+  fallback: number,
+): number {
+  const [width, setWidth] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      return stored ? Number(stored) || fallback : fallback;
+    } catch {
+      return fallback;
+    }
+  });
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ storageKey: string; width: number }>)
+        .detail;
+      if (detail?.storageKey === storageKey) setWidth(detail.width);
+    };
+    window.addEventListener("resizable-width-change", handler);
+    return () => window.removeEventListener("resizable-width-change", handler);
+  }, [storageKey]);
+
+  return width;
 }

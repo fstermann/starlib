@@ -156,7 +156,9 @@ async def _fetch_stream_url(track_id: int) -> tuple[str, float]:
 
 
 @router.get("/tracks/{track_id}/stream", response_model=StreamUrlResponse)
-async def get_track_stream(track_id: int) -> StreamUrlResponse:
+async def get_track_stream(
+    track_id: int, force_refresh: bool = False
+) -> StreamUrlResponse:
     """Return a signed HLS playlist URL for the given SoundCloud track.
 
     The result is cached in-memory and reused while still valid. Expired
@@ -166,6 +168,10 @@ async def get_track_stream(track_id: int) -> StreamUrlResponse:
     ----------
     track_id : int
         SoundCloud track id.
+    force_refresh : bool, optional
+        When true, evict any cached entry and fetch a fresh URL from
+        SoundCloud. Clients should set this after receiving a 403 on a
+        cached URL so the server does not hand them the same stale entry.
 
     Returns
     -------
@@ -176,6 +182,8 @@ async def get_track_stream(track_id: int) -> StreamUrlResponse:
     now = time.time()
 
     async with _cache_lock:
+        if force_refresh:
+            _cache.pop(track_id, None)
         entry = _cache.get(track_id)
         # Treat anything expiring in <60s as stale so clients don't race the expiry.
         if entry and entry.expires_at - now > 60:
