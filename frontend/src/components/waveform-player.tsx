@@ -428,7 +428,7 @@ export function WaveformPlayer() {
           {errorMsg}
         </span>
       ) : (
-        <span className="text-muted-foreground w-24 shrink-0 text-right font-mono text-xs tabular-nums">
+        <span className="text-muted-foreground w-24 shrink-0 text-right text-xs tabular-nums">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
       )}

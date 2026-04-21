@@ -124,7 +124,7 @@ const LIKES_COLUMNS: LikesCol[] = [
     sortKey: "duration",
     defaultWidth: 64,
     cellClassName:
-      "text-muted-foreground shrink-0 text-right font-mono text-xs tabular-nums",
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
     renderBody: ({ track }) => <>{formatDuration(track.duration)}</>,
   },
   {
@@ -132,7 +132,7 @@ const LIKES_COLUMNS: LikesCol[] = [
     header: "BPM",
     defaultWidth: 56,
     cellClassName:
-      "text-muted-foreground shrink-0 text-right font-mono text-xs tabular-nums",
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
     renderBody: ({ track }) => (
       <SoundcloudBpmCell
         trackId={extractId(track)}
@@ -146,7 +146,7 @@ const LIKES_COLUMNS: LikesCol[] = [
     sortKey: "playback_count",
     defaultWidth: 64,
     cellClassName:
-      "text-muted-foreground shrink-0 text-right font-mono text-xs tabular-nums",
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
     renderBody: ({ track }) => <>{formatPlays(track.playback_count)}</>,
   },
   {

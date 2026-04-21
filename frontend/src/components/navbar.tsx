@@ -70,7 +70,7 @@ export function Navbar() {
         <div className="flex shrink-0 items-center gap-2">
           {user ? (
             <>
-              <span className="text-muted-foreground hidden font-mono text-xs sm:block">
+              <span className="text-muted-foreground hidden text-xs sm:block">
                 {user.username}
               </span>
               <Button

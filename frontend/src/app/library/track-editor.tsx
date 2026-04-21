@@ -1736,7 +1736,7 @@ export function TrackEditor({
                         }
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`hover:text-foreground block truncate font-mono text-xs transition-colors ${commentData.soundcloud_id !== originalCommentData.soundcloud_id || commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink ? "text-warning/90" : "text-muted-foreground"}`}
+                        className={`hover:text-foreground block truncate text-xs transition-colors ${commentData.soundcloud_id !== originalCommentData.soundcloud_id || commentData.soundcloud_permalink !== originalCommentData.soundcloud_permalink ? "text-warning/90" : "text-muted-foreground"}`}
                       >
                         {commentData.soundcloud_permalink ||
                           `ID: ${commentData.soundcloud_id}`}

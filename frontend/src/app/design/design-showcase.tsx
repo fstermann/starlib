@@ -473,17 +473,17 @@ export function DesignShowcase() {
                 <CardContent className="text-sm">
                   <div className="flex justify-between border-b border-[var(--border)] py-1.5">
                     <span className="text-[var(--text-muted)]">Tracks</span>
-                    <span className="font-mono">2,184</span>
+                    <span className="tabular-nums">2,184</span>
                   </div>
                   <div className="flex justify-between border-b border-[var(--border)] py-1.5">
                     <span className="text-[var(--text-muted)]">
                       Missing metadata
                     </span>
-                    <span className="font-mono">37</span>
+                    <span className="tabular-nums">37</span>
                   </div>
                   <div className="flex justify-between py-1.5">
                     <span className="text-[var(--text-muted)]">Storage</span>
-                    <span className="font-mono">68.4 GB</span>
+                    <span className="tabular-nums">68.4 GB</span>
                   </div>
                 </CardContent>
               </Card>
@@ -615,7 +615,7 @@ export function DesignShowcase() {
                   }`}
                 >
                   <span>{t}</span>
-                  <span className="font-mono text-xs text-[var(--text-muted)]">
+                  <span className="text-xs text-[var(--text-muted)] tabular-nums">
                     128.0 · A♭m
                   </span>
                 </div>
@@ -686,9 +686,7 @@ function Section({
     <section id={id} className="space-y-6">
       <div className="flex items-baseline justify-between border-b border-[var(--border)] pb-2">
         <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-        <span className="font-mono text-xs text-[var(--text-muted)]">
-          {specRef}
-        </span>
+        <span className="text-xs text-[var(--text-muted)]">{specRef}</span>
       </div>
       <div className="space-y-8">{children}</div>
     </section>
@@ -771,7 +769,7 @@ function KnobSlider({
           onValueChange={(v) => onChange(v[0])}
         />
       </div>
-      <span className="w-14 font-mono text-xs tabular-nums">{display}</span>
+      <span className="w-14 text-xs tabular-nums">{display}</span>
       <button
         type="button"
         onClick={onReset}
