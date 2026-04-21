@@ -221,6 +221,46 @@ def test_search_filter_hits_flat_tag_columns(tmp_path: Path) -> None:
     assert len(hits_hay) == 1 and hits_hay[0]["title"] == "Two"
 
 
+def test_migration_0004_downgrade_upgrade_round_trip(tmp_path: Path) -> None:
+    """Downgrade then upgrade must preserve the soundcloud_track_bpm schema.
+
+    Regression: 0004's downgrade used to re-add ``algorithm_version`` as
+    nullable, drifting from 0003's NOT NULL shape.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    db = tmp_path / "cache.db"
+    cache_db.init_db(db)
+    assert _rev(db) == "0004"
+
+    # Confirm the column is gone at head.
+    head_cols = _cols(db, "soundcloud_track_bpm")
+    assert "algorithm_version" not in head_cols
+
+    # Point alembic at this scratch DB and go 0004 -> 0003 -> 0004.
+    cfg = Config()
+    cfg.set_main_option("script_location", "backend/alembic")
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
+
+    command.downgrade(cfg, "0003")
+    assert _rev(db) == "0003"
+
+    # After downgrade, algorithm_version must exist and be NOT NULL,
+    # matching 0003's upgrade().
+    conn = _connect(db)
+    info = conn.execute("PRAGMA table_info(soundcloud_track_bpm)").fetchall()
+    conn.close()
+    algo_col = next((row for row in info if row[1] == "algorithm_version"), None)
+    assert algo_col is not None, "algorithm_version missing after downgrade"
+    # PRAGMA table_info: row[3] is `notnull` (1 = NOT NULL).
+    assert algo_col[3] == 1, f"algorithm_version should be NOT NULL after downgrade, got {algo_col}"
+
+    command.upgrade(cfg, "0004")
+    assert _rev(db) == "0004"
+    assert "algorithm_version" not in _cols(db, "soundcloud_track_bpm")
+
+
 def test_peaks_round_trip(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
     cache_db.init_db(db)

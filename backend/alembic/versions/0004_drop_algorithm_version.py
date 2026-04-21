@@ -35,6 +35,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Re-add the column as nullable; data is not recoverable.
+    # Re-add the column matching 0003's schema (NOT NULL). Data isn't
+    # recoverable, so backfill with a default before flipping to NOT NULL
+    # inside the same batch op.
     with op.batch_alter_table("soundcloud_track_bpm") as batch_op:
-        batch_op.add_column(sa.Column("algorithm_version", sa.Integer(), nullable=True))
+        batch_op.add_column(
+            sa.Column("algorithm_version", sa.Integer(), nullable=False, server_default="1"),
+        )
+    # Drop the server_default so the restored schema matches 0003 exactly.
+    with op.batch_alter_table("soundcloud_track_bpm") as batch_op:
+        batch_op.alter_column("algorithm_version", server_default=None)
