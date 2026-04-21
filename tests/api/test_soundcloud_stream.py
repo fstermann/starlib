@@ -121,8 +121,8 @@ def test_cache_hit_skips_upstream_call(client: TestClient) -> None:
 def test_cache_expiry_triggers_refetch(client: TestClient) -> None:
     """When the cached entry is stale, the next call refetches upstream."""
 
-    signed_cdn_1 = f"https://cdn.example/first.m3u8?expires={int(time.time()) + 1800}"
-    signed_cdn_2 = f"https://cdn.example/second.m3u8?expires={int(time.time()) + 3600}"
+    signed_cdn_1 = f"https://cf-hls-media.sndcdn.com/first.m3u8?expires={int(time.time()) + 1800}"
+    signed_cdn_2 = f"https://cf-hls-media.sndcdn.com/second.m3u8?expires={int(time.time()) + 3600}"
 
     call_state = {"n": 0}
 
@@ -145,6 +145,46 @@ def test_cache_expiry_triggers_refetch(client: TestClient) -> None:
 
         r2 = client.get("/api/soundcloud/tracks/99/stream")
         assert r2.json()["url"] == signed_cdn_2
+
+
+def test_rejects_redirect_to_disallowed_host(client: TestClient) -> None:
+    """Location header pointing outside the SC CDN allowlist → 502."""
+
+    malicious = "https://evil.example.com/pwn.m3u8?expires=9999999999"
+
+    async def fake_http_get(url, *, token, follow_redirects):
+        if url.endswith("/streams"):
+            return _mock_response(
+                status_code=200,
+                json_data={"hls_aac_160_url": "https://api.soundcloud.com/streams/redirect"},
+            )
+        return _mock_response(status_code=302, headers={"Location": malicious})
+
+    with patch.object(soundcloud_api, "_http_get", new=AsyncMock(side_effect=fake_http_get)):
+        resp = client.get("/api/soundcloud/tracks/77/stream")
+
+    assert resp.status_code == 502
+    assert "allowlist" in resp.json()["detail"].lower()
+
+
+def test_accepts_sndcdn_subdomain_redirect(client: TestClient) -> None:
+    """Any *.sndcdn.com host is accepted by the allowlist."""
+
+    signed_cdn = "https://foo-bar.sndcdn.com/path.m3u8?expires=9999999999"
+
+    async def fake_http_get(url, *, token, follow_redirects):
+        if url.endswith("/streams"):
+            return _mock_response(
+                status_code=200,
+                json_data={"hls_aac_160_url": "https://api.soundcloud.com/streams/redirect"},
+            )
+        return _mock_response(status_code=302, headers={"Location": signed_cdn})
+
+    with patch.object(soundcloud_api, "_http_get", new=AsyncMock(side_effect=fake_http_get)):
+        resp = client.get("/api/soundcloud/tracks/78/stream")
+
+    assert resp.status_code == 200
+    assert resp.json()["url"] == signed_cdn
 
 
 def test_missing_hls_variant_returns_404(client: TestClient) -> None:
