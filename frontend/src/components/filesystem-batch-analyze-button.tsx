@@ -124,12 +124,12 @@ export function FilesystemBatchAnalyzeButton({
         disabled={!folderPath}
         title={
           consensus
-            ? "Analyze unanalyzed tracks in this folder (high-accuracy, ~3× slower)"
+            ? "Analyze unanalyzed tracks in this folder (consensus mode, ~3× slower)"
             : "Analyze BPM for all tracks in this folder that don't have one"
         }
       >
         <Waves className="size-3.5" />
-        Analyze BPMs{consensus ? " · high accuracy" : ""}
+        Analyze BPMs{consensus ? " · consensus" : ""}
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -147,7 +147,8 @@ export function FilesystemBatchAnalyzeButton({
             checked={consensus}
             onCheckedChange={setConsensus}
           >
-            High accuracy (consensus)
+            Consensus mode (median of 3 windows — more robust on tracks with
+            intros/breakdowns)
           </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>

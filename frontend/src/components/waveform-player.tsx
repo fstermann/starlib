@@ -112,6 +112,7 @@ export function WaveformPlayer() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [ready, setReady] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Keep isPlayingRef current for use in async callbacks
   useEffect(() => {
@@ -130,6 +131,7 @@ export function WaveformPlayer() {
     setReady(false);
     setCurrentTime(0);
     setDuration(0);
+    setErrorMsg(null);
 
     async function init() {
       if (!containerRef.current || cancelled) return;
@@ -185,14 +187,39 @@ export function WaveformPlayer() {
             currentTrack!.streamRefreshKey,
           );
           if (cancelled) return;
+          // Confirm the refreshed URL is actually live before swapping it in
+          // — otherwise we silently replace a broken source with another
+          // broken one and the user just sees a dead player. Range-byte HEAD
+          // equivalent works against HLS playlist CDNs that reject bare HEAD.
+          try {
+            const probe = await fetch(fresh.url, {
+              method: "GET",
+              headers: { Range: "bytes=0-0" },
+            });
+            if (!probe.ok) {
+              setErrorMsg(
+                `Refreshed stream URL returned ${probe.status}. Playback stopped.`,
+              );
+              return;
+            }
+          } catch (probeErr) {
+            console.error("Refreshed HLS URL probe failed:", probeErr);
+            setErrorMsg(
+              "Couldn't reach the refreshed stream URL. Playback stopped.",
+            );
+            return;
+          }
+          if (cancelled) return;
           hls?.destroy();
           hls = attachAudioSource(audio, fresh.url, {
             onExpired: () => {
               console.error("HLS stream expired twice — giving up");
+              setErrorMsg("Stream expired. Please try again.");
             },
           });
         } catch (err) {
           console.error("Failed to refresh HLS stream URL:", err);
+          setErrorMsg("Couldn't refresh the stream URL.");
         }
       };
 
@@ -391,10 +418,20 @@ export function WaveformPlayer() {
         style={{ cursor: "pointer" }}
       />
 
-      {/* Time display */}
-      <span className="text-muted-foreground w-24 shrink-0 text-right font-mono text-xs tabular-nums">
-        {formatTime(currentTime)} / {formatTime(duration)}
-      </span>
+      {/* Error surface — replaces the time display when stream validation
+          fails so users see *something* went wrong instead of a dead player. */}
+      {errorMsg ? (
+        <span
+          role="alert"
+          className="text-destructive w-fit shrink-0 truncate text-right text-xs"
+        >
+          {errorMsg}
+        </span>
+      ) : (
+        <span className="text-muted-foreground w-24 shrink-0 text-right text-xs tabular-nums">
+          {formatTime(currentTime)} / {formatTime(duration)}
+        </span>
+      )}
     </div>
   );
 }

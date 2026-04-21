@@ -152,9 +152,9 @@ function FormatChip({
 
   const label = (
     <>
-      <span className="font-mono">{displayFormat.toUpperCase()}</span>
+      <span>{displayFormat.toUpperCase()}</span>
       {displayFormat === "mp3" && !isPreferred && (
-        <span className="ml-1 font-mono opacity-50">{quality}k</span>
+        <span className="ml-1 opacity-50">{quality}k</span>
       )}
       {isPreferred && (
         <span className="bg-brand-soft text-primary ml-1 rounded px-1 text-xs font-semibold tracking-wide">
@@ -204,9 +204,7 @@ function FormatChip({
             }}
           >
             <span>Preferred</span>
-            <span className="font-mono opacity-60">
-              {preferredFormat.toUpperCase()}
-            </span>
+            <span className="opacity-60">{preferredFormat.toUpperCase()}</span>
           </button>
         )}
         <div className="flex gap-1.5">
@@ -214,7 +212,7 @@ function FormatChip({
             <button
               key={f}
               className={cn(
-                "flex-1 cursor-pointer rounded border px-2 py-1 font-mono text-xs font-medium transition-colors",
+                "flex-1 cursor-pointer rounded border px-2 py-1 text-xs font-medium transition-colors",
                 format === f
                   ? "bg-primary text-primary-foreground border-primary"
                   : "bg-accent text-accent-foreground hover:bg-accent border-transparent",
@@ -238,7 +236,7 @@ function FormatChip({
                 <button
                   key={q}
                   className={cn(
-                    "flex-1 cursor-pointer rounded border px-1 py-1 font-mono text-xs transition-colors",
+                    "flex-1 cursor-pointer rounded border px-1 py-1 text-xs transition-colors",
                     quality === q
                       ? "bg-primary text-primary-foreground border-primary"
                       : "bg-accent text-accent-foreground hover:bg-accent border-transparent",
