@@ -4,10 +4,13 @@ import base64
 import hashlib
 import logging
 import secrets
+import threading
+import time
+from collections import deque
 from urllib.parse import urlencode, urlparse
 
 import requests
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
 
 from backend.schemas.auth import (
@@ -55,6 +58,40 @@ _pending_oauth_flows: dict[str, tuple[str, str]] = {}
 
 # Server-side storage for completed OAuth flows: state -> CallbackResponse
 _completed_oauth_flows: dict[str, CallbackResponse] = {}
+
+# Simple in-memory per-IP rate limiter for the /result polling endpoint.
+# Keeps last-N request timestamps per client IP; rejects over threshold.
+_RATE_LIMIT_MAX_REQUESTS = 10
+_RATE_LIMIT_WINDOW_SECONDS = 60.0
+_rate_limit_buckets: dict[str, deque[float]] = {}
+_rate_limit_lock = threading.Lock()
+
+
+def _rate_limit_check(client_ip: str) -> bool:
+    """Return True if `client_ip` is within the rate limit, False otherwise.
+
+    Uses a sliding-window counter with the last ``_RATE_LIMIT_MAX_REQUESTS``
+    timestamps per IP. Expired entries are dropped opportunistically.
+    """
+    now = time.monotonic()
+    cutoff = now - _RATE_LIMIT_WINDOW_SECONDS
+    with _rate_limit_lock:
+        bucket = _rate_limit_buckets.get(client_ip)
+        if bucket is None:
+            bucket = deque(maxlen=_RATE_LIMIT_MAX_REQUESTS)
+            _rate_limit_buckets[client_ip] = bucket
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= _RATE_LIMIT_MAX_REQUESTS:
+            return False
+        bucket.append(now)
+        return True
+
+
+def _reset_rate_limiter_for_tests() -> None:
+    """Clear all rate-limit buckets. Intended for tests only."""
+    with _rate_limit_lock:
+        _rate_limit_buckets.clear()
 
 
 def _exchange_code(code: str, code_verifier: str) -> CallbackResponse:
@@ -228,11 +265,21 @@ def oauth_done() -> HTMLResponse:
 
 
 @router.get("/result", response_model=CallbackResponse)
-def get_oauth_result(state: str = Query(...)) -> CallbackResponse:
+def get_oauth_result(request: Request, state: str = Query(...)) -> CallbackResponse:
     """Retrieve completed OAuth result by state token.
 
-    One-time retrieval: the result is removed after being fetched.
+    One-time retrieval: the result is removed after being fetched. Per-IP
+    rate limited (10 req/min) to keep the polling loop from hammering the
+    server or being abused to enumerate state tokens.
     """
+    client_ip = request.client.host if request.client else "unknown"
+    if not _rate_limit_check(client_ip):
+        logger.warning("Rate limit exceeded on /auth/soundcloud/result: ip=%s state=%s", client_ip, state)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests.",
+        )
+
     result = _completed_oauth_flows.pop(state, None)
     if result is None:
         raise HTTPException(

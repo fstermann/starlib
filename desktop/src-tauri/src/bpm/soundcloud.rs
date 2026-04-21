@@ -144,7 +144,7 @@ async fn sc_get(http: &Client, token: &str, url: &str) -> Result<reqwest::Respon
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    unreachable!()
+    Err(anyhow!("sc_get exhausted retries without returning"))
 }
 
 // ---------- m3u8 parsing ----------

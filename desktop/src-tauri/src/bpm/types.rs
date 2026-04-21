@@ -1,8 +1,30 @@
 //! Public types for the BPM analysis module.
 
+use thiserror::Error;
+
 /// Current algorithm version. Bump when the analysis pipeline changes
 /// in a way that would produce different BPM values for the same input.
 pub const ALGORITHM_VERSION: u16 = 1;
+
+/// Typed errors produced by the BPM analysis pipeline.
+///
+/// These cover cases that were previously either swallowed (returning a
+/// zero-BPM `Low`-confidence result) or paved over with a silent default.
+/// Surface them to the caller so bad inputs don't masquerade as valid
+/// analysis results.
+#[derive(Debug, Error)]
+pub enum BpmError {
+    /// PCM buffer is too short to run the STFT / autocorrelation stages.
+    #[error("insufficient data for BPM analysis: {0}")]
+    InsufficientData(String),
+    /// The onset envelope is all zeros — the signal is silent or lacks any
+    /// detectable spectral change across frames.
+    #[error("silent or featureless input: onset envelope is all zeros")]
+    SilentInput,
+    /// The decoded track carries no sample-rate metadata. We refuse to guess.
+    #[error("decoded track is missing sample-rate metadata")]
+    MissingSampleRate,
+}
 
 /// Confidence bucket for a BPM estimate.
 ///
