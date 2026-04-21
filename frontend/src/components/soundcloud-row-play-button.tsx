@@ -68,6 +68,7 @@ export function SoundcloudRowPlayButton({
       variant="ghost"
       size="icon-xs"
       aria-label={isActive ? "Pause" : "Play"}
+      aria-busy={loading}
       disabled={loading}
       onClick={handleClick}
       className={cn(isActive && "text-primary", className)}

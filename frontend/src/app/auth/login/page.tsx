@@ -2,7 +2,7 @@
 
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { fetchApi } from "@/lib/api";
@@ -29,10 +29,35 @@ interface CallbackResponse {
 }
 
 const POLL_INTERVAL_MS = 1500;
+const POLL_JITTER_MS = 200;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+/** Sleep that clears its timeout when the signal aborts — without this a
+ * fired-and-forgotten setTimeout keeps a ref to the callback (and its closure)
+ * until the natural interval elapses, which is a leak on navigate-away. */
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /** Poll /auth/soundcloud/result until the browser-side redirect delivers it,
- * or we time out. Returns the tokens on success; throws on timeout / abort. */
+ * or we time out. Returns the tokens on success; throws on timeout / abort.
+ * Adds ±POLL_JITTER_MS jitter so N simultaneous logins don't align into a
+ * tight request train (pairs with the backend rate limiter). */
 async function pollForOAuthResult(
   state: string,
   abort: AbortController,
@@ -51,7 +76,8 @@ async function pollForOAuthResult(
       const anyErr = err as { status?: number };
       if (anyErr?.status !== 404) throw err;
     }
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    const jitter = (Math.random() * 2 - 1) * POLL_JITTER_MS;
+    await abortableSleep(Math.max(0, POLL_INTERVAL_MS + jitter), abort.signal);
   }
   throw new Error("Login timed out. Please try again.");
 }
@@ -61,6 +87,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Abort any in-flight poll when the component unmounts (e.g. user navigates
+  // away) so the setTimeout chain in pollForOAuthResult clears immediately.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function handleConnect() {
     setLoading(true);
