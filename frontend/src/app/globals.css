@@ -233,6 +233,143 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
+/* Star drifts translate only — rotation is owned by the 3D tumble */
+@keyframes star-drift-1 {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(22px, -18px);
+  }
+  50% {
+    transform: translate(0, -36px);
+  }
+  75% {
+    transform: translate(-22px, -18px);
+  }
+}
+
+@keyframes star-drift-2 {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(-18px, 26px);
+  }
+  66% {
+    transform: translate(26px, 14px);
+  }
+}
+
+@keyframes star-drift-3 {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(20px, 16px);
+  }
+  40% {
+    transform: translate(-10px, 22px);
+  }
+  60% {
+    transform: translate(-24px, -10px);
+  }
+  80% {
+    transform: translate(8px, -22px);
+  }
+}
+
+/* 3D tumble — two full Y spins + X/Z wobble for organic zero-G motion */
+@keyframes star-tumble-1 {
+  0% {
+    transform: rotateX(8deg) rotateY(0deg) rotateZ(0deg);
+  }
+  25% {
+    transform: rotateX(-10deg) rotateY(180deg) rotateZ(12deg);
+  }
+  50% {
+    transform: rotateX(14deg) rotateY(360deg) rotateZ(-8deg);
+  }
+  75% {
+    transform: rotateX(-6deg) rotateY(540deg) rotateZ(18deg);
+  }
+  100% {
+    transform: rotateX(8deg) rotateY(720deg) rotateZ(0deg);
+  }
+}
+
+@keyframes star-tumble-2 {
+  0% {
+    transform: rotateX(-6deg) rotateY(0deg) rotateZ(0deg);
+  }
+  33% {
+    transform: rotateX(18deg) rotateY(-240deg) rotateZ(-14deg);
+  }
+  66% {
+    transform: rotateX(-12deg) rotateY(-480deg) rotateZ(10deg);
+  }
+  100% {
+    transform: rotateX(-6deg) rotateY(-720deg) rotateZ(0deg);
+  }
+}
+
+@keyframes star-tumble-3 {
+  0% {
+    transform: rotateX(0deg) rotateY(0deg) rotateZ(-10deg);
+  }
+  20% {
+    transform: rotateX(15deg) rotateY(144deg) rotateZ(8deg);
+  }
+  40% {
+    transform: rotateX(-20deg) rotateY(288deg) rotateZ(-6deg);
+  }
+  60% {
+    transform: rotateX(10deg) rotateY(432deg) rotateZ(16deg);
+  }
+  80% {
+    transform: rotateX(-8deg) rotateY(576deg) rotateZ(-12deg);
+  }
+  100% {
+    transform: rotateX(0deg) rotateY(720deg) rotateZ(-10deg);
+  }
+}
+
+@keyframes sleepy-z {
+  0% {
+    transform: translate(0, 0) scale(0.8);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(6px, -12px) scale(1.3);
+    opacity: 0;
+  }
+}
+
+@keyframes planet-float {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(10px, -14px) rotate(6deg);
+  }
+}
+
+@keyframes satellite-orbit {
+  from {
+    transform: rotate(0deg) translateX(var(--orbit-r, 120px)) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(var(--orbit-r, 120px)) rotate(-360deg);
+  }
+}
+
 @keyframes saved-pulse {
   0% {
     background-color: oklch(
