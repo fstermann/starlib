@@ -203,11 +203,9 @@ Rules:
 
 ### 3.3 Monospace
 
-Geist Mono at `text-sm` (12px) or `text-base` (14px). Never use monospace for prose. Use it for:
+Geist Mono at `text-sm` (12px) or `text-base` (14px). Reserved for **folder paths, filenames, and URLs/hostnames** (e.g. `claude.com/code`, `console.anthropic.com`).
 
-- Terminal commands, code blocks, JSON
-- Track BPM / key / duration / file paths in dense tables
-- IDs, hashes, timestamps
+Do not use monospace for BPM, key, duration, play counts, model IDs, IDs, hashes, timestamps, labels, or any other numeric/textual content. Tabular numbers (`tabular-nums`) handle column alignment without switching typefaces. Terminal commands and code samples in prose use monospace via the default `<code>` styling; new UI content should not opt in.
 
 ---
 

@@ -924,7 +924,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           value={aiSettings.ollama.model}
                           onValueChange={handleOllamaModelChange}
                         >
-                          <SelectTrigger className="h-8 w-fit min-w-48 font-mono text-xs">
+                          <SelectTrigger className="h-8 w-fit min-w-48 text-xs">
                             <SelectValue placeholder="Select a model" />
                           </SelectTrigger>
                           <SelectContent>
@@ -932,7 +932,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               <SelectItem
                                 key={m.id}
                                 value={m.id}
-                                className="font-mono text-xs"
+                                className="text-xs"
                               >
                                 {m.id}
                                 {m.size && m.size > 0 && (
@@ -996,7 +996,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                             setAiSettings(next);
                           }}
                         >
-                          <SelectTrigger className="h-8 w-fit min-w-48 font-mono text-xs">
+                          <SelectTrigger className="h-8 w-fit min-w-48 text-xs">
                             <SelectValue placeholder="Select a model" />
                           </SelectTrigger>
                           <SelectContent>
@@ -1004,7 +1004,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               <SelectItem
                                 key={m.id}
                                 value={m.id}
-                                className="font-mono text-xs"
+                                className="text-xs"
                               >
                                 {m.display_name ?? m.id}
                               </SelectItem>
@@ -1103,7 +1103,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                             value={aiSettings.anthropic.model}
                             onValueChange={handleAnthropicModelChange}
                           >
-                            <SelectTrigger className="h-8 w-fit min-w-64 font-mono text-xs">
+                            <SelectTrigger className="h-8 w-fit min-w-64 text-xs">
                               <SelectValue placeholder="Select a model" />
                             </SelectTrigger>
                             <SelectContent>
@@ -1111,7 +1111,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                                 <SelectItem
                                   key={m.id}
                                   value={m.id}
-                                  className="font-mono text-xs"
+                                  className="text-xs"
                                 >
                                   {m.display_name ?? m.id}
                                 </SelectItem>

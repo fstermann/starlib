@@ -127,6 +127,14 @@ export interface BatchUpdateResponse {
   results: BatchResultItem[];
 }
 
+// ==================== BPM Types ====================
+
+export interface LocalBpmResult {
+  file_path: string;
+  bpm: number;
+  algorithm_version: number;
+}
+
 // ==================== Ruleset Types ====================
 
 export type RuleType = "move" | "convert" | "copy";
@@ -744,7 +752,7 @@ export const api = {
     filePath: string,
     bpm: number,
     algorithmVersion: number,
-  ): Promise<{ file_path: string; bpm: number; algorithm_version: number }> {
+  ): Promise<LocalBpmResult> {
     return fetchApi("/api/bpm/local", {
       method: "POST",
       body: JSON.stringify({

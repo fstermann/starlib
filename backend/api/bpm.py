@@ -16,7 +16,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from backend.core.services import cache_db
+from backend.core.services import app_settings as app_settings_service
+from backend.core.services import cache_db, sc_auth_cache
 from soundcloud_tools.oauth import OAuthManager
 from soundcloud_tools.settings import get_settings
 
@@ -50,6 +51,49 @@ class LocalCandidatesResponse(BaseModel):
     file_paths: list[str]
 
 
+def _validate_library_folder(folder: str) -> Path:
+    """Resolve ``folder`` and ensure it lives under the configured library root.
+
+    Rejects traversal (``..``) and any path outside the user's configured
+    ``root_music_folder``.
+
+    Parameters
+    ----------
+    folder : str
+        Caller-supplied absolute or relative folder path.
+
+    Returns
+    -------
+    Path
+        Fully resolved absolute path inside the library root.
+
+    Raises
+    ------
+    HTTPException
+        400 if the path is outside the configured library root or no root is
+        configured.
+    """
+    root_str = app_settings_service.get_root_music_folder()
+    if not root_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No library root configured",
+        )
+    root = Path(root_str).expanduser().resolve()
+    candidate = Path(folder).expanduser()
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="folder must be inside the configured library root",
+        ) from exc
+    return resolved
+
+
 @router.get("/local/candidates", response_model=LocalCandidatesResponse)
 def get_local_candidates(folder: str, recursive: bool = True) -> LocalCandidatesResponse:
     """Return indexed-but-unanalyzed tracks in `folder` for the batch runner.
@@ -57,7 +101,8 @@ def get_local_candidates(folder: str, recursive: bool = True) -> LocalCandidates
     Filters to tracks with `bpm IS NULL` in cache_db. `recursive=True` (default)
     walks subdirectories, matching the library view's usual display scope.
     """
-    paths = cache_db.get_tracks_missing_bpm(Path(folder), recursive=recursive)
+    safe_folder = _validate_library_folder(folder)
+    paths = cache_db.get_tracks_missing_bpm(safe_folder, recursive=recursive)
     return LocalCandidatesResponse(file_paths=paths)
 
 
@@ -168,11 +213,11 @@ def get_soundcloud_client_token() -> ClientTokenResponse:
             detail="SoundCloud OAuth credentials not configured",
         )
     try:
-        token = OAuthManager(settings.client_id, settings.client_secret).get_access_token()
+        token = sc_auth_cache.get_cached_access_token(settings, OAuthManager)
     except Exception as exc:
         logger.exception("Failed to acquire SoundCloud client-credentials token")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"SoundCloud auth error: {exc}",
+            detail="SoundCloud auth unavailable",
         ) from exc
     return ClientTokenResponse(token=token)

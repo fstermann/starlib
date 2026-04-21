@@ -81,6 +81,7 @@ export function WaveformPlayer() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [ready, setReady] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const treeWidth = useResizableWidth("tree-panel-width", 240);
 
@@ -169,6 +170,7 @@ export function WaveformPlayer() {
     setReady(false);
     setCurrentTime(0);
     setDuration(0);
+    setErrorMsg(null);
 
     async function init() {
       if (!containerRef.current || cancelled) return;
@@ -195,9 +197,8 @@ export function WaveformPlayer() {
       // wastes latency. The audio element + HLS attach happens as soon as
       // the stream URL is ready, independent of peaks/WaveSurfer.
       const wsImportPromise = import("wavesurfer.js");
-      const hoverImportPromise = import(
-        "wavesurfer.js/dist/plugins/hover.esm.js"
-      );
+      const hoverImportPromise =
+        import("wavesurfer.js/dist/plugins/hover.esm.js");
       const peaksPromise: Promise<number[]> = isStream
         ? currentTrack!.waveformUrl
           ? getCachedSoundcloudPeaks(currentTrack!.waveformUrl, numPeaks).then(
@@ -205,21 +206,18 @@ export function WaveformPlayer() {
             )
           : Promise.resolve(new Array<number>(numPeaks).fill(0.5))
         : api.getFilePeaks(currentTrack!.filePath, numPeaks);
-      const streamUrlPromise: Promise<string | undefined> =
-        currentTrack!.streamUrl
-          ? Promise.resolve(currentTrack!.streamUrl)
-          : currentTrack!.streamRefreshKey !== undefined &&
-              currentTrack!.streamRefreshKey !== null
-            ? getCachedSoundcloudStreamUrl(
-                currentTrack!.streamRefreshKey,
-              ).catch((err) => {
-                console.error(
-                  "Failed to resolve SoundCloud stream URL:",
-                  err,
-                );
+      const streamUrlPromise: Promise<string | undefined> = currentTrack!
+        .streamUrl
+        ? Promise.resolve(currentTrack!.streamUrl)
+        : currentTrack!.streamRefreshKey !== undefined &&
+            currentTrack!.streamRefreshKey !== null
+          ? getCachedSoundcloudStreamUrl(currentTrack!.streamRefreshKey).catch(
+              (err) => {
+                console.error("Failed to resolve SoundCloud stream URL:", err);
                 return undefined;
-              })
-            : Promise.resolve(undefined);
+              },
+            )
+          : Promise.resolve(undefined);
 
       const audio = new Audio();
       audio.preload = "auto";
@@ -254,6 +252,29 @@ export function WaveformPlayer() {
             { forceRefresh: true },
           );
           if (cancelled) return;
+          // Confirm the refreshed URL is actually live before swapping it in
+          // — otherwise we silently replace a broken source with another
+          // broken one and the user just sees a dead player. Range-byte HEAD
+          // equivalent works against HLS playlist CDNs that reject bare HEAD.
+          try {
+            const probe = await fetch(url, {
+              method: "GET",
+              headers: { Range: "bytes=0-0" },
+            });
+            if (!probe.ok) {
+              setErrorMsg(
+                `Refreshed stream URL returned ${probe.status}. Playback stopped.`,
+              );
+              return;
+            }
+          } catch (probeErr) {
+            console.error("Refreshed HLS URL probe failed:", probeErr);
+            setErrorMsg(
+              "Couldn't reach the refreshed stream URL. Playback stopped.",
+            );
+            return;
+          }
+          if (cancelled) return;
           hls?.destroy();
           hls = attachAudioSource(audio, url, {
             onExpired: () => {
@@ -263,10 +284,12 @@ export function WaveformPlayer() {
               console.warn(
                 "[player] refreshed HLS URL also returned 403; giving up",
               );
+              setErrorMsg("Stream expired. Please try again.");
             },
           });
         } catch (err) {
           console.warn("[player] failed to refresh HLS stream URL:", err);
+          setErrorMsg("Couldn't refresh the stream URL.");
         }
       };
 
@@ -613,11 +636,21 @@ export function WaveformPlayer() {
         </div>
       </div>
 
-      {/* Time column */}
-      <div className="flex shrink-0 flex-col justify-center px-3 font-mono text-xs tabular-nums">
-        <span>{formatTime(currentTime)}</span>
-        <span className="text-muted-foreground">{formatTime(duration)}</span>
-      </div>
+      {/* Time column — replaced by error surface when stream validation fails
+          so users see *something* went wrong instead of a dead player. */}
+      {errorMsg ? (
+        <div
+          role="alert"
+          className="text-destructive flex shrink-0 items-center px-3 text-xs"
+        >
+          {errorMsg}
+        </div>
+      ) : (
+        <div className="flex shrink-0 flex-col justify-center px-3 font-mono text-xs tabular-nums">
+          <span>{formatTime(currentTime)}</span>
+          <span className="text-muted-foreground">{formatTime(duration)}</span>
+        </div>
+      )}
 
       {/* Waveform (fills remaining width) */}
       <div className="relative flex min-w-0 flex-1 items-center pr-4">

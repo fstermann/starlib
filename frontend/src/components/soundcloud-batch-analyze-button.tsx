@@ -156,12 +156,12 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
         onClick={run}
         title={
           consensus
-            ? "Analyze visible tracks in high-accuracy mode (~3× slower per track)"
+            ? "Analyze visible tracks in consensus mode (~3× slower per track)"
             : "Analyze BPM for all visible tracks that don't have one"
         }
       >
         <Waves className="size-3.5" />
-        Analyze BPMs{consensus ? " · high accuracy" : ""}
+        Analyze BPMs{consensus ? " · consensus" : ""}
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -179,7 +179,8 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
             checked={consensus}
             onCheckedChange={setConsensus}
           >
-            High accuracy (consensus)
+            Consensus mode (median of 3 windows — more robust on tracks with
+            intros/breakdowns)
           </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>

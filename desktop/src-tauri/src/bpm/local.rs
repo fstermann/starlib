@@ -7,12 +7,21 @@
 
 use std::path::Path;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use super::tempo::consensus;
 use super::types::AnalysisMode;
 use super::{decode, tempo, types::BpmOptions, types::BpmResult};
 
+/// Offsets (as percent of track length) used in consensus mode.
+///
+/// Consensus mode is a *robustness* technique, not a precision one: by
+/// sampling three windows spaced across the track and taking the median,
+/// we avoid landing entirely inside a breakdown / intro / outro and
+/// reporting that section's tempo (or none at all). It does **not** produce
+/// a higher-resolution BPM value than single-shot — the per-window estimator
+/// is the same code path, and the final answer is one of the three window
+/// medians, not an average.
 const CONSENSUS_OFFSETS_PCT: &[f32] = &[25.0, 50.0, 75.0];
 
 /// Analyse a snippet of `path` and return a BPM estimate.
@@ -100,7 +109,7 @@ mod tests {
         f.write_all(&byte_rate.to_le_bytes()).unwrap();
         f.write_all(&2u16.to_le_bytes()).unwrap(); // block align
         f.write_all(&16u16.to_le_bytes()).unwrap(); // bits per sample
-        // data chunk
+                                                    // data chunk
         f.write_all(b"data").unwrap();
         f.write_all(&data_size.to_le_bytes()).unwrap();
         for s in samples {
