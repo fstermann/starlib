@@ -5,11 +5,28 @@
 //! underlying modules.
 
 use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 
 use serde::Serialize;
+use tokio::sync::Semaphore;
 
 use crate::bpm::types::AnalysisMode;
 use crate::bpm::{self, BpmOptions, Confidence};
+
+/// Global bound on concurrent blocking BPM analysis tasks.
+///
+/// Tauri's `spawn_blocking` pool is shared with the rest of the app; without
+/// a bound a bulk-analyze run would flood it. Size the semaphore to logical
+/// CPU count so we saturate cores without starving other blocking work.
+fn analysis_semaphore() -> &'static Arc<Semaphore> {
+    static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SEM.get_or_init(|| {
+        let n = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        Arc::new(Semaphore::new(n))
+    })
+}
 
 /// JSON representation of a `BpmResult` across the invoke boundary.
 #[derive(Serialize)]
@@ -44,12 +61,27 @@ fn to_response(r: bpm::BpmResult) -> BpmResponse {
 /// Runs synchronously on a blocking thread (the decode + analyze together
 /// take ~50 ms on a typical track); Tauri invoke handlers can be called from
 /// async contexts so no extra wrapper is needed for responsiveness.
+///
+/// # Parameters
+/// - `consensus`: when `true`, run the analyzer on three windows spaced
+///   across the track (25% / 50% / 75%) and take the median. This is a
+///   **robustness** toggle — it protects against intro/breakdown/outro
+///   sections that would mislead a single-window read — not a precision
+///   toggle. Per-window analysis uses the same algorithm either way.
+///   Costs roughly 3× CPU for the analyze step (decode only runs once).
+///   Param name is part of the wire contract; see the frontend `invoke` call.
 #[tauri::command]
 pub async fn analyze_local_bpm(
     path: String,
     consensus: Option<bool>,
 ) -> Result<BpmResponse, String> {
+    let sem = analysis_semaphore().clone();
+    let _permit = sem
+        .acquire_owned()
+        .await
+        .map_err(|e| format!("analysis semaphore closed: {e}"))?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _permit = _permit; // hold across the blocking work
         let mut options = BpmOptions::default();
         if consensus.unwrap_or(false) {
             options.mode = AnalysisMode::Consensus;
