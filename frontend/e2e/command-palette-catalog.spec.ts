@@ -35,12 +35,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
 ]);
 
 /** Allowed ID prefixes for dynamic providers (folder shortcuts, search hits). */
-const KNOWN_COMMAND_PREFIXES = [
-  "folder:",
-  "local:",
-  "sc-track:",
-  "sc-user:",
-];
+const KNOWN_COMMAND_PREFIXES = ["folder:", "local:", "sc-track:", "sc-user:"];
 
 async function setupMocks(page: Page) {
   // Seed token so the SC client runs.
@@ -134,9 +129,7 @@ async function setupMocks(page: Page) {
 async function collectCommandIds(page: Page): Promise<Set<string>> {
   const ids = new Set<string>();
   // Empty palette (captures always-on nav + actions).
-  await page
-    .getByRole("button", { name: /open command palette/i })
-    .click();
+  await page.getByRole("button", { name: /open command palette/i }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   const empty = await dialog.locator("[data-command-id]").all();
