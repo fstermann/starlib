@@ -1,6 +1,6 @@
 "use client";
 
-import { Compass, Heart, ListPlus } from "lucide-react";
+import { Compass, Heart, ListPlus, Search } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -15,6 +15,7 @@ import { LIKES_COLUMN_DEFS, LikesTable } from "@/components/likes-table";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { SoundcloudBatchAnalyzeButton } from "@/components/soundcloud-batch-analyze-button";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Tooltip,
@@ -46,6 +47,7 @@ import {
   useLikesFilter,
 } from "./use-likes-filter";
 import { usePlaylistTracks } from "./use-playlist-tracks";
+import { useSoundcloudTrackSearch } from "./use-soundcloud-track-search";
 import { useUserPlaylists } from "./use-user-playlists";
 
 /** Hide attributes that don't apply to the current tab/context. */
@@ -57,7 +59,8 @@ function filterSchemaForTab(
   return {
     ...schema,
     attributes: schema.attributes.filter((a) => {
-      if (a.id === "exclude_my_likes") return tab === "discover";
+      if (a.id === "exclude_my_likes")
+        return tab === "discover" || tab === "search";
       if (a.id === "in_collection") return hasCollection;
       return true;
     }),
@@ -79,13 +82,24 @@ export function SoundcloudView() {
   // User search state (Discover tab)
   const [selectedUser, setSelectedUser] = useState<SCUser | null>(null);
 
+  // Track search state (Search tab)
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Which SoundCloud user we're currently viewing
   const activeUrn: string | "me" | null =
-    tab === "me" ? "me" : (selectedUser?.urn ?? null);
+    tab === "me"
+      ? "me"
+      : tab === "discover"
+        ? (selectedUser?.urn ?? null)
+        : null;
 
   const myLikes = useLikes("me");
   const discoverLikes = useLikes(tab === "discover" ? activeUrn : null);
-  const activeLikes = tab === "me" ? myLikes : discoverLikes;
+  const trackSearch = useSoundcloudTrackSearch(
+    tab === "search" ? searchQuery : "",
+  );
+  const activeLikes =
+    tab === "me" ? myLikes : tab === "discover" ? discoverLikes : trackSearch;
 
   const { playlists } = useUserPlaylists(activeUrn);
 
@@ -180,7 +194,7 @@ export function SoundcloudView() {
     () =>
       makeLikesFilterPredicate(
         filterOptions,
-        tab === "discover" ? myLikedIds : undefined,
+        tab === "discover" || tab === "search" ? myLikedIds : undefined,
         collectionIds,
       ),
     [filterOptions, tab, myLikedIds, collectionIds],
@@ -234,15 +248,27 @@ export function SoundcloudView() {
             <Compass className="size-3.5" />
             Discover
           </ToggleGroupItem>
+          <ToggleGroupItem
+            value="search"
+            className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
+          >
+            <Search className="size-3.5" />
+            Search
+          </ToggleGroupItem>
         </ToggleGroup>
       </LibraryTitle>
     ),
   });
 
   const storageKey =
-    tab === "me" ? "library:soundcloud:me" : "library:soundcloud:discover";
+    tab === "me"
+      ? "library:soundcloud:me"
+      : tab === "discover"
+        ? "library:soundcloud:discover"
+        : "library:soundcloud:search";
 
   const viewingUser = tab === "discover" && !selectedUser;
+  const hideTreePanel = viewingUser || tab === "search";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -260,8 +286,24 @@ export function SoundcloudView() {
         </div>
       )}
 
+      {/* Search tab: free-text SoundCloud track search */}
+      {tab === "search" && (
+        <div className="border-border border-b px-4 py-2">
+          <div className="relative">
+            <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search SoundCloud tracks or paste a track URL…"
+              className="pl-9"
+              autoFocus
+            />
+          </div>
+        </div>
+      )}
+
       <div className="flex min-h-0 flex-1">
-        {!viewingUser && (
+        {!hideTreePanel && (
           <LikesTreePanel
             playlists={playlists}
             selectedId={nodeId ?? LIKES_NODE_ID}
@@ -284,6 +326,7 @@ export function SoundcloudView() {
             myLikedIds={myLikedIds}
             collectionIds={collectionIds}
             hasSelectedUser={selectedUser != null}
+            searchQuery={searchQuery}
             seedSchema={seedSchema}
             filterState={filterState}
             onFilterChange={setFilter}
@@ -306,6 +349,7 @@ interface LikesViewProps {
   myLikedIds: Set<number>;
   collectionIds: Set<number>;
   hasSelectedUser: boolean;
+  searchQuery: string;
 
   seedSchema: FilterSchemaResponse;
   filterState: import("@/lib/filters/schema").FilterState;
@@ -327,6 +371,7 @@ function LikesView({
   myLikedIds,
   collectionIds,
   hasSelectedUser,
+  searchQuery,
   seedSchema,
   filterState,
   onFilterChange,
@@ -347,7 +392,7 @@ function LikesView({
   const { filteredTracks } = useLikesFilter(
     sourceTracks,
     filterOptions,
-    tab === "discover" ? myLikedIds : undefined,
+    tab === "discover" || tab === "search" ? myLikedIds : undefined,
     collectionIds,
   );
 
@@ -513,6 +558,12 @@ function LikesView({
               Search for a user to discover their library
             </p>
           </div>
+        ) : tab === "search" && !searchQuery.trim() ? (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-muted-foreground text-sm">
+              Type to search SoundCloud tracks
+            </p>
+          </div>
         ) : sourceTracks.length === 0 && !loading ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-muted-foreground text-sm">
@@ -520,7 +571,9 @@ function LikesView({
                 ? "This playlist is empty"
                 : isAllPlaylistsView
                   ? "No playlists"
-                  : "No liked tracks found"}
+                  : tab === "search"
+                    ? "No tracks matched your search"
+                    : "No liked tracks found"}
             </p>
           </div>
         ) : (
