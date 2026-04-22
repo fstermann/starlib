@@ -166,6 +166,8 @@ export function WaveformPlayer() {
     let hls: Hls | null = null;
     let cancelled = false;
     let retriedStreamRefresh = false;
+    let resizeObserver: ResizeObserver | null = null;
+    let resizeDebounce: ReturnType<typeof setTimeout> | null = null;
 
     setReady(false);
     setCurrentTime(0);
@@ -405,6 +407,53 @@ export function WaveformPlayer() {
 
       wsRef.current = ws;
 
+      // Refetch peaks when the container width changes meaningfully (tree
+      // panel drag, window resize). WaveSurfer's own ResizeObserver only
+      // re-renders the existing peak array, which leaves bars stretched or
+      // compressed. Refetching at the new bar count restores visual
+      // fidelity. The peaks cache is keyed by numPeaks, so repeated
+      // resizes to widths we've already seen are free.
+      let currentNumPeaks = numPeaks;
+      const handleResize = () => {
+        if (!containerRef.current || cancelled || !wsRef.current) return;
+        const w = containerRef.current.clientWidth;
+        if (w <= 0) return;
+        const newNumPeaks = Math.min(
+          2000,
+          Math.max(50, Math.ceil(w / (BAR_WIDTH + BAR_GAP))),
+        );
+        if (
+          Math.abs(newNumPeaks - currentNumPeaks) / currentNumPeaks <
+          0.1
+        ) {
+          return;
+        }
+        currentNumPeaks = newNumPeaks;
+        const peaksP: Promise<number[] | null | undefined> = isStream
+          ? currentTrack!.waveformUrl
+            ? getCachedSoundcloudPeaks(
+                currentTrack!.waveformUrl,
+                newNumPeaks,
+              )
+            : Promise.resolve(null)
+          : api.getFilePeaks(currentTrack!.filePath, newNumPeaks);
+        peaksP
+          .then((p) => {
+            if (cancelled || !wsRef.current) return;
+            if (p && p.length > 0) {
+              wsRef.current.setOptions({ peaks: [p] });
+            }
+          })
+          .catch(() => {
+            /* Best-effort; keep existing peaks on failure. */
+          });
+      };
+      resizeObserver = new ResizeObserver(() => {
+        if (resizeDebounce) clearTimeout(resizeDebounce);
+        resizeDebounce = setTimeout(handleResize, 150);
+      });
+      resizeObserver.observe(containerRef.current);
+
       ws.on("ready", () => {
         if (cancelled) return;
         setDuration(knownDuration);
@@ -450,6 +499,9 @@ export function WaveformPlayer() {
       registerSeek(null);
       reportProgress(0);
       reportDuration(0);
+      if (resizeDebounce) clearTimeout(resizeDebounce);
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       ws?.destroy();
       wsRef.current = null;
       hls?.destroy();
