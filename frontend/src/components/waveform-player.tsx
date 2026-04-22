@@ -1,11 +1,20 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import Hls from "hls.js";
+import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type WaveSurferType from "wavesurfer.js";
 
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
+import {
+  getCachedSoundcloudPeaks,
+  getCachedSoundcloudStreamUrl,
+  invalidateSoundcloudStreamUrl,
+} from "@/lib/soundcloud-cache";
+import { useResizableWidth } from "@/lib/use-resizable";
+import { cn } from "@/lib/utils";
 
 /** Heuristic: URL is an HLS playlist (by extension). */
 function isHlsUrl(url: string): boolean {
@@ -13,50 +22,6 @@ function isHlsUrl(url: string): boolean {
   return noQuery.endsWith(".m3u8");
 }
 
-/** Fetch SoundCloud's pre-rendered waveform JSON (samples in 0..1000) and
- * resample into `n` normalized peaks in 0..1. Returns null on any failure so
- * callers can fall back to a flat placeholder. */
-async function fetchSoundcloudPeaks(
-  url: string,
-  n: number,
-): Promise<number[] | null> {
-  try {
-    // SoundCloud's waveform_url typically points at a PNG
-    // (e.g. `https://wave.sndcdn.com/xxx_m.png`). The same path with a
-    // `.json` extension returns the sample array we actually want.
-    const jsonUrl = url.replace(/\.png(\?|$)/, ".json$1");
-    const resp = await fetch(jsonUrl);
-    if (!resp.ok) return null;
-    const data = (await resp.json()) as { samples?: unknown };
-    const samples = data.samples;
-    if (!Array.isArray(samples) || samples.length === 0) return null;
-    let max = 0;
-    for (const v of samples) {
-      if (typeof v === "number" && v > max) max = v;
-    }
-    if (max === 0) return null;
-    const out = new Array<number>(n);
-    for (let i = 0; i < n; i++) {
-      const start = Math.floor((i * samples.length) / n);
-      const end = Math.max(
-        start + 1,
-        Math.floor(((i + 1) * samples.length) / n),
-      );
-      let peak = 0;
-      for (let j = start; j < end && j < samples.length; j++) {
-        const v = samples[j];
-        if (typeof v === "number" && v > peak) peak = v;
-      }
-      out[i] = peak / max;
-    }
-    return out;
-  } catch {
-    return null;
-  }
-}
-
-/** Attach a URL to an <audio> element using hls.js when needed. Returns an
- * Hls instance (or null) that the caller must destroy on teardown. */
 function attachAudioSource(
   audio: HTMLAudioElement,
   url: string,
@@ -80,7 +45,6 @@ function attachAudioSource(
     return hls;
   }
   if (audio.canPlayType("application/vnd.apple.mpegurl")) {
-    // Safari / WKWebView native HLS.
     audio.src = url;
     return null;
   }
@@ -99,27 +63,104 @@ export function WaveformPlayer() {
   const {
     currentTrack,
     isPlaying,
-    pause,
+    toggle,
+    next,
+    previous,
+    peekNext,
+    hasNext,
+    hasPrevious,
     reportProgress,
     registerSeek,
     reportDuration,
-    largePlayer,
   } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurferType | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const isPlayingRef = useRef(isPlaying);
+  const nextRef = useRef(next);
+  const hasNextRef = useRef(hasNext);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [ready, setReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
-  // Keep isPlayingRef current for use in async callbacks
+  const treeWidth = useResizableWidth("tree-panel-width", 240);
+
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+  useEffect(() => {
+    nextRef.current = next;
+    hasNextRef.current = hasNext;
+  }, [next, hasNext]);
 
-  // Initialize / rebuild WaveSurfer whenever the track changes
+  // Space toggles play/pause. Ignored when the user is typing.
+  useEffect(() => {
+    if (!currentTrack) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+      }
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        toggle();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [currentTrack, toggle]);
+
+  // OS / hardware media keys (play, pause, next track, previous track).
+  // Uses the browser's Media Session API — the same mechanism SoundCloud
+  // and Spotify use to react to keyboard media keys and Bluetooth remotes.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    const ms = navigator.mediaSession;
+    if (!currentTrack) {
+      ms.metadata = null;
+      ms.setActionHandler("play", null);
+      ms.setActionHandler("pause", null);
+      ms.setActionHandler("nexttrack", null);
+      ms.setActionHandler("previoustrack", null);
+      return;
+    }
+    const art =
+      currentTrack.artworkUrl ?? api.getArtworkUrl(currentTrack.filePath);
+    ms.metadata = new MediaMetadata({
+      title: currentTrack.title ?? currentTrack.fileName,
+      artist: currentTrack.artist ?? "",
+      artwork: art
+        ? [
+            { src: art, sizes: "512x512", type: "image/jpeg" },
+            { src: art, sizes: "256x256", type: "image/jpeg" },
+          ]
+        : undefined,
+    });
+    ms.playbackState = isPlaying ? "playing" : "paused";
+    ms.setActionHandler("play", () => toggle());
+    ms.setActionHandler("pause", () => toggle());
+    ms.setActionHandler("nexttrack", hasNext ? () => next() : null);
+    ms.setActionHandler("previoustrack", hasPrevious ? () => previous() : null);
+    return () => {
+      ms.setActionHandler("play", null);
+      ms.setActionHandler("pause", null);
+      ms.setActionHandler("nexttrack", null);
+      ms.setActionHandler("previoustrack", null);
+    };
+  }, [currentTrack, isPlaying, toggle, next, previous, hasNext, hasPrevious]);
+
   useEffect(() => {
     if (!currentTrack) return;
 
@@ -136,55 +177,82 @@ export function WaveformPlayer() {
     async function init() {
       if (!containerRef.current || cancelled) return;
 
-      const { default: WaveSurfer } = await import("wavesurfer.js");
-      const { default: HoverPlugin } =
-        await import("wavesurfer.js/dist/plugins/hover.esm.js");
-      if (cancelled || !containerRef.current) return;
-
-      // Calculate how many peaks fit the container at the chosen bar dimensions.
       const BAR_WIDTH = 2;
       const BAR_GAP = 1;
-      const containerWidth = containerRef.current.clientWidth || 800;
-      const numPeaks = Math.min(
-        2000,
-        Math.max(50, Math.ceil(containerWidth / (BAR_WIDTH + BAR_GAP))),
-      );
+      // Fetch at max resolution once. WaveSurfer renders the bars for the
+      // current container width by sampling from this array — with 2000
+      // peaks we easily exceed any realistic bar count (a 3000+ px wide
+      // waveform at 2+1 px per bar = ~1000 bars), so resize never leaves
+      // gaps between bars.
+      const numPeaks = 2000;
 
-      // For local files we fetch pre-computed peaks from the backend so
-      // WaveSurfer doesn't need to decode via AudioContext (which fails in
-      // sandboxed WKWebView). For SoundCloud streams we use the track's
-      // pre-rendered waveform JSON (`waveform_url` on the track object)
-      // when available, falling back to a flat placeholder otherwise.
-      const isStream = !!currentTrack!.streamUrl;
-      let peaks: number[];
-      if (isStream) {
-        const scPeaks = currentTrack!.waveformUrl
-          ? await fetchSoundcloudPeaks(currentTrack!.waveformUrl, numPeaks)
-          : null;
-        peaks = scPeaks ?? new Array(numPeaks).fill(0.5);
-      } else {
-        peaks = await api.getFilePeaks(currentTrack!.filePath, numPeaks);
-      }
-      if (cancelled || !containerRef.current) return;
+      // Skeleton SoundCloud entries from the queue have no `streamUrl` yet —
+      // `streamRefreshKey` is the durable marker that this is a SC track.
+      const isStream =
+        !!currentTrack!.streamUrl ||
+        currentTrack!.streamRefreshKey !== undefined;
 
-      // Use an <audio> element for playback so WaveSurfer uses the native
-      // media pipeline instead of Web Audio API. crossOrigin is intentionally
-      // omitted: peaks are pre-fetched so no Web Audio decoding is needed, and
-      // CORS mode on the <audio> element can cause playback failures in the
-      // Tauri WKWebView when the WebKit media assertion (RBS) is unavailable.
+      // Kick off all network-bound work in parallel:
+      //   - WaveSurfer module imports (cached after first track)
+      //   - peaks fetch (backend or SC CDN)
+      //   - stream URL resolution (only for SC skeleton queue entries)
+      // None of these depend on each other, so running them sequentially
+      // wastes latency. The audio element + HLS attach happens as soon as
+      // the stream URL is ready, independent of peaks/WaveSurfer.
+      const wsImportPromise = import("wavesurfer.js");
+      const hoverImportPromise =
+        import("wavesurfer.js/dist/plugins/hover.esm.js");
+      const peaksPromise: Promise<number[]> = isStream
+        ? currentTrack!.waveformUrl
+          ? getCachedSoundcloudPeaks(currentTrack!.waveformUrl, numPeaks).then(
+              (p) => p ?? new Array<number>(numPeaks).fill(0.5),
+            )
+          : Promise.resolve(new Array<number>(numPeaks).fill(0.5))
+        : api.getFilePeaks(currentTrack!.filePath, numPeaks);
+      const streamUrlPromise: Promise<string | undefined> = currentTrack!
+        .streamUrl
+        ? Promise.resolve(currentTrack!.streamUrl)
+        : currentTrack!.streamRefreshKey !== undefined &&
+            currentTrack!.streamRefreshKey !== null
+          ? getCachedSoundcloudStreamUrl(currentTrack!.streamRefreshKey).catch(
+              (err) => {
+                console.error("Failed to resolve SoundCloud stream URL:", err);
+                return undefined;
+              },
+            )
+          : Promise.resolve(undefined);
+
       const audio = new Audio();
-      audio.preload = "metadata";
+      audio.preload = "auto";
       audioRef.current = audio;
 
+      // Start playback as soon as the browser has enough buffered data.
+      // This fires well before WaveSurfer's `ready` (which waits for peaks
+      // + a finite duration), cutting the "click-to-first-note" latency.
+      const resolvedStreamUrl = await streamUrlPromise;
+      if (cancelled) return;
+      // For SC tracks the resolve can fail — bail before attaching a bad src.
+      if (
+        currentTrack!.streamRefreshKey !== undefined &&
+        currentTrack!.streamRefreshKey !== null &&
+        !resolvedStreamUrl
+      ) {
+        return;
+      }
       const sourceUrl =
-        currentTrack!.streamUrl ?? api.getAudioUrl(currentTrack!.filePath);
+        resolvedStreamUrl ?? api.getAudioUrl(currentTrack!.filePath);
 
       const onStreamExpired = async () => {
         if (retriedStreamRefresh || !currentTrack!.streamRefreshKey) return;
         retriedStreamRefresh = true;
+        // Evict the frontend cache AND force the backend to bypass its own
+        // cache — without force_refresh the server would hand us the same
+        // stale URL that just 403'd.
+        invalidateSoundcloudStreamUrl(currentTrack!.streamRefreshKey);
         try {
-          const fresh = await api.getSoundcloudStreamUrl(
+          const url = await getCachedSoundcloudStreamUrl(
             currentTrack!.streamRefreshKey,
+            { forceRefresh: true },
           );
           if (cancelled) return;
           // Confirm the refreshed URL is actually live before swapping it in
@@ -192,7 +260,7 @@ export function WaveformPlayer() {
           // broken one and the user just sees a dead player. Range-byte HEAD
           // equivalent works against HLS playlist CDNs that reject bare HEAD.
           try {
-            const probe = await fetch(fresh.url, {
+            const probe = await fetch(url, {
               method: "GET",
               headers: { Range: "bytes=0-0" },
             });
@@ -211,57 +279,72 @@ export function WaveformPlayer() {
           }
           if (cancelled) return;
           hls?.destroy();
-          hls = attachAudioSource(audio, fresh.url, {
+          hls = attachAudioSource(audio, url, {
             onExpired: () => {
-              console.error("HLS stream expired twice — giving up");
+              // Fresh URL also 403'd — likely an account/auth problem rather
+              // than expiry. Warn instead of error so the Next dev overlay
+              // stays quiet.
+              console.warn(
+                "[player] refreshed HLS URL also returned 403; giving up",
+              );
               setErrorMsg("Stream expired. Please try again.");
             },
           });
         } catch (err) {
-          console.error("Failed to refresh HLS stream URL:", err);
+          console.warn("[player] failed to refresh HLS stream URL:", err);
           setErrorMsg("Couldn't refresh the stream URL.");
         }
       };
 
       hls = attachAudioSource(audio, sourceUrl, { onExpired: onStreamExpired });
 
-      // Wait until audio.duration is a finite positive number before creating
-      // WaveSurfer. For AIFF files (served as transcoded WAV), loadedmetadata
-      // can fire with duration=Infinity if the browser hasn't read the full
-      // RIFF header yet. We also listen to durationchange so we catch the
-      // moment the browser settles on a real value.
-      await new Promise<void>((resolve) => {
-        if (isFinite(audio.duration) && audio.duration > 0) {
-          resolve();
-          return;
-        }
-        const cleanup = () => {
-          audio.removeEventListener("durationchange", check);
-          audio.removeEventListener("loadedmetadata", check);
-          audio.removeEventListener("error", onError);
-        };
-        const check = () => {
-          if (isFinite(audio.duration) && audio.duration > 0) {
-            cleanup();
-            resolve();
-          }
-        };
-        const onError = () => {
-          cleanup();
-          resolve();
-        };
-        audio.addEventListener("durationchange", check);
-        audio.addEventListener("loadedmetadata", check);
-        audio.addEventListener("error", onError, { once: true });
-      });
+      // Now await the remaining work in parallel: peaks, waveform module
+      // imports, and a finite audio.duration. Audio playback has already
+      // been kicked off via the `canplay` listener, so this path only
+      // affects when the waveform appears — not when sound starts.
+      const [peaks, { default: WaveSurfer }, { default: HoverPlugin }] =
+        await Promise.all([
+          peaksPromise,
+          wsImportPromise,
+          hoverImportPromise,
+          new Promise<void>((resolve) => {
+            if (isFinite(audio.duration) && audio.duration > 0) {
+              resolve();
+              return;
+            }
+            const cleanup = () => {
+              audio.removeEventListener("durationchange", check);
+              audio.removeEventListener("loadedmetadata", check);
+              audio.removeEventListener("error", onError);
+            };
+            const check = () => {
+              if (isFinite(audio.duration) && audio.duration > 0) {
+                // Kick off playback as soon as duration is known — earlier
+                // than `canplay`, which waits for more buffered data.
+                if (!cancelled && isPlayingRef.current) {
+                  audio.play().catch(() => {
+                    /* Will retry via ws.ready → ws.play(). */
+                  });
+                }
+                cleanup();
+                resolve();
+              }
+            };
+            const onError = () => {
+              cleanup();
+              resolve();
+            };
+            audio.addEventListener("durationchange", check);
+            audio.addEventListener("loadedmetadata", check);
+            audio.addEventListener("error", onError, { once: true });
+          }),
+        ]);
       if (cancelled || !containerRef.current) return;
-      // Bail on a hard load error (duration stays NaN).
       if (!isFinite(audio.duration) || audio.duration <= 0) return;
       const knownDuration = audio.duration;
 
       const isDark = document.documentElement.classList.contains("dark");
 
-      // Build canvas gradients for the SoundCloud-style waveform.
       const tmpCanvas = document.createElement("canvas");
       const tmpCtx = tmpCanvas.getContext("2d")!;
       const h = 128;
@@ -284,7 +367,7 @@ export function WaveformPlayer() {
       }
 
       const progressGrad = tmpCtx.createLinearGradient(0, 0, 0, h * 1.35);
-      /* Brand-color hex literals — kept inline for canvas-gradient perf. See --brand in globals.css. */
+      /* Brand-color hex literals — inline for canvas-gradient perf. See --brand in globals.css. */
       progressGrad.addColorStop(0, isDark ? "#d0fd5a" : "#bde752");
       progressGrad.addColorStop((h * 0.7) / h, "#a8cd49");
       progressGrad.addColorStop((h * 0.7 + 1) / h, "#ffffff");
@@ -294,7 +377,7 @@ export function WaveformPlayer() {
 
       ws = WaveSurfer.create({
         container: containerRef.current,
-        height: 44,
+        height: 32,
         barWidth: BAR_WIDTH,
         barGap: BAR_GAP,
         barRadius: 2,
@@ -343,10 +426,13 @@ export function WaveformPlayer() {
       });
 
       ws.on("finish", () => {
-        pause();
-        audio.currentTime = 0;
-        setCurrentTime(0);
-        reportProgress(0);
+        if (hasNextRef.current) {
+          nextRef.current();
+        } else {
+          audio.currentTime = 0;
+          setCurrentTime(0);
+          reportProgress(0);
+        }
       });
 
       ws.on("seeking", () => {
@@ -377,18 +463,9 @@ export function WaveformPlayer() {
         audioRef.current = null;
       }
     };
-    // Only `currentTrack?.filePath` actually drives this effect; rebuilding
-    // WaveSurfer on every other currentTrack field change would thrash.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    currentTrack?.filePath,
-    pause,
-    reportProgress,
-    registerSeek,
-    reportDuration,
-  ]);
+  }, [currentTrack?.filePath, reportProgress, registerSeek, reportDuration]);
 
-  // Sync isPlaying state to WaveSurfer
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws || !ready) return;
@@ -399,39 +476,332 @@ export function WaveformPlayer() {
     }
   }, [isPlaying, ready]);
 
+  // Prefetch the next queued track's stream URL + peaks as soon as the
+  // current track is decoded. When the user skips, the caches are already
+  // warm and only the HLS manifest + first-segment download remains.
+  // Defer until `ready` so we don't fight the current track for bandwidth.
+  useEffect(() => {
+    if (!ready || !hasNext) return;
+    const nextTrack = peekNext();
+    if (!nextTrack) return;
+    // Match the init() resolution so the prefetched peaks hit the same cache
+    // key as the real fetch when the next track starts.
+    const numPeaks = 2000;
+    if (
+      nextTrack.streamRefreshKey !== undefined &&
+      nextTrack.streamRefreshKey !== null
+    ) {
+      getCachedSoundcloudStreamUrl(nextTrack.streamRefreshKey).catch(() => {
+        /* Prefetch is best-effort; real init will retry. */
+      });
+    }
+    if (nextTrack.waveformUrl) {
+      getCachedSoundcloudPeaks(nextTrack.waveformUrl, numPeaks).catch(() => {
+        /* Prefetch is best-effort. */
+      });
+    }
+  }, [ready, hasNext, peekNext, currentTrack?.filePath]);
+
   if (!currentTrack) return null;
 
-  return (
-    <div
-      data-testid="waveform-player"
-      aria-hidden={!largePlayer}
-      className={`bg-card border-border fixed right-0 bottom-0 left-14 z-40 flex h-17 items-center gap-4 border-t px-4 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] transition-[transform,opacity] duration-200 ease-out ${
-        largePlayer
-          ? "translate-y-0 opacity-100"
-          : "pointer-events-none translate-y-full opacity-0"
-      } ${!ready ? "opacity-60" : ""}`}
-    >
-      {/* Waveform canvas — play/pause + track info live in the tree-panel mini player */}
-      <div
-        ref={containerRef}
-        className="min-w-0 flex-1"
-        style={{ cursor: "pointer" }}
-      />
+  const artworkUrl =
+    currentTrack.artworkUrl ?? api.getArtworkUrl(currentTrack.filePath);
+  // SoundCloud serves artwork at multiple sizes via suffix (`-large` is ~100px,
+  // `-t500x500` is 500px). Upgrade for the expanded preview so it doesn't look
+  // pixelated at tree-panel width. Non-SC URLs pass through unchanged.
+  const largeArtworkUrl = artworkUrl.replace("-large", "-t500x500");
+  const titleText = currentTrack.title ?? currentTrack.fileName;
+  const artistText = currentTrack.artist ?? "";
+  const loadingProgress = duration > 0 ? currentTime / duration : 0;
 
-      {/* Error surface — replaces the time display when stream validation
-          fails so users see *something* went wrong instead of a dead player. */}
-      {errorMsg ? (
-        <span
-          role="alert"
-          className="text-destructive w-fit shrink-0 truncate text-right text-xs"
+  const morphTransition = {
+    type: "spring" as const,
+    stiffness: 380,
+    damping: 34,
+  };
+
+  return (
+    <>
+      {/* Background panel — fades in/out behind the morphing artwork + title. */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            key="artwork-panel-bg"
+            className="border-border fixed bottom-0 left-14 z-50 border-t bg-[var(--surface-2)]"
+            style={{
+              // Leave the rightmost pixel uncovered so the tree view's own
+              // border-r (which the panel would otherwise paint over) stays
+              // visible, giving a continuous vertical separator line.
+              width: `${treeWidth - 1}px`,
+              height: `${treeWidth + 64}px`,
+            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={() => setExpanded(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Big artwork — mounted only when expanded; shares layoutId with the
+          small artwork so framer-motion animates the transform between them. */}
+      {expanded && (
+        <motion.button
+          layoutId="player-artwork"
+          layoutDependency={expanded}
+          type="button"
+          data-testid="player-artwork"
+          onClick={() => setExpanded(false)}
+          className="bg-muted fixed left-14 z-50 cursor-pointer overflow-hidden"
+          style={{
+            bottom: "4rem",
+            width: `${treeWidth - 1}px`,
+            height: `${treeWidth - 1}px`,
+          }}
+          title="Collapse artwork"
+          aria-label="Collapse artwork"
+          transition={morphTransition}
         >
-          {errorMsg}
-        </span>
-      ) : (
-        <span className="text-muted-foreground w-24 shrink-0 text-right text-xs tabular-nums">
-          {formatTime(currentTime)} / {formatTime(duration)}
-        </span>
+          <img
+            src={largeArtworkUrl}
+            alt=""
+            className="size-full object-cover"
+            onError={(e) => {
+              // Fall back to the small artwork URL if the hi-res variant 404s
+              // (e.g., non-SC sources where `-large` isn't in the URL).
+              const img = e.currentTarget as HTMLImageElement;
+              if (img.src !== artworkUrl) {
+                img.src = artworkUrl;
+              } else {
+                img.style.display = "none";
+              }
+            }}
+          />
+        </motion.button>
       )}
-    </div>
+
+      {/* Big title row — same layoutId dance as the artwork. */}
+      {expanded && (
+        <motion.div
+          layoutId="player-title"
+          layoutDependency={expanded}
+          className="fixed bottom-0 left-14 z-50 flex h-16 min-w-0 flex-col justify-center gap-0.5 px-3"
+          style={{ width: `${treeWidth - 1}px` }}
+          onClick={() => setExpanded(false)}
+          transition={morphTransition}
+        >
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-xs" title={titleText}>
+              {titleText}
+            </span>
+            {currentTrack.permalinkUrl && (
+              <a
+                href={currentTrack.permalinkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+                title="Open on SoundCloud"
+                aria-label="Open on SoundCloud"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img
+                  src="/icons/soundcloud.svg"
+                  alt=""
+                  className="size-3 dark:invert"
+                />
+              </a>
+            )}
+          </div>
+          {artistText && (
+            <span
+              className="text-muted-foreground truncate text-xs"
+              title={artistText}
+            >
+              {artistText}
+            </span>
+          )}
+        </motion.div>
+      )}
+
+      <div
+        data-testid="waveform-player"
+        className="border-border fixed right-0 bottom-0 left-14 z-40 flex h-16 items-stretch border-t bg-[var(--surface-2)] shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
+      >
+        {/* Mini block — fixed width matching the tree panel above */}
+        <div
+          className="border-border flex shrink-0 items-center gap-2 border-r pr-3 pl-2"
+          style={{ width: `${treeWidth}px` }}
+        >
+          {/* Artwork — click expands. When expanded, this unmounts and the
+            big artwork (same layoutId) takes over; framer-motion animates
+            the transform between the two positions. */}
+          {!expanded && (
+            <motion.button
+              layoutId="player-artwork"
+              layoutDependency={expanded}
+              type="button"
+              data-testid="player-artwork"
+              className="bg-muted relative flex size-10 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md"
+              onClick={() => setExpanded(true)}
+              title="Expand artwork"
+              aria-label="Expand artwork"
+              aria-expanded={false}
+              transition={morphTransition}
+            >
+              <img
+                src={artworkUrl}
+                alt=""
+                className="size-full object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </motion.button>
+          )}
+
+          {/* Title + artist — morphs into the expanded panel's title row. */}
+          {!expanded && (
+            <motion.div
+              layoutId="player-title"
+              layoutDependency={expanded}
+              className="flex min-w-0 flex-1 flex-col gap-0.5"
+              transition={morphTransition}
+            >
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-xs" title={titleText}>
+                  {titleText}
+                </span>
+                {currentTrack.permalinkUrl && (
+                  <a
+                    href={currentTrack.permalinkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+                    title="Open on SoundCloud"
+                    aria-label="Open on SoundCloud"
+                  >
+                    <img
+                      src="/icons/soundcloud.svg"
+                      alt=""
+                      className="size-3 dark:invert"
+                    />
+                  </a>
+                )}
+              </div>
+              {artistText && (
+                <div
+                  className="text-muted-foreground truncate text-xs"
+                  title={artistText}
+                >
+                  {artistText}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </div>
+
+        {/* Transport cluster — lifted out of the tree-width column so the
+          title block has room to breathe. */}
+        <div className="flex shrink-0 items-center gap-0.5 px-3">
+          <button
+            type="button"
+            onClick={(e) => {
+              previous();
+              e.currentTarget.blur();
+            }}
+            disabled={!hasPrevious && currentTime <= 3}
+            className={cn(
+              "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors",
+              !hasPrevious &&
+                currentTime <= 3 &&
+                "cursor-not-allowed opacity-40 hover:bg-transparent",
+            )}
+            title="Previous (←)"
+            aria-label="Previous track"
+          >
+            <SkipBack className="size-4" />
+          </button>
+          <button
+            type="button"
+            data-testid="player-toggle"
+            onClick={(e) => {
+              toggle();
+              // Drop focus so a subsequent Space keypress isn't captured by
+              // the button's default activation behavior (which would
+              // re-toggle on top of the window-level keyboard handler).
+              e.currentTarget.blur();
+            }}
+            className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-9 cursor-pointer items-center justify-center rounded-full transition-colors"
+            title={isPlaying ? "Pause (Space)" : "Play (Space)"}
+            aria-label={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? (
+              <Pause className="size-4" />
+            ) : (
+              <Play className="size-4 translate-x-px" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              next();
+              e.currentTarget.blur();
+            }}
+            disabled={!hasNext}
+            className={cn(
+              "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors",
+              !hasNext && "cursor-not-allowed opacity-40 hover:bg-transparent",
+            )}
+            title="Next (→)"
+            aria-label="Next track"
+          >
+            <SkipForward className="size-4" />
+          </button>
+        </div>
+
+        {errorMsg ? (
+          <div
+            role="alert"
+            className="text-destructive flex shrink-0 items-center px-3 text-xs"
+          >
+            {errorMsg}
+          </div>
+        ) : (
+          <>
+            {/* Current time — left of waveform */}
+            <div className="text-muted-foreground flex shrink-0 items-center pl-2 text-xs tabular-nums">
+              {formatTime(currentTime)}
+            </div>
+
+            {/* Waveform (fills remaining width) */}
+            <div className="relative flex min-w-0 flex-1 items-center px-3">
+              <div
+                ref={containerRef}
+                className="min-w-0 flex-1"
+                style={{ cursor: "pointer" }}
+              />
+              {/* Loading-state fallback progress — fades out once waveform is ready. */}
+              <div
+                className={cn(
+                  "bg-surface-3 pointer-events-none absolute right-3 bottom-2 left-0 h-0.5 overflow-hidden rounded-full transition-opacity duration-200",
+                  ready ? "opacity-0" : "opacity-100",
+                )}
+              >
+                <div
+                  className="bg-primary h-full"
+                  style={{ width: `${Math.min(100, loadingProgress * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Total duration — right of waveform */}
+            <div className="text-muted-foreground flex shrink-0 items-center pr-4 text-xs tabular-nums">
+              {formatTime(duration)}
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 }

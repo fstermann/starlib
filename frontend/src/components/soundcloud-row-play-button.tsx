@@ -16,7 +16,13 @@ interface SoundcloudRowPlayButtonProps {
   waveformUrl?: string;
   /** SoundCloud permalink URL for the track. */
   permalinkUrl?: string;
+  /** Track artwork URL. */
+  artworkUrl?: string;
   className?: string;
+  /** When provided, called instead of the button's default single-track
+   * playback. Lets the parent install queue context before playback begins.
+   * Should return a promise that resolves once playback has started. */
+  onStartPlay?: () => Promise<void> | void;
 }
 
 /** Small icon-only play button for a SoundCloud row. Fetches a short-lived
@@ -27,7 +33,9 @@ export function SoundcloudRowPlayButton({
   artist,
   waveformUrl,
   permalinkUrl,
+  artworkUrl,
   className,
+  onStartPlay,
 }: SoundcloudRowPlayButtonProps) {
   const { currentTrack, isPlaying, play, toggle } = usePlayer();
   const [loading, setLoading] = useState(false);
@@ -44,17 +52,22 @@ export function SoundcloudRowPlayButton({
     }
     setLoading(true);
     try {
-      const { url } = await api.getSoundcloudStreamUrl(trackId);
-      play({
-        filePath: trackKey,
-        fileName: title ?? String(trackId),
-        title,
-        artist,
-        streamUrl: url,
-        waveformUrl,
-        streamRefreshKey: trackId,
-        permalinkUrl,
-      });
+      if (onStartPlay) {
+        await onStartPlay();
+      } else {
+        const { url } = await api.getSoundcloudStreamUrl(trackId);
+        play({
+          filePath: trackKey,
+          fileName: title ?? String(trackId),
+          title,
+          artist,
+          streamUrl: url,
+          waveformUrl,
+          streamRefreshKey: trackId,
+          permalinkUrl,
+          artworkUrl,
+        });
+      }
     } catch (err) {
       console.error("Failed to start SoundCloud playback:", err);
     } finally {

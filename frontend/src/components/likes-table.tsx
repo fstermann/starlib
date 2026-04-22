@@ -49,7 +49,12 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import type { ColumnDef } from "@/lib/columns/types";
+import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import type { SCTrack } from "@/lib/soundcloud";
+import {
+  getCachedSoundcloudPeaks,
+  getCachedSoundcloudStreamUrl,
+} from "@/lib/soundcloud-cache";
 import { cn } from "@/lib/utils";
 
 const ROW_HEIGHT = 48;
@@ -346,6 +351,8 @@ interface TrackRowProps {
   isNew?: boolean;
   onToggleSelect: (shiftKey: boolean) => void;
   onExpand: () => void;
+  /** Install the queue starting at this row and begin playback. */
+  onStartPlay: () => Promise<void> | void;
   /** Columns filtered and ordered per user preferences, with resolved widths. */
   visibleColumns: ResolvedLikesCol[];
   /** When set, the row renders a drag handle and participates in SortableContext. */
@@ -364,11 +371,36 @@ function TrackRowInner({
   isNew,
   onToggleSelect,
   onExpand,
+  onStartPlay,
   visibleColumns,
   dragHandle,
 }: TrackRowProps) {
   const imgUrl = artworkUrl(track);
   const scTrackId = extractId(track);
+
+  // Hover prefetch: warm the stream URL + peaks cache after a short dwell.
+  // Eliminates the 500–700ms cold SC resolve for rows the user is about
+  // to click. Cancelled if the mouse leaves before the dwell elapses.
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wavUrl = track.waveform_url ?? undefined;
+  const onPointerEnter = useCallback(() => {
+    if (hoverTimeoutRef.current) return;
+    hoverTimeoutRef.current = setTimeout(() => {
+      hoverTimeoutRef.current = null;
+      if (scTrackId) {
+        getCachedSoundcloudStreamUrl(scTrackId).catch(() => {});
+      }
+      if (wavUrl) {
+        getCachedSoundcloudPeaks(wavUrl, 800).catch(() => {});
+      }
+    }, 120);
+  }, [scTrackId, wavUrl]);
+  const onPointerLeave = useCallback(() => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+  }, []);
 
   return (
     <div>
@@ -377,6 +409,8 @@ function TrackRowInner({
         tabIndex={0}
         className={`border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isSelected ? "bg-[var(--brand-soft)]" : isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
         onClick={onExpand}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
         onKeyDown={(e) => {
           if (e.key === "Enter") onExpand();
           if (e.key === " ") {
@@ -435,6 +469,8 @@ function TrackRowInner({
             artist={track.user?.username ?? undefined}
             waveformUrl={track.waveform_url ?? undefined}
             permalinkUrl={track.permalink_url ?? undefined}
+            artworkUrl={imgUrl ?? undefined}
+            onStartPlay={onStartPlay}
           />
         ) : (
           <div className="size-6 shrink-0" />
@@ -549,6 +585,7 @@ export function LikesTable({
   onVisibleOrderChange,
 }: LikesTableProps) {
   const reorderEnabled = !!onReorderTracks;
+  const { playQueue } = usePlayer();
 
   // Pre-fill cached BPMs for all tracks in this table in a single bulk
   // request, rather than making one GET per visible row. The map survives
@@ -643,6 +680,31 @@ export function LikesTable({
   // the user's drag target (sorted position) wouldn't map to a meaningful
   // underlying order.
   const reorderable = reorderEnabled && !sortBy;
+
+  // Build a PlayerTrack queue from the currently visible (sorted) SC tracks
+  // and start playback at `index`. Every entry is a skeleton — the player
+  // resolves streamUrl on demand via the shared TTL cache, so the clicked
+  // row's URL is fetched in parallel with peaks + waveform init rather
+  // than serialised before the UI updates.
+  const handleStartPlay = useCallback(
+    (index: number) => {
+      const queue: PlayerTrack[] = sortedTracks.map((t) => {
+        const id = extractId(t);
+        return {
+          filePath: `soundcloud:${id}`,
+          fileName: t.title ?? String(id),
+          title: t.title ?? undefined,
+          artist: t.user?.username ?? undefined,
+          waveformUrl: t.waveform_url ?? undefined,
+          streamRefreshKey: id,
+          permalinkUrl: t.permalink_url ?? undefined,
+          artworkUrl: artworkUrl(t) ?? undefined,
+        };
+      });
+      playQueue(queue, index);
+    },
+    [sortedTracks, playQueue],
+  );
 
   // Report the current visible order (after sort) to callers so they can save
   // whatever the user currently sees.
@@ -891,6 +953,7 @@ export function LikesTable({
                           }
                         }}
                         onExpand={() => handleExpand(track)}
+                        onStartPlay={() => handleStartPlay(virtualRow.index)}
                         visibleColumns={visibleColumns}
                       />
                     </div>
@@ -924,6 +987,7 @@ export function LikesTable({
                         isNew={false}
                         onToggleSelect={() => undefined}
                         onExpand={() => undefined}
+                        onStartPlay={() => undefined}
                         visibleColumns={visibleColumns}
                         dragHandle={{
                           attributes: {},

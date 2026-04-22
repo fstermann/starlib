@@ -155,6 +155,23 @@ async def _fetch_stream_url(track_id: int) -> tuple[str, float]:
             detail="SoundCloud upstream error",
         ) from exc
 
+    # SoundCloud can invalidate a still-cached Client-Credentials token
+    # before its nominal expiry (observed in practice). On 401, wipe the
+    # cache, mint a fresh token, and retry once — avoids forcing the user
+    # through the full user-OAuth flow just to keep playback alive.
+    if response.status_code == 401:
+        logger.info("SoundCloud /streams 401 for track %s — refreshing token and retrying", track_id)
+        sc_auth_cache.reset_cache()
+        try:
+            token = sc_auth_cache.get_cached_access_token(settings, OAuthManager)
+            response = await _http_get(streams_url, token=token, follow_redirects=True)
+        except Exception as exc:
+            logger.exception("Retry after SoundCloud 401 failed")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="SoundCloud auth retry failed",
+            ) from exc
+
     if response.status_code != 200:
         logger.warning("SoundCloud /streams returned %s for track %s", response.status_code, track_id)
         raise HTTPException(
@@ -219,7 +236,7 @@ async def _get_inflight_lock(track_id: int) -> asyncio.Lock:
 
 
 @router.get("/tracks/{track_id}/stream", response_model=StreamUrlResponse)
-async def get_track_stream(track_id: int) -> StreamUrlResponse:
+async def get_track_stream(track_id: int, force_refresh: bool = False) -> StreamUrlResponse:
     """Return a signed HLS playlist URL for the given SoundCloud track.
 
     The result is cached in-memory and reused while still valid. Expired
@@ -229,6 +246,10 @@ async def get_track_stream(track_id: int) -> StreamUrlResponse:
     ----------
     track_id : int
         SoundCloud track id.
+    force_refresh : bool, optional
+        When true, evict any cached entry and fetch a fresh URL from
+        SoundCloud. Clients should set this after receiving a 403 on a
+        cached URL so the server does not hand them the same stale entry.
 
     Returns
     -------
@@ -239,6 +260,8 @@ async def get_track_stream(track_id: int) -> StreamUrlResponse:
     now = time.time()
 
     async with _cache_lock:
+        if force_refresh:
+            _cache.pop(track_id, None)
         entry = _cache.get(track_id)
         # Treat anything expiring in <60s as stale so clients don't race the expiry.
         if entry and entry.expires_at - now > 60:

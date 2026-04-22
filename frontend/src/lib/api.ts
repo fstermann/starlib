@@ -777,8 +777,10 @@ export const api = {
 
   async getSoundcloudStreamUrl(
     trackId: number | string,
+    opts?: { forceRefresh?: boolean },
   ): Promise<{ url: string; expires_at: string }> {
-    return fetchApi(`/api/soundcloud/tracks/${trackId}/stream`);
+    const qs = opts?.forceRefresh ? "?force_refresh=true" : "";
+    return fetchApi(`/api/soundcloud/tracks/${trackId}/stream${qs}`);
   },
 
   // ==================== BPM ====================

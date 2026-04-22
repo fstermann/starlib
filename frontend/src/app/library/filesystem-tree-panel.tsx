@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
-import { TreePanelMiniPlayer } from "@/components/tree-panel-mini-player";
 import { TreeView } from "@/components/tree/tree-view";
 import {
   ContextMenu,
@@ -491,7 +490,6 @@ export function FilesystemTreePanel({
       renderBadge={renderBadge}
       wrapNode={wrapNode}
       header={header}
-      footer={<TreePanelMiniPlayer />}
       storageKey={storageKey}
     />
   );
