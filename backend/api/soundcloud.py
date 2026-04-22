@@ -155,6 +155,23 @@ async def _fetch_stream_url(track_id: int) -> tuple[str, float]:
             detail="SoundCloud upstream error",
         ) from exc
 
+    # SoundCloud can invalidate a still-cached Client-Credentials token
+    # before its nominal expiry (observed in practice). On 401, wipe the
+    # cache, mint a fresh token, and retry once — avoids forcing the user
+    # through the full user-OAuth flow just to keep playback alive.
+    if response.status_code == 401:
+        logger.info("SoundCloud /streams 401 for track %s — refreshing token and retrying", track_id)
+        sc_auth_cache.reset_cache()
+        try:
+            token = sc_auth_cache.get_cached_access_token(settings, OAuthManager)
+            response = await _http_get(streams_url, token=token, follow_redirects=True)
+        except Exception as exc:
+            logger.exception("Retry after SoundCloud 401 failed")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="SoundCloud auth retry failed",
+            ) from exc
+
     if response.status_code != 200:
         logger.warning("SoundCloud /streams returned %s for track %s", response.status_code, track_id)
         raise HTTPException(

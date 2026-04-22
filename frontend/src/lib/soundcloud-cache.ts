@@ -31,7 +31,10 @@ export async function getCachedSoundcloudStreamUrl(
   const inflight = api
     .getSoundcloudStreamUrl(id, { forceRefresh: opts?.forceRefresh })
     .then((r) => {
-      streamCache.set(key, { url: r.url, expiresAt: Date.now() + STREAM_TTL_MS });
+      streamCache.set(key, {
+        url: r.url,
+        expiresAt: Date.now() + STREAM_TTL_MS,
+      });
       return r.url;
     })
     .catch((err) => {

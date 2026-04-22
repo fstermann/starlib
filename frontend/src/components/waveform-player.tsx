@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import Hls from "hls.js";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -82,6 +83,7 @@ export function WaveformPlayer() {
   const [currentTime, setCurrentTime] = useState(0);
   const [ready, setReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const treeWidth = useResizableWidth("tree-panel-width", 240);
 
@@ -166,8 +168,6 @@ export function WaveformPlayer() {
     let hls: Hls | null = null;
     let cancelled = false;
     let retriedStreamRefresh = false;
-    let resizeObserver: ResizeObserver | null = null;
-    let resizeDebounce: ReturnType<typeof setTimeout> | null = null;
 
     setReady(false);
     setCurrentTime(0);
@@ -179,11 +179,12 @@ export function WaveformPlayer() {
 
       const BAR_WIDTH = 2;
       const BAR_GAP = 1;
-      const containerWidth = containerRef.current.clientWidth || 800;
-      const numPeaks = Math.min(
-        2000,
-        Math.max(50, Math.ceil(containerWidth / (BAR_WIDTH + BAR_GAP))),
-      );
+      // Fetch at max resolution once. WaveSurfer renders the bars for the
+      // current container width by sampling from this array — with 2000
+      // peaks we easily exceed any realistic bar count (a 3000+ px wide
+      // waveform at 2+1 px per bar = ~1000 bars), so resize never leaves
+      // gaps between bars.
+      const numPeaks = 2000;
 
       // Skeleton SoundCloud entries from the queue have no `streamUrl` yet —
       // `streamRefreshKey` is the durable marker that this is a SC track.
@@ -407,53 +408,6 @@ export function WaveformPlayer() {
 
       wsRef.current = ws;
 
-      // Refetch peaks when the container width changes meaningfully (tree
-      // panel drag, window resize). WaveSurfer's own ResizeObserver only
-      // re-renders the existing peak array, which leaves bars stretched or
-      // compressed. Refetching at the new bar count restores visual
-      // fidelity. The peaks cache is keyed by numPeaks, so repeated
-      // resizes to widths we've already seen are free.
-      let currentNumPeaks = numPeaks;
-      const handleResize = () => {
-        if (!containerRef.current || cancelled || !wsRef.current) return;
-        const w = containerRef.current.clientWidth;
-        if (w <= 0) return;
-        const newNumPeaks = Math.min(
-          2000,
-          Math.max(50, Math.ceil(w / (BAR_WIDTH + BAR_GAP))),
-        );
-        if (
-          Math.abs(newNumPeaks - currentNumPeaks) / currentNumPeaks <
-          0.1
-        ) {
-          return;
-        }
-        currentNumPeaks = newNumPeaks;
-        const peaksP: Promise<number[] | null | undefined> = isStream
-          ? currentTrack!.waveformUrl
-            ? getCachedSoundcloudPeaks(
-                currentTrack!.waveformUrl,
-                newNumPeaks,
-              )
-            : Promise.resolve(null)
-          : api.getFilePeaks(currentTrack!.filePath, newNumPeaks);
-        peaksP
-          .then((p) => {
-            if (cancelled || !wsRef.current) return;
-            if (p && p.length > 0) {
-              wsRef.current.setOptions({ peaks: [p] });
-            }
-          })
-          .catch(() => {
-            /* Best-effort; keep existing peaks on failure. */
-          });
-      };
-      resizeObserver = new ResizeObserver(() => {
-        if (resizeDebounce) clearTimeout(resizeDebounce);
-        resizeDebounce = setTimeout(handleResize, 150);
-      });
-      resizeObserver.observe(containerRef.current);
-
       ws.on("ready", () => {
         if (cancelled) return;
         setDuration(knownDuration);
@@ -499,9 +453,6 @@ export function WaveformPlayer() {
       registerSeek(null);
       reportProgress(0);
       reportDuration(0);
-      if (resizeDebounce) clearTimeout(resizeDebounce);
-      resizeObserver?.disconnect();
-      resizeObserver = null;
       ws?.destroy();
       wsRef.current = null;
       hls?.destroy();
@@ -533,11 +484,9 @@ export function WaveformPlayer() {
     if (!ready || !hasNext) return;
     const nextTrack = peekNext();
     if (!nextTrack) return;
-    const containerWidth = containerRef.current?.clientWidth ?? 800;
-    const numPeaks = Math.min(
-      2000,
-      Math.max(50, Math.ceil(containerWidth / 3)),
-    );
+    // Match the init() resolution so the prefetched peaks hit the same cache
+    // key as the real fetch when the next track starts.
+    const numPeaks = 2000;
     if (
       nextTrack.streamRefreshKey !== undefined &&
       nextTrack.streamRefreshKey !== null
@@ -557,48 +506,91 @@ export function WaveformPlayer() {
 
   const artworkUrl =
     currentTrack.artworkUrl ?? api.getArtworkUrl(currentTrack.filePath);
+  // SoundCloud serves artwork at multiple sizes via suffix (`-large` is ~100px,
+  // `-t500x500` is 500px). Upgrade for the expanded preview so it doesn't look
+  // pixelated at tree-panel width. Non-SC URLs pass through unchanged.
+  const largeArtworkUrl = artworkUrl.replace("-large", "-t500x500");
   const titleText = currentTrack.title ?? currentTrack.fileName;
   const artistText = currentTrack.artist ?? "";
   const loadingProgress = duration > 0 ? currentTime / duration : 0;
 
+  const morphTransition = {
+    type: "spring" as const,
+    stiffness: 380,
+    damping: 34,
+  };
+
   return (
-    <div
-      data-testid="waveform-player"
-      className="border-border fixed right-0 bottom-0 left-14 z-40 flex h-16 items-stretch border-t bg-[var(--surface-2)] shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
-    >
-      {/* Mini block — fixed width matching the tree panel above */}
-      <div
-        className="border-border flex shrink-0 items-center gap-2 border-r pr-3 pl-2"
-        style={{ width: `${treeWidth}px` }}
-      >
-        {/* Artwork — click toggles play */}
-        <button
+    <>
+      {/* Background panel — fades in/out behind the morphing artwork + title. */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            key="artwork-panel-bg"
+            className="border-border fixed bottom-0 left-14 z-50 border-t bg-[var(--surface-2)]"
+            style={{
+              // Leave the rightmost pixel uncovered so the tree view's own
+              // border-r (which the panel would otherwise paint over) stays
+              // visible, giving a continuous vertical separator line.
+              width: `${treeWidth - 1}px`,
+              height: `${treeWidth + 64}px`,
+            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={() => setExpanded(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Big artwork — mounted only when expanded; shares layoutId with the
+          small artwork so framer-motion animates the transform between them. */}
+      {expanded && (
+        <motion.button
+          layoutId="player-artwork"
+          layoutDependency={expanded}
           type="button"
-          data-testid="player-toggle"
-          className="bg-muted group/art relative flex size-10 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md"
-          onClick={() => toggle()}
-          title={isPlaying ? "Pause" : "Play"}
-          aria-label={isPlaying ? "Pause" : "Play"}
+          data-testid="player-artwork"
+          onClick={() => setExpanded(false)}
+          className="bg-muted fixed left-14 z-50 cursor-pointer overflow-hidden"
+          style={{
+            bottom: "4rem",
+            width: `${treeWidth - 1}px`,
+            height: `${treeWidth - 1}px`,
+          }}
+          title="Collapse artwork"
+          aria-label="Collapse artwork"
+          transition={morphTransition}
         >
           <img
-            src={artworkUrl}
+            src={largeArtworkUrl}
             alt=""
             className="size-full object-cover"
             onError={(e) => {
-              (e.currentTarget as HTMLImageElement).style.display = "none";
+              // Fall back to the small artwork URL if the hi-res variant 404s
+              // (e.g., non-SC sources where `-large` isn't in the URL).
+              const img = e.currentTarget as HTMLImageElement;
+              if (img.src !== artworkUrl) {
+                img.src = artworkUrl;
+              } else {
+                img.style.display = "none";
+              }
             }}
           />
-          <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/art:bg-black/40">
-            {isPlaying ? (
-              <Pause className="size-4 text-white opacity-0 transition-opacity group-hover/art:opacity-100" />
-            ) : (
-              <Play className="size-4 text-white opacity-0 transition-opacity group-hover/art:opacity-100" />
-            )}
-          </span>
-        </button>
+        </motion.button>
+      )}
 
-        {/* Title + artist */}
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      {/* Big title row — same layoutId dance as the artwork. */}
+      {expanded && (
+        <motion.div
+          layoutId="player-title"
+          layoutDependency={expanded}
+          className="fixed bottom-0 left-14 z-50 flex h-16 min-w-0 flex-col justify-center gap-0.5 px-3"
+          style={{ width: `${treeWidth - 1}px` }}
+          onClick={() => setExpanded(false)}
+          transition={morphTransition}
+        >
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-xs" title={titleText}>
               {titleText}
@@ -611,6 +603,7 @@ export function WaveformPlayer() {
                 className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
                 title="Open on SoundCloud"
                 aria-label="Open on SoundCloud"
+                onClick={(e) => e.stopPropagation()}
               >
                 <img
                   src="/icons/soundcloud.svg"
@@ -621,115 +614,194 @@ export function WaveformPlayer() {
             )}
           </div>
           {artistText && (
-            <div
+            <span
               className="text-muted-foreground truncate text-xs"
               title={artistText}
             >
               {artistText}
-            </div>
+            </span>
           )}
-        </div>
-      </div>
-
-      {/* Transport cluster — lifted out of the tree-width column so the
-          title block has room to breathe. */}
-      <div className="flex shrink-0 items-center gap-0.5 px-3">
-        <button
-          type="button"
-          onClick={(e) => {
-            previous();
-            e.currentTarget.blur();
-          }}
-          disabled={!hasPrevious && currentTime <= 3}
-          className={cn(
-            "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors",
-            !hasPrevious &&
-              currentTime <= 3 &&
-              "cursor-not-allowed opacity-40 hover:bg-transparent",
-          )}
-          title="Previous (←)"
-          aria-label="Previous track"
-        >
-          <SkipBack className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            toggle();
-            // Drop focus so a subsequent Space keypress isn't captured by
-            // the button's default activation behavior (which would
-            // re-toggle on top of the window-level keyboard handler).
-            e.currentTarget.blur();
-          }}
-          className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-9 cursor-pointer items-center justify-center rounded-full transition-colors"
-          title={isPlaying ? "Pause (Space)" : "Play (Space)"}
-          aria-label={isPlaying ? "Pause" : "Play"}
-        >
-          {isPlaying ? (
-            <Pause className="size-4" />
-          ) : (
-            <Play className="size-4 translate-x-px" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            next();
-            e.currentTarget.blur();
-          }}
-          disabled={!hasNext}
-          className={cn(
-            "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors",
-            !hasNext && "cursor-not-allowed opacity-40 hover:bg-transparent",
-          )}
-          title="Next (→)"
-          aria-label="Next track"
-        >
-          <SkipForward className="size-4" />
-        </button>
-      </div>
-
-      {errorMsg ? (
-        <div
-          role="alert"
-          className="text-destructive flex shrink-0 items-center px-3 text-xs"
-        >
-          {errorMsg}
-        </div>
-      ) : (
-        <>
-          {/* Current time — left of waveform */}
-          <div className="text-muted-foreground flex shrink-0 items-center pl-2 font-mono text-xs tabular-nums">
-            {formatTime(currentTime)}
-          </div>
-
-          {/* Waveform (fills remaining width) */}
-          <div className="relative flex min-w-0 flex-1 items-center px-3">
-            <div
-              ref={containerRef}
-              className="min-w-0 flex-1"
-              style={{ cursor: "pointer" }}
-            />
-            {/* Loading-state fallback progress — fades out once waveform is ready. */}
-            <div
-              className={cn(
-                "bg-surface-3 pointer-events-none absolute right-3 bottom-2 left-0 h-0.5 overflow-hidden rounded-full transition-opacity duration-200",
-                ready ? "opacity-0" : "opacity-100",
-              )}
-            >
-              <div
-                className="bg-primary h-full"
-                style={{ width: `${Math.min(100, loadingProgress * 100)}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Total duration — right of waveform */}
-          <div className="text-muted-foreground flex shrink-0 items-center pr-4 font-mono text-xs tabular-nums">
-            {formatTime(duration)}
-          </div>
-        </>
+        </motion.div>
       )}
-    </div>
+
+      <div
+        data-testid="waveform-player"
+        className="border-border fixed right-0 bottom-0 left-14 z-40 flex h-16 items-stretch border-t bg-[var(--surface-2)] shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
+      >
+        {/* Mini block — fixed width matching the tree panel above */}
+        <div
+          className="border-border flex shrink-0 items-center gap-2 border-r pr-3 pl-2"
+          style={{ width: `${treeWidth}px` }}
+        >
+          {/* Artwork — click expands. When expanded, this unmounts and the
+            big artwork (same layoutId) takes over; framer-motion animates
+            the transform between the two positions. */}
+          {!expanded && (
+            <motion.button
+              layoutId="player-artwork"
+              layoutDependency={expanded}
+              type="button"
+              data-testid="player-artwork"
+              className="bg-muted relative flex size-10 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md"
+              onClick={() => setExpanded(true)}
+              title="Expand artwork"
+              aria-label="Expand artwork"
+              aria-expanded={false}
+              transition={morphTransition}
+            >
+              <img
+                src={artworkUrl}
+                alt=""
+                className="size-full object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </motion.button>
+          )}
+
+          {/* Title + artist — morphs into the expanded panel's title row. */}
+          {!expanded && (
+            <motion.div
+              layoutId="player-title"
+              layoutDependency={expanded}
+              className="flex min-w-0 flex-1 flex-col gap-0.5"
+              transition={morphTransition}
+            >
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-xs" title={titleText}>
+                  {titleText}
+                </span>
+                {currentTrack.permalinkUrl && (
+                  <a
+                    href={currentTrack.permalinkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+                    title="Open on SoundCloud"
+                    aria-label="Open on SoundCloud"
+                  >
+                    <img
+                      src="/icons/soundcloud.svg"
+                      alt=""
+                      className="size-3 dark:invert"
+                    />
+                  </a>
+                )}
+              </div>
+              {artistText && (
+                <div
+                  className="text-muted-foreground truncate text-xs"
+                  title={artistText}
+                >
+                  {artistText}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </div>
+
+        {/* Transport cluster — lifted out of the tree-width column so the
+          title block has room to breathe. */}
+        <div className="flex shrink-0 items-center gap-0.5 px-3">
+          <button
+            type="button"
+            onClick={(e) => {
+              previous();
+              e.currentTarget.blur();
+            }}
+            disabled={!hasPrevious && currentTime <= 3}
+            className={cn(
+              "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors",
+              !hasPrevious &&
+                currentTime <= 3 &&
+                "cursor-not-allowed opacity-40 hover:bg-transparent",
+            )}
+            title="Previous (←)"
+            aria-label="Previous track"
+          >
+            <SkipBack className="size-4" />
+          </button>
+          <button
+            type="button"
+            data-testid="player-toggle"
+            onClick={(e) => {
+              toggle();
+              // Drop focus so a subsequent Space keypress isn't captured by
+              // the button's default activation behavior (which would
+              // re-toggle on top of the window-level keyboard handler).
+              e.currentTarget.blur();
+            }}
+            className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-9 cursor-pointer items-center justify-center rounded-full transition-colors"
+            title={isPlaying ? "Pause (Space)" : "Play (Space)"}
+            aria-label={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? (
+              <Pause className="size-4" />
+            ) : (
+              <Play className="size-4 translate-x-px" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              next();
+              e.currentTarget.blur();
+            }}
+            disabled={!hasNext}
+            className={cn(
+              "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors",
+              !hasNext && "cursor-not-allowed opacity-40 hover:bg-transparent",
+            )}
+            title="Next (→)"
+            aria-label="Next track"
+          >
+            <SkipForward className="size-4" />
+          </button>
+        </div>
+
+        {errorMsg ? (
+          <div
+            role="alert"
+            className="text-destructive flex shrink-0 items-center px-3 text-xs"
+          >
+            {errorMsg}
+          </div>
+        ) : (
+          <>
+            {/* Current time — left of waveform */}
+            <div className="text-muted-foreground flex shrink-0 items-center pl-2 text-xs tabular-nums">
+              {formatTime(currentTime)}
+            </div>
+
+            {/* Waveform (fills remaining width) */}
+            <div className="relative flex min-w-0 flex-1 items-center px-3">
+              <div
+                ref={containerRef}
+                className="min-w-0 flex-1"
+                style={{ cursor: "pointer" }}
+              />
+              {/* Loading-state fallback progress — fades out once waveform is ready. */}
+              <div
+                className={cn(
+                  "bg-surface-3 pointer-events-none absolute right-3 bottom-2 left-0 h-0.5 overflow-hidden rounded-full transition-opacity duration-200",
+                  ready ? "opacity-0" : "opacity-100",
+                )}
+              >
+                <div
+                  className="bg-primary h-full"
+                  style={{ width: `${Math.min(100, loadingProgress * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Total duration — right of waveform */}
+            <div className="text-muted-foreground flex shrink-0 items-center pr-4 text-xs tabular-nums">
+              {formatTime(duration)}
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 }
