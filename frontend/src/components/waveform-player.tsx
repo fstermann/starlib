@@ -374,7 +374,7 @@ export function WaveformPlayer() {
 
       ws = WaveSurfer.create({
         container: containerRef.current,
-        height: 48,
+        height: 32,
         barWidth: BAR_WIDTH,
         barGap: BAR_GAP,
         barRadius: 2,
@@ -512,7 +512,7 @@ export function WaveformPlayer() {
   return (
     <div
       data-testid="waveform-player"
-      className="border-border fixed right-0 bottom-0 left-14 z-40 flex h-18 items-stretch border-t bg-[var(--surface-2)] shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
+      className="border-border fixed right-0 bottom-0 left-14 z-40 flex h-16 items-stretch border-t bg-[var(--surface-2)] shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
     >
       {/* Mini block — fixed width matching the tree panel above */}
       <div
@@ -577,67 +577,66 @@ export function WaveformPlayer() {
             </div>
           )}
         </div>
-
-        {/* Transport cluster */}
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={(e) => {
-              previous();
-              e.currentTarget.blur();
-            }}
-            disabled={!hasPrevious && currentTime <= 3}
-            className={cn(
-              "text-muted-foreground hover:text-foreground flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-3)]",
-              !hasPrevious &&
-                currentTime <= 3 &&
-                "cursor-not-allowed opacity-40 hover:bg-transparent",
-            )}
-            title="Previous (←)"
-            aria-label="Previous track"
-          >
-            <SkipBack className="size-4" />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              toggle();
-              // Drop focus so a subsequent Space keypress isn't captured by
-              // the button's default activation behavior (which would
-              // re-toggle on top of the window-level keyboard handler).
-              e.currentTarget.blur();
-            }}
-            className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-9 cursor-pointer items-center justify-center rounded-full transition-colors"
-            title={isPlaying ? "Pause (Space)" : "Play (Space)"}
-            aria-label={isPlaying ? "Pause" : "Play"}
-          >
-            {isPlaying ? (
-              <Pause className="size-4" />
-            ) : (
-              <Play className="size-4 translate-x-[1px]" />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              next();
-              e.currentTarget.blur();
-            }}
-            disabled={!hasNext}
-            className={cn(
-              "text-muted-foreground hover:text-foreground flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-3)]",
-              !hasNext && "cursor-not-allowed opacity-40 hover:bg-transparent",
-            )}
-            title="Next (→)"
-            aria-label="Next track"
-          >
-            <SkipForward className="size-4" />
-          </button>
-        </div>
       </div>
 
-      {/* Time column — replaced by error surface when stream validation fails
-          so users see *something* went wrong instead of a dead player. */}
+      {/* Transport cluster — lifted out of the tree-width column so the
+          title block has room to breathe. */}
+      <div className="flex shrink-0 items-center gap-0.5 px-3">
+        <button
+          type="button"
+          onClick={(e) => {
+            previous();
+            e.currentTarget.blur();
+          }}
+          disabled={!hasPrevious && currentTime <= 3}
+          className={cn(
+            "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors",
+            !hasPrevious &&
+              currentTime <= 3 &&
+              "cursor-not-allowed opacity-40 hover:bg-transparent",
+          )}
+          title="Previous (←)"
+          aria-label="Previous track"
+        >
+          <SkipBack className="size-4" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            toggle();
+            // Drop focus so a subsequent Space keypress isn't captured by
+            // the button's default activation behavior (which would
+            // re-toggle on top of the window-level keyboard handler).
+            e.currentTarget.blur();
+          }}
+          className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-9 cursor-pointer items-center justify-center rounded-full transition-colors"
+          title={isPlaying ? "Pause (Space)" : "Play (Space)"}
+          aria-label={isPlaying ? "Pause" : "Play"}
+        >
+          {isPlaying ? (
+            <Pause className="size-4" />
+          ) : (
+            <Play className="size-4 translate-x-px" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            next();
+            e.currentTarget.blur();
+          }}
+          disabled={!hasNext}
+          className={cn(
+            "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors",
+            !hasNext && "cursor-not-allowed opacity-40 hover:bg-transparent",
+          )}
+          title="Next (→)"
+          aria-label="Next track"
+        >
+          <SkipForward className="size-4" />
+        </button>
+      </div>
+
       {errorMsg ? (
         <div
           role="alert"
@@ -646,32 +645,39 @@ export function WaveformPlayer() {
           {errorMsg}
         </div>
       ) : (
-        <div className="flex shrink-0 flex-col justify-center px-3 font-mono text-xs tabular-nums">
-          <span>{formatTime(currentTime)}</span>
-          <span className="text-muted-foreground">{formatTime(duration)}</span>
-        </div>
-      )}
+        <>
+          {/* Current time — left of waveform */}
+          <div className="text-muted-foreground flex shrink-0 items-center pl-2 font-mono text-xs tabular-nums">
+            {formatTime(currentTime)}
+          </div>
 
-      {/* Waveform (fills remaining width) */}
-      <div className="relative flex min-w-0 flex-1 items-center pr-4">
-        <div
-          ref={containerRef}
-          className="min-w-0 flex-1"
-          style={{ cursor: "pointer" }}
-        />
-        {/* Loading-state fallback progress — fades out once waveform is ready. */}
-        <div
-          className={cn(
-            "pointer-events-none absolute right-4 bottom-2 left-0 h-0.5 overflow-hidden rounded-full bg-[var(--surface-3)] transition-opacity duration-200",
-            ready ? "opacity-0" : "opacity-100",
-          )}
-        >
-          <div
-            className="bg-primary h-full"
-            style={{ width: `${Math.min(100, loadingProgress * 100)}%` }}
-          />
-        </div>
-      </div>
+          {/* Waveform (fills remaining width) */}
+          <div className="relative flex min-w-0 flex-1 items-center px-3">
+            <div
+              ref={containerRef}
+              className="min-w-0 flex-1"
+              style={{ cursor: "pointer" }}
+            />
+            {/* Loading-state fallback progress — fades out once waveform is ready. */}
+            <div
+              className={cn(
+                "bg-surface-3 pointer-events-none absolute right-3 bottom-2 left-0 h-0.5 overflow-hidden rounded-full transition-opacity duration-200",
+                ready ? "opacity-0" : "opacity-100",
+              )}
+            >
+              <div
+                className="bg-primary h-full"
+                style={{ width: `${Math.min(100, loadingProgress * 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Total duration — right of waveform */}
+          <div className="text-muted-foreground flex shrink-0 items-center pr-4 font-mono text-xs tabular-nums">
+            {formatTime(duration)}
+          </div>
+        </>
+      )}
     </div>
   );
 }
