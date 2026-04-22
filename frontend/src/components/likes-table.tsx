@@ -829,7 +829,8 @@ export function LikesTable({
               )}
             />
           </div>
-          <div className="size-8 shrink-0" />
+          <div className="size-7 shrink-0" aria-hidden />
+          <div className="size-6 shrink-0" aria-hidden />
           <SortableColumnHeader
             ids={visibleColumns.map((c) => c.id)}
             onOrderChange={(nextIds) => {
