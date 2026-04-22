@@ -167,6 +167,10 @@ export function TrackEditor({
   const [originalFormData, setOriginalFormData] = useState({
     ...emptyFormData,
   });
+  // File path that the current formData / originalFormData correspond to.
+  // Used to gate the mirror-to-pending effect so we don't race-write a stale
+  // diff under a newly selected track's file_path during track switches.
+  const [formDataFilePath, setFormDataFilePath] = useState<string | null>(null);
 
   // Track whether the user has manually edited release_year this session;
   // when false, editing release_date auto-syncs the year.
@@ -274,30 +278,45 @@ export function TrackEditor({
     };
   }, [selectedFile.file_path]);
 
-  // Auto-fill empty form fields when a source track is selected
+  // Apply source metadata to the form when a source track is selected.
+  // autoApplyScResults overrides existing values; autoCopyMetadata only fills
+  // empty fields; when both are off this effect is a no-op (user must click
+  // "Apply SC Metadata" manually).
   useLayoutEffect(() => {
     setScQueryPending(false);
 
-    if (!selectedScTrack || !autoActions.autoCopyMetadata) return;
+    if (!selectedScTrack) return;
+    if (!autoActions.autoApplyScResults && !autoActions.autoCopyMetadata)
+      return;
 
     const meta = activeSource.extractMetadata(selectedScTrack);
+    const hardOverride = autoActions.autoApplyScResults;
 
-    setFormData((prev) => ({
-      ...prev,
-      title: prev.title || selectedScTrack.title || "",
-      artist: prev.artist || selectedScTrack.username || "",
-      genre: prev.genre || selectedScTrack.genre || "",
-      release_date: prev.release_date || meta.release_date || "",
-    }));
+    setFormData((prev) => {
+      const pick = (existing: string, incoming: string | undefined) =>
+        hardOverride ? incoming || existing : existing || incoming || "";
+      return {
+        ...prev,
+        title: pick(prev.title, meta.title || selectedScTrack.title),
+        artist: pick(prev.artist, meta.artist || selectedScTrack.username),
+        genre: pick(prev.genre, meta.genre || selectedScTrack.genre),
+        release_date: pick(prev.release_date, meta.release_date),
+      };
+    });
 
     setCommentData((prev) => ({
-      soundcloud_id: prev.soundcloud_id || meta.source_id,
-      soundcloud_permalink: prev.soundcloud_permalink || meta.source_permalink,
+      soundcloud_id: hardOverride
+        ? meta.source_id
+        : prev.soundcloud_id || meta.source_id,
+      soundcloud_permalink: hardOverride
+        ? meta.source_permalink
+        : prev.soundcloud_permalink || meta.source_permalink,
     }));
     setScLinkEnabled(true);
   }, [
     selectedScTrack,
     autoActions.autoCopyMetadata,
+    autoActions.autoApplyScResults,
     activeSource,
     setScQueryPending,
   ]);
@@ -338,9 +357,12 @@ export function TrackEditor({
     const parsed = parseFilename(trackInfo.file_name);
     const joinList = (v: string | string[] | null | undefined): string =>
       Array.isArray(v) ? v.join(", ") : (v ?? "");
+    // originalData reflects what's actually persisted in the file tags —
+    // NO filename-parse fallback. This is the baseline isChanged() compares
+    // against, so parse-derived values surface as dirty (yellow).
     const originalData: typeof emptyFormData = {
-      title: trackInfo.title || parsed.title || "",
-      artist: joinList(trackInfo.artist) || parsed.artist || "",
+      title: trackInfo.title || "",
+      artist: joinList(trackInfo.artist),
       bpm: trackInfo.bpm?.toString() || "",
       key: trackInfo.key || "",
       genre: trackInfo.genre || "",
@@ -351,15 +373,33 @@ export function TrackEditor({
       mix_name: trackInfo.mix_name || "",
       user_comment: trackInfo.user_comment || "",
     };
+    // Displayed form starts from real tags, falls back to filename parse for
+    // empty title/artist, then auto-actions transform the values. Each step
+    // only diverges from originalData when it produces a value the file
+    // doesn't already have — so the yellow "changed" border tracks reality.
+    const autoFilled: typeof emptyFormData = { ...originalData };
+    if (!autoFilled.title && parsed.title) autoFilled.title = parsed.title;
+    if (!autoFilled.artist && parsed.artist) autoFilled.artist = parsed.artist;
+    if (autoActions.autoRemoveOriginalMix && autoFilled.title) {
+      autoFilled.title = removeMix(autoFilled.title);
+    }
+    if (autoActions.autoClean) {
+      if (autoFilled.title) autoFilled.title = cleanTitle(autoFilled.title);
+      if (autoFilled.artist) autoFilled.artist = cleanArtist(autoFilled.artist);
+    }
+    if (autoActions.autoTitelize && autoFilled.title) {
+      autoFilled.title = titelize(autoFilled.title);
+    }
     // Overlay any pending edits the user made in the batch table before
     // opening the editor, so both surfaces show the same values.
     const existingPending = pendingFieldEdits.get(trackInfo.file_path) ?? {};
     const newFormData: typeof emptyFormData = {
-      ...originalData,
+      ...autoFilled,
       ...existingPending,
     } as typeof emptyFormData;
     setFormData(newFormData);
     setOriginalFormData(originalData);
+    setFormDataFilePath(trackInfo.file_path);
     setReleaseYearTouched(false);
     const parsedComment = parseComment(trackInfo.starlib_meta);
     setCommentData(parsedComment);
@@ -540,24 +580,6 @@ export function TrackEditor({
     !!formData.release_year &&
     releaseDateYear !== formData.release_year;
 
-  const mirrorToPending = (field: FormFieldKey, value: string) => {
-    if (!trackInfo) return;
-    const filePath = trackInfo.file_path;
-    const original = originalFormData[field];
-    setPendingFieldEdits((prev) => {
-      const existing = prev.get(filePath) ?? {};
-      const isDirty = value !== (original ?? "");
-      const { [field]: _omit, ...rest } = existing;
-      const nextEntry: Record<string, string> = isDirty
-        ? { ...rest, [field]: value }
-        : rest;
-      const next = new Map(prev);
-      if (Object.keys(nextEntry).length === 0) next.delete(filePath);
-      else next.set(filePath, nextEntry);
-      return next;
-    });
-  };
-
   const handleFormChange = (field: FormFieldKey, value: string) => {
     setFormData((prev) => {
       const next = { ...prev, [field]: value };
@@ -569,13 +591,54 @@ export function TrackEditor({
             ? parse(value, "yyyy-MM-dd", new Date())
             : null;
         next.release_year = parsed ? parsed.getFullYear().toString() : "";
-        mirrorToPending("release_year", next.release_year);
       }
       return next;
     });
     if (field === "release_year") setReleaseYearTouched(true);
-    mirrorToPending(field, value);
   };
+
+  // Mirror every formData diff vs originalFormData into the shared
+  // pendingFieldEdits map so the batch table reflects editor changes —
+  // including auto-actions (Clean, Titelize, Copy-from-SC, etc.) that bypass
+  // handleFormChange by calling setFormData directly.
+  useEffect(() => {
+    if (!trackInfo) return;
+    // Skip while formData/originalFormData still belong to the previously
+    // selected track — otherwise a track switch would copy the old track's
+    // diff under the new track's file_path.
+    if (formDataFilePath !== trackInfo.file_path) return;
+    const filePath = trackInfo.file_path;
+    setPendingFieldEdits((prev) => {
+      const entry: Record<string, string> = {};
+      for (const key of Object.keys(formData) as FormFieldKey[]) {
+        if (formData[key] !== (originalFormData[key] ?? "")) {
+          entry[key] = formData[key];
+        }
+      }
+      const existing = prev.get(filePath);
+      const entryKeys = Object.keys(entry);
+      if (entryKeys.length === 0) {
+        if (!prev.has(filePath)) return prev;
+        const next = new Map(prev);
+        next.delete(filePath);
+        return next;
+      }
+      const same =
+        existing !== undefined &&
+        Object.keys(existing).length === entryKeys.length &&
+        entryKeys.every((k) => existing[k] === entry[k]);
+      if (same) return prev;
+      const next = new Map(prev);
+      next.set(filePath, entry);
+      return next;
+    });
+  }, [
+    formData,
+    originalFormData,
+    trackInfo,
+    formDataFilePath,
+    setPendingFieldEdits,
+  ]);
 
   // React to external edits to the same file (e.g. user changed a cell in
   // the batch table while the editor was open).
@@ -1036,7 +1099,7 @@ export function TrackEditor({
                   <Input
                     value={formData.title}
                     onChange={(e) => handleFormChange("title", e.target.value)}
-                    className={`h-8 text-xs${isChanged("title") ? "border-warning/70" : ""}`}
+                    className={`h-8 text-xs ${isChanged("title") ? "border-warning/70" : ""}`}
                     placeholder="Title"
                   />
                 </div>
@@ -1126,7 +1189,7 @@ export function TrackEditor({
                   <Input
                     value={formData.artist}
                     onChange={(e) => handleFormChange("artist", e.target.value)}
-                    className={`h-8 text-xs${isChanged("artist") ? "border-warning/70" : ""}`}
+                    className={`h-8 text-xs ${isChanged("artist") ? "border-warning/70" : ""}`}
                     placeholder="Artist"
                   />
                 </div>
@@ -1181,7 +1244,7 @@ export function TrackEditor({
                 <Input
                   value={formData.genre}
                   onChange={(e) => handleFormChange("genre", e.target.value)}
-                  className={`h-8 text-xs${isChanged("genre") ? "border-warning/70" : ""}`}
+                  className={`h-8 text-xs ${isChanged("genre") ? "border-warning/70" : ""}`}
                   placeholder="—"
                 />
               </div>
@@ -1246,7 +1309,7 @@ export function TrackEditor({
                   type="number"
                   value={formData.bpm}
                   onChange={(e) => handleFormChange("bpm", e.target.value)}
-                  className={`h-8 text-xs${isChanged("bpm") ? "border-warning/70" : ""}`}
+                  className={`h-8 text-xs ${isChanged("bpm") ? "border-warning/70" : ""}`}
                   placeholder="—"
                 />
               </div>
@@ -1292,7 +1355,7 @@ export function TrackEditor({
                     <Button
                       variant="outline"
                       size="sm"
-                      className={`bg-card h-8 w-full justify-start px-2.5 text-left text-xs font-normal dark:bg-muted${isChanged("release_date") ? "border-warning/70 dark:border-warning/70" : "dark:border-input"}${!formData.release_date ? "text-muted-foreground" : "text-foreground"}`}
+                      className={`bg-card dark:bg-muted h-8 w-full justify-start px-2.5 text-left text-xs font-normal ${isChanged("release_date") ? "border-warning/70 dark:border-warning/70" : "dark:border-input"} ${!formData.release_date ? "text-muted-foreground" : "text-foreground"}`}
                     >
                       <CalendarIcon className="mr-1 shrink-0" />
                       {formData.release_date ? (
@@ -1381,7 +1444,7 @@ export function TrackEditor({
                   onChange={(e) =>
                     handleFormChange("release_year", e.target.value)
                   }
-                  className={`h-8 text-xs${isChanged("release_year") || yearMismatch ? "border-warning/70" : ""}`}
+                  className={`h-8 text-xs ${isChanged("release_year") || yearMismatch ? "border-warning/70" : ""}`}
                   placeholder="—"
                 />
               </div>
@@ -1410,7 +1473,7 @@ export function TrackEditor({
                 <Input
                   value={formData.key}
                   onChange={(e) => handleFormChange("key", e.target.value)}
-                  className={`h-8 text-xs${isChanged("key") ? "border-warning/70" : ""}`}
+                  className={`h-8 text-xs ${isChanged("key") ? "border-warning/70" : ""}`}
                   placeholder="—"
                 />
               </div>
@@ -1502,7 +1565,7 @@ export function TrackEditor({
                   onChange={(e) =>
                     handleFormChange("original_artist", e.target.value)
                   }
-                  className={`h-8 text-xs${isChanged("original_artist") ? "border-warning/70" : ""}`}
+                  className={`h-8 text-xs ${isChanged("original_artist") ? "border-warning/70" : ""}`}
                   placeholder="—"
                 />
               </div>
@@ -1586,7 +1649,7 @@ export function TrackEditor({
                 <Input
                   value={formData.remixer}
                   onChange={(e) => handleFormChange("remixer", e.target.value)}
-                  className={`h-8 text-xs${isChanged("remixer") ? "border-warning/70" : ""}`}
+                  className={`h-8 text-xs ${isChanged("remixer") ? "border-warning/70" : ""}`}
                   placeholder="—"
                 />
               </div>
@@ -1649,7 +1712,7 @@ export function TrackEditor({
               <Input
                 value={formData.mix_name}
                 onChange={(e) => handleFormChange("mix_name", e.target.value)}
-                className={`h-8 text-xs${isChanged("mix_name") ? "border-warning/70" : ""}`}
+                className={`h-8 text-xs ${isChanged("mix_name") ? "border-warning/70" : ""}`}
                 placeholder="—"
               />
             </div>
@@ -1683,7 +1746,7 @@ export function TrackEditor({
                 onChange={(e) =>
                   handleFormChange("user_comment", e.target.value)
                 }
-                className={`bg-card dark:bg-muted focus:border-ring min-h-16 resize-y rounded-md border px-2.5 py-2 text-xs outline-none focus:ring-1 focus:ring-ring/50${isChanged("user_comment") ? "border-warning/70" : "border-input dark:border-input"}`}
+                className={`bg-card dark:bg-muted focus:border-ring focus:ring-ring/50 min-h-16 resize-y rounded-md border px-2.5 py-2 text-xs outline-none focus:ring-1 ${isChanged("user_comment") ? "border-warning/70" : "border-input dark:border-input"}`}
                 placeholder="—"
               />
             </div>
