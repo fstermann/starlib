@@ -97,7 +97,7 @@ export default function Home() {
                 fill="none"
                 style={{
                   stroke: "var(--brand)",
-                  strokeOpacity: 0.7,
+                  strokeOpacity: 0.3,
                   strokeWidth: 1.5,
                   strokeDasharray: "3 6",
                 }}
@@ -111,7 +111,7 @@ export default function Home() {
                 fill="none"
                 style={{
                   stroke: "var(--brand)",
-                  strokeOpacity: 0.5,
+                  strokeOpacity: 0.2,
                   strokeWidth: 1.5,
                   strokeDasharray: "2 5",
                 }}

@@ -119,7 +119,7 @@ export function StarMate({
     // --- Face group on the forward surface ---
     const faceGroup = new Zdog.Anchor({
       addTo: illo,
-      translate: { z: STAR_THICKNESS / 2 + 0.5 },
+      translate: { z: STAR_THICKNESS / 2 + 2.5 },
     });
 
     const buildFace = (expression: Expression) => {
@@ -135,9 +135,10 @@ export function StarMate({
           addTo: faceGroup,
           diameter: 4.6,
           translate: { x, y: eyeY },
-          stroke: 0.8,
+          stroke: 2.8,
           color: EYE_COLOR,
           fill: true,
+          backface: false,
         });
       };
 
@@ -155,12 +156,13 @@ export function StarMate({
             },
           ],
           closed: false,
-          stroke: 1.4,
+          stroke: 2.2,
           color: EYE_COLOR,
+          backface: false,
         });
       };
 
-      const arcMouth = (width: number, dip: number, thickness = 1.4) => {
+      const arcMouth = (width: number, dip: number, thickness = 2.2) => {
         new Zdog.Shape({
           addTo: faceGroup,
           path: [
@@ -175,6 +177,7 @@ export function StarMate({
           closed: false,
           stroke: thickness,
           color: EYE_COLOR,
+          backface: false,
         });
       };
 
@@ -186,6 +189,7 @@ export function StarMate({
           stroke: 0.8,
           color: EYE_COLOR,
           fill: true,
+          backface: false,
         });
       };
 
@@ -197,6 +201,7 @@ export function StarMate({
           stroke: 0.8,
           color: EYE_COLOR,
           fill: true,
+          backface: false,
         });
       };
 
@@ -215,17 +220,19 @@ export function StarMate({
           addTo: faceGroup,
           diameter: 3.4,
           translate: { x: lx, y: eyeY },
-          stroke: 0.6,
+          stroke: 2.4,
           color: EYE_COLOR,
           fill: true,
+          backface: false,
         });
         new Zdog.Ellipse({
           addTo: faceGroup,
           diameter: 3.4,
           translate: { x: rx, y: eyeY },
-          stroke: 0.6,
+          stroke: 2.4,
           color: EYE_COLOR,
           fill: true,
+          backface: false,
         });
       } else {
         openEye(lx);
@@ -238,11 +245,11 @@ export function StarMate({
       } else if (expression === "yawn") {
         ovalMouth(3.2);
       } else if (expression === "sleepy") {
-        arcMouth(2, -1, 1.2);
+        arcMouth(2, -1, 2);
       } else if (expression === "happy") {
-        arcMouth(6, 4, 1.6);
+        arcMouth(6, 4, 2.4);
       } else {
-        arcMouth(4.5, 3, 1.4);
+        arcMouth(4.5, 3, 2.2);
       }
     };
     buildFace("smile");
