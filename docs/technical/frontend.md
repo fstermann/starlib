@@ -54,7 +54,7 @@ npm run generate
 
 ## Command palette
 
-A global ⌘K / Ctrl+K palette lives in `src/components/command-palette/`. Two extension points:
+A global ⌘P / Ctrl+P palette lives in `src/components/command-palette/`. Two extension points:
 
 ### Contextual commands — `useCommand`
 

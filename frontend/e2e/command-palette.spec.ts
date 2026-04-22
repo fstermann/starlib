@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures";
  * Command palette end-to-end tests.
  *
  * These cover the extensibility architecture end-to-end:
- * - Global ⌘K hotkey + the top-bar search trigger both open the palette
+ * - Global ⌘P hotkey + the top-bar search trigger both open the palette
  * - Nav provider (static sync) contributes "Go to" commands
  * - Dynamic `useCommand` registrations show up (theme toggle, etc.)
  * - Pinned-folder sync provider resolves shortcut names to absolute paths
@@ -124,7 +124,7 @@ test.describe("Command palette", () => {
     await mockLocalLibrary(page);
   });
 
-  test("opens with the top-bar trigger and with ⌘K", async ({ page }) => {
+  test("opens with the top-bar trigger and with ⌘P", async ({ page }) => {
     await page.goto("/library");
     const trigger = page.getByRole("button", { name: /open command palette/i });
     await expect(trigger).toBeVisible();
@@ -136,7 +136,7 @@ test.describe("Command palette", () => {
     await expect(dialog).toBeHidden();
 
     // Hotkey path — press on the body to ensure window receives the event.
-    await page.locator("body").press("Meta+k");
+    await page.locator("body").press("Meta+p");
     await expect(dialog).toBeVisible();
   });
 
@@ -145,9 +145,7 @@ test.describe("Command palette", () => {
     await page.getByRole("button", { name: /open command palette/i }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByText(/go to library/i).first()).toBeVisible();
-    await expect(
-      dialog.getByText(/soundcloud.*search/i).first(),
-    ).toBeVisible();
+    await expect(dialog.getByText(/soundcloud.*search/i).first()).toBeVisible();
     await expect(dialog.getByText(/switch to .* theme/i)).toBeVisible();
   });
 
@@ -155,7 +153,9 @@ test.describe("Command palette", () => {
     await page.goto("/library?source=filesystem");
     await page.getByRole("button", { name: /open command palette/i }).click();
     const dialog = page.getByRole("dialog");
-    const item = dialog.getByRole("option", { name: /open folder: collection/i });
+    const item = dialog.getByRole("option", {
+      name: /open folder: collection/i,
+    });
     await expect(item).toBeVisible();
     await item.click();
     await expect(page).toHaveURL(/nodeId=%2Fmusic%2Fcollection/);
@@ -205,7 +205,10 @@ test.describe("Command palette", () => {
     await page.getByRole("button", { name: /open command palette/i }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByPlaceholder(/search or type a command/i).fill("weekly");
-    await dialog.getByRole("option", { name: /go to weekly/i }).first().click();
+    await dialog
+      .getByRole("option", { name: /go to weekly/i })
+      .first()
+      .click();
     await expect(page).toHaveURL(/\/weekly/);
   });
 });

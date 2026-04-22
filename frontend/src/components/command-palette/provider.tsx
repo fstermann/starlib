@@ -71,10 +71,10 @@ export function CommandPaletteProvider({
 
   const toggle = useCallback(() => setOpen((o) => !o), []);
 
-  // Global ⌘K / Ctrl+K hotkey.
+  // Global ⌘P / Ctrl+P hotkey.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+      if (e.key === "p" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         toggle();
       }

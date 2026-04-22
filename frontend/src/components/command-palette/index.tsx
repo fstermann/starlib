@@ -51,10 +51,7 @@ export function CommandPalette() {
   // Stable handlers for built-in providers — inline arrows would thrash their memos.
   const onNavigate = useCallback((href: string) => router.push(href), [router]);
   const onSelectTrack = useCallback(
-    (track: {
-      permalink_url?: string | null;
-      urn?: string | null;
-    }) => {
+    (track: { permalink_url?: string | null; urn?: string | null }) => {
       const urn = track.urn;
       // Jump to the Search tab with the USER'S palette query (not the track URL)
       // so results show the full list they saw in the palette. `play=<urn>`

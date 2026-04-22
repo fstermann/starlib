@@ -50,7 +50,7 @@ If you can't reach the surface via the browser (e.g. it requires a Tauri build),
 
 # Command palette
 
-Starlib has a global ⌘K / Ctrl+K palette in `frontend/src/components/command-palette/`. Two extension points:
+Starlib has a global ⌘P / Ctrl+P palette in `frontend/src/components/command-palette/`. Two extension points:
 
 - **`useCommand({...})`** — one-line hook to register a context-aware command (e.g. "Analyze selected tracks"). Lives while the calling component is mounted; auto-unregisters on unmount. Prefer this for feature-scoped actions over touching any central registry.
 - **Providers** — longer-lived sources (nav, SoundCloud search, etc.) live in `command-palette/providers/*` and register via `useRegisterProvider`. Add a provider when a feature needs to contribute a *list* of items (often async/search-driven), not a single action.

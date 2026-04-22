@@ -169,7 +169,7 @@ Under **Settings > Ollama**, connect a local Ollama instance for LLM-powered fea
 
 ## :material-keyboard: Command palette
 
-Press ++cmd+k++ (macOS) or ++ctrl+k++ (Windows/Linux) from anywhere to open the command palette — a Spotlight-style overlay for fast navigation, search, and actions. There's also a **Search…** bar in the middle of the top app bar you can click instead.
+Press ++cmd+p++ (macOS) or ++ctrl+p++ (Windows/Linux) from anywhere to open the command palette — a Spotlight-style overlay for fast navigation, search, and actions. There's also a **Search…** bar in the middle of the top app bar you can click instead.
 
 - **Go to** any page or sub-tab (Library Filesystem, Library SoundCloud Search/Discover/My Library, Weekly Favorites…)
 - **Folders** — jump directly to any pinned folder shortcut
