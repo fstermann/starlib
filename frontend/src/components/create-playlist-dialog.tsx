@@ -28,6 +28,10 @@ interface CreatePlaylistDialogProps {
   defaultTitle?: string;
   defaultDescription?: string;
   onCreated?: () => void;
+  /** Optional controlled open state — lets the dialog be opened from code
+   * paths that don't render the trigger (e.g. command palette). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 function extractUrn(track: SCTrack): string | undefined {
@@ -49,8 +53,12 @@ export function CreatePlaylistDialog({
   defaultTitle,
   defaultDescription,
   onCreated,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: CreatePlaylistDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = controlledOnOpenChange ?? setUncontrolledOpen;
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [isPublic, setIsPublic] = useState(false);
@@ -104,16 +112,20 @@ export function CreatePlaylistDialog({
     }
   }
 
+  const isControlled = controlledOpen !== undefined;
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button size="sm" variant="default">
-            <ListPlus className="mr-1.5 size-4" />
-            Create Playlist ({tracks.length})
-          </Button>
-        )}
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button size="sm" variant="default">
+              <ListPlus className="mr-1.5 size-4" />
+              Create Playlist ({tracks.length})
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Create SoundCloud Playlist</DialogTitle>

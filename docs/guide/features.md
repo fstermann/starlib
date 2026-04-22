@@ -88,8 +88,9 @@ Browse your SoundCloud library and discover music from other users. Switch the s
 |---------|-------------|
 | **My Library** | Your likes and playlists on SoundCloud |
 | **Discover** | Search for another user and browse their library, with an option to exclude tracks you've already liked |
+| **Search** | Free-text search across all of SoundCloud — find any track, not just ones in your (or another user's) likes. Paste a SoundCloud track URL to resolve it directly. |
 
-Both sub-tabs share the same filter/table UX: filter by genre, duration, and collection status; see at a glance which tracks are already in your local collection; select tracks to build a playlist and publish it to SoundCloud.
+All three sub-tabs share the same filter/table UX: filter by genre, duration, and collection status; see at a glance which tracks are already in your local collection; select tracks to build a playlist and publish it to SoundCloud.
 
 <figure markdown="span" style="text-align: center;">
   ![Library — SoundCloud](../assets/images/screenshots/library-soundcloud.png){ width="90%" }
@@ -165,6 +166,19 @@ Under **Settings > Library**, choose the default format used by convert rules se
 #### Ollama (LLM Integration)
 
 Under **Settings > Ollama**, connect a local Ollama instance for LLM-powered features. See the [Ollama setup guide](ollama.md) for installation and configuration.
+
+## :material-keyboard: Command palette
+
+Press ++cmd+p++ (macOS) or ++ctrl+p++ (Windows/Linux) from anywhere to open the command palette — a Spotlight-style overlay for fast navigation, search, and actions. There's also a **Search…** bar in the middle of the top app bar you can click instead.
+
+- **Go to** any page or sub-tab (Library Filesystem, Library SoundCloud Search/Discover/My Library, Weekly Favorites…)
+- **Folders** — jump directly to any pinned folder shortcut
+- **Local Library** — search your on-disk collection by title or artist
+- **SoundCloud Tracks** — search all of SoundCloud by title/artist, or paste a track URL. Selecting a result opens the Search tab with that track and **starts playback automatically**.
+- **SoundCloud Users** — jump straight into a user's library in Discover
+- **Actions** — connect/disconnect SoundCloud, toggle the theme, open Settings, reload the current library, create a playlist from selected tracks, and other context-aware commands contributed by the current view
+
+Use ++arrow-up++ / ++arrow-down++ to navigate, ++enter++ to run, ++escape++ to dismiss.
 
 ## :material-calendar-week: Weekly Favorites
 

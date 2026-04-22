@@ -1,5 +1,7 @@
 "use client";
 
+import { CommandPaletteTrigger } from "@/components/command-palette";
+
 import { useTopBarContent } from "./top-bar-context";
 
 export function TopBar() {
@@ -10,7 +12,12 @@ export function TopBar() {
       <div className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium">
         {title ?? null}
       </div>
-      <div className="flex items-center gap-1">{actions}</div>
+      <div className="hidden shrink-0 sm:block">
+        <CommandPaletteTrigger />
+      </div>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+        {actions}
+      </div>
     </header>
   );
 }

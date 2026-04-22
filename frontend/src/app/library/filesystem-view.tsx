@@ -293,8 +293,20 @@ export function FilesystemView() {
     setTableTotal(t);
     setTableCacheLoading(cl);
   }, []);
+
+  // Autoplay: when a file_path is present in ?play=, select + autoplay that
+  // row once it appears in the current fetch result. Consumed by the palette
+  // "search + open + play" flow.
+  const [playFilePath, setPlayFilePath] = useQueryState("play", {
+    defaultValue: "",
+  });
+  // Increment whenever the table's items change so the autoplay effect below
+  // can react (refs don't trigger re-renders).
+  const [tableItemsVersion, setTableItemsVersion] = useState(0);
+
   const handleItemsChange = useCallback((items: TrackBrowse[]) => {
     tableItemsRef.current = items;
+    setTableItemsVersion((v) => v + 1);
   }, []);
 
   // Column visibility prefs (persisted per view)
@@ -342,6 +354,37 @@ export function FilesystemView() {
   // capturing the mount-time `player` is intentional.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => player.stop(), []);
+
+  // Autoplay the requested file once it appears in the table. Fires when
+  // either the URL `play=` param is set or new rows arrive.
+  useEffect(() => {
+    if (!playFilePath) return;
+    const items = tableItemsRef.current;
+    const idx = items.findIndex((i) => i.file_path === playFilePath);
+    if (idx < 0) return;
+    const target = items[idx];
+    const file: FileInfo = {
+      file_path: target.file_path,
+      file_name: target.file_name,
+      file_size: target.file_size,
+      file_format: target.file_format,
+      has_artwork: target.has_artwork,
+    };
+    setSelectedFile(file);
+    setEditorOpen(true);
+    const queue = items.map((it) => ({
+      filePath: it.file_path,
+      fileName: it.file_name,
+      title: it.title ?? undefined,
+      artist: Array.isArray(it.artist)
+        ? it.artist.join(", ")
+        : (it.artist ?? undefined),
+    }));
+    player.playQueue(queue, idx);
+    setPlayFilePath("");
+    // player is stable (context singleton); omitted intentionally.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playFilePath, tableItemsVersion, setPlayFilePath]);
 
   const selectNextTrack = useCallback((currentFilePath: string) => {
     const items = tableItemsRef.current;

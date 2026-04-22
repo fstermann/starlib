@@ -1,11 +1,12 @@
 "use client";
 
-import { CalendarDays, Settings } from "lucide-react";
+import { Moon, Settings, Sun } from "lucide-react";
+import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { LibraryIcon } from "@/components/icons/library-icon";
+import { useCommand } from "@/components/command-palette";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { SettingsDialog } from "@/components/settings-dialog";
 import {
@@ -14,6 +15,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { clearTokens } from "@/lib/auth";
+import { NAV_LINKS } from "@/lib/nav-config";
 
 interface User {
   id: number;
@@ -22,16 +24,80 @@ interface User {
   avatar_url: string | null;
 }
 
-const NAV_LINKS = [
-  { href: "/library", label: "Library", icon: LibraryIcon },
-  { href: "/weekly", label: "Weekly Favorites", icon: CalendarDays },
-];
-
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { resolvedTheme, setTheme } = useTheme();
   const [user, setUser] = useState<User | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Palette commands (lifecycle-bound — here since sidebar is always mounted).
+  const runSettings = useCallback(({ close }: { close: () => void }) => {
+    setSettingsOpen(true);
+    close();
+  }, []);
+  useCommand({
+    id: "settings:open",
+    label: "Open Settings",
+    group: "Actions",
+    icon: Settings,
+    keywords: ["preferences", "config"],
+    run: runSettings,
+  });
+
+  const runToggleTheme = useCallback(
+    ({ close }: { close: () => void }) => {
+      setTheme(resolvedTheme === "dark" ? "light" : "dark");
+      close();
+    },
+    [resolvedTheme, setTheme],
+  );
+  useCommand({
+    id: "theme:toggle",
+    label: `Switch to ${resolvedTheme === "dark" ? "Light" : "Dark"} Theme`,
+    group: "Actions",
+    icon: resolvedTheme === "dark" ? Sun : Moon,
+    keywords: ["theme", "appearance", "dark", "light", "mode"],
+    run: runToggleTheme,
+  });
+
+  const runConnect = useCallback(
+    ({ close }: { close: () => void }) => {
+      router.push("/auth/login");
+      close();
+    },
+    [router],
+  );
+  useCommand({
+    id: "auth:connect",
+    label: "Connect SoundCloud",
+    group: "Actions",
+    icon: SoundCloudLogo,
+    keywords: ["login", "sign in", "auth"],
+    when: !user,
+    run: runConnect,
+  });
+
+  const runDisconnect = useCallback(
+    ({ close }: { close: () => void }) => {
+      clearTokens();
+      setUser(null);
+      router.push("/");
+      close();
+    },
+    [router],
+  );
+  useCommand({
+    id: "auth:disconnect",
+    label: user
+      ? `Disconnect SoundCloud (${user.username})`
+      : "Disconnect SoundCloud",
+    group: "Actions",
+    icon: SoundCloudLogo,
+    keywords: ["logout", "sign out", "auth"],
+    when: !!user,
+    run: runDisconnect,
+  });
 
   useEffect(() => {
     const readUser = () => {

@@ -7,6 +7,10 @@ import { ThemeProvider } from "next-themes";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
 import { BackendGate } from "@/components/backend-gate";
+import {
+  CommandPalette,
+  CommandPaletteProvider,
+} from "@/components/command-palette";
 import { DeepLinkListener } from "@/components/deep-link-listener";
 import { LayoutShell } from "@/components/layout-shell";
 import { TopBar } from "@/components/layout/top-bar";
@@ -56,14 +60,17 @@ export default function RootLayout({
               <NuqsAdapter>
                 <PlayerProvider>
                   <TopBarProvider>
-                    <Sidebar />
-                    <TopBar />
-                    <LayoutShell>
-                      <UpdateBanner />
-                      <SetupGate>{children}</SetupGate>
-                    </LayoutShell>
-                    <WaveformPlayer />
-                    <Toaster />
+                    <CommandPaletteProvider>
+                      <Sidebar />
+                      <TopBar />
+                      <LayoutShell>
+                        <UpdateBanner />
+                        <SetupGate>{children}</SetupGate>
+                      </LayoutShell>
+                      <WaveformPlayer />
+                      <Toaster />
+                      <CommandPalette />
+                    </CommandPaletteProvider>
                   </TopBarProvider>
                 </PlayerProvider>
               </NuqsAdapter>
