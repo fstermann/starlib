@@ -6,7 +6,7 @@ import {
   Eraser,
   Image as ImageIcon,
   PencilLine,
-  Settings2,
+  Wand2,
   XCircle,
 } from "lucide-react";
 import { useQueryState } from "nuqs";
@@ -303,7 +303,12 @@ export function FilesystemView() {
     FILESYSTEM_COLUMN_DEFS,
   );
 
-  // Auto-action settings
+  // Auto-action settings. Master switch is off by default — browsing should
+  // never rewrite form values behind the user's back. Left-click on the wand
+  // toolbar button toggles the master; right-click opens the fine-grained
+  // popover to configure which actions run when the master is on.
+  const [autoActionsEnabled, setAutoActionsEnabled] = useState(false);
+  const [autoActionsMenuOpen, setAutoActionsMenuOpen] = useState(false);
   const [autoActions, setAutoActions] = useState<AutoActions>({
     autoCopyArtwork: true,
     autoCopyMetadata: true,
@@ -312,6 +317,16 @@ export function FilesystemView() {
     autoRemoveOriginalMix: true,
     autoApplyScResults: true,
   });
+  const effectiveAutoActions: AutoActions = autoActionsEnabled
+    ? autoActions
+    : {
+        autoCopyArtwork: false,
+        autoCopyMetadata: false,
+        autoClean: false,
+        autoTitelize: false,
+        autoRemoveOriginalMix: false,
+        autoApplyScResults: false,
+      };
 
   const player = usePlayer();
 
@@ -402,18 +417,55 @@ export function FilesystemView() {
             <PencilLine className="size-3.5" />
           </button>
         )}
-        <Popover>
+        <Popover
+          open={autoActionsMenuOpen}
+          onOpenChange={setAutoActionsMenuOpen}
+        >
           <PopoverTrigger asChild>
-            <button className="hover:bg-accent text-muted-foreground hover:text-foreground flex size-6 cursor-pointer items-center justify-center rounded-md transition-colors">
-              <Settings2 className="size-3.5" />
+            <button
+              onClick={() => setAutoActionsEnabled((v) => !v)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setAutoActionsMenuOpen(true);
+              }}
+              className={cn(
+                "hover:bg-accent flex size-6 cursor-pointer items-center justify-center rounded-md transition-colors",
+                autoActionsEnabled
+                  ? "text-primary hover:text-primary"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              title={
+                autoActionsEnabled
+                  ? "Auto-actions on — click to disable, right-click to configure"
+                  : "Auto-actions off — click to enable, right-click to configure"
+              }
+            >
+              <Wand2 className="size-3.5" />
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-52" align="end">
             <div className="space-y-3">
-              <h4 className="text-muted-foreground text-xs font-bold tracking-widest uppercase">
-                Auto-Actions
-              </h4>
-              <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-muted-foreground text-xs font-bold tracking-widest uppercase">
+                  Auto-Actions
+                </h4>
+                <span
+                  className={cn(
+                    "text-[10px] font-medium tracking-wide uppercase",
+                    autoActionsEnabled
+                      ? "text-primary"
+                      : "text-muted-foreground/60",
+                  )}
+                >
+                  {autoActionsEnabled ? "On" : "Off"}
+                </span>
+              </div>
+              <div
+                className={cn(
+                  "space-y-2",
+                  !autoActionsEnabled && "pointer-events-none opacity-50",
+                )}
+              >
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="auto-artwork"
@@ -621,7 +673,7 @@ export function FilesystemView() {
               <TrackEditor
                 selectedFile={selectedFile}
                 folderRulesetId={effectiveRulesetId}
-                autoActions={autoActions}
+                autoActions={effectiveAutoActions}
                 onTableRefresh={() => setRefreshToken((t) => t + 1)}
                 onClose={() => setEditorOpen(false)}
                 onFileChange={setSelectedFile}
