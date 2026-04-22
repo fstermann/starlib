@@ -1,10 +1,11 @@
 "use client";
 
-import { Compass, Heart, ListPlus, Search } from "lucide-react";
+import { Compass, Heart, ListPlus, RefreshCw, Search } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
+import { useCommand } from "@/components/command-palette";
 import {
   CreatePlaylistDialog,
   MAX_TRACKS,
@@ -29,6 +30,8 @@ import { useColumnPrefs } from "@/lib/columns/use-column-prefs";
 import type { FilterSchemaResponse } from "@/lib/filters/schema";
 import { useFilterSchema } from "@/lib/filters/use-filter-schema";
 import { useFilterState } from "@/lib/filters/use-filter-state";
+import { usePlayer } from "@/lib/player-context";
+import * as soundcloud from "@/lib/soundcloud";
 import type { SCTrack, SCUser } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
@@ -81,9 +84,37 @@ export function SoundcloudView() {
 
   // User search state (Discover tab)
   const [selectedUser, setSelectedUser] = useState<SCUser | null>(null);
+  const [userPermalink, setUserPermalink] = useQueryState("u", {
+    defaultValue: "",
+  });
 
   // Track search state (Search tab)
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useQueryState("q", {
+    defaultValue: "",
+  });
+  // Autoplay: when a track URN is present, the first search result matching
+  // this URN is auto-played once. Consumed from the palette "open + play" flow.
+  const [playUrn, setPlayUrn] = useQueryState("play", { defaultValue: "" });
+  const player = usePlayer();
+
+  // Hydrate selectedUser from ?u=permalink on mount or external nav.
+  useEffect(() => {
+    if (!userPermalink) return;
+    if (selectedUser?.permalink === userPermalink) return;
+    let cancelled = false;
+    (async () => {
+      const resolved = await soundcloud.resolveUrl(
+        `https://soundcloud.com/${userPermalink}`,
+      );
+      if (cancelled) return;
+      if (resolved && "username" in resolved && resolved.kind === "user") {
+        setSelectedUser(resolved as SCUser);
+      }
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [userPermalink, selectedUser?.permalink]);
 
   // Which SoundCloud user we're currently viewing
   const activeUrn: string | "me" | null =
@@ -100,6 +131,46 @@ export function SoundcloudView() {
   );
   const activeLikes =
     tab === "me" ? myLikes : tab === "discover" ? discoverLikes : trackSearch;
+
+  // Autoplay the requested track once search results arrive.
+  useEffect(() => {
+    if (!playUrn || tab !== "search") return;
+    const match = trackSearch.tracks.find((t) => t.urn === playUrn);
+    if (!match) return;
+    const trackIdPart = playUrn.split(":").pop();
+    const trackId = trackIdPart ? Number(trackIdPart) : NaN;
+    if (!trackId || Number.isNaN(trackId)) {
+      setPlayUrn("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { url } = await api.getSoundcloudStreamUrl(trackId);
+        if (cancelled) return;
+        player.play({
+          filePath: `soundcloud:${trackId}`,
+          fileName: match.title ?? String(trackId),
+          title: match.title ?? undefined,
+          artist: match.user?.username ?? undefined,
+          streamUrl: url,
+          waveformUrl: match.waveform_url ?? undefined,
+          streamRefreshKey: trackId,
+          permalinkUrl: match.permalink_url ?? undefined,
+          artworkUrl: match.artwork_url ?? undefined,
+        });
+      } catch {
+        // swallow — user can hit play manually
+      } finally {
+        if (!cancelled) setPlayUrn("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // player is stable (context singleton); intentionally excluded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playUrn, tab, trackSearch.tracks, setPlayUrn]);
 
   const { playlists } = useUserPlaylists(activeUrn);
 
@@ -278,10 +349,19 @@ export function SoundcloudView() {
           {selectedUser ? (
             <UserCard
               user={selectedUser}
-              onClear={() => setSelectedUser(null)}
+              onClear={() => {
+                setSelectedUser(null);
+                setUserPermalink("");
+              }}
             />
           ) : (
-            <UserSearch onSelect={setSelectedUser} />
+            <UserSearch
+              onSelect={(u) => {
+                if (!u) return;
+                setSelectedUser(u);
+                setUserPermalink(u.permalink ?? "");
+              }}
+            />
           )}
         </div>
       )}
@@ -380,6 +460,7 @@ function LikesView({
 }: LikesViewProps) {
   // Selection state stays local — filters live at the page level.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [createPlaylistOpen, setCreatePlaylistOpen] = useState(false);
 
   const columnPrefs = useColumnPrefs("library.soundcloud", LIKES_COLUMN_DEFS);
 
@@ -465,6 +546,43 @@ function LikesView({
     : isAllPlaylistsView
       ? combinedPlaylistTracks.tracks.length
       : activeLikes.loaded;
+
+  // Contextual palette commands — registered only while this view is mounted
+  // and a selection/filter context applies.
+  const openCreatePlaylist = useCallback(() => setCreatePlaylistOpen(true), []);
+  useCommand({
+    id: "sc:create-playlist-from-selection",
+    label: `Create playlist from ${selectedIds.size} selected track${selectedIds.size === 1 ? "" : "s"}`,
+    group: "Actions",
+    icon: ListPlus,
+    when: selectedIds.size > 0 && selectedIds.size <= MAX_TRACKS,
+    run: useCallback(
+      ({ close }: { close: () => void }) => {
+        openCreatePlaylist();
+        close();
+      },
+      [openCreatePlaylist],
+    ),
+  });
+
+  const reloadActiveLikes = activeLikes.reload;
+  useCommand({
+    id: "sc:reload",
+    label:
+      tab === "search"
+        ? "Re-run SoundCloud search"
+        : "Reload SoundCloud library",
+    group: "Actions",
+    icon: RefreshCw,
+    when: tab !== "search" || searchQuery.trim().length > 0,
+    run: useCallback(
+      ({ close }: { close: () => void }) => {
+        reloadActiveLikes();
+        close();
+      },
+      [reloadActiveLikes],
+    ),
+  });
 
   return (
     <>
@@ -603,6 +721,13 @@ function LikesView({
           </div>
         )}
       </div>
+
+      {/* Headless controlled dialog for palette-triggered Create Playlist. */}
+      <CreatePlaylistDialog
+        tracks={selectedTracks}
+        open={createPlaylistOpen}
+        onOpenChange={setCreatePlaylistOpen}
+      />
     </>
   );
 }

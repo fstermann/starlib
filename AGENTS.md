@@ -33,7 +33,36 @@ Frontend routes: `/library` (filesystem + SoundCloud sources via `?source=`), `/
 - **All git hooks** are managed by the Python `pre-commit` framework via `.pre-commit-config.yaml` at the repo root. Install once with `pre-commit install`. Python hooks (ruff, mypy, pydoclint) and frontend hooks (prettier, tsc) live side by side — do not introduce a second hook runner.
 - **Frontend formatter**: Prettier owns all formatting. Don't hand-sort imports or Tailwind classes — `@ianvs/prettier-plugin-sort-imports` and `prettier-plugin-tailwindcss` handle both. `cn` and `cva` are registered as Tailwind functions. Config: `frontend/.prettierrc.json`.
 - **Frontend scripts**: `npm run lint`, `npm run format`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`.
-- **CI** should run: `lint`, `format:check`, `typecheck`, `test`, `build`.
+- **Playwright e2e** lives in `frontend/e2e/`, config in `frontend/playwright.config.ts`, fixtures in `frontend/e2e/fixtures.ts` (mocks the backend so tests don't need a running API). Run with `npx playwright test` from `frontend/`.
+- **CI** should run: `lint`, `format:check`, `typecheck`, `test`, `build`, and `playwright test`.
+
+### Rule: any user-visible feature needs a Playwright test
+
+This is binding, not aspirational. A feature that isn't exercised by an e2e test rots silently — the palette "looks the same" while its commands stop registering. Every PR that adds or changes a user-visible surface MUST include/update a Playwright spec that:
+
+1. Mounts the feature through the normal route (no unit-level shortcuts).
+2. Asserts the observable behavior (URL after navigation, dialog visible, autoplay URL hit, etc.) — not implementation details.
+3. Mocks any network in `fixtures.ts` or the spec itself; tests must run offline.
+
+Examples of "user-visible" that qualify: new routes, new palette commands/providers, new buttons in toolbars or top bar, new modal dialogs, new URL-driven behaviors (autoplay, deep-link params), new batch actions. Pure refactors and internal utilities are exempt.
+
+If you can't reach the surface via the browser (e.g. it requires a Tauri build), say so explicitly in the PR and write the closest achievable test (e.g. rendering the page stops crashing).
+
+# Command palette
+
+Starlib has a global ⌘K / Ctrl+K palette in `frontend/src/components/command-palette/`. Two extension points:
+
+- **`useCommand({...})`** — one-line hook to register a context-aware command (e.g. "Analyze selected tracks"). Lives while the calling component is mounted; auto-unregisters on unmount. Prefer this for feature-scoped actions over touching any central registry.
+- **Providers** — longer-lived sources (nav, SoundCloud search, etc.) live in `command-palette/providers/*` and register via `useRegisterProvider`. Add a provider when a feature needs to contribute a *list* of items (often async/search-driven), not a single action.
+
+Nav commands are derived from `src/lib/nav-config.ts` — adding a sidebar route or `QUICK_JUMPS` entry auto-adds a "Go to" palette entry. The palette's top-bar trigger lives in `src/components/command-palette/search-trigger.tsx`.
+
+**Commands must be documented.** `docs/guide/command-palette.md` is the authoritative list. When you add a `useCommand({...})` or a new provider:
+
+1. Add the id + label + gate to the table in `docs/guide/command-palette.md`.
+2. Add the id (or dynamic prefix) to `KNOWN_COMMAND_IDS` / `KNOWN_COMMAND_PREFIXES` in `frontend/e2e/command-palette-catalog.spec.ts`.
+
+The catalog spec opens the palette across several contexts, scrapes every rendered `data-command-id`, and fails CI if any id is missing from the known set — so the docs can't silently drift.
 
 # Backend
 
