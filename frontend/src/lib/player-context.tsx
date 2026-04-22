@@ -27,18 +27,35 @@ export interface PlayerTrack {
   /** External URL the track originates from (e.g. SoundCloud permalink).
    * Rendered as a link next to the title in the mini player. */
   permalinkUrl?: string;
+  /** Artwork URL. For local files, the backend's `/artwork` endpoint; for
+   * SoundCloud tracks, the CDN `artwork_url`. Surfaced to the OS media
+   * widget via the Media Session API. */
+  artworkUrl?: string;
 }
 
 interface PlayerContextValue {
   currentTrack: PlayerTrack | null;
   isPlaying: boolean;
+  /** Load a single track without playing. Replaces the queue with [track]. */
   load: (track: PlayerTrack) => void;
+  /** Play a single track. Replaces the queue with [track]. */
   play: (track: PlayerTrack) => void;
+  /** Replace the queue with `tracks` and start playback at `index`. */
+  playQueue: (tracks: PlayerTrack[], index: number) => void;
   pause: () => void;
   toggle: (track?: PlayerTrack) => void;
   stop: () => void;
   /** Seek to a position (0–1) in the current track. */
   seek: (ratio: number) => void;
+  /** Advance to the next track in the queue. No-op at end. */
+  next: () => void;
+  /** Go to previous track, or restart current if playback is past 3s. */
+  previous: () => void;
+  /** Peek at the next queued track without advancing. Used by the player
+   * to prefetch stream URL + peaks so skip-to-next is near-instant. */
+  peekNext: () => PlayerTrack | null;
+  hasNext: boolean;
+  hasPrevious: boolean;
   /** Subscribe to playback progress updates (0–1). Immediately called with current value. Returns unsubscribe fn. */
   subscribeProgress: (fn: (p: number) => void) => () => void;
   /** Called by WaveformPlayer to push real-time progress. */
@@ -49,44 +66,59 @@ interface PlayerContextValue {
   duration: number;
   /** Called by WaveformPlayer once the track is decoded. */
   reportDuration: (d: number) => void;
-  /** When true, the full-width bottom waveform is shown and the mini player's
-   * waveform is hidden. Toggled from the mini player's chevron. */
-  largePlayer: boolean;
-  setLargePlayer: (v: boolean | ((prev: boolean) => boolean)) => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
 
-export function PlayerProvider({ children }: { children: React.ReactNode }) {
-  const [currentTrack, setCurrentTrack] = useState<PlayerTrack | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const currentTrackRef = useRef<PlayerTrack | null>(null);
+function sameTrack(a: PlayerTrack | null, b: PlayerTrack | null) {
+  if (!a || !b) return a === b;
+  return a.filePath === b.filePath;
+}
 
+export function PlayerProvider({ children }: { children: React.ReactNode }) {
+  const [queue, setQueue] = useState<PlayerTrack[]>([]);
+  const [queueIndex, setQueueIndex] = useState(-1);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
-  const [largePlayer, setLargePlayer] = useState(false);
+
+  const queueRef = useRef<PlayerTrack[]>([]);
+  const queueIndexRef = useRef(-1);
   const progressRef = useRef(0);
   const progressCallbacksRef = useRef<Set<(p: number) => void>>(new Set());
   const seekFnRef = useRef<((ratio: number) => void) | null>(null);
 
-  const updateTrack = useCallback((track: PlayerTrack | null) => {
-    currentTrackRef.current = track;
-    setCurrentTrack(track);
+  const currentTrack = queueIndex >= 0 ? (queue[queueIndex] ?? null) : null;
+
+  const setQueueState = useCallback((tracks: PlayerTrack[], index: number) => {
+    queueRef.current = tracks;
+    queueIndexRef.current = index;
+    setQueue(tracks);
+    setQueueIndex(index);
   }, []);
+
+  const playQueue = useCallback(
+    (tracks: PlayerTrack[], index: number) => {
+      if (tracks.length === 0 || index < 0 || index >= tracks.length) return;
+      setQueueState(tracks, index);
+      setIsPlaying(true);
+    },
+    [setQueueState],
+  );
 
   const load = useCallback(
     (track: PlayerTrack) => {
-      updateTrack(track);
+      setQueueState([track], 0);
       setIsPlaying(false);
     },
-    [updateTrack],
+    [setQueueState],
   );
 
   const play = useCallback(
     (track: PlayerTrack) => {
-      updateTrack(track);
+      setQueueState([track], 0);
       setIsPlaying(true);
     },
-    [updateTrack],
+    [setQueueState],
   );
 
   const pause = useCallback(() => {
@@ -95,24 +127,51 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const toggle = useCallback(
     (track?: PlayerTrack) => {
-      if (track && track.filePath !== currentTrackRef.current?.filePath) {
-        updateTrack(track);
+      const current =
+        queueIndexRef.current >= 0
+          ? (queueRef.current[queueIndexRef.current] ?? null)
+          : null;
+      if (track && !sameTrack(track, current)) {
+        setQueueState([track], 0);
         setIsPlaying(true);
       } else {
         setIsPlaying((prev) => !prev);
       }
     },
-    [updateTrack],
+    [setQueueState],
   );
 
   const stop = useCallback(() => {
     setIsPlaying(false);
-    updateTrack(null);
-  }, [updateTrack]);
+    setQueueState([], -1);
+  }, [setQueueState]);
 
   const seek = useCallback((ratio: number) => {
     seekFnRef.current?.(ratio);
   }, []);
+
+  const next = useCallback(() => {
+    const nextIdx = queueIndexRef.current + 1;
+    if (nextIdx < 0 || nextIdx >= queueRef.current.length) return;
+    queueIndexRef.current = nextIdx;
+    setQueueIndex(nextIdx);
+    setIsPlaying(true);
+  }, []);
+
+  const previous = useCallback(() => {
+    if (progressRef.current * (duration || 0) > 3) {
+      seekFnRef.current?.(0);
+      return;
+    }
+    const prevIdx = queueIndexRef.current - 1;
+    if (prevIdx < 0) {
+      seekFnRef.current?.(0);
+      return;
+    }
+    queueIndexRef.current = prevIdx;
+    setQueueIndex(prevIdx);
+    setIsPlaying(true);
+  }, [duration]);
 
   const reportProgress = useCallback((p: number) => {
     progressRef.current = p;
@@ -121,7 +180,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const subscribeProgress = useCallback((fn: (p: number) => void) => {
     progressCallbacksRef.current.add(fn);
-    fn(progressRef.current); // deliver current value immediately
+    fn(progressRef.current);
     return () => {
       progressCallbacksRef.current.delete(fn);
     };
@@ -135,39 +194,56 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setDuration(d);
   }, []);
 
+  const hasNext = queueIndex >= 0 && queueIndex < queue.length - 1;
+  const hasPrevious = queueIndex > 0;
+  const peekNext = useCallback((): PlayerTrack | null => {
+    const idx = queueIndexRef.current + 1;
+    if (idx < 0 || idx >= queueRef.current.length) return null;
+    return queueRef.current[idx] ?? null;
+  }, []);
+
   const value = useMemo<PlayerContextValue>(
     () => ({
       currentTrack,
       isPlaying,
       load,
       play,
+      playQueue,
       pause,
       toggle,
       stop,
       seek,
+      next,
+      previous,
+      peekNext,
+      hasNext,
+      hasPrevious,
       reportProgress,
       subscribeProgress,
       registerSeek,
       duration,
       reportDuration,
-      largePlayer,
-      setLargePlayer,
     }),
     [
       currentTrack,
       isPlaying,
       load,
       play,
+      playQueue,
       pause,
       toggle,
       stop,
       seek,
+      next,
+      previous,
+      peekNext,
+      hasNext,
+      hasPrevious,
       reportProgress,
       subscribeProgress,
       registerSeek,
       duration,
       reportDuration,
-      largePlayer,
     ],
   );
 

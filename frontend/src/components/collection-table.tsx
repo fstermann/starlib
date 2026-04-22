@@ -367,6 +367,7 @@ interface EditRowProps {
   onToggleSelect: (shiftKey: boolean) => void;
   onFieldChange: (field: EditableField, value: string) => void;
   onSelect: () => void;
+  onStartPlay: () => void;
   justSaved: boolean;
   pendingArtworkB64?: string;
   /** True if track has a SoundCloud link (saved or pending). */
@@ -385,6 +386,7 @@ function EditRow({
   onToggleSelect,
   onFieldChange,
   onSelect,
+  onStartPlay,
   justSaved,
   pendingArtworkB64,
   isScLinked,
@@ -481,6 +483,7 @@ function EditRow({
               : (item.artist ?? undefined),
           }}
           halfHeight
+          onStartPlay={onStartPlay}
         />
       </div>
 
@@ -661,7 +664,7 @@ export function CollectionTable({
   const abortRef = useRef<AbortController | null>(null);
   const itemsRef = useRef<TrackBrowse[]>([]);
 
-  const { load } = usePlayer();
+  const { playQueue, load } = usePlayer();
 
   const scrollParentRef = useRef<HTMLDivElement>(null);
 
@@ -888,6 +891,18 @@ export function CollectionTable({
         : (item.artist ?? undefined),
     });
     onSelect?.(item);
+  }
+
+  function handleStartPlay(index: number) {
+    const queue = items.map((it) => ({
+      filePath: it.file_path,
+      fileName: it.file_name,
+      title: it.title ?? undefined,
+      artist: Array.isArray(it.artist)
+        ? it.artist.join(", ")
+        : (it.artist ?? undefined),
+    }));
+    playQueue(queue, index);
   }
 
   // Get the "original" value for a field — used for change detection
@@ -1663,6 +1678,7 @@ export function CollectionTable({
                           updateField(item.file_path, field, value)
                         }
                         onSelect={() => handleSelect(item)}
+                        onStartPlay={() => handleStartPlay(virtualRow.index)}
                         justSaved={pulseRows.has(item.file_path)}
                         pendingArtworkB64={pendingArtwork.get(item.file_path)}
                         isScLinked={

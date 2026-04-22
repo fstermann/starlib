@@ -1,6 +1,6 @@
 [package]
 name = "starlib"
-version = "0.4.0"
+version = "0.4.1"
 description = "Starlib desktop application"
 authors = ["Fabian Stermann <56961284+fstermann@users.noreply.github.com>"]
 license = "MIT"
@@ -30,10 +30,13 @@ dirs = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13", features = ["json"] }
-tokio = { version = "1", features = ["time"] }
-symphonia = { version = "0.5", features = ["aac", "isomp4", "mp3", "flac", "wav", "vorbis"] }
+tokio = { version = "1", features = ["time", "sync"] }
+thiserror = "1"
+symphonia = { version = "0.5", features = ["aac", "aiff", "alac", "isomp4", "mp3", "flac", "wav", "vorbis"] }
 rustfft = "6"
 anyhow = "1"
+futures = "0.3"
+url = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

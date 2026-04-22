@@ -18,6 +18,7 @@ import {
   FILESYSTEM_COLUMN_DEFS,
 } from "@/components/collection-table";
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
+import { FilesystemBatchAnalyzeButton } from "@/components/filesystem-batch-analyze-button";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { useTopBar } from "@/components/layout/top-bar-context";
@@ -565,15 +566,22 @@ export function FilesystemView() {
               total={findNodeTrackCount(tree, selectedNodeId) ?? tableTotal}
               cacheLoading={tableCacheLoading}
               actions={
-                <ColumnVisibilityMenu
-                  columns={FILESYSTEM_COLUMN_DEFS}
-                  isVisible={columnPrefs.isVisible}
-                  setHidden={columnPrefs.setHidden}
-                  onResetVisibility={columnPrefs.resetVisibility}
-                  onResetOrder={columnPrefs.resetOrder}
-                  onResetWidths={columnPrefs.resetWidths}
-                  className="text-muted-foreground h-7 gap-1.5 text-xs"
-                />
+                <>
+                  <FilesystemBatchAnalyzeButton
+                    folderPath={selectedNodeId ?? undefined}
+                    onComplete={() => setRefreshToken((t) => t + 1)}
+                    className="text-muted-foreground h-7 gap-1.5 text-xs"
+                  />
+                  <ColumnVisibilityMenu
+                    columns={FILESYSTEM_COLUMN_DEFS}
+                    isVisible={columnPrefs.isVisible}
+                    setHidden={columnPrefs.setHidden}
+                    onResetVisibility={columnPrefs.resetVisibility}
+                    onResetOrder={columnPrefs.resetOrder}
+                    onResetWidths={columnPrefs.resetWidths}
+                    className="text-muted-foreground h-7 gap-1.5 text-xs"
+                  />
+                </>
               }
             />
             <CollectionTable

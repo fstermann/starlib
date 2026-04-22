@@ -5,25 +5,74 @@
 //! to integer-lag BPMs, and returns a confidence bucket derived from peak
 //! sharpness.
 
-use anyhow::Result;
-use rustfft::FftPlanner;
+use anyhow::{anyhow, Result};
 use rustfft::num_complex::Complex;
+use rustfft::FftPlanner;
 
-use super::types::{ALGORITHM_VERSION, BpmOptions, BpmResult, Confidence};
+use super::types::{BpmError, BpmOptions, BpmResult, Confidence, ALGORITHM_VERSION};
+
+/// Combine multiple single-shot BPM results into one consensus estimate.
+///
+/// Returns the median BPM. Confidence is derived from window agreement
+/// spread: High if all within ±2 BPM of the median, Medium if within ±5,
+/// else Low. `corrected_from` on the consensus result is the pre-correction
+/// median in case any octave correction was applied.
+pub fn consensus(results: &[BpmResult]) -> Result<BpmResult> {
+    if results.is_empty() {
+        return Err(anyhow!("consensus requires at least one result"));
+    }
+    let mut bpms: Vec<f32> = results.iter().map(|r| r.bpm).collect();
+    bpms.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = bpms[bpms.len() / 2];
+
+    let max_dev = bpms
+        .iter()
+        .map(|b| (b - median).abs())
+        .fold(0.0_f32, f32::max);
+    let confidence = if max_dev <= 2.0 {
+        Confidence::High
+    } else if max_dev <= 5.0 {
+        Confidence::Medium
+    } else {
+        Confidence::Low
+    };
+
+    // Consensus doesn't "correct" itself — correction already happened per
+    // window. Expose any pre-correction median for debugging if every run
+    // carries a corrected_from value.
+    let corrected_from = if results.iter().all(|r| r.corrected_from.is_some()) {
+        let mut pre: Vec<f32> = results.iter().map(|r| r.corrected_from.unwrap()).collect();
+        pre.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        Some(pre[pre.len() / 2])
+    } else {
+        None
+    };
+
+    Ok(BpmResult {
+        bpm: median,
+        confidence,
+        corrected_from,
+        algorithm_version: ALGORITHM_VERSION,
+    })
+}
 
 /// Analyse PCM samples (mono, at `sr`) and return a BPM estimate.
 pub fn analyze(samples: &[f32], sr: u32, options: &BpmOptions) -> Result<BpmResult> {
+    // Need enough samples to run at least a couple of STFT frames
+    // (win=2048, hop=512) and leave room for autocorrelation lags.
     if samples.len() < 4096 {
-        return Ok(BpmResult {
-            bpm: 0.0,
-            confidence: Confidence::Low,
-            corrected_from: None,
-            algorithm_version: ALGORITHM_VERSION,
-        });
+        return Err(BpmError::InsufficientData(format!(
+            "need at least 4096 PCM samples for STFT, got {}",
+            samples.len()
+        ))
+        .into());
     }
 
-    let onset = spectral_flux_onset(samples);
-    let (raw_bpm, peak_ratio) = autocorrelate_bpm(&onset, sr, options);
+    let onset = spectral_flux_onset(samples)?;
+    if onset.iter().all(|&v| v == 0.0) {
+        return Err(BpmError::SilentInput.into());
+    }
+    let (raw_bpm, peak_ratio) = autocorrelate_bpm(&onset, sr, options)?;
 
     let confidence = if peak_ratio >= 3.0 {
         Confidence::High
@@ -49,9 +98,24 @@ pub fn analyze(samples: &[f32], sr: u32, options: &BpmOptions) -> Result<BpmResu
 
 /// Spectral-flux onset envelope: STFT magnitude differences (positive only),
 /// mean-subtracted and half-wave rectified.
-fn spectral_flux_onset(samples: &[f32]) -> Vec<f32> {
+///
+/// The 2048-sample window / 512-sample hop combo is the usual MIR default:
+/// at the pipeline's target sample rate of 22050 Hz this gives ~93 ms frames
+/// with ~23 ms steps (43 Hz frame rate) — fine-grained enough to catch
+/// percussive onsets while keeping FFT cost low. If `BpmOptions::target_sr`
+/// changes, revisit these constants.
+fn spectral_flux_onset(samples: &[f32]) -> Result<Vec<f32>> {
     let win = 2048usize;
     let hop = 512usize;
+
+    if samples.len() < win + hop {
+        return Err(BpmError::InsufficientData(format!(
+            "spectral-flux needs at least {} samples, got {}",
+            win + hop,
+            samples.len()
+        ))
+        .into());
+    }
 
     let hann: Vec<f32> = (0..win)
         .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / win as f32).cos())
@@ -88,21 +152,32 @@ fn spectral_flux_onset(samples: &[f32]) -> Vec<f32> {
     }
 
     let mean = flux.iter().sum::<f32>() / flux.len().max(1) as f32;
-    flux.iter().map(|v| (v - mean).max(0.0)).collect()
+    Ok(flux.iter().map(|v| (v - mean).max(0.0)).collect())
 }
 
 /// Autocorrelation over the onset envelope. Returns `(bpm, peak_ratio)` where
 /// `peak_ratio` is the peak autocorrelation score divided by the median over
 /// the searched lag range (used for confidence).
-fn autocorrelate_bpm(onset: &[f32], sr: u32, options: &BpmOptions) -> (f32, f32) {
+fn autocorrelate_bpm(onset: &[f32], sr: u32, options: &BpmOptions) -> Result<(f32, f32)> {
     let hop = 512usize;
     let frame_rate = sr as f32 / hop as f32;
     let min_lag = (frame_rate * 60.0 / options.max_bpm) as usize;
     let max_lag = (frame_rate * 60.0 / options.min_bpm) as usize;
 
     let n = onset.len();
-    if n <= max_lag + 2 || min_lag < 2 {
-        return (0.0, 0.0);
+    if min_lag < 2 {
+        return Err(BpmError::InsufficientData(format!(
+            "min_lag={min_lag} < 2; max_bpm={} too high for frame_rate={frame_rate}",
+            options.max_bpm
+        ))
+        .into());
+    }
+    if n <= max_lag + 2 {
+        return Err(BpmError::InsufficientData(format!(
+            "onset envelope ({n} frames) shorter than max_lag+2 ({})",
+            max_lag + 2
+        ))
+        .into());
     }
 
     // Classic autocorrelation. We need lags [min_lag - 1, max_lag + 1]
@@ -144,7 +219,7 @@ fn autocorrelate_bpm(onset: &[f32], sr: u32, options: &BpmOptions) -> (f32, f32)
     let median = search[search.len() / 2].max(1e-9);
     let peak_ratio = best_score / median;
 
-    (bpm, peak_ratio)
+    Ok((bpm, peak_ratio))
 }
 
 /// Parabolic peak interpolation for three adjacent samples `y0, y1, y2`
@@ -224,5 +299,44 @@ mod tests {
         let (corrected, from) = apply_octave_correction(128.0);
         assert_eq!(corrected, 128.0);
         assert_eq!(from, None);
+    }
+
+    fn result(bpm: f32) -> BpmResult {
+        BpmResult {
+            bpm,
+            confidence: Confidence::Medium,
+            corrected_from: None,
+            algorithm_version: ALGORITHM_VERSION,
+        }
+    }
+
+    #[test]
+    fn consensus_tight_cluster_is_high_confidence() {
+        let c = consensus(&[result(127.0), result(128.0), result(128.5)]).unwrap();
+        assert_eq!(c.bpm, 128.0);
+        assert_eq!(c.confidence, Confidence::High);
+    }
+
+    #[test]
+    fn consensus_moderate_spread_is_medium() {
+        let c = consensus(&[result(125.0), result(128.0), max_dev_helper()]).unwrap();
+        assert_eq!(c.bpm, 128.0);
+        assert_eq!(c.confidence, Confidence::Medium);
+    }
+
+    fn max_dev_helper() -> BpmResult {
+        result(132.0) // 4 BPM from median 128 → Medium (≤5)
+    }
+
+    #[test]
+    fn consensus_wide_spread_is_low() {
+        let c = consensus(&[result(120.0), result(128.0), result(140.0)]).unwrap();
+        assert_eq!(c.bpm, 128.0);
+        assert_eq!(c.confidence, Confidence::Low); // 12 BPM from median
+    }
+
+    #[test]
+    fn consensus_empty_errors() {
+        assert!(consensus(&[]).is_err());
     }
 }

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub mod bpm;
+pub mod commands;
 
 /// Returns the app config directory used by both the Rust and Python layers.
 /// Matches `platformdirs.user_config_path("com.starlib.Starlib")`.
@@ -179,6 +180,10 @@ pub fn run() {
     }
 
     builder
+        .invoke_handler(tauri::generate_handler![
+            commands::analyze_local_bpm,
+            commands::analyze_sc_bpm,
+        ])
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([

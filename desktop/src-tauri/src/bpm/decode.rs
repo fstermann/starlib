@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::Cursor;
 use std::path::Path;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::errors::Error as SymphError;
@@ -18,7 +18,7 @@ use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-use super::types::BpmOptions;
+use super::types::{BpmError, BpmOptions};
 
 /// Decode in-memory audio bytes to mono f32 PCM at `options.target_sr`.
 ///
@@ -60,7 +60,12 @@ fn decode_from_source(
         .default_track()
         .ok_or_else(|| anyhow!("no default audio track"))?;
     let track_id = track.id;
-    let src_sr = track.codec_params.sample_rate.unwrap_or(44100);
+    // Refuse to guess: a missing sample rate would silently corrupt tempo
+    // detection (lag-to-BPM mapping is sample-rate dependent).
+    let src_sr = track
+        .codec_params
+        .sample_rate
+        .ok_or(BpmError::MissingSampleRate)?;
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
         .context("decoder init failed")?;

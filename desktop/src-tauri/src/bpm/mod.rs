@@ -10,6 +10,8 @@ use std::path::Path;
 use anyhow::Result;
 
 pub mod decode;
+pub mod local;
+pub mod soundcloud;
 pub mod tempo;
 pub mod types;
 

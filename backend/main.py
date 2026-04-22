@@ -16,6 +16,7 @@ from fastapi_pagination import add_pagination
 from backend.api.ai import router as ai_router
 from backend.api.app_settings import router as app_settings_router
 from backend.api.auth import router as auth_router
+from backend.api.bpm import router as bpm_router
 from backend.api.folder_config import router as folder_config_router
 from backend.api.metadata import router as metadata_router
 from backend.api.rulesets import router as rulesets_router
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(app_settings_router)
     app.include_router(ai_router)
     app.include_router(soundcloud_router)
+    app.include_router(bpm_router)
 
     add_pagination(app)
 

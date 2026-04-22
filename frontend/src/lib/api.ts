@@ -127,6 +127,14 @@ export interface BatchUpdateResponse {
   results: BatchResultItem[];
 }
 
+// ==================== BPM Types ====================
+
+export interface LocalBpmResult {
+  file_path: string;
+  bpm: number;
+  algorithm_version: number;
+}
+
 // ==================== Ruleset Types ====================
 
 export type RuleType = "move" | "convert" | "copy";
@@ -739,11 +747,64 @@ export const api = {
     return fetchApi("/api/ai/anthropic/credentials", { method: "DELETE" });
   },
 
+  // BPM
+  async saveLocalBpm(
+    filePath: string,
+    bpm: number,
+    algorithmVersion: number,
+  ): Promise<LocalBpmResult> {
+    return fetchApi("/api/bpm/local", {
+      method: "POST",
+      body: JSON.stringify({
+        file_path: filePath,
+        bpm,
+        algorithm_version: algorithmVersion,
+      }),
+    });
+  },
+
+  async getLocalBpmCandidates(
+    folder: string,
+    recursive = true,
+  ): Promise<{ file_paths: string[] }> {
+    const qs = new URLSearchParams({
+      folder,
+      recursive: String(recursive),
+    });
+    return fetchApi(`/api/bpm/local/candidates?${qs.toString()}`);
+  },
   // ==================== SoundCloud ====================
 
   async getSoundcloudStreamUrl(
     trackId: number | string,
+    opts?: { forceRefresh?: boolean },
   ): Promise<{ url: string; expires_at: string }> {
-    return fetchApi(`/api/soundcloud/tracks/${trackId}/stream`);
+    const qs = opts?.forceRefresh ? "?force_refresh=true" : "";
+    return fetchApi(`/api/soundcloud/tracks/${trackId}/stream${qs}`);
+  },
+
+  // ==================== BPM ====================
+
+  async getSoundcloudClientToken(): Promise<{ token: string }> {
+    return fetchApi("/api/bpm/soundcloud-client-token");
+  },
+
+  async saveSoundcloudBpm(
+    trackId: number,
+    bpm: number,
+  ): Promise<{ track_id: number; bpm: number }> {
+    return fetchApi("/api/bpm/soundcloud", {
+      method: "POST",
+      body: JSON.stringify({ track_id: trackId, bpm }),
+    });
+  },
+
+  async getSoundcloudBpmsBulk(
+    trackIds: number[],
+  ): Promise<{ bpms: Record<string, number> }> {
+    return fetchApi("/api/bpm/soundcloud/bulk", {
+      method: "POST",
+      body: JSON.stringify({ track_ids: trackIds }),
+    });
   },
 };

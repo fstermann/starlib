@@ -1,8 +1,30 @@
 //! Public types for the BPM analysis module.
 
+use thiserror::Error;
+
 /// Current algorithm version. Bump when the analysis pipeline changes
 /// in a way that would produce different BPM values for the same input.
 pub const ALGORITHM_VERSION: u16 = 1;
+
+/// Typed errors produced by the BPM analysis pipeline.
+///
+/// These cover cases that were previously either swallowed (returning a
+/// zero-BPM `Low`-confidence result) or paved over with a silent default.
+/// Surface them to the caller so bad inputs don't masquerade as valid
+/// analysis results.
+#[derive(Debug, Error)]
+pub enum BpmError {
+    /// PCM buffer is too short to run the STFT / autocorrelation stages.
+    #[error("insufficient data for BPM analysis: {0}")]
+    InsufficientData(String),
+    /// The onset envelope is all zeros — the signal is silent or lacks any
+    /// detectable spectral change across frames.
+    #[error("silent or featureless input: onset envelope is all zeros")]
+    SilentInput,
+    /// The decoded track carries no sample-rate metadata. We refuse to guess.
+    #[error("decoded track is missing sample-rate metadata")]
+    MissingSampleRate,
+}
 
 /// Confidence bucket for a BPM estimate.
 ///
@@ -28,6 +50,20 @@ pub struct BpmResult {
     pub algorithm_version: u16,
 }
 
+/// Analysis strategy — single-shot or multi-window consensus.
+///
+/// `Consensus` runs the single-shot analyzer on three windows at 25%, 50%
+/// and 75% of the track (or the source-provided range) and returns the
+/// median, with confidence derived from agreement spread. Cost is ~3× but
+/// catches breakdowns / intro-heavy tracks where a single 15s window can
+/// land in a tempo-ambiguous section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnalysisMode {
+    #[default]
+    Single,
+    Consensus,
+}
+
 /// Tunables for the BPM analysis pipeline.
 #[derive(Debug, Clone)]
 pub struct BpmOptions {
@@ -40,6 +76,8 @@ pub struct BpmOptions {
     pub min_bpm: f32,
     /// Maximum BPM considered during autocorrelation search.
     pub max_bpm: f32,
+    /// Single-shot vs multi-window consensus.
+    pub mode: AnalysisMode,
 }
 
 impl Default for BpmOptions {
@@ -49,6 +87,7 @@ impl Default for BpmOptions {
             target_sr: 22050,
             min_bpm: 60.0,
             max_bpm: 200.0,
+            mode: AnalysisMode::Single,
         }
     }
 }
