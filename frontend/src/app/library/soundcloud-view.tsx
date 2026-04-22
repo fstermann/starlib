@@ -116,9 +116,6 @@ export function SoundcloudView() {
     };
   }, [userPermalink, selectedUser?.permalink]);
 
-  // Track search state (Search tab)
-  const [searchQuery, setSearchQuery] = useState("");
-
   // Which SoundCloud user we're currently viewing
   const activeUrn: string | "me" | null =
     tab === "me"
