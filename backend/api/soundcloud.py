@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, Response, status
 from pydantic import BaseModel
 
 from backend.core.services import sc_auth_cache
@@ -286,6 +286,82 @@ async def get_track_stream(track_id: int, force_refresh: bool = False) -> Stream
 
     expires_dt = datetime.fromtimestamp(capped_expires, tz=UTC)
     return StreamUrlResponse(url=url, expires_at=expires_dt.isoformat())
+
+
+def _user_token_from_authorization(authorization: str | None) -> str:
+    """Extract the user's SoundCloud access token from an Authorization header.
+
+    Accepts both ``OAuth <token>`` (what the SC API expects) and
+    ``Bearer <token>`` (the conventional frontend idiom). The browser can't
+    call ``POST``/``DELETE /likes/tracks/...`` directly because SoundCloud
+    doesn't expose those methods in its CORS policy — so this endpoint acts
+    as a thin proxy that forwards the request with the user's own token.
+    """
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+        )
+    for prefix in ("OAuth ", "Bearer "):
+        if authorization.startswith(prefix):
+            return authorization[len(prefix) :].strip()
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authorization header must be 'OAuth <token>' or 'Bearer <token>'",
+    )
+
+
+async def _proxy_like(track_id: int, method: str, token: str) -> Response:
+    """Forward a like/unlike call to the SoundCloud public API."""
+    url = f"{_PUBLIC_API_BASE}/likes/tracks/soundcloud:tracks:{track_id}"
+    headers = {"Authorization": f"OAuth {token}", "Accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            resp = await client.request(method, url, headers=headers)
+    except Exception as exc:
+        logger.exception("SoundCloud like proxy transport error")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="SoundCloud upstream error",
+        ) from exc
+
+    if resp.status_code in (401, 403):
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail="SoundCloud rejected the user token",
+        )
+    if not resp.is_success:
+        logger.warning(
+            "SoundCloud %s /likes/tracks returned %s for track %s",
+            method,
+            resp.status_code,
+            track_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"SoundCloud returned {resp.status_code}",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/tracks/{track_id}/like", status_code=status.HTTP_204_NO_CONTENT)
+async def like_track(
+    track_id: int,
+    authorization: str | None = Header(default=None),
+) -> Response:
+    """Like a SoundCloud track on behalf of the authenticated user."""
+    token = _user_token_from_authorization(authorization)
+    return await _proxy_like(track_id, "POST", token)
+
+
+@router.delete("/tracks/{track_id}/like", status_code=status.HTTP_204_NO_CONTENT)
+async def unlike_track(
+    track_id: int,
+    authorization: str | None = Header(default=None),
+) -> Response:
+    """Unlike a SoundCloud track on behalf of the authenticated user."""
+    token = _user_token_from_authorization(authorization)
+    return await _proxy_like(track_id, "DELETE", token)
 
 
 def _reset_cache_for_tests() -> None:

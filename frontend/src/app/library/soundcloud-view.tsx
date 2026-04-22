@@ -703,6 +703,7 @@ function LikesView({
             onSelectAll={selectAllFiltered}
             onDeselectAll={deselectAll}
             collectionIds={collectionIds}
+            likedIds={myLikedIds}
             isColumnVisible={columnPrefs.isVisible}
             columnOrder={columnPrefs.prefs.order}
             onColumnOrderChange={columnPrefs.setOrder}
