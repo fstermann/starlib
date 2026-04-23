@@ -15,7 +15,7 @@ function detectMac() {
 
 /**
  * Input-shaped button that opens the command palette. Rendered in the top bar
- * so users who don't know the ⌘K shortcut can still discover the palette.
+ * so users who don't know the ⌘P shortcut can still discover the palette.
  */
 export function CommandPaletteTrigger({ className }: { className?: string }) {
   const { setOpen } = useCommandPalette();
@@ -35,7 +35,7 @@ export function CommandPaletteTrigger({ className }: { className?: string }) {
       <span className="flex-1 text-left">Search…</span>
       <kbd className="bg-muted text-muted-foreground pointer-events-none inline-flex h-4 items-center gap-0.5 rounded border px-1 font-mono text-[9px] font-medium select-none">
         {isMac ? "⌘" : "Ctrl"}
-        <span className="text-[10px]">K</span>
+        <span className="text-[10px]">P</span>
       </kbd>
     </button>
   );

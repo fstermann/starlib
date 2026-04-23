@@ -1,6 +1,6 @@
 # Command palette reference
 
-This page is the **authoritative list** of every command contributed to the palette. Opening the palette (++cmd+k++ / ++ctrl+k++, or clicking **Search…** in the top bar) surfaces these — everything shown there should be documented here.
+This page is the **authoritative list** of every command contributed to the palette. Opening the palette (++cmd+p++ / ++ctrl+p++, or clicking **Search…** in the top bar) surfaces these — everything shown there should be documented here.
 
 !!! info "This list is enforced"
     A Playwright test (`frontend/e2e/command-palette-catalog.spec.ts`) scrapes every command id rendered in the palette across typical contexts and asserts it matches the IDs listed below. Adding a new command without updating this table fails CI.
