@@ -292,10 +292,17 @@ export function SoundcloudView() {
     clearAll: clearFilters,
   } = useFilterState(seedSchema);
 
-  const filterOptions = useMemo(
-    () => filterStateToLikesOptions(filterState),
-    [filterState],
-  );
+  const filterOptions = useMemo(() => {
+    const opts = filterStateToLikesOptions(filterState);
+    // On the Likes node the "exclude my likes" filter would always empty
+    // the list — hide it from the toolbar (see `filterSchemaForTab`) AND
+    // neutralize any leftover state from the URL/filter history so it
+    // doesn't silently apply when the toggle is no longer visible.
+    if (tab === "me" && nodeId === LIKES_NODE_ID) {
+      opts.excludeMyLikes = false;
+    }
+    return opts;
+  }, [filterState, tab, nodeId]);
 
   // Always pass myLikedIds — the predicate only consults it when the
   // `excludeMyLikes` toggle is on, and we now surface that toggle on Mixes
