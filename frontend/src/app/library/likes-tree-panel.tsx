@@ -14,12 +14,7 @@ export const MIXES_GROUP_ID = "mixes";
 export const playlistNodeId = (urn: string) => `pl:${urn}`;
 export const mixNodeId = (urn: string) => `mix:${urn}`;
 
-export type LikesTreeNodeKind =
-  | "root"
-  | "likes"
-  | "group"
-  | "playlist"
-  | "mix";
+export type LikesTreeNodeKind = "root" | "likes" | "group" | "playlist" | "mix";
 
 export interface LikesTreeNode {
   id: string;

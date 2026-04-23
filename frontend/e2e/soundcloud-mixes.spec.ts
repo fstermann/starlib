@@ -72,7 +72,9 @@ test.describe("SoundCloud Mixes section", () => {
       route.fulfill({
         status: 404,
         contentType: "application/json",
-        body: JSON.stringify({ detail: "SoundCloud session cookie not configured" }),
+        body: JSON.stringify({
+          detail: "SoundCloud session cookie not configured",
+        }),
       }),
     );
 
@@ -116,37 +118,35 @@ test.describe("SoundCloud Mixes section", () => {
       }),
     );
 
-    await page.route(
-      `**/api/soundcloud/system-playlists/**/tracks`,
-      (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            tracks: [
-              {
-                id: 101,
-                urn: "soundcloud:tracks:101",
-                title: "Wave One",
-                user: { id: 10, username: "artist-a" },
-                duration: 180_000,
-                permalink_url: "https://soundcloud.com/a/one",
-                artwork_url: null,
-                genre: "House",
-              },
-              {
-                id: 102,
-                urn: "soundcloud:tracks:102",
-                title: "Wave Two",
-                user: { id: 11, username: "artist-b" },
-                duration: 200_000,
-                permalink_url: "https://soundcloud.com/b/two",
-                artwork_url: null,
-                genre: "Techno",
-              },
-            ],
-          }),
+    await page.route(`**/api/soundcloud/system-playlists/**/tracks`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          tracks: [
+            {
+              id: 101,
+              urn: "soundcloud:tracks:101",
+              title: "Wave One",
+              user: { id: 10, username: "artist-a" },
+              duration: 180_000,
+              permalink_url: "https://soundcloud.com/a/one",
+              artwork_url: null,
+              genre: "House",
+            },
+            {
+              id: 102,
+              urn: "soundcloud:tracks:102",
+              title: "Wave Two",
+              user: { id: 11, username: "artist-b" },
+              duration: 200_000,
+              permalink_url: "https://soundcloud.com/b/two",
+              artwork_url: null,
+              genre: "Techno",
+            },
+          ],
         }),
+      }),
     );
 
     await page.goto("/library?source=soundcloud");

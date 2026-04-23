@@ -84,7 +84,9 @@ export function useSystemPlaylists(enabled: boolean): UseSystemPlaylistsResult {
           return;
         }
         setError(
-          err instanceof Error ? err.message : "Failed to load system playlists",
+          err instanceof Error
+            ? err.message
+            : "Failed to load system playlists",
         );
       })
       .finally(() => {
