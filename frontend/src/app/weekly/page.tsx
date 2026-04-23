@@ -4,13 +4,14 @@ import { CalendarDays, RefreshCw } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { useTopBar } from "@/components/layout/top-bar-context";
-import { LikesFilterBar } from "@/components/likes-filter-bar";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { WeeklyGroupCard } from "@/components/weekly-group-card";
 import { api } from "@/lib/api";
+import { useFilterState } from "@/lib/filters/use-filter-state";
 import {
   fetchLikesPage,
   getMyLikedTracks,
@@ -18,8 +19,13 @@ import {
   type SCTrack,
 } from "@/lib/soundcloud";
 
+import { buildWeeklySchema } from "./build-weekly-schema";
 import { useFollowingsTracks } from "./use-followings-tracks";
-import { useWeeklyFilter, type WeeklyFilterOptions } from "./use-weekly-filter";
+import {
+  filterStateToWeeklyOptions,
+  makeWeeklyFilterPredicate,
+  useWeeklyFilter,
+} from "./use-weekly-filter";
 import {
   useWeeklyGroups,
   type GroupingMode,
@@ -90,15 +96,24 @@ export default function WeeklyPage() {
       .catch(() => {});
   }, []);
 
-  // Global filter state
-  const [search, setSearch] = useState("");
-  const [genres, setGenres] = useState<string[]>([]);
-  const [minDuration, setMinDuration] = useState<number | null>(null);
-  const [maxDuration, setMaxDuration] = useState<number | null>(null);
-  const [excludeSeen, setExcludeSeen] = useState(true);
-  const [inCollection, setInCollection] = useState<boolean | null>(null);
-  const [excludeOwnLikes, setExcludeOwnLikes] = useState(true);
-  const [trackType, setTrackType] = useState<"track" | "set" | null>("track");
+  // Seed schema fixes the attribute set so URL parsers stay bound even when
+  // data-derived schema (genre options/counts, duration range) refreshes.
+  const seedSchema = useMemo(
+    () => buildWeeklySchema({ tracks: [], hasCollection: true }),
+    [],
+  );
+
+  const {
+    state: filterState,
+    set: setFilter,
+    clearAll: clearFilters,
+  } = useFilterState(seedSchema);
+
+  const filterOptions = useMemo(
+    () => filterStateToWeeklyOptions(filterState),
+    [filterState],
+  );
+  const { excludeOwnLikes } = filterOptions;
 
   // Liked track IDs
   const [likedTrackIds, setLikedTrackIds] = useState<Set<number> | null>(null);
@@ -129,37 +144,27 @@ export default function WeeklyPage() {
     };
   }, [excludeOwnLikes, likedTrackIds]);
 
-  const filterOptions: WeeklyFilterOptions = useMemo(
-    () => ({
-      search,
-      genres,
-      minDuration,
-      maxDuration,
-      trackType,
-      excludeSeen,
-      inCollection,
-      excludeOwnLikes,
-    }),
-    [
-      search,
-      genres,
-      minDuration,
-      maxDuration,
-      trackType,
-      excludeSeen,
-      inCollection,
-      excludeOwnLikes,
-    ],
+  const { filteredTracks: allFilteredTracks } = useWeeklyFilter(
+    tracks,
+    filterOptions,
+    seenTrackIds,
+    collectionIds,
+    likedTrackIds ?? undefined,
   );
 
-  const { filteredTracks: allFilteredTracks, availableGenres } =
-    useWeeklyFilter(
-      tracks,
-      filterOptions,
-      seenTrackIds,
-      collectionIds,
-      likedTrackIds ?? undefined,
-    );
+  // Filter predicate for tracks already in an existing playlist: apply every
+  // filter except `excludeSeen` (those tracks are "seen" by definition and we
+  // still want to show them in their own playlist).
+  const inPlaylistPredicate = useMemo(
+    () =>
+      makeWeeklyFilterPredicate(
+        { ...filterOptions, excludeSeen: false },
+        undefined,
+        collectionIds,
+        likedTrackIds ?? undefined,
+      ),
+    [filterOptions, collectionIds, likedTrackIds],
+  );
 
   // Per-group filtered tracks
   const groupsWithFilteredTracks = useMemo(() => {
@@ -348,7 +353,42 @@ export default function WeeklyPage() {
     return null;
   }, [selectedId, visibleGroups, orphanGroups]);
 
-  const totalFilteredCount = allFilteredTracks.length;
+  // Universe of tracks the filters operate on: the selected week/playlist's
+  // tracks (existing playlist + new feed candidates, or the raw feed slice if
+  // no playlist exists yet). Filter options (genres, duration bounds, counts)
+  // and the toolbar totals are derived from this set so they match what the
+  // user sees in the card — not the 2-week feed across all weeks.
+  const selectedUniverse = useMemo<SCTrack[]>(() => {
+    if (!selectedEntry) return [];
+    const { group } = selectedEntry;
+    const pl = playlistByTitle.get(group.playlistTitle);
+    if (!pl) return group.tracks;
+    const existingTracks = pl.tracks ?? [];
+    const existingUrns = new Set(
+      existingTracks.map((t) => t.urn).filter((u): u is string => !!u),
+    );
+    const newCandidates = group.tracks.filter(
+      (t) => t.urn && !existingUrns.has(t.urn),
+    );
+    return [...existingTracks, ...newCandidates];
+  }, [selectedEntry, playlistByTitle]);
+
+  const schema = useMemo(
+    () =>
+      buildWeeklySchema({
+        tracks: selectedUniverse,
+        hasCollection: collectionIds.size > 0,
+      }),
+    [selectedUniverse, collectionIds],
+  );
+
+  // Counts for the filter toolbar, derived from the same universe so the
+  // numbers match what the card renders.
+  const { visibleCount, visibleTotal } = useMemo(() => {
+    const filtered = selectedUniverse.filter(inPlaylistPredicate).length;
+    return { visibleCount: filtered, visibleTotal: selectedUniverse.length };
+  }, [selectedUniverse, inPlaylistPredicate]);
+
   const selectedCount = selectedIds.size;
 
   useTopBar({
@@ -391,32 +431,22 @@ export default function WeeklyPage() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <LikesFilterBar
-          search={search}
-          onSearchChange={setSearch}
-          genres={genres}
-          onGenresChange={setGenres}
-          availableGenres={availableGenres}
-          minDuration={minDuration}
-          maxDuration={maxDuration}
-          onMinDurationChange={setMinDuration}
-          onMaxDurationChange={setMaxDuration}
-          trackType={trackType}
-          onTrackTypeChange={setTrackType}
-          excludeMyLikes={excludeSeen}
-          onExcludeMyLikesChange={setExcludeSeen}
-          showExcludeMyLikes={true}
-          excludeMyLikesLabel="Exclude previously added"
-          excludeOwnLikes={excludeOwnLikes}
-          onExcludeOwnLikesChange={setExcludeOwnLikes}
-          showExcludeOwnLikes={true}
-          inCollection={inCollection}
-          onInCollectionChange={setInCollection}
-          showInCollection={collectionIds.size > 0}
-          filteredCount={totalFilteredCount}
-          totalCount={tracks.length}
-          loading={loading}
-          selectedCount={selectedCount}
+        <FiltersToolbar
+          schema={schema}
+          state={filterState}
+          onChange={setFilter}
+          onClearAll={clearFilters}
+          filtered={visibleCount}
+          total={visibleTotal}
+          defaultOpen
+          trailing={
+            <>
+              {selectedCount > 0 && (
+                <span>{selectedCount.toLocaleString()} selected</span>
+              )}
+              {loading && <span>(loading…)</span>}
+            </>
+          }
         />
 
         <div className="flex min-h-0 flex-1 flex-col">
@@ -469,7 +499,7 @@ export default function WeeklyPage() {
                   : ""
               }
               onPlaylistsReload={reloadPlaylists}
-              trackType={trackType}
+              filterTrack={inPlaylistPredicate}
             />
           )}
 
