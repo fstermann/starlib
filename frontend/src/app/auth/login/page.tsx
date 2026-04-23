@@ -1,6 +1,6 @@
 "use client";
 
-import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { invoke } from "@tauri-apps/api/core";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/button";
 import { fetchApi } from "@/lib/api";
 import { storeTokens } from "@/lib/auth";
 import { isTauri } from "@/lib/tauri";
+
+interface CapturedAuth {
+  oauth_token: string | null;
+  completed: boolean;
+}
 
 interface AuthorizeResponse {
   authorization_url: string;
@@ -113,7 +118,16 @@ export default function LoginPage() {
       sessionStorage.setItem("oauth_state", data.state);
 
       if (inTauri) {
-        await openExternal(data.authorization_url);
+        // Open SoundCloud's authorize URL in an in-app webview so we can
+        // ALSO harvest the api-v2 web-session `oauth_token` cookie on the
+        // way out — that cookie is required to reach system-playlist
+        // endpoints (Mixes). The backend code exchange still happens
+        // server-side via the existing /redirect handler, same as before.
+        const captured = await invoke<CapturedAuth>("open_soundcloud_login", {
+          authUrl: data.authorization_url,
+        });
+        if (!captured.completed) throw new Error("Login cancelled");
+
         const result = await pollForOAuthResult(data.state, abort);
         storeTokens(
           result.access_token,
@@ -122,26 +136,23 @@ export default function LoginPage() {
         );
         localStorage.setItem("sc_user", JSON.stringify(result.user));
         sessionStorage.removeItem("oauth_state");
-        window.dispatchEvent(new Event("auth-changed"));
-        // Bring the Starlib window back to the front — the user is currently
-        // looking at the "you can close this tab" page in their browser.
-        // macOS throttles cross-app focus stealing hard; combine unminimize +
-        // show + setFocus for best-effort activation, then bounce the dock
-        // icon via requestUserAttention(Critical) which is explicitly
-        // permitted for user-attention cues even when activation is refused.
-        try {
-          const { getCurrentWindow, UserAttentionType } =
-            await import("@tauri-apps/api/window");
-          const w = getCurrentWindow();
-          await w.unminimize().catch(() => {});
-          await w.show().catch(() => {});
-          await w.setFocus().catch(() => {});
-          await w
-            .requestUserAttention(UserAttentionType.Critical)
-            .catch(() => {});
-        } catch (err) {
-          console.warn("focus on self failed:", err);
+
+        // Best-effort: persist the captured session cookie. If this 422s
+        // (unexpected token shape) or the webview didn't expose the cookie,
+        // Mixes stays hidden but the rest of SoundCloud still works.
+        if (captured.oauth_token) {
+          try {
+            await fetchApi("/auth/soundcloud/session-cookie", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ oauth_token: captured.oauth_token }),
+            });
+          } catch (err) {
+            console.warn("session-cookie persist failed:", err);
+          }
         }
+
+        window.dispatchEvent(new Event("auth-changed"));
         router.push("/library?source=soundcloud");
       } else {
         window.location.href = data.authorization_url;

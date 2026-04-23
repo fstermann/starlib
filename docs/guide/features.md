@@ -86,11 +86,13 @@ Browse your SoundCloud library and discover music from other users. Switch the s
 
 | Sub-tab | Description |
 |---------|-------------|
-| **My Library** | Your likes and playlists on SoundCloud |
+| **My Library** | Your likes, playlists, and **Mixes** (Weekly Wave, Daily Drops, Your Mix 1–10) on SoundCloud |
 | **Discover** | Search for another user and browse their library, with an option to exclude tracks you've already liked |
 | **Search** | Free-text search across all of SoundCloud — find any track, not just ones in your (or another user's) likes. Paste a SoundCloud track URL to resolve it directly. |
 
-All three sub-tabs share the same filter/table UX: filter by genre, duration, and collection status; see at a glance which tracks are already in your local collection; select tracks to build a playlist and publish it to SoundCloud.
+All three sub-tabs share the same filter/table UX: filter by genre, duration, track vs. DJ set, and collection status; exclude tracks you've already liked on SoundCloud; see at a glance which tracks are already in your local collection; select tracks to build a playlist and publish it to SoundCloud.
+
+The **Mixes** section always shows on *My Library* for the desktop app, but it only populates after the login window has captured a SoundCloud session cookie — personalized-playlist endpoints aren't exposed on SoundCloud's public API. If the cookie is missing or expired, the Mixes pane shows a **Reconnect SoundCloud** button that restarts the login flow; the cookie is harvested on the way out and stored in `config.env` as `OAUTH_TOKEN`. See [`authentication.md`](../technical/authentication.md) for the full flow.
 
 <figure markdown="span" style="text-align: center;">
   ![Library — SoundCloud](../assets/images/screenshots/library-soundcloud.png){ width="90%" }

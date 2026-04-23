@@ -22,7 +22,22 @@ export function SoundcloudLikeButton({
   initialLiked,
   onChange,
 }: Props) {
+  // Virtualized list rows reuse component instances across different
+  // tracks as the user scrolls or filters. `useState(initialLiked)` only
+  // captures the *initial* prop value, so the button would keep the
+  // previous track's liked state when the parent swaps in a new track.
+  // Re-seed state whenever either the track identity or the parent's
+  // view of its liked state changes. The derived-state-on-render pattern
+  // (rather than useEffect) avoids a one-frame flash of stale UI.
   const [liked, setLiked] = useState(initialLiked);
+  const [seededFor, setSeededFor] = useState({
+    urn: trackUrn,
+    liked: initialLiked,
+  });
+  if (seededFor.urn !== trackUrn || seededFor.liked !== initialLiked) {
+    setSeededFor({ urn: trackUrn, liked: initialLiked });
+    setLiked(initialLiked);
+  }
   const [pending, setPending] = useState(false);
 
   async function toggle(e: React.MouseEvent) {

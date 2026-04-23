@@ -23,6 +23,9 @@ export function buildSoundcloudSchema(
   let durationMin = Infinity;
   let durationMax = -Infinity;
   let hasDuration = false;
+  // Same 12-minute heuristic as the weekly view — keeps the track/set
+  // split consistent wherever users toggle it.
+  const trackTypeCounts: Record<string, number> = { track: 0, set: 0 };
 
   for (const t of tracks) {
     if (t.genre) genreCounts[t.genre] = (genreCounts[t.genre] ?? 0) + 1;
@@ -31,6 +34,8 @@ export function buildSoundcloudSchema(
       if (s < durationMin) durationMin = s;
       if (s > durationMax) durationMax = s;
       hasDuration = true;
+      if (s < 720) trackTypeCounts.track += 1;
+      else trackTypeCounts.set += 1;
     }
   }
 
@@ -60,6 +65,13 @@ export function buildSoundcloudSchema(
             },
           ]
         : []),
+      {
+        id: "track_type",
+        label: "Type",
+        kind: "enum",
+        options: ["track", "set"],
+        counts: trackTypeCounts,
+      },
       { id: "in_collection", label: "In collection", kind: "bool" },
       { id: "exclude_my_likes", label: "Exclude my likes", kind: "bool" },
     ],
