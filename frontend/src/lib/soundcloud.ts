@@ -64,6 +64,40 @@ export async function getTrack(trackUrn: string): Promise<SCTrack | null> {
   return (data as SCTrack) ?? null;
 }
 
+// Like/unlike go through the backend. SoundCloud's public API doesn't expose
+// POST/DELETE on /likes/tracks in its CORS policy, so the browser can't call
+// it directly — the backend forwards the request with the user's token.
+function trackIdFromUrn(trackUrn: string): number {
+  const parts = trackUrn.split(":");
+  const id = parseInt(parts[parts.length - 1], 10);
+  if (!id) throw new Error(`Invalid track urn: ${trackUrn}`);
+  return id;
+}
+
+async function likeRequest(trackUrn: string, method: "POST" | "DELETE") {
+  const token = await ensureValidToken();
+  const trackId = trackIdFromUrn(trackUrn);
+  const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const resp = await fetch(`${base}/api/soundcloud/tracks/${trackId}/like`, {
+    method,
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(
+      `${method === "POST" ? "Like" : "Unlike"} failed: ${resp.status} ${body}`,
+    );
+  }
+}
+
+export async function likeTrack(trackUrn: string): Promise<void> {
+  await likeRequest(trackUrn, "POST");
+}
+
+export async function unlikeTrack(trackUrn: string): Promise<void> {
+  await likeRequest(trackUrn, "DELETE");
+}
+
 export async function getMe(): Promise<SCUser> {
   const client = await getClient();
   const { data, error } = await client.GET("/me", {});

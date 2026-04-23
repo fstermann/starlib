@@ -39,6 +39,7 @@ import {
   SoundcloudBpmCacheContext,
   SoundcloudBpmCell,
 } from "@/components/soundcloud-bpm-cell";
+import { SoundcloudLikeButton } from "@/components/soundcloud-like-button";
 import { SoundcloudRowPlayButton } from "@/components/soundcloud-row-play-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -81,6 +82,7 @@ interface LikesCol {
     isExpanded: boolean;
     inCollection: boolean;
     isNew: boolean;
+    isLiked: boolean;
   }) => React.ReactNode;
 }
 
@@ -165,7 +167,7 @@ const LIKES_COLUMNS: LikesCol[] = [
         <span className="text-xs opacity-50">Links</span>
       </div>
     ),
-    renderBody: ({ track, inCollection }) => (
+    renderBody: ({ track, inCollection, isLiked }) => (
       <div
         className={`flex items-center justify-between ${inCollection ? "opacity-35" : ""}`}
       >
@@ -176,6 +178,11 @@ const LIKES_COLUMNS: LikesCol[] = [
           {inCollection && <FolderCheck className="text-primary size-3.5" />}
         </div>
         <TooltipProvider>
+          {track.urn ? (
+            <SoundcloudLikeButton trackUrn={track.urn} initialLiked={isLiked} />
+          ) : (
+            <div className="size-5" />
+          )}
           {track.download_url ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -348,6 +355,7 @@ interface TrackRowProps {
   isSelected: boolean;
   isExpanded: boolean;
   inCollection: boolean;
+  isLiked: boolean;
   isNew?: boolean;
   onToggleSelect: (shiftKey: boolean) => void;
   onExpand: () => void;
@@ -368,6 +376,7 @@ function TrackRowInner({
   isSelected,
   isExpanded,
   inCollection,
+  isLiked,
   isNew,
   onToggleSelect,
   onExpand,
@@ -487,6 +496,7 @@ function TrackRowInner({
               track,
               isExpanded,
               inCollection,
+              isLiked,
               isNew: isNew ?? false,
             })}
           </div>
@@ -544,6 +554,9 @@ interface LikesTableProps {
   onSelectAll: () => void;
   onDeselectAll: () => void;
   collectionIds?: Set<number>;
+  /** IDs of tracks the authenticated user has liked. When a track's id is in
+   *  this set, the like button renders as active. */
+  likedIds?: Set<number>;
   newTrackUrns?: Set<string>;
   /** Per-column visibility. When omitted, all columns render. */
   isColumnVisible?: (id: string) => boolean;
@@ -574,6 +587,7 @@ export function LikesTable({
   onSelectAll,
   onDeselectAll,
   collectionIds,
+  likedIds,
   newTrackUrns,
   isColumnVisible,
   columnOrder,
@@ -922,6 +936,9 @@ export function LikesTable({
                         isSelected={selectedIds.has(id)}
                         isExpanded={expandedId === id}
                         inCollection={collectionIds?.has(id) ?? false}
+                        isLiked={
+                          likedIds?.has(id) ?? track.user_favorite === true
+                        }
                         isNew={
                           newTrackUrns
                             ? track.urn
@@ -985,6 +1002,7 @@ export function LikesTable({
                         isSelected={false}
                         isExpanded={false}
                         inCollection={false}
+                        isLiked={false}
                         isNew={false}
                         onToggleSelect={() => undefined}
                         onExpand={() => undefined}
