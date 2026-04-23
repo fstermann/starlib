@@ -152,18 +152,27 @@ export function SoundcloudView() {
   useEffect(() => {
     if (!playUrn || tab !== "search") return;
     const match = trackSearch.tracks.find((t) => t.urn === playUrn);
-    if (!match) return;
+    if (!match) {
+      console.info("[autoplay] waiting for search results matching", playUrn);
+      return;
+    }
     const trackIdPart = playUrn.split(":").pop();
     const trackId = trackIdPart ? Number(trackIdPart) : NaN;
     if (!trackId || Number.isNaN(trackId)) {
+      console.warn("[autoplay] bad trackId from urn", playUrn);
       setPlayUrn("");
       return;
     }
+    console.info("[autoplay] starting", { trackId, title: match.title });
     let cancelled = false;
     (async () => {
       try {
         const { url } = await api.getSoundcloudStreamUrl(trackId);
-        if (cancelled) return;
+        if (cancelled) {
+          console.info("[autoplay] cancelled before play (deps changed)");
+          return;
+        }
+        console.info("[autoplay] stream url resolved, calling player.play");
         player.play({
           filePath: `soundcloud:${trackId}`,
           fileName: match.title ?? String(trackId),
@@ -175,8 +184,8 @@ export function SoundcloudView() {
           permalinkUrl: match.permalink_url ?? undefined,
           artworkUrl: match.artwork_url ?? undefined,
         });
-      } catch {
-        // swallow — user can hit play manually
+      } catch (err) {
+        console.warn("[autoplay] failed", err);
       } finally {
         if (!cancelled) setPlayUrn("");
       }
