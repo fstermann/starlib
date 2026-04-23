@@ -147,12 +147,14 @@ export function LikesTreePanel({
         if (node.kind === "likes") {
           return <Heart className="text-muted-foreground size-3.5 shrink-0" />;
         }
-        if (node.kind === "playlist") {
+        // Match group headers (Mixes/Playlists) to the icon used by their
+        // children so the sidebar reads cohesively even when collapsed.
+        if (node.kind === "playlist" || node.id === PLAYLISTS_GROUP_ID) {
           return (
             <ListMusic className="text-muted-foreground size-3.5 shrink-0" />
           );
         }
-        if (node.kind === "mix") {
+        if (node.kind === "mix" || node.id === MIXES_GROUP_ID) {
           return (
             <Sparkles className="text-muted-foreground size-3.5 shrink-0" />
           );
