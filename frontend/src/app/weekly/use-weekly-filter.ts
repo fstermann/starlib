@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 
+import type { FilterState } from "@/lib/filters/schema";
 import type { SCTrack } from "@/lib/soundcloud";
 
 export interface WeeklyFilterOptions {
@@ -11,6 +12,39 @@ export interface WeeklyFilterOptions {
   excludeSeen: boolean;
   inCollection: boolean | null;
   excludeOwnLikes: boolean;
+}
+
+/** Translate a schema-driven FilterState into the legacy WeeklyFilterOptions
+ *  shape so the existing `makeWeeklyFilterPredicate` can still be reused. */
+export function filterStateToWeeklyOptions(
+  state: FilterState,
+): WeeklyFilterOptions {
+  const duration = (state.duration as
+    | [number | null, number | null]
+    | undefined) ?? [null, null];
+  const trackTypes = (state.track_type as string[] | undefined) ?? [];
+  const trackType =
+    trackTypes.length === 1 &&
+    (trackTypes[0] === "track" || trackTypes[0] === "set")
+      ? (trackTypes[0] as "track" | "set")
+      : null;
+  return {
+    search: (state.search as string | undefined) ?? "",
+    genres: (state.genre as string[] | undefined) ?? [],
+    minDuration: duration[0],
+    maxDuration: duration[1],
+    trackType,
+    // Default is EXCLUDE; user opts into including previously-added tracks.
+    excludeSeen: state.include_seen !== true,
+    inCollection:
+      state.in_collection === true
+        ? true
+        : state.in_collection === false
+          ? false
+          : null,
+    // Default is EXCLUDE; user opts into including their own liked tracks.
+    excludeOwnLikes: state.include_own_likes !== true,
+  };
 }
 
 interface UseWeeklyFilterResult {

@@ -35,7 +35,9 @@ interface WeeklyGroupCardProps {
   existingPlaylist?: SCPlaylist;
   playlistDescription: string;
   onPlaylistsReload?: () => void;
-  trackType?: "track" | "set" | null;
+  /** Track predicate used for existing-playlist and new-feed tracks. Callers
+   *  typically pass the active weekly filter minus `excludeSeen`. */
+  filterTrack?: (track: SCTrack) => boolean;
 }
 
 function formatDuration(ms: number): string {
@@ -62,7 +64,7 @@ export function WeeklyGroupCard({
   existingPlaylist,
   playlistDescription,
   onPlaylistsReload,
-  trackType,
+  filterTrack,
 }: WeeklyGroupCardProps) {
   const [showOnlyNew, setShowOnlyNew] = useState<boolean | null>(null);
   // User-defined track order override. When non-null, displayTracks is
@@ -83,35 +85,29 @@ export function WeeklyGroupCard({
   }, [existingPlaylist]);
 
   // Tracks from this week's feed that are not yet in the existing playlist.
-  // Use group.tracks (raw, before filters) so excludeSeen doesn't hide them,
-  // but still apply the trackType filter.
+  // Use group.tracks (raw, before excludeSeen) so previously-added tracks
+  // don't disappear, but apply every other active filter.
   const newTracks = useMemo(() => {
-    const SET_THRESHOLD = 720_000;
     return group.tracks.filter((t) => {
       if (!t.urn || existingUrns.has(t.urn)) return false;
-      if (trackType === "track") return (t.duration ?? 0) < SET_THRESHOLD;
-      if (trackType === "set") return (t.duration ?? 0) >= SET_THRESHOLD;
-      return true;
+      return filterTrack ? filterTrack(t) : true;
     });
-  }, [group.tracks, existingUrns, trackType]);
+  }, [group.tracks, existingUrns, filterTrack]);
 
   // Merged display: the playlist's stored order (source of truth) followed by
   // any new feed tracks not yet in the playlist, sorted newest first.
   const baseDisplayTracks = useMemo(() => {
     if (!existingPlaylist) return filteredTracks;
-    const SET_THRESHOLD = 720_000;
-    const existingFiltered = (existingPlaylist.tracks ?? []).filter((t) => {
-      if (trackType === "track") return (t.duration ?? 0) < SET_THRESHOLD;
-      if (trackType === "set") return (t.duration ?? 0) >= SET_THRESHOLD;
-      return true;
-    });
+    const existingFiltered = (existingPlaylist.tracks ?? []).filter((t) =>
+      filterTrack ? filterTrack(t) : true,
+    );
     const newSorted = [...newTracks].sort((a, b) => {
       const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
       const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
       return tb - ta;
     });
     return [...existingFiltered, ...newSorted];
-  }, [existingPlaylist, newTracks, filteredTracks, trackType]);
+  }, [existingPlaylist, newTracks, filteredTracks, filterTrack]);
 
   // Apply user reorder override, keeping any tracks not in the override appended.
   const displayTracks = useMemo(() => {

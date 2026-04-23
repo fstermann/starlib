@@ -145,9 +145,7 @@ test.describe("Command palette", () => {
     await page.getByRole("button", { name: /open command palette/i }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByText(/go to library/i).first()).toBeVisible();
-    await expect(
-      dialog.getByText(/soundcloud.*search/i).first(),
-    ).toBeVisible();
+    await expect(dialog.getByText(/soundcloud.*search/i).first()).toBeVisible();
     await expect(dialog.getByText(/switch to .* theme/i)).toBeVisible();
   });
 
@@ -155,7 +153,9 @@ test.describe("Command palette", () => {
     await page.goto("/library?source=filesystem");
     await page.getByRole("button", { name: /open command palette/i }).click();
     const dialog = page.getByRole("dialog");
-    const item = dialog.getByRole("option", { name: /open folder: collection/i });
+    const item = dialog.getByRole("option", {
+      name: /open folder: collection/i,
+    });
     await expect(item).toBeVisible();
     await item.click();
     await expect(page).toHaveURL(/nodeId=%2Fmusic%2Fcollection/);
@@ -205,7 +205,10 @@ test.describe("Command palette", () => {
     await page.getByRole("button", { name: /open command palette/i }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByPlaceholder(/search or type a command/i).fill("weekly");
-    await dialog.getByRole("option", { name: /go to weekly/i }).first().click();
+    await dialog
+      .getByRole("option", { name: /go to weekly/i })
+      .first()
+      .click();
     await expect(page).toHaveURL(/\/weekly/);
   });
 });
