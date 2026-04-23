@@ -10,7 +10,15 @@ export interface LikesFilterOptions {
   maxDuration: number | null;
   excludeMyLikes: boolean;
   inCollection: boolean | null; // null = any, true = in collection, false = not in collection
+  /** null = any; "track" = shorter than SET_THRESHOLD_SECONDS; "set" = at or above. */
+  trackType: "track" | "set" | null;
 }
+
+// A SoundCloud item is modelled as a "set" (DJ mix, podcast, compilation)
+// rather than a "track" when its duration crosses this threshold. Same 12
+// minute cutoff the weekly view uses — keeps semantics consistent across
+// filter surfaces and avoids needing a real `kind` field on the API.
+const SET_THRESHOLD_SECONDS = 720;
 
 /** Translate a schema-driven FilterState into the legacy LikesFilterOptions
  *  shape so the existing `makeLikesFilterPredicate` can still be reused
@@ -21,6 +29,15 @@ export function filterStateToLikesOptions(
   const duration = (state.duration as
     | [number | null, number | null]
     | undefined) ?? [null, null];
+  // track_type is modelled as a multi-select enum with options ["track",
+  // "set"]. A single-item selection means "only this type"; picking both
+  // (or neither) is equivalent to no filter and collapses to null.
+  const trackTypes = (state.track_type as string[] | undefined) ?? [];
+  const trackType: "track" | "set" | null =
+    trackTypes.length === 1 &&
+    (trackTypes[0] === "track" || trackTypes[0] === "set")
+      ? (trackTypes[0] as "track" | "set")
+      : null;
   return {
     search: (state.search as string | undefined) ?? "",
     genres: (state.genre as string[] | undefined) ?? [],
@@ -33,6 +50,7 @@ export function filterStateToLikesOptions(
         : state.in_collection === false
           ? false
           : null,
+    trackType,
   };
 }
 
@@ -82,6 +100,11 @@ export function makeLikesFilterPredicate(
       const isInCollection = id != null && collectionIds.has(id);
       if (options.inCollection && !isInCollection) return false;
       if (!options.inCollection && isInCollection) return false;
+    }
+    if (options.trackType && track.duration != null) {
+      const isSet = track.duration / 1000 >= SET_THRESHOLD_SECONDS;
+      if (options.trackType === "set" && !isSet) return false;
+      if (options.trackType === "track" && isSet) return false;
     }
     return true;
   };

@@ -26,7 +26,7 @@ _CONFIG_DIR = _APP_CONFIG_DIR
 _CONFIG_FILE = _CONFIG_DIR / "config.env"
 
 
-def _read_config() -> dict[str, str]:
+def read_config() -> dict[str, str]:
     """Read key=value pairs from the user config file."""
     if not _CONFIG_FILE.exists():
         return {}
@@ -40,7 +40,7 @@ def _read_config() -> dict[str, str]:
     return result
 
 
-def _write_config(data: dict[str, str]) -> None:
+def write_config(data: dict[str, str]) -> None:
     """Write key=value pairs to the user config file."""
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     lines = [f"{k}={v}" for k, v in data.items()]
@@ -57,7 +57,7 @@ def get_setup_status() -> SetupStatusResponse:
     SetupStatusResponse
         configured=True when both client_id and client_secret are present.
     """
-    cfg = _read_config()
+    cfg = read_config()
     configured = bool(cfg.get("CLIENT_ID") and cfg.get("CLIENT_SECRET"))
     return SetupStatusResponse(configured=configured)
 
@@ -88,10 +88,10 @@ def save_setup(body: SetupRequest) -> SetupResponse:
         )
 
     try:
-        existing = _read_config()
+        existing = read_config()
         existing["CLIENT_ID"] = body.client_id
         existing["CLIENT_SECRET"] = body.client_secret
-        _write_config(existing)
+        write_config(existing)
     except OSError as exc:
         logger.exception("Failed to write config file")
         raise HTTPException(

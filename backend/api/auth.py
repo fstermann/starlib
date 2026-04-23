@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import logging
+import re
 import secrets
 import threading
 import time
@@ -13,12 +14,15 @@ import requests
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
 
+from backend.api.setup import read_config, write_config
 from backend.schemas.auth import (
     AuthorizeResponse,
     CallbackRequest,
     CallbackResponse,
     RefreshRequest,
     RefreshResponse,
+    SessionCookieRequest,
+    SessionCookieResponse,
     UserInfo,
 )
 from soundcloud_tools.settings import get_settings
@@ -323,6 +327,46 @@ def handle_callback(body: CallbackRequest) -> CallbackResponse:
 
     code_verifier, _ = flow_data
     return _exchange_code(body.code, code_verifier)
+
+
+# Recognize SoundCloud's session token format to reject obvious garbage
+# before we write it to disk. Permissive on the tail random segment.
+_OAUTH_TOKEN_RE = re.compile(r"^2-\d+-\d+-[A-Za-z0-9]+$")
+
+
+@router.post("/session-cookie", response_model=SessionCookieResponse)
+def save_session_cookie(body: SessionCookieRequest) -> SessionCookieResponse:
+    """Persist the api-v2 web-session ``oauth_token`` captured by the desktop shell.
+
+    The Tauri login window opens SoundCloud's OAuth2 authorize URL in an
+    in-app webview; after consent the backend's existing ``/redirect``
+    handler exchanges the code for OAuth2 tokens as usual. *In addition*,
+    the webview's cookie jar now holds the web-session ``oauth_token``,
+    which the shell posts here. We persist it to ``config.env`` as
+    ``OAUTH_TOKEN`` so :class:`soundcloud_tools.settings.Settings` picks
+    it up on the next ``get_settings()`` call.
+    """
+    token = body.oauth_token.strip()
+    if not _OAUTH_TOKEN_RE.match(token):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="oauth_token does not match expected SoundCloud session token shape",
+        )
+
+    try:
+        cfg = read_config()
+        cfg["OAUTH_TOKEN"] = token
+        write_config(cfg)
+    except OSError as exc:
+        logger.exception("Failed to persist session cookie")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not write config",
+        ) from exc
+
+    get_settings.cache_clear()
+    logger.info("SoundCloud session cookie persisted")
+    return SessionCookieResponse(success=True)
 
 
 @router.post("/refresh", response_model=RefreshResponse)

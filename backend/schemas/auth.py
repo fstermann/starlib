@@ -35,6 +35,22 @@ class CallbackResponse(BaseModel):
     user: UserInfo
 
 
+class SessionCookieRequest(BaseModel):
+    """Web-session ``oauth_token`` captured from the SoundCloud cookie jar.
+
+    Required to reach api-v2.soundcloud.com (system playlists / mixes).
+    Format is SoundCloud's session token: ``2-<digits>-<uid>-<rand>``.
+    """
+
+    oauth_token: str
+
+
+class SessionCookieResponse(BaseModel):
+    """Result of persisting the web-session token."""
+
+    success: bool
+
+
 class RefreshRequest(BaseModel):
     """Token refresh request."""
 

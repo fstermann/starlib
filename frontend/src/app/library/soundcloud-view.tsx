@@ -1,6 +1,14 @@
 "use client";
 
-import { Compass, Heart, ListPlus, RefreshCw, Search } from "lucide-react";
+import {
+  Compass,
+  Heart,
+  ListPlus,
+  RefreshCw,
+  Search,
+  Sparkles,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -39,6 +47,8 @@ import { LibraryTitle } from "./library-title";
 import {
   LIKES_NODE_ID,
   LikesTreePanel,
+  MIXES_GROUP_ID,
+  mixNodeId,
   playlistNodeId,
   PLAYLISTS_GROUP_ID,
 } from "./likes-tree-panel";
@@ -51,6 +61,8 @@ import {
 } from "./use-likes-filter";
 import { usePlaylistTracks } from "./use-playlist-tracks";
 import { useSoundcloudTrackSearch } from "./use-soundcloud-track-search";
+import { useSystemPlaylistTracks } from "./use-system-playlist-tracks";
+import { useSystemPlaylists } from "./use-system-playlists";
 import { useUserPlaylists } from "./use-user-playlists";
 
 /** Hide attributes that don't apply to the current tab/context. */
@@ -58,12 +70,16 @@ function filterSchemaForTab(
   schema: FilterSchemaResponse,
   tab: string,
   hasCollection: boolean,
+  nodeId: string | null,
 ): FilterSchemaResponse {
+  // On the "me" tab, the Likes node *is* the user's likes — excluding
+  // your own likes from that list would always empty it. Everywhere else
+  // (Mixes, Playlists, Discover, Search) the filter is useful.
+  const onLikesNode = tab === "me" && nodeId === LIKES_NODE_ID;
   return {
     ...schema,
     attributes: schema.attributes.filter((a) => {
-      if (a.id === "exclude_my_likes")
-        return tab === "discover" || tab === "search";
+      if (a.id === "exclude_my_likes") return !onLikesNode;
       if (a.id === "in_collection") return hasCollection;
       return true;
     }),
@@ -136,18 +152,27 @@ export function SoundcloudView() {
   useEffect(() => {
     if (!playUrn || tab !== "search") return;
     const match = trackSearch.tracks.find((t) => t.urn === playUrn);
-    if (!match) return;
+    if (!match) {
+      console.info("[autoplay] waiting for search results matching", playUrn);
+      return;
+    }
     const trackIdPart = playUrn.split(":").pop();
     const trackId = trackIdPart ? Number(trackIdPart) : NaN;
     if (!trackId || Number.isNaN(trackId)) {
+      console.warn("[autoplay] bad trackId from urn", playUrn);
       setPlayUrn("");
       return;
     }
+    console.info("[autoplay] starting", { trackId, title: match.title });
     let cancelled = false;
     (async () => {
       try {
         const { url } = await api.getSoundcloudStreamUrl(trackId);
-        if (cancelled) return;
+        if (cancelled) {
+          console.info("[autoplay] cancelled before play (deps changed)");
+          return;
+        }
+        console.info("[autoplay] stream url resolved, calling player.play");
         player.play({
           filePath: `soundcloud:${trackId}`,
           fileName: match.title ?? String(trackId),
@@ -159,8 +184,8 @@ export function SoundcloudView() {
           permalinkUrl: match.permalink_url ?? undefined,
           artworkUrl: match.artwork_url ?? undefined,
         });
-      } catch {
-        // swallow — user can hit play manually
+      } catch (err) {
+        console.warn("[autoplay] failed", err);
       } finally {
         if (!cancelled) setPlayUrn("");
       }
@@ -173,10 +198,16 @@ export function SoundcloudView() {
   }, [playUrn, tab, trackSearch.tracks, setPlayUrn]);
 
   const { playlists } = useUserPlaylists(activeUrn);
+  // Mixes (system playlists) are only personal — tab "me" only.
+  const { playlists: mixes, available: mixesAvailable } = useSystemPlaylists(
+    tab === "me",
+  );
 
   // Selection mode
   const isPlaylistView = nodeId?.startsWith("pl:") ?? false;
+  const isMixView = nodeId?.startsWith("mix:") ?? false;
   const isAllPlaylistsView = nodeId === PLAYLISTS_GROUP_ID;
+  const isMixesGroupView = nodeId === MIXES_GROUP_ID;
 
   const selectedPlaylist = useMemo(() => {
     if (!isPlaylistView) return null;
@@ -185,8 +216,16 @@ export function SoundcloudView() {
     );
   }, [playlists, nodeId, isPlaylistView]);
 
+  const selectedMix = useMemo(() => {
+    if (!isMixView) return null;
+    return mixes.find((m) => mixNodeId(m.urn) === nodeId) ?? null;
+  }, [mixes, nodeId, isMixView]);
+
   const playlistTracks = usePlaylistTracks(
     isPlaylistView ? (selectedPlaylist?.urn ?? null) : null,
+  );
+  const mixTracks = useSystemPlaylistTracks(
+    isMixView ? (selectedMix?.urn ?? null) : null,
   );
 
   const allPlaylistUrns = useMemo(
@@ -243,6 +282,12 @@ export function SoundcloudView() {
           step: 15,
           formatHint: "duration",
         },
+        {
+          id: "track_type",
+          label: "Type",
+          kind: "enum",
+          options: ["track", "set"],
+        },
         { id: "in_collection", label: "In collection", kind: "bool" },
         { id: "exclude_my_likes", label: "Exclude my likes", kind: "bool" },
       ],
@@ -256,19 +301,25 @@ export function SoundcloudView() {
     clearAll: clearFilters,
   } = useFilterState(seedSchema);
 
-  const filterOptions = useMemo(
-    () => filterStateToLikesOptions(filterState),
-    [filterState],
-  );
+  const filterOptions = useMemo(() => {
+    const opts = filterStateToLikesOptions(filterState);
+    // On the Likes node the "exclude my likes" filter would always empty
+    // the list — hide it from the toolbar (see `filterSchemaForTab`) AND
+    // neutralize any leftover state from the URL/filter history so it
+    // doesn't silently apply when the toggle is no longer visible.
+    if (tab === "me" && nodeId === LIKES_NODE_ID) {
+      opts.excludeMyLikes = false;
+    }
+    return opts;
+  }, [filterState, tab, nodeId]);
 
+  // Always pass myLikedIds — the predicate only consults it when the
+  // `excludeMyLikes` toggle is on, and we now surface that toggle on Mixes
+  // and Playlists as well. Scoping the Set by tab silently no-op'd the
+  // filter on those views.
   const filterPredicate = useMemo(
-    () =>
-      makeLikesFilterPredicate(
-        filterOptions,
-        tab === "discover" || tab === "search" ? myLikedIds : undefined,
-        collectionIds,
-      ),
-    [filterOptions, tab, myLikedIds, collectionIds],
+    () => makeLikesFilterPredicate(filterOptions, myLikedIds, collectionIds),
+    [filterOptions, myLikedIds, collectionIds],
   );
 
   // Filtered counts for tree nodes
@@ -292,6 +343,16 @@ export function SoundcloudView() {
     }
     return m;
   }, [selectedPlaylist?.urn, selectedPlaylistCount]);
+
+  const selectedMixCount = useMemo(
+    () => mixTracks.tracks.filter(filterPredicate).length,
+    [mixTracks.tracks, filterPredicate],
+  );
+  const perMixCount = useMemo(() => {
+    const m = new Map<string, number>();
+    if (selectedMix?.urn) m.set(selectedMix.urn, selectedMixCount);
+    return m;
+  }, [selectedMix?.urn, selectedMixCount]);
 
   useTopBar({
     title: (
@@ -392,6 +453,9 @@ export function SoundcloudView() {
             likesCount={likesCount}
             combinedCount={combinedCount}
             perPlaylistFilteredCount={perPlaylistCount}
+            mixes={mixes}
+            perMixFilteredCount={perMixCount}
+            showMixes={tab === "me"}
           />
         )}
 
@@ -401,8 +465,13 @@ export function SoundcloudView() {
             activeLikes={activeLikes}
             playlistTracks={playlistTracks}
             combinedPlaylistTracks={combinedPlaylistTracks}
+            mixTracks={mixTracks}
+            nodeId={nodeId ?? LIKES_NODE_ID}
             isPlaylistView={isPlaylistView}
             isAllPlaylistsView={isAllPlaylistsView}
+            isMixView={isMixView}
+            isMixesGroupView={isMixesGroupView}
+            mixesAvailable={mixesAvailable}
             myLikedIds={myLikedIds}
             collectionIds={collectionIds}
             hasSelectedUser={selectedUser != null}
@@ -424,8 +493,13 @@ interface LikesViewProps {
   activeLikes: ReturnType<typeof useLikes>;
   playlistTracks: ReturnType<typeof usePlaylistTracks>;
   combinedPlaylistTracks: ReturnType<typeof useCombinedPlaylistsTracks>;
+  mixTracks: ReturnType<typeof useSystemPlaylistTracks>;
+  nodeId: string;
   isPlaylistView: boolean;
   isAllPlaylistsView: boolean;
+  isMixView: boolean;
+  isMixesGroupView: boolean;
+  mixesAvailable: boolean;
   myLikedIds: Set<number>;
   collectionIds: Set<number>;
   hasSelectedUser: boolean;
@@ -446,8 +520,13 @@ function LikesView({
   activeLikes,
   playlistTracks,
   combinedPlaylistTracks,
+  mixTracks,
+  nodeId,
   isPlaylistView,
   isAllPlaylistsView,
+  isMixView,
+  isMixesGroupView,
+  mixesAvailable,
   myLikedIds,
   collectionIds,
   hasSelectedUser,
@@ -464,16 +543,18 @@ function LikesView({
 
   const columnPrefs = useColumnPrefs("library.soundcloud", LIKES_COLUMN_DEFS);
 
-  const sourceTracks = isPlaylistView
-    ? playlistTracks.tracks
-    : isAllPlaylistsView
-      ? combinedPlaylistTracks.tracks
-      : activeLikes.tracks;
+  const sourceTracks = isMixView
+    ? mixTracks.tracks
+    : isPlaylistView
+      ? playlistTracks.tracks
+      : isAllPlaylistsView
+        ? combinedPlaylistTracks.tracks
+        : activeLikes.tracks;
 
   const { filteredTracks } = useLikesFilter(
     sourceTracks,
     filterOptions,
-    tab === "discover" || tab === "search" ? myLikedIds : undefined,
+    myLikedIds,
     collectionIds,
   );
 
@@ -531,21 +612,27 @@ function LikesView({
     [sourceTracks, selectedIds],
   );
 
-  const loading = isPlaylistView
-    ? playlistTracks.loading
-    : isAllPlaylistsView
-      ? combinedPlaylistTracks.loading
-      : activeLikes.loading;
-  const error = isPlaylistView
-    ? playlistTracks.error
-    : isAllPlaylistsView
-      ? combinedPlaylistTracks.error
-      : activeLikes.error;
-  const loadedCount = isPlaylistView
-    ? playlistTracks.tracks.length
-    : isAllPlaylistsView
-      ? combinedPlaylistTracks.tracks.length
-      : activeLikes.loaded;
+  const loading = isMixView
+    ? mixTracks.loading
+    : isPlaylistView
+      ? playlistTracks.loading
+      : isAllPlaylistsView
+        ? combinedPlaylistTracks.loading
+        : activeLikes.loading;
+  const error = isMixView
+    ? mixTracks.error
+    : isPlaylistView
+      ? playlistTracks.error
+      : isAllPlaylistsView
+        ? combinedPlaylistTracks.error
+        : activeLikes.error;
+  const loadedCount = isMixView
+    ? mixTracks.tracks.length
+    : isPlaylistView
+      ? playlistTracks.tracks.length
+      : isAllPlaylistsView
+        ? combinedPlaylistTracks.tracks.length
+        : activeLikes.loaded;
 
   // Contextual palette commands — registered only while this view is mounted
   // and a selection/filter context applies.
@@ -584,11 +671,21 @@ function LikesView({
     ),
   });
 
+  // Dedicated empty-state for the Mixes group itself. When the user hasn't
+  // connected (or the captured cookie expired) we render a reconnect CTA
+  // here so the feature is discoverable without being hidden outright.
+  const showMixesGroupCta = isMixesGroupView;
+
   return (
     <>
-      {(sourceTracks.length > 0 || loading) && (
+      {!showMixesGroupCta && (sourceTracks.length > 0 || loading) && (
         <FiltersToolbar
-          schema={filterSchemaForTab(schema, tab, collectionIds.size > 0)}
+          schema={filterSchemaForTab(
+            schema,
+            tab,
+            collectionIds.size > 0,
+            nodeId,
+          )}
           state={filterState}
           onChange={onFilterChange}
           onClearAll={onClearFilters}
@@ -655,7 +752,9 @@ function LikesView({
       )}
 
       <div className="relative min-h-0 flex-1">
-        {loading && sourceTracks.length === 0 ? (
+        {showMixesGroupCta ? (
+          <MixesGroupPane available={mixesAvailable} />
+        ) : loading && sourceTracks.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-4">
             <LogoSpinner className="size-16" />
             <p className="text-muted-foreground text-sm">Loading tracks…</p>
@@ -685,13 +784,15 @@ function LikesView({
         ) : sourceTracks.length === 0 && !loading ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-muted-foreground text-sm">
-              {isPlaylistView
-                ? "This playlist is empty"
-                : isAllPlaylistsView
-                  ? "No playlists"
-                  : tab === "search"
-                    ? "No tracks matched your search"
-                    : "No liked tracks found"}
+              {isMixView
+                ? "This mix is empty"
+                : isPlaylistView
+                  ? "This playlist is empty"
+                  : isAllPlaylistsView
+                    ? "No playlists"
+                    : tab === "search"
+                      ? "No tracks matched your search"
+                      : "No liked tracks found"}
             </p>
           </div>
         ) : (
@@ -730,5 +831,39 @@ function LikesView({
         onOpenChange={setCreatePlaylistOpen}
       />
     </>
+  );
+}
+
+/** Right-pane content for the "Mixes" tree group itself. Shown instead of
+ * a track list — we either prompt the user to connect (so the api-v2
+ * session cookie can be harvested) or ask them to pick a specific mix. */
+function MixesGroupPane({ available }: { available: boolean }) {
+  const router = useRouter();
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+      <Sparkles className="text-muted-foreground size-8" />
+      {available ? (
+        <p className="text-muted-foreground text-sm">
+          Pick a mix from the sidebar to view its tracks.
+        </p>
+      ) : (
+        <>
+          <p className="text-foreground text-sm font-medium">
+            Mixes aren&apos;t available yet
+          </p>
+          <p className="text-muted-foreground max-w-sm text-sm">
+            Reconnect SoundCloud so Starlib can access your personalized
+            playlists (Weekly Wave, Daily Drops, Your Mix&nbsp;1–10).
+          </p>
+          <Button
+            size="sm"
+            className="mt-1"
+            onClick={() => router.push("/auth/login")}
+          >
+            Reconnect SoundCloud
+          </Button>
+        </>
+      )}
+    </div>
   );
 }

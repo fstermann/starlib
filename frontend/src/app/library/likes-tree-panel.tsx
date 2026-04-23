@@ -1,16 +1,20 @@
 "use client";
 
-import { Heart, ListMusic } from "lucide-react";
+import { Heart, ListMusic, Sparkles } from "lucide-react";
 import { useMemo } from "react";
 
 import { TreeView } from "@/components/tree/tree-view";
 import type { SCPlaylist } from "@/lib/soundcloud";
 
+import type { SystemPlaylistSummary } from "./use-system-playlists";
+
 export const LIKES_NODE_ID = "likes";
 export const PLAYLISTS_GROUP_ID = "playlists";
+export const MIXES_GROUP_ID = "mixes";
 export const playlistNodeId = (urn: string) => `pl:${urn}`;
+export const mixNodeId = (urn: string) => `mix:${urn}`;
 
-export type LikesTreeNodeKind = "root" | "likes" | "group" | "playlist";
+export type LikesTreeNodeKind = "root" | "likes" | "group" | "playlist" | "mix";
 
 export interface LikesTreeNode {
   id: string;
@@ -19,6 +23,7 @@ export interface LikesTreeNode {
   kind: LikesTreeNodeKind;
   trackCount?: number;
   playlist?: SCPlaylist;
+  mix?: SystemPlaylistSummary;
 }
 
 interface LikesTreePanelProps {
@@ -36,6 +41,17 @@ interface LikesTreePanelProps {
    * track_count.
    */
   perPlaylistFilteredCount: Map<string, number>;
+  /** System playlists ("Mixes"). */
+  mixes?: SystemPlaylistSummary[];
+  /** Filtered count for the currently-selected mix, if loaded. */
+  perMixFilteredCount?: Map<string, number>;
+  /**
+   * Whether the Mixes feature should be rendered at all. Pass `true` on the
+   * "me" tab even when the user hasn't connected yet — the group row will
+   * appear empty and the content pane shows a reconnect CTA. Pass `false`
+   * on the Discover tab where mixes don't apply (per-user playlists only).
+   */
+  showMixes?: boolean;
 }
 
 export function LikesTreePanel({
@@ -46,6 +62,9 @@ export function LikesTreePanel({
   likesCount,
   combinedCount,
   perPlaylistFilteredCount,
+  mixes,
+  perMixFilteredCount,
+  showMixes,
 }: LikesTreePanelProps) {
   const tree = useMemo<LikesTreeNode>(() => {
     const playlistNodes: LikesTreeNode[] = playlists.map((pl, idx) => {
@@ -63,28 +82,59 @@ export function LikesTreePanel({
       };
     });
 
+    const mixNodes: LikesTreeNode[] = (mixes ?? []).map((m) => ({
+      id: mixNodeId(m.urn),
+      name: m.title,
+      children: [],
+      kind: "mix",
+      trackCount: perMixFilteredCount?.get(m.urn) ?? m.track_count,
+      mix: m,
+    }));
+
+    const children: LikesTreeNode[] = [
+      {
+        id: LIKES_NODE_ID,
+        name: "Likes",
+        children: [],
+        kind: "likes",
+        trackCount: likesCount,
+      },
+    ];
+    // Always surface Mixes on tabs where it applies. When the user hasn't
+    // connected yet we still render the group (empty) so the CTA in the
+    // right-hand pane is reachable — hiding it would leave users who
+    // never auto-captured the cookie with no way to trigger a reconnect.
+    if (showMixes) {
+      children.push({
+        id: MIXES_GROUP_ID,
+        name: "Mixes",
+        children: mixNodes,
+        kind: "group",
+      });
+    }
+    children.push({
+      id: PLAYLISTS_GROUP_ID,
+      name: "Playlists",
+      children: playlistNodes,
+      kind: "group",
+      trackCount: combinedCount || undefined,
+    });
+
     return {
       id: "root",
       name: "Library",
       kind: "root",
-      children: [
-        {
-          id: LIKES_NODE_ID,
-          name: "Likes",
-          children: [],
-          kind: "likes",
-          trackCount: likesCount,
-        },
-        {
-          id: PLAYLISTS_GROUP_ID,
-          name: "Playlists",
-          children: playlistNodes,
-          kind: "group",
-          trackCount: combinedCount || undefined,
-        },
-      ],
+      children,
     };
-  }, [playlists, likesCount, combinedCount, perPlaylistFilteredCount]);
+  }, [
+    playlists,
+    likesCount,
+    combinedCount,
+    perPlaylistFilteredCount,
+    mixes,
+    perMixFilteredCount,
+    showMixes,
+  ]);
 
   return (
     <TreeView<LikesTreeNode>
@@ -97,9 +147,16 @@ export function LikesTreePanel({
         if (node.kind === "likes") {
           return <Heart className="text-muted-foreground size-3.5 shrink-0" />;
         }
-        if (node.kind === "playlist") {
+        // Match group headers (Mixes/Playlists) to the icon used by their
+        // children so the sidebar reads cohesively even when collapsed.
+        if (node.kind === "playlist" || node.id === PLAYLISTS_GROUP_ID) {
           return (
             <ListMusic className="text-muted-foreground size-3.5 shrink-0" />
+          );
+        }
+        if (node.kind === "mix" || node.id === MIXES_GROUP_ID) {
+          return (
+            <Sparkles className="text-muted-foreground size-3.5 shrink-0" />
           );
         }
         return null;

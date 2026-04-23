@@ -183,6 +183,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::analyze_local_bpm,
             commands::analyze_sc_bpm,
+            commands::open_soundcloud_login,
         ])
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -223,6 +224,13 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Only the main window closing means "app is quitting" —
+                // auxiliary windows (e.g. the SoundCloud login webview)
+                // open and close during the normal app lifecycle and must
+                // not tear down the backend sidecar.
+                if window.label() != "main" {
+                    return;
+                }
                 // Signal the watchdog to stop before killing the sidecar.
                 SHUTTING_DOWN.store(true, Ordering::SeqCst);
                 // Shut down the backend sidecar when the main window is closed.
