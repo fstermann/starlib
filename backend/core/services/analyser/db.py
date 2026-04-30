@@ -90,7 +90,22 @@ def insert_job(
     options: dict,
 ) -> JobRow:
     now = time.time()
-    row = AnalyserJob(
+    values = {
+        "id": job_id,
+        "soundcloud_id": soundcloud_id,
+        "source_url": source_url,
+        "title": title,
+        "artist": artist,
+        "duration_s": duration_s,
+        "status": "pending",
+        "options_json": json.dumps(options),
+        "error": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    with get_engine().begin() as conn:
+        conn.execute(sqlite_insert(AnalyserJob.__table__).values(**values))
+    return JobRow(
         id=job_id,
         soundcloud_id=soundcloud_id,
         source_url=source_url,
@@ -98,14 +113,11 @@ def insert_job(
         artist=artist,
         duration_s=duration_s,
         status="pending",
-        options_json=json.dumps(options),
+        options=options,
         error=None,
         created_at=now,
         updated_at=now,
     )
-    with get_engine().begin() as conn:
-        conn.execute(sqlite_insert(AnalyserJob.__table__).values(**row.model_dump()))
-    return _to_job_row(row)
 
 
 def update_job_status(job_id: str, *, status: str, error: str | None = None) -> None:
@@ -126,38 +138,73 @@ def update_job_meta(job_id: str, *, duration_s: float | None) -> None:
         )
 
 
+_JOB_COLS = (
+    AnalyserJob.__table__.c.id,
+    AnalyserJob.__table__.c.soundcloud_id,
+    AnalyserJob.__table__.c.source_url,
+    AnalyserJob.__table__.c.title,
+    AnalyserJob.__table__.c.artist,
+    AnalyserJob.__table__.c.duration_s,
+    AnalyserJob.__table__.c.status,
+    AnalyserJob.__table__.c.options_json,
+    AnalyserJob.__table__.c.error,
+    AnalyserJob.__table__.c.created_at,
+    AnalyserJob.__table__.c.updated_at,
+)
+
+
+def _row_to_job(row) -> JobRow:
+    try:
+        options = json.loads(row.options_json) if row.options_json else {}
+    except json.JSONDecodeError:
+        options = {}
+    return JobRow(
+        id=row.id,
+        soundcloud_id=row.soundcloud_id,
+        source_url=row.source_url,
+        title=row.title,
+        artist=row.artist,
+        duration_s=row.duration_s,
+        status=row.status,
+        options=options,
+        error=row.error,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 def get_job(job_id: str) -> JobRow | None:
     with get_engine().begin() as conn:
-        result = conn.execute(
-            select(AnalyserJob).where(AnalyserJob.__table__.c.id == job_id)
+        row = conn.execute(
+            select(*_JOB_COLS).where(AnalyserJob.__table__.c.id == job_id)
         ).first()
-    if result is None:
+    if row is None:
         return None
-    return _to_job_row(result[0])
+    return _row_to_job(row)
 
 
 def list_recent_jobs(limit: int = 25) -> list[JobRow]:
     with get_engine().begin() as conn:
         rows = conn.execute(
-            select(AnalyserJob)
+            select(*_JOB_COLS)
             .order_by(AnalyserJob.__table__.c.created_at.desc())
             .limit(limit)
         ).all()
-    return [_to_job_row(r[0]) for r in rows]
+    return [_row_to_job(r) for r in rows]
 
 
 def find_job_for_set(soundcloud_id: int) -> JobRow | None:
     """Return the most recent job for a SoundCloud set, if any."""
     with get_engine().begin() as conn:
         row = conn.execute(
-            select(AnalyserJob)
+            select(*_JOB_COLS)
             .where(AnalyserJob.__table__.c.soundcloud_id == soundcloud_id)
             .order_by(AnalyserJob.__table__.c.created_at.desc())
             .limit(1)
         ).first()
     if row is None:
         return None
-    return _to_job_row(row[0])
+    return _row_to_job(row)
 
 
 # ---------------------------------------------------------------------------
@@ -329,27 +376,6 @@ def list_track_ids(job_id: str) -> list[TrackIdRow]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _to_job_row(row: AnalyserJob) -> JobRow:
-    try:
-        options = json.loads(row.options_json) if row.options_json else {}
-    except json.JSONDecodeError:
-        # Hard-corrupt options column shouldn't kill the read path.
-        options = {}
-    return JobRow(
-        id=row.id,
-        soundcloud_id=row.soundcloud_id,
-        source_url=row.source_url,
-        title=row.title,
-        artist=row.artist,
-        duration_s=row.duration_s,
-        status=row.status,
-        options=options,
-        error=row.error,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
 
 
 def section_row_dict(row: SectionRow) -> dict:
