@@ -40,6 +40,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
+import { ScrubNumberInput } from "@/components/ui/scrub-number-input";
 import {
   Popover,
   PopoverContent,
@@ -1305,11 +1306,17 @@ export function TrackEditor({
                     )}
                   </div>
                 </div>
-                <Input
-                  type="number"
+                <ScrubNumberInput
                   value={formData.bpm}
-                  onChange={(e) => handleFormChange("bpm", e.target.value)}
-                  className={`h-8 text-xs ${isChanged("bpm") ? "border-warning/70" : ""}`}
+                  onChange={(v) => handleFormChange("bpm", v)}
+                  min={0}
+                  max={400}
+                  ariaLabel="BPM"
+                  testId="bpm-input"
+                  className={cn(
+                    "h-8 text-xs",
+                    isChanged("bpm") && "border-warning/70",
+                  )}
                   placeholder="—"
                 />
               </div>
