@@ -69,6 +69,74 @@ class Peaks(SQLModel, table=True):
     mtime: float
 
 
+class AnalyserJob(SQLModel, table=True):
+    """One analyser run over a SoundCloud set.
+
+    Status transitions: ``pending`` → ``running`` → ``complete`` / ``error``.
+    `options_json` is the JSON-serialized analysis configuration (BPM range,
+    pitch strategy, target BPM, etc.) used for this run; carried on the row
+    so the user can see what parameters produced a saved result.
+    """
+
+    __tablename__ = "analyser_jobs"  # type: ignore[assignment]
+
+    id: str = Field(primary_key=True)
+    soundcloud_id: int | None = Field(default=None, index=True)
+    source_url: str | None = None
+    title: str | None = None
+    artist: str | None = None
+    duration_s: float | None = None
+    status: str
+    options_json: str
+    error: str | None = None
+    created_at: float
+    updated_at: float
+
+
+class AnalyserWindowBpm(SQLModel, table=True):
+    """Per-window BPM result emitted during stage 1 of analysis."""
+
+    __tablename__ = "analyser_window_bpm"  # type: ignore[assignment]
+
+    job_id: str = Field(primary_key=True, index=True)
+    start_s: float = Field(primary_key=True)
+    end_s: float
+    bpm: float
+    confidence: str  # "high" | "medium" | "low"
+
+
+class AnalyserSection(SQLModel, table=True):
+    """A detected section boundary span within an analyser job."""
+
+    __tablename__ = "analyser_sections"  # type: ignore[assignment]
+
+    job_id: str = Field(primary_key=True)
+    section_index: int = Field(primary_key=True)
+    start_s: float
+    end_s: float
+    confidence: float
+
+
+class AnalyserTrackId(SQLModel, table=True):
+    """Cached Shazam matches for a section, keyed by ``pitch_offset``.
+
+    ``pitch_offset`` is the semitone-equivalent shift applied before the
+    Shazam query (0.0 = unmodified). Caching by offset lets the
+    ``range`` pitch strategy memoise its candidate sweeps.
+    """
+
+    __tablename__ = "analyser_track_ids"  # type: ignore[assignment]
+
+    job_id: str = Field(primary_key=True)
+    section_index: int = Field(primary_key=True)
+    pitch_offset: float = Field(primary_key=True)
+    title: str | None = None
+    artist: str | None = None
+    shazam_id: str | None = None
+    confidence: float
+    matched_at: float
+
+
 class SoundcloudTrackBpm(SQLModel, table=True):
     """Cached BPM results for SoundCloud tracks.
 

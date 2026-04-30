@@ -24,6 +24,7 @@ dependencies = [
     "alembic>=1.13",
     "anthropic>=0.97.0",
     "keyring>=25.0.0",
+    "shazamio>=0.7.0",
 ]
 
 [dependency-groups]

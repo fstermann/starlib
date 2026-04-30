@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi_pagination import add_pagination
 
 from backend.api.ai import router as ai_router
+from backend.api.analyser import router as analyser_router
 from backend.api.app_settings import router as app_settings_router
 from backend.api.auth import router as auth_router
 from backend.api.bpm import router as bpm_router
@@ -108,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(soundcloud_router)
     app.include_router(system_playlists_router)
     app.include_router(bpm_router)
+    app.include_router(analyser_router)
 
     add_pagination(app)
 
