@@ -28,13 +28,13 @@ test.describe("drag handle hover affordance", () => {
     ).toBeLessThan(0.05);
 
     // Hover the row that owns this handle: opacity transitions to 1.
-    const row = handle.locator("xpath=ancestor::*[contains(@class,'group')][1]");
+    const row = handle.locator(
+      "xpath=ancestor::*[contains(@class,'group')][1]",
+    );
     await row.hover();
     await expect
       .poll(async () =>
-        handle.evaluate(
-          (el) => parseFloat(getComputedStyle(el).opacity) || 0,
-        ),
+        handle.evaluate((el) => parseFloat(getComputedStyle(el).opacity) || 0),
       )
       .toBeGreaterThan(0.9);
   });
