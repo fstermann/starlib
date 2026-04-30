@@ -61,6 +61,7 @@ import {
   type TrackInfo,
   type TrackInfoUpdateRequest,
 } from "@/lib/api";
+import { applyRulesGate } from "@/lib/apply-rules-gate";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
 import type { SourceTrack } from "@/lib/sources/types";
 import {
@@ -2055,42 +2056,64 @@ export function TrackEditor({
             </Button>
 
             {/* Apply Rules — shown only when folder has a ruleset */}
-            {activeRuleset?.rules.length ? (
-              <TooltipProvider delayDuration={400} disableHoverableContent>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      onClick={handleFinalize}
-                      disabled={loading || hasMissingRequired}
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "h-7 gap-1 text-xs",
-                        hasMissingRequired
-                          ? "text-muted-foreground"
-                          : "text-primary hover:bg-primary/10 hover:text-primary",
-                      )}
+            {activeRuleset?.rules.length
+              ? (() => {
+                  const gate = applyRulesGate({
+                    loading,
+                    hasUnsavedChanges: hasChanges,
+                    hasMissingRequired,
+                  });
+                  return (
+                    <TooltipProvider
+                      delayDuration={400}
+                      disableHoverableContent
                     >
-                      <Workflow className="size-3" />
-                      Apply rules
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    sideOffset={6}
-                    showArrow={false}
-                    className="bg-popover text-popover-foreground max-w-64 border p-0"
-                  >
-                    <RulesetPreview
-                      ruleset={activeRuleset}
-                      missingRequired={
-                        hasMissingRequired ? missingRequiredAttrs : undefined
-                      }
-                    />
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            onClick={handleFinalize}
+                            disabled={gate.disabled}
+                            data-testid="apply-rules-button"
+                            data-gate-reason={gate.reason ?? ""}
+                            variant="ghost"
+                            size="sm"
+                            className={cn(
+                              "h-7 gap-1 text-xs",
+                              gate.disabled
+                                ? "text-muted-foreground"
+                                : "text-primary hover:bg-primary/10 hover:text-primary",
+                            )}
+                          >
+                            <Workflow className="size-3" />
+                            Apply rules
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          sideOffset={6}
+                          showArrow={false}
+                          className="bg-popover text-popover-foreground max-w-64 border p-0"
+                        >
+                          {gate.reason === "unsaved" ? (
+                            <p className="px-3 py-2 text-xs">
+                              Save your changes before applying rules.
+                            </p>
+                          ) : (
+                            <RulesetPreview
+                              ruleset={activeRuleset}
+                              missingRequired={
+                                hasMissingRequired
+                                  ? missingRequiredAttrs
+                                  : undefined
+                              }
+                            />
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  );
+                })()
+              : null}
             <div className="flex-1" />
             <Button
               onClick={handleDelete}
