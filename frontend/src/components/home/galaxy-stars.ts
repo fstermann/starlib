@@ -11,7 +11,10 @@ export type Star = {
 
 // Stars are seeded once in normalized [0, 1] coords. Window resizes scale them
 // to pixel positions at render time instead of reshuffling the field.
-export function seedStars(count: number, rng: () => number = Math.random): Star[] {
+export function seedStars(
+  count: number,
+  rng: () => number = Math.random,
+): Star[] {
   return new Array(count).fill(0).map(() => {
     const depth = Math.pow(rng(), 1.6); // bias toward far
     return {
