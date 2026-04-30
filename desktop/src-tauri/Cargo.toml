@@ -15,6 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+starlib_audio = { path = "../../starlib_audio", features = ["soundcloud"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-updater = "2"
@@ -32,11 +33,7 @@ serde_json = "1"
 reqwest = { version = "0.13", features = ["json"] }
 tokio = { version = "1", features = ["time", "sync"] }
 thiserror = "2"
-symphonia = { version = "0.5", features = ["aac", "aiff", "alac", "isomp4", "mp3", "flac", "wav", "vorbis"] }
-rustfft = "6"
 anyhow = "1"
-futures = "0.3"
-url = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -4300,14 +4300,12 @@ version = "0.4.3"
 dependencies = [
  "anyhow",
  "dirs",
- "futures",
  "libc",
  "log",
  "reqwest",
- "rustfft",
  "serde",
  "serde_json",
- "symphonia",
+ "starlib_audio",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",
@@ -4319,7 +4317,23 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tauri-plugin-updater",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "starlib_audio"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "log",
+ "reqwest",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "symphonia",
+ "thiserror 2.0.18",
  "tokio",
  "url",
 ]
