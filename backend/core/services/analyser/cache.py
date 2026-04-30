@@ -43,7 +43,7 @@ class AnalyserCacheConfig:
     set_ttl_seconds: float = 30 * 24 * 3600  # 30 days
 
     @classmethod
-    def from_settings(cls) -> "AnalyserCacheConfig":
+    def from_settings(cls) -> AnalyserCacheConfig:
         settings = get_backend_settings()
         base = settings.cache_dir / "analyser"
         return cls(
@@ -105,10 +105,14 @@ async def fetch_set_audio(
         cmd.extend(["-headers", f"Authorization: {auth_header}\r\n"])
     cmd.extend(
         [
-            "-i", hls_url,
-            "-c", "copy",
-            "-bsf:a", "aac_adtstoasc",
-            "-f", "mp4",
+            "-i",
+            hls_url,
+            "-c",
+            "copy",
+            "-bsf:a",
+            "aac_adtstoasc",
+            "-f",
+            "mp4",
             str(out),
         ]
     )
@@ -213,10 +217,14 @@ async def make_shazam_slice(
 
     ffmpeg = _find_ffmpeg()
     cmd: list[str] = [
-        ffmpeg, "-y",
-        "-ss", f"{start_s:.3f}",
-        "-t", f"{duration_s:.3f}",
-        "-i", str(source),
+        ffmpeg,
+        "-y",
+        "-ss",
+        f"{start_s:.3f}",
+        "-t",
+        f"{duration_s:.3f}",
+        "-i",
+        str(source),
     ]
     if pitch_semitones != 0.0:
         # asetrate scales sample rate (changes pitch + tempo together);

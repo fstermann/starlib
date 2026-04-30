@@ -175,9 +175,7 @@ def _row_to_job(row) -> JobRow:
 
 def get_job(job_id: str) -> JobRow | None:
     with get_engine().begin() as conn:
-        row = conn.execute(
-            select(*_JOB_COLS).where(AnalyserJob.__table__.c.id == job_id)
-        ).first()
+        row = conn.execute(select(*_JOB_COLS).where(AnalyserJob.__table__.c.id == job_id)).first()
     if row is None:
         return None
     return _row_to_job(row)
@@ -185,11 +183,7 @@ def get_job(job_id: str) -> JobRow | None:
 
 def list_recent_jobs(limit: int = 25) -> list[JobRow]:
     with get_engine().begin() as conn:
-        rows = conn.execute(
-            select(*_JOB_COLS)
-            .order_by(AnalyserJob.__table__.c.created_at.desc())
-            .limit(limit)
-        ).all()
+        rows = conn.execute(select(*_JOB_COLS).order_by(AnalyserJob.__table__.c.created_at.desc()).limit(limit)).all()
     return [_row_to_job(r) for r in rows]
 
 
@@ -212,9 +206,7 @@ def find_job_for_set(soundcloud_id: int) -> JobRow | None:
 # ---------------------------------------------------------------------------
 
 
-def upsert_window_bpm(
-    *, job_id: str, start_s: float, end_s: float, bpm: float, confidence: str
-) -> None:
+def upsert_window_bpm(*, job_id: str, start_s: float, end_s: float, bpm: float, confidence: str) -> None:
     table = AnalyserWindowBpm.__table__
     stmt = sqlite_insert(table).values(
         job_id=job_id,
@@ -340,8 +332,15 @@ def get_track_id(job_id: str, section_index: int, pitch_offset: float) -> TrackI
     table = AnalyserTrackId.__table__
     with get_engine().begin() as conn:
         row = conn.execute(
-            select(table.c.section_index, table.c.pitch_offset, table.c.title,
-                   table.c.artist, table.c.shazam_id, table.c.confidence, table.c.matched_at)
+            select(
+                table.c.section_index,
+                table.c.pitch_offset,
+                table.c.title,
+                table.c.artist,
+                table.c.shazam_id,
+                table.c.confidence,
+                table.c.matched_at,
+            )
             .where(table.c.job_id == job_id)
             .where(table.c.section_index == section_index)
             .where(table.c.pitch_offset == pitch_offset)
@@ -356,8 +355,15 @@ def list_track_ids(job_id: str) -> list[TrackIdRow]:
     table = AnalyserTrackId.__table__
     with get_engine().begin() as conn:
         rows = conn.execute(
-            select(table.c.section_index, table.c.pitch_offset, table.c.title,
-                   table.c.artist, table.c.shazam_id, table.c.confidence, table.c.matched_at)
+            select(
+                table.c.section_index,
+                table.c.pitch_offset,
+                table.c.title,
+                table.c.artist,
+                table.c.shazam_id,
+                table.c.confidence,
+                table.c.matched_at,
+            )
             .where(table.c.job_id == job_id)
             .order_by(table.c.section_index, table.c.confidence.desc())
         ).all()

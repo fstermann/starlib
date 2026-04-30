@@ -116,6 +116,10 @@ class _JobState:
 _jobs: dict[str, _JobState] = {}
 _jobs_lock = asyncio.Lock()
 
+# Holds strong refs to fire-and-forget pipeline tasks so the GC doesn't
+# reap them while they're still streaming events to listeners.
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
 
 class JobNotFoundError(LookupError):
     """Raised when a job_id has no in-memory state and isn't in the DB."""
@@ -194,7 +198,7 @@ async def start_job(
     )
     state = _JobState(job_id=job_id, options=options)
     await _put_state(state)
-    asyncio.create_task(
+    task = asyncio.create_task(
         _run_job(
             state,
             fetch_audio=fetch_audio,
@@ -203,6 +207,8 @@ async def start_job(
             replay_meta=True,
         )
     )
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
     return job_id
 
 
@@ -273,11 +279,11 @@ async def subscribe_to_job(job_id: str) -> AsyncIterator[AnalyserEvent]:
 
     try:
         while True:
-            event = await queue.get()
-            if event is None:
+            queued = await queue.get()
+            if queued is None:
                 return
-            yield event
-            if isinstance(event, (JobCompleteEvent, JobErrorEvent)):
+            yield queued
+            if isinstance(queued, (JobCompleteEvent, JobErrorEvent)):
                 return
     finally:
         try:
@@ -355,6 +361,42 @@ def _build_default_shazam() -> ShazamClient:
     return build_rate_limited_client(get_default_client())
 
 
+async def _dispatch_subprocess_event(
+    event: AnalyserEvent,
+    *,
+    state: _JobState,
+    sections_buffer: list[SectionDetectedEvent],
+    replay_meta: bool,
+) -> None:
+    """Persist + broadcast one event coming off the subprocess listener."""
+    job_id = state.job_id
+    if isinstance(event, MetaEvent):
+        state.duration_s = event.duration_s
+        db.update_job_meta(job_id, duration_s=event.duration_s)
+        if replay_meta:
+            # Carry across the user-facing title/artist that came in via
+            # the SoundCloud /resolve hop (already on the DB row).
+            event.title = _job_title(job_id)
+            event.artist = _job_artist(job_id)
+            await _broadcast(state, event)
+    elif isinstance(event, WindowBpmEvent):
+        db.upsert_window_bpm(
+            job_id=job_id,
+            start_s=event.start_s,
+            end_s=event.end_s,
+            bpm=event.bpm,
+            confidence=event.confidence,
+        )
+        state.last_window_bpm = event
+        await _broadcast(state, event)
+    elif isinstance(event, SectionDetectedEvent):
+        sections_buffer.append(event)
+        await _broadcast(state, event)
+    elif isinstance(event, JobErrorEvent):
+        await _broadcast(state, event)
+    # JobCompleteEvent is emitted by the controller, not the subprocess.
+
+
 def _maybe_revive_state(job_id: str) -> _JobState | None:
     """Return the in-memory state, or rebuild a fresh one for a finished job."""
     state = _jobs.get(job_id)
@@ -400,33 +442,12 @@ async def _run_job(
         event = event_from_subprocess_line(job_id, payload)
         if event is None:
             return
-        if isinstance(event, MetaEvent):
-            state.duration_s = event.duration_s
-            db.update_job_meta(job_id, duration_s=event.duration_s)
-            if replay_meta:
-                # Carry across the user-facing title/artist that came in via
-                # the SoundCloud /resolve hop (already on the DB row).
-                event.title = _job_title(job_id)
-                event.artist = _job_artist(job_id)
-                await _broadcast(state, event)
-        elif isinstance(event, WindowBpmEvent):
-            db.upsert_window_bpm(
-                job_id=job_id,
-                start_s=event.start_s,
-                end_s=event.end_s,
-                bpm=event.bpm,
-                confidence=event.confidence,
-            )
-            state.last_window_bpm = event
-            await _broadcast(state, event)
-        elif isinstance(event, SectionDetectedEvent):
-            sections_buffer.append(event)
-            await _broadcast(state, event)
-        elif isinstance(event, JobCompleteEvent):
-            # Emitted later by us, after the Shazam stage.
-            return
-        elif isinstance(event, JobErrorEvent):
-            await _broadcast(state, event)
+        await _dispatch_subprocess_event(
+            event,
+            state=state,
+            sections_buffer=sections_buffer,
+            replay_meta=replay_meta,
+        )
 
     try:
         rc = await run_analyser_subprocess(
@@ -517,7 +538,10 @@ async def _run_shazam_stage(
                 except Exception as exc:
                     logger.warning(
                         "analyser: slice generation failed for job %s section %d pitch %.2f: %s",
-                        state.job_id, section.section_index, pitch_offset, exc,
+                        state.job_id,
+                        section.section_index,
+                        pitch_offset,
+                        exc,
                     )
                     continue
                 try:
@@ -525,7 +549,9 @@ async def _run_shazam_stage(
                 except Exception as exc:
                     logger.warning(
                         "analyser: shazam call failed for job %s section %d: %s",
-                        state.job_id, section.section_index, exc,
+                        state.job_id,
+                        section.section_index,
+                        exc,
                     )
                     continue
                 title = response.title if response else None

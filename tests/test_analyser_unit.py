@@ -14,7 +14,6 @@ from backend.core.services.analyser.pipeline import (
 )
 from backend.core.services.analyser.shazam import TokenBucket
 
-
 # ---------------------------------------------------------------------------
 # Pitch strategy
 # ---------------------------------------------------------------------------
@@ -22,22 +21,16 @@ from backend.core.services.analyser.shazam import TokenBucket
 
 class TestSelectPitchOffsets:
     def test_none_strategy_yields_unmodified_query(self) -> None:
-        assert select_pitch_offsets(
-            section_bpm=128.0, target_bpm=120.0, bpm_range=None, strategy="none"
-        ) == [0.0]
+        assert select_pitch_offsets(section_bpm=128.0, target_bpm=120.0, bpm_range=None, strategy="none") == [0.0]
 
     def test_single_strategy_picks_one_target_offset(self) -> None:
-        offsets = select_pitch_offsets(
-            section_bpm=128.0, target_bpm=120.0, bpm_range=None, strategy="single"
-        )
+        offsets = select_pitch_offsets(section_bpm=128.0, target_bpm=120.0, bpm_range=None, strategy="single")
         assert len(offsets) == 1
         # 12 * log2(120/128) ≈ -1.117 semitones
         assert offsets[0] == pytest.approx(12.0 * math.log2(120.0 / 128.0), abs=1e-6)
 
     def test_range_strategy_fans_out_across_band(self) -> None:
-        offsets = select_pitch_offsets(
-            section_bpm=128.0, target_bpm=None, bpm_range=(120.0, 130.0), strategy="range"
-        )
+        offsets = select_pitch_offsets(section_bpm=128.0, target_bpm=None, bpm_range=(120.0, 130.0), strategy="range")
         assert len(offsets) == 3
         # Lowest candidate (120) shifts down, highest (130) shifts up.
         assert offsets[0] < offsets[1] < offsets[2]
@@ -45,9 +38,7 @@ class TestSelectPitchOffsets:
         assert offsets[2] == pytest.approx(12.0 * math.log2(130.0 / 128.0), abs=1e-6)
 
     def test_invalid_section_bpm_falls_back_to_no_shift(self) -> None:
-        assert select_pitch_offsets(
-            section_bpm=0.0, target_bpm=120.0, bpm_range=None, strategy="single"
-        ) == [0.0]
+        assert select_pitch_offsets(section_bpm=0.0, target_bpm=120.0, bpm_range=None, strategy="single") == [0.0]
 
 
 # ---------------------------------------------------------------------------

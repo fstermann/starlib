@@ -2,7 +2,7 @@
 
 Spawns the real ``analyser-stream`` Rust subprocess against a synthetic
 click-track WAV and verifies the orchestrator stitches events together
-correctly: meta → window.bpm × N → section.detected × M → job.complete.
+correctly: meta → window.bpm x N → section.detected x M → job.complete.
 SoundCloud is bypassed via a custom audio fetcher.
 
 The test is gated on the analyser binary being built; if it's missing it
@@ -16,6 +16,7 @@ import math
 import os
 import struct
 import wave
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -74,7 +75,7 @@ def _write_test_set(path: Path, *, bpm: float = 128.0, total_s: float = 90.0) ->
 
 
 @pytest.fixture(autouse=True)
-def _temp_db(tmp_path: Path) -> Path:
+def _temp_db(tmp_path: Path) -> Iterator[Path]:
     db_path = tmp_path / "analyser.db"
     engine = db_engine.init_engine(db_path)
     run_migrations(engine, db_path)

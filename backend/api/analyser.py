@@ -28,8 +28,8 @@ from backend.core.services.analyser import (
     AnalyserJobOptions,
     JobNotFoundError,
     get_job_snapshot,
-    recent_jobs,
     reanalyse_job,
+    recent_jobs,
     start_job,
     subscribe_to_job,
 )
@@ -43,6 +43,11 @@ from soundcloud_tools.settings import get_settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analyser", tags=["analyser"])
+
+# Holds strong references to fire-and-forget background tasks so the GC
+# doesn't reap them mid-flight. asyncio's docs explicitly warn that bare
+# ``create_task`` without a stored reference is a footgun.
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +65,7 @@ class StartJobRequest(BaseModel):
     artist: str | None = None
 
     @model_validator(mode="after")
-    def _has_target(self) -> "StartJobRequest":
+    def _has_target(self) -> StartJobRequest:
         if self.url is None and self.soundcloud_id is None:
             raise ValueError("either url or soundcloud_id is required")
         return self
@@ -75,7 +80,7 @@ class ReanalyseRequest(BaseModel):
     overrides: dict[str, Any] | None = None
 
     @model_validator(mode="after")
-    def _at_least_one_range(self) -> "ReanalyseRequest":
+    def _at_least_one_range(self) -> ReanalyseRequest:
         if not self.ranges:
             raise ValueError("ranges must contain at least one entry")
         for r in self.ranges:
@@ -92,48 +97,16 @@ class ReanalyseRequest(BaseModel):
 @router.post("/sets", response_model=StartJobResponse)
 async def start_analyser_job(payload: StartJobRequest) -> StartJobResponse:
     """Start a new analyser job for a SoundCloud set."""
-    settings = get_settings()
-    if not settings.has_oauth_credentials():
+    if not get_settings().has_oauth_credentials():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="SoundCloud OAuth credentials not configured",
         )
 
     soundcloud_id = payload.soundcloud_id
-    title = payload.title
-    artist = payload.artist
-
     if soundcloud_id is None:
-        url = payload.url or ""
-        async with Client() as client:
-            try:
-                resolved_id = await client.get_track_id(url)
-            except Exception as exc:
-                logger.exception("analyser: failed to resolve URL %s", url)
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"could not resolve SoundCloud URL: {exc}",
-                ) from exc
-        if resolved_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="no SoundCloud track found at that URL",
-            )
-        soundcloud_id = resolved_id
-
-    if title is None or artist is None:
-        try:
-            async with Client() as client:
-                track = await client.get_track(track_id=soundcloud_id)
-            if track is not None:
-                if title is None and getattr(track, "title", None):
-                    title = track.title
-                if artist is None:
-                    user = getattr(track, "user", None)
-                    if user is not None:
-                        artist = getattr(user, "username", None)
-        except Exception as exc:  # don't fail the job start over a metadata fetch
-            logger.warning("analyser: track metadata fetch failed for %s: %s", soundcloud_id, exc)
+        soundcloud_id = await _resolve_soundcloud_url(payload.url or "")
+    title, artist = await _fetch_track_meta(soundcloud_id, payload.title, payload.artist)
 
     fetch_audio = _make_soundcloud_fetcher(soundcloud_id)
     job_id = await start_job(
@@ -145,6 +118,43 @@ async def start_analyser_job(payload: StartJobRequest) -> StartJobResponse:
         fetch_audio=fetch_audio,
     )
     return StartJobResponse(job_id=job_id)
+
+
+async def _resolve_soundcloud_url(url: str) -> int:
+    try:
+        resolved = await Client().get_track_id(url)
+    except Exception as exc:
+        logger.exception("analyser: failed to resolve URL %s", url)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"could not resolve SoundCloud URL: {exc}",
+        ) from exc
+    if resolved is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="no SoundCloud track found at that URL",
+        )
+    return resolved
+
+
+async def _fetch_track_meta(soundcloud_id: int, title: str | None, artist: str | None) -> tuple[str | None, str | None]:
+    """Fill in title/artist from the SoundCloud API. Failures are non-fatal."""
+    if title and artist:
+        return title, artist
+    try:
+        track = await Client().get_track(track_id=soundcloud_id)
+    except Exception as exc:  # metadata is best-effort
+        logger.warning("analyser: track metadata fetch failed for %s: %s", soundcloud_id, exc)
+        return title, artist
+    if track is None:
+        return title, artist
+    if title is None and getattr(track, "title", None):
+        title = track.title
+    if artist is None:
+        user = getattr(track, "user", None)
+        if user is not None:
+            artist = getattr(user, "username", None)
+    return title, artist
 
 
 @router.get("/sets")
@@ -177,7 +187,7 @@ async def reanalyse(job_id: str, payload: ReanalyseRequest) -> dict:
     fetch_audio = _make_soundcloud_fetcher(int(soundcloud_id))
     ranges = [(float(r["start_s"]), float(r["end_s"])) for r in payload.ranges]
 
-    asyncio.create_task(
+    task = asyncio.create_task(
         reanalyse_job(
             job_id,
             ranges=ranges,
@@ -185,6 +195,8 @@ async def reanalyse(job_id: str, payload: ReanalyseRequest) -> dict:
             fetch_audio=fetch_audio,
         )
     )
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
     return {"job_id": job_id, "scheduled_ranges": payload.ranges}
 
 

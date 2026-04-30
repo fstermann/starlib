@@ -16,8 +16,8 @@ from backend.core.services.analyser.controller import (
     AnalyserJobOptions,
     JobNotFoundError,
     get_job_snapshot,
-    recent_jobs,
     reanalyse_job,
+    recent_jobs,
     start_job,
     subscribe_to_job,
 )
@@ -26,8 +26,8 @@ __all__ = [
     "AnalyserJobOptions",
     "JobNotFoundError",
     "get_job_snapshot",
-    "recent_jobs",
     "reanalyse_job",
+    "recent_jobs",
     "start_job",
     "subscribe_to_job",
 ]

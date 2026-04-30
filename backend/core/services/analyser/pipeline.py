@@ -38,12 +38,20 @@ class AnalyserBinaryOptions:
 
     def to_argv(self, *, input_path: Path) -> list[str]:
         argv: list[str] = ["analyse", "--input", str(input_path)]
-        if self.window_s is not None:
-            argv += ["--window-s", str(self.window_s)]
-        if self.hop_s is not None:
-            argv += ["--hop-s", str(self.hop_s)]
-        if self.target_sr is not None:
-            argv += ["--target-sr", str(self.target_sr)]
+        argv += self._bpm_argv()
+        argv += self._segment_argv()
+        argv += self._region_argv()
+        return argv
+
+    def _bpm_argv(self) -> list[str]:
+        argv: list[str] = []
+        for flag, value in (
+            ("--window-s", self.window_s),
+            ("--hop-s", self.hop_s),
+            ("--target-sr", self.target_sr),
+        ):
+            if value is not None:
+                argv += [flag, str(value)]
         if self.bpm_range is not None:
             lo, hi = self.bpm_range
             argv += ["--bpm-range", f"{lo}-{hi}"]
@@ -54,16 +62,24 @@ class AnalyserBinaryOptions:
                 argv += ["--max-bpm", str(self.max_bpm)]
         if self.octave_correction is False:
             argv += ["--no-octave-correction"]
+        return argv
+
+    def _segment_argv(self) -> list[str]:
+        argv: list[str] = []
         if not self.sections_enabled:
             argv += ["--no-sections"]
-        if self.bands is not None:
-            argv += ["--bands", str(self.bands)]
-        if self.kernel_half_s is not None:
-            argv += ["--kernel-half-s", str(self.kernel_half_s)]
-        if self.min_gap_s is not None:
-            argv += ["--min-gap-s", str(self.min_gap_s)]
-        if self.peak_threshold is not None:
-            argv += ["--peak-threshold", str(self.peak_threshold)]
+        for flag, value in (
+            ("--bands", self.bands),
+            ("--kernel-half-s", self.kernel_half_s),
+            ("--min-gap-s", self.min_gap_s),
+            ("--peak-threshold", self.peak_threshold),
+        ):
+            if value is not None:
+                argv += [flag, str(value)]
+        return argv
+
+    def _region_argv(self) -> list[str]:
+        argv: list[str] = []
         if self.start_s is not None:
             argv += ["--start-s", str(self.start_s)]
         if self.end_s is not None:

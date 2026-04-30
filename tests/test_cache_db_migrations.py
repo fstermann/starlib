@@ -47,8 +47,16 @@ def _cols(db: Path, table: str) -> set[str]:
 def test_fresh_db_upgrades_to_head(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
     cache_db.init_db(db)
-    assert _rev(db) == "0004"
-    assert {"tracks", "peaks", "alembic_version"} <= _tables(db)
+    assert _rev(db) == "0005"
+    assert {
+        "tracks",
+        "peaks",
+        "alembic_version",
+        "analyser_jobs",
+        "analyser_window_bpm",
+        "analyser_sections",
+        "analyser_track_ids",
+    } <= _tables(db)
 
 
 def test_idempotent_restart(tmp_path: Path) -> None:
@@ -108,7 +116,7 @@ def test_legacy_db_bootstrap_then_head(tmp_path: Path) -> None:
         "duration",
     ):
         assert col in tracks_cols, f"missing column after bootstrap: {col}"
-    assert _rev(db) == "0004"
+    assert _rev(db) == "0005"
 
 
 def test_backup_created_on_bootstrap(tmp_path: Path) -> None:
@@ -232,13 +240,14 @@ def test_migration_0004_downgrade_upgrade_round_trip(tmp_path: Path) -> None:
 
     db = tmp_path / "cache.db"
     cache_db.init_db(db)
-    assert _rev(db) == "0004"
+    assert _rev(db) == "0005"
 
     # Confirm the column is gone at head.
     head_cols = _cols(db, "soundcloud_track_bpm")
     assert "algorithm_version" not in head_cols
 
-    # Point alembic at this scratch DB and go 0004 -> 0003 -> 0004.
+    # Point alembic at this scratch DB and go to 0003 (skipping the
+    # analyser tables added in 0005), then back up to 0004.
     cfg = Config()
     cfg.set_main_option("script_location", "backend/alembic")
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
