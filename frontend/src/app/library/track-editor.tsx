@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Image as ImageIcon,
+  Link2,
   Loader2,
   MoveRight,
   RotateCcw,
@@ -1812,56 +1813,82 @@ export function TrackEditor({
                       </span>
                     )}
                   </div>
-                  <div className="flex shrink-0 scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-hover:scale-100 group-hover:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => {
-                        if (!selectedScTrack) return;
-                        const meta =
-                          activeSource.extractMetadata(selectedScTrack);
-                        setCommentData({
-                          soundcloud_id: meta.source_id,
-                          soundcloud_permalink: meta.source_permalink,
-                        });
-                        setScLinkEnabled(true);
-                      }}
-                      disabled={!selectedScTrack}
-                      title="Link selected SC track"
-                    >
-                      <activeSource.Icon className="size-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() =>
-                        setCommentData({
-                          soundcloud_id: "",
-                          soundcloud_permalink: "",
-                        })
-                      }
-                      disabled={
-                        !commentData.soundcloud_id &&
-                        !commentData.soundcloud_permalink
-                      }
-                      title="Clear link"
-                    >
-                      <Trash2 />
-                    </Button>
-                    {(commentData.soundcloud_id !==
-                      originalCommentData.soundcloud_id ||
-                      commentData.soundcloud_permalink !==
-                        originalCommentData.soundcloud_permalink) && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => setCommentData(originalCommentData)}
-                        title="Reset"
-                      >
-                        <RotateCcw />
-                      </Button>
-                    )}
-                  </div>
+                  <TooltipProvider delayDuration={300}>
+                    <div className="flex shrink-0 scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-hover:scale-100 group-hover:opacity-100">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => {
+                              if (!selectedScTrack) return;
+                              const meta =
+                                activeSource.extractMetadata(selectedScTrack);
+                              setCommentData({
+                                soundcloud_id: meta.source_id,
+                                soundcloud_permalink: meta.source_permalink,
+                              });
+                              setScLinkEnabled(true);
+                            }}
+                            disabled={!selectedScTrack}
+                            data-testid="link-sc-track-button"
+                            aria-label="Link selected SoundCloud track to this file"
+                          >
+                            <Link2 className="size-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={4}>
+                          {selectedScTrack
+                            ? "Link selected SoundCloud track"
+                            : "Pick a SoundCloud track in the search panel first"}
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() =>
+                              setCommentData({
+                                soundcloud_id: "",
+                                soundcloud_permalink: "",
+                              })
+                            }
+                            disabled={
+                              !commentData.soundcloud_id &&
+                              !commentData.soundcloud_permalink
+                            }
+                            aria-label="Clear SoundCloud link"
+                          >
+                            <Trash2 />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={4}>
+                          Clear link
+                        </TooltipContent>
+                      </Tooltip>
+                      {(commentData.soundcloud_id !==
+                        originalCommentData.soundcloud_id ||
+                        commentData.soundcloud_permalink !==
+                          originalCommentData.soundcloud_permalink) && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => setCommentData(originalCommentData)}
+                              aria-label="Reset SoundCloud link"
+                            >
+                              <RotateCcw />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={4}>
+                            Reset
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </TooltipProvider>
                 </div>
 
                 {/* Compact track preview (search closed, track selected) */}
