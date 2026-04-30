@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   ChevronUp,
   Eraser,
+  Loader2,
   Music,
   PencilLine,
   Workflow,
@@ -680,6 +681,9 @@ export function CollectionTable({
   >;
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  // Disable batch Apply Rules while one is in flight (#375). Each finalize
+  // is a long ffmpeg job — re-firing the button stacks them.
+  const [finalizingBatch, setFinalizingBatch] = useState(false);
   const [pulseRows, setPulseRows] = useState<Set<string>>(new Set());
   const pulseTimersRef = useRef<Map<string, number>>(new Map());
   const triggerSavePulse = useCallback((filePath: string) => {
@@ -1218,27 +1222,32 @@ export function CollectionTable({
       const toastId = toast.loading(
         `Applying rules to ${paths.length} track${paths.length !== 1 ? "s" : ""}…`,
       );
+      setFinalizingBatch(true);
       let succeeded = 0;
       let failed = 0;
-      for (const fp of paths) {
-        try {
-          await api.finalizeTrack(fp, {});
-          succeeded++;
-        } catch {
-          failed++;
+      try {
+        for (const fp of paths) {
+          try {
+            await api.finalizeTrack(fp, {});
+            succeeded++;
+          } catch {
+            failed++;
+          }
         }
+        if (failed === 0) {
+          toast.success(
+            `Applied rules to ${succeeded} track${succeeded !== 1 ? "s" : ""}`,
+            { id: toastId },
+          );
+        } else {
+          toast.warning(`${succeeded} applied, ${failed} failed`, {
+            id: toastId,
+          });
+        }
+        onEditSaved?.();
+      } finally {
+        setFinalizingBatch(false);
       }
-      if (failed === 0) {
-        toast.success(
-          `Applied rules to ${succeeded} track${succeeded !== 1 ? "s" : ""}`,
-          { id: toastId },
-        );
-      } else {
-        toast.warning(`${succeeded} applied, ${failed} failed`, {
-          id: toastId,
-        });
-      }
-      onEditSaved?.();
     },
     [onEditSaved],
   );
@@ -1463,13 +1472,18 @@ export function CollectionTable({
                       ? "text-primary hover:bg-primary/10 hover:text-primary"
                       : "text-muted-foreground",
                   )}
-                  disabled={finalizeEligibleCount === 0}
+                  disabled={finalizeEligibleCount === 0 || finalizingBatch}
+                  data-finalizing={finalizingBatch ? "true" : undefined}
                   onClick={handleFinalizeSelected}
                 >
-                  <Workflow className="size-3.5" />
+                  {finalizingBatch ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Workflow className="size-3.5" />
+                  )}
                   <span className="max-w-[140px] overflow-hidden whitespace-nowrap opacity-100 @max-[760px]/toolbar:max-w-0 @max-[760px]/toolbar:opacity-0">
-                    Apply rules
-                    {finalizeEligibleCount > 0
+                    {finalizingBatch ? "Applying…" : "Apply rules"}
+                    {!finalizingBatch && finalizeEligibleCount > 0
                       ? ` (${finalizeEligibleCount})`
                       : ""}
                   </span>

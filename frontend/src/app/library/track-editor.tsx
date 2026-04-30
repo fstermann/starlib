@@ -186,6 +186,11 @@ export function TrackEditor({
   // BPM detection state (Rust-side analysis via Tauri invoke)
   const [bpmAnalyzing, setBpmAnalyzing] = useState(false);
 
+  // Finalize is a long-running backend job (ffmpeg conversion + file moves).
+  // Track it so we can disable the Apply Rules button + sibling actions and
+  // show a spinner instead of letting users re-fire it. See #375.
+  const [finalizing, setFinalizing] = useState(false);
+
   // Active ruleset (shown in Apply Rules popover) — only set when the folder has one assigned
   const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
   useEffect(() => {
@@ -726,11 +731,12 @@ export function TrackEditor({
   };
 
   const handleFinalize = () => {
-    if (!trackInfo) return;
+    if (!trackInfo || finalizing) return;
     const filePathToFinalize = trackInfo.file_path;
     const trackName =
       formData.title || selectedFile.file_name || filePathToFinalize;
     const toastId = toast.loading(`Applying rules to "${trackName}"…`);
+    setFinalizing(true);
     api
       .finalizeTrack(filePathToFinalize, {})
       .then((result) => {
@@ -777,7 +783,8 @@ export function TrackEditor({
         const message =
           err instanceof Error ? err.message : "Failed to apply rules";
         toast.error(message, { id: toastId, duration: Infinity });
-      });
+      })
+      .finally(() => setFinalizing(false));
   };
 
   const handleDelete = () => {
@@ -2036,7 +2043,7 @@ export function TrackEditor({
             {/* Save */}
             <Button
               onClick={handleSave}
-              disabled={!hasChanges || loading}
+              disabled={!hasChanges || loading || finalizing}
               variant="ghost"
               size="sm"
               className={cn(
@@ -2061,7 +2068,9 @@ export function TrackEditor({
                   <TooltipTrigger asChild>
                     <Button
                       onClick={handleFinalize}
-                      disabled={loading || hasMissingRequired}
+                      disabled={loading || hasMissingRequired || finalizing}
+                      data-testid="apply-rules-button"
+                      data-finalizing={finalizing ? "true" : undefined}
                       variant="ghost"
                       size="sm"
                       className={cn(
@@ -2071,8 +2080,12 @@ export function TrackEditor({
                           : "text-primary hover:bg-primary/10 hover:text-primary",
                       )}
                     >
-                      <Workflow className="size-3" />
-                      Apply rules
+                      {finalizing ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Workflow className="size-3" />
+                      )}
+                      {finalizing ? "Applying…" : "Apply rules"}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent
@@ -2081,12 +2094,19 @@ export function TrackEditor({
                     showArrow={false}
                     className="bg-popover text-popover-foreground max-w-64 border p-0"
                   >
-                    <RulesetPreview
-                      ruleset={activeRuleset}
-                      missingRequired={
-                        hasMissingRequired ? missingRequiredAttrs : undefined
-                      }
-                    />
+                    {finalizing ? (
+                      <p className="px-3 py-2 text-xs">
+                        Applying rules — file conversion runs in the
+                        background, the rest of the app stays usable.
+                      </p>
+                    ) : (
+                      <RulesetPreview
+                        ruleset={activeRuleset}
+                        missingRequired={
+                          hasMissingRequired ? missingRequiredAttrs : undefined
+                        }
+                      />
+                    )}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -2094,7 +2114,7 @@ export function TrackEditor({
             <div className="flex-1" />
             <Button
               onClick={handleDelete}
-              disabled={loading}
+              disabled={loading || finalizing}
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground hover:text-destructive"
