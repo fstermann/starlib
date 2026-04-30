@@ -1876,7 +1876,9 @@ export function TrackEditor({
                             <Button
                               variant="ghost"
                               size="icon-xs"
-                              onClick={() => setCommentData(originalCommentData)}
+                              onClick={() =>
+                                setCommentData(originalCommentData)
+                              }
                               aria-label="Reset SoundCloud link"
                             >
                               <RotateCcw />
