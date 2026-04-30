@@ -471,10 +471,12 @@ export function RuleCard({
         <button
           {...(draggable ? { ...attributes, ...listeners } : {})}
           tabIndex={-1}
+          aria-label="Drag to reorder"
+          data-testid="rule-card-drag-handle"
           className={cn(
-            "text-muted-foreground group-hover:text-muted-foreground shrink-0 transition-colors",
+            "text-muted-foreground shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
             isBuiltin || !draggable
-              ? "pointer-events-none cursor-default opacity-30"
+              ? "pointer-events-none cursor-default group-hover:opacity-30"
               : "cursor-grab active:cursor-grabbing",
           )}
         >

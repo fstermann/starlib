@@ -62,7 +62,7 @@ function FolderRow({
         ref={setNodeRef}
         style={style}
         className={cn(
-          "border-border bg-card flex items-center gap-2 rounded-md border px-2.5 py-2",
+          "group border-border bg-card flex items-center gap-2 rounded-md border px-2.5 py-2",
           isDragging && "opacity-50 shadow-lg",
         )}
       >
@@ -72,7 +72,9 @@ function FolderRow({
               {...attributes}
               {...listeners}
               tabIndex={-1}
-              className="text-muted-foreground hover:text-muted-foreground shrink-0 cursor-grab transition-colors active:cursor-grabbing"
+              aria-label="Drag to reorder"
+              data-testid="folder-config-drag-handle"
+              className="text-muted-foreground hover:text-muted-foreground shrink-0 cursor-grab opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
             >
               <GripVertical className="size-3.5" />
             </button>
