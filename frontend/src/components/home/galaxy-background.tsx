@@ -2,16 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-type Star = {
-  x: number;
-  y: number;
-  r: number;
-  baseAlpha: number;
-  twinkleSpeed: number;
-  twinklePhase: number;
-  depth: number; // 0..1, smaller = farther
-  hue: number; // 0 = white, 1 = brand-tinted
-};
+import { seedStars, type Star } from "./galaxy-stars";
 
 type Shooting = {
   x: number;
@@ -76,22 +67,8 @@ export function GalaxyBackground() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
-    // Star positions are stored in normalized [0, 1] coords so window resizes
-    // re-scale rather than reshuffle them.
     const seed = () => {
-      stars = new Array(STAR_COUNT).fill(0).map(() => {
-        const depth = Math.pow(Math.random(), 1.6); // bias toward far
-        return {
-          x: Math.random(),
-          y: Math.random(),
-          r: 0.3 + depth * 1.6,
-          baseAlpha: 0.25 + depth * 0.7,
-          twinkleSpeed: 0.4 + Math.random() * 1.4,
-          twinklePhase: Math.random() * Math.PI * 2,
-          depth,
-          hue: Math.random() < 0.25 ? 1 : 0,
-        };
-      });
+      stars = seedStars(STAR_COUNT);
     };
 
     const spawnShooting = () => {
