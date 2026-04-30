@@ -210,6 +210,158 @@ test.describe("Set Analyser", () => {
     await expect(page.getByTestId("track-label")).toContainText("Mock Track A");
   });
 
+  test("navigating to a different ?job= URL switches the loaded job", async ({
+    page,
+  }) => {
+    const SECOND_JOB = "test-job-2";
+
+    await mockAnalyserApi(page);
+    // Snapshot + SSE for the second job so the page can render it after nav.
+    await page.route(new RegExp(`/api/analyser/sets/${SECOND_JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: SECOND_JOB,
+          soundcloud_id: 67890,
+          source_url: null,
+          title: "Second Set",
+          artist: "Second Artist",
+          duration_s: 60.0,
+          status: "complete",
+          options: {
+            pitch_strategy: "none",
+            window_s: 30,
+            hop_s: 25,
+            min_section_gap_s: 30,
+            sections_enabled: true,
+          },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          tracks: [],
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${SECOND_JOB}/events$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: sseBody([
+            {
+              event: "meta",
+              data: {
+                type: "meta",
+                job_id: SECOND_JOB,
+                duration_s: 60.0,
+                sample_rate: 22050,
+                title: "Second Set",
+                artist: "Second Artist",
+              },
+            },
+            {
+              event: "job.complete",
+              data: { type: "job.complete", job_id: SECOND_JOB },
+            },
+          ]),
+        }),
+    );
+
+    await page.goto(`/analyser?job=${FAKE_JOB_ID}`);
+    await expect(page.getByTestId("analyser-header")).toContainText("Test Set");
+
+    // Navigate to a different job through the URL — the page must pick
+    // up the new id rather than continuing to render the original one.
+    await page.goto(`/analyser?job=${SECOND_JOB}`);
+    await expect(page.getByTestId("analyser-header")).toContainText(
+      "Second Set",
+    );
+  });
+
+  test("EventSource closes after job.complete (no auto-reconnect)", async ({
+    page,
+  }) => {
+    let eventsRequests = 0;
+    await page.route(/\/api\/analyser\/sets$/, (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      });
+    });
+    await page.route(
+      new RegExp(`/api/analyser/sets/${FAKE_JOB_ID}$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: FAKE_JOB_ID,
+            soundcloud_id: null,
+            source_url: null,
+            title: "Test Set",
+            artist: "Test Artist",
+            duration_s: 30.0,
+            status: "complete",
+            options: {
+              pitch_strategy: "none",
+              window_s: 30,
+              hop_s: 25,
+              min_section_gap_s: 30,
+              sections_enabled: true,
+            },
+            error: null,
+            created_at: 0,
+            updated_at: 0,
+            windows: [],
+            sections: [],
+            tracks: [],
+          }),
+        }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${FAKE_JOB_ID}/events$`),
+      (route) => {
+        eventsRequests += 1;
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: sseBody([
+            {
+              event: "meta",
+              data: {
+                type: "meta",
+                job_id: FAKE_JOB_ID,
+                duration_s: 30.0,
+                sample_rate: 22050,
+                title: "Test Set",
+                artist: "Test Artist",
+              },
+            },
+            {
+              event: "job.complete",
+              data: { type: "job.complete", job_id: FAKE_JOB_ID },
+            },
+          ]),
+        });
+      },
+    );
+
+    await page.goto(`/analyser?job=${FAKE_JOB_ID}`);
+    await expect(page.getByTestId("analyser-status")).toHaveText(/Complete/i);
+
+    // Without the fix, the native EventSource would re-open the stream
+    // after the body closes — driving up the request count over time.
+    await page.waitForTimeout(1500);
+    expect(eventsRequests).toBeLessThanOrEqual(1);
+  });
+
   test("re-analyse selection POSTs the right region", async ({ page }) => {
     const handle = await mockAnalyserApi(page);
     await page.goto(`/analyser?job=${FAKE_JOB_ID}`);

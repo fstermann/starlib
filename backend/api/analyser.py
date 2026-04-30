@@ -36,7 +36,6 @@ from backend.core.services.analyser import (
 from backend.core.services.analyser import cache as audio_cache
 from backend.core.services.analyser.events import event_to_sse
 from backend.core.services.sc_auth_cache import get_cached_access_token
-from soundcloud_tools.client import Client
 from soundcloud_tools.oauth import OAuthManager
 from soundcloud_tools.settings import get_settings
 
@@ -121,8 +120,16 @@ async def start_analyser_job(payload: StartJobRequest) -> StartJobResponse:
 
 
 async def _resolve_soundcloud_url(url: str) -> int:
+    # Goes through ``api.soundcloud.com/resolve`` (Client-Credentials token),
+    # not the api-v2 path that ``soundcloud_tools.Client`` would hit — those
+    # require the web-session cookie token and aren't authorised for this
+    # router's use case.
+    from backend.api.soundcloud import _resolve_track_id
+
     try:
-        resolved = await Client().get_track_id(url)
+        resolved = await _resolve_track_id(url)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("analyser: failed to resolve URL %s", url)
         raise HTTPException(
@@ -138,22 +145,28 @@ async def _resolve_soundcloud_url(url: str) -> int:
 
 
 async def _fetch_track_meta(soundcloud_id: int, title: str | None, artist: str | None) -> tuple[str | None, str | None]:
-    """Fill in title/artist from the SoundCloud API. Failures are non-fatal."""
+    """Fill in title/artist from the public SoundCloud API. Failures are non-fatal."""
     if title and artist:
         return title, artist
+    from backend.api.soundcloud import _fetch_track_meta as fetch_public_track
+
     try:
-        track = await Client().get_track(track_id=soundcloud_id)
-    except Exception as exc:  # metadata is best-effort
+        track = await fetch_public_track(soundcloud_id)
+    except Exception as exc:  # metadata is best-effort — never fail the job for this.
         logger.warning("analyser: track metadata fetch failed for %s: %s", soundcloud_id, exc)
         return title, artist
-    if track is None:
+    if not isinstance(track, dict):
         return title, artist
-    if title is None and getattr(track, "title", None):
-        title = track.title
+    if title is None:
+        t = track.get("title")
+        if isinstance(t, str) and t:
+            title = t
     if artist is None:
-        user = getattr(track, "user", None)
-        if user is not None:
-            artist = getattr(user, "username", None)
+        user = track.get("user")
+        if isinstance(user, dict):
+            u = user.get("username")
+            if isinstance(u, str) and u:
+                artist = u
     return title, artist
 
 

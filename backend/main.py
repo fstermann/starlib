@@ -29,6 +29,7 @@ from backend.core.services import app_settings as app_settings_service
 from backend.core.services import cache_db, watcher
 from backend.core.services import folder_config as folder_config_service
 from backend.core.services import ollama as ollama_service
+from backend.core.services.analyser import db as analyser_db
 from backend.core.services.collection import ensure_folder_indexed
 
 # Log to stdout so the Tauri sidecar captures and writes everything to backend.log.
@@ -49,6 +50,14 @@ async def lifespan(app: FastAPI):
     # Initialise SQLite cache (creates tables if first run)
     cache_db.init_db(settings.cache_dir / "metadata.db")
     cache_db.prune_missing_files()
+
+    # Analyser jobs that were running when a previous backend died are
+    # stuck in ``running`` / ``pending`` in the DB but have no live
+    # pipeline. Subscribers would block forever waiting for events; flip
+    # them to ``error`` so the SSE replay closes cleanly.
+    stale = analyser_db.mark_running_jobs_as_error("backend restarted; please re-run analysis")
+    if stale:
+        logger.info("analyser: marked %d stale running job(s) as error", stale)
 
     # Start watchdog observer for real-time file change detection
     watcher.start_watcher(root)

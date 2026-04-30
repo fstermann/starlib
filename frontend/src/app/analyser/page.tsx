@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 
 import {
   buildTracklistText,
@@ -23,30 +23,26 @@ import { useAnalyserJob } from "./_hooks/use-analyser-job";
 function AnalyserPageInner() {
   const router = useRouter();
   const search = useSearchParams();
-  const initialJobId = search.get("job");
+  // The URL is the single source of truth for which job we're viewing —
+  // keeping a parallel `useState` would desync from external navigations
+  // (palette "Open job", browser back, deep links to a different ?job=).
+  const jobId = search.get("job");
   const initialUrl = search.get("url") ?? "";
 
-  const [jobId, setJobId] = useState<string | null>(initialJobId);
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] =
     useState<AnalyserJobOptions>(DEFAULT_JOB_OPTIONS);
 
   const { state, dispatch } = useAnalyserJob(jobId);
 
-  // Keep the URL in sync so the browser back button + reload work.
-  useEffect(() => {
-    if (jobId && search.get("job") !== jobId) {
-      router.replace(`/analyser?job=${encodeURIComponent(jobId)}`);
-    }
-  }, [jobId, router, search]);
-
-  // Adopt persisted options once the snapshot loads, so the controls
-  // reflect what's actually running.
-  useEffect(() => {
-    if (state.jobId && state.jobId === jobId) {
-      // (state has them; dispatch already merged them via load.snapshot)
-    }
-  }, [state.jobId, jobId]);
+  const setJobId = useCallback(
+    (id: string | null) => {
+      router.replace(
+        id ? `/analyser?job=${encodeURIComponent(id)}` : "/analyser",
+      );
+    },
+    [router],
+  );
 
   const handleStart = useCallback(
     async ({ url }: { url: string }) => {
@@ -58,7 +54,7 @@ function AnalyserPageInner() {
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [options],
+    [options, setJobId],
   );
 
   const handleReanalyseSelection = useCallback(async () => {

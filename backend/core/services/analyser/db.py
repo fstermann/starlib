@@ -138,6 +138,33 @@ def update_job_meta(job_id: str, *, duration_s: float | None) -> None:
         )
 
 
+def update_job_options(job_id: str, options: dict) -> None:
+    """Persist a new options blob for a job (used by re-analyse overrides)."""
+    with get_engine().begin() as conn:
+        conn.execute(
+            AnalyserJob.__table__.update()
+            .where(AnalyserJob.__table__.c.id == job_id)
+            .values(options_json=json.dumps(options), updated_at=time.time())
+        )
+
+
+def mark_running_jobs_as_error(message: str) -> int:
+    """Move ``pending`` / ``running`` jobs to ``error``.
+
+    Called at backend startup so subscribers don't hang on jobs whose
+    pipeline died with the previous process. Returns the number of rows
+    affected.
+    """
+    table = AnalyserJob.__table__
+    with get_engine().begin() as conn:
+        result = conn.execute(
+            table.update()
+            .where(table.c.status.in_(("running", "pending")))
+            .values(status="error", error=message, updated_at=time.time())
+        )
+    return result.rowcount or 0
+
+
 _JOB_COLS = (
     AnalyserJob.__table__.c.id,
     AnalyserJob.__table__.c.soundcloud_id,
@@ -235,10 +262,12 @@ def list_windows(job_id: str) -> list[WindowBpmRow]:
 
 
 def delete_windows_in_range(job_id: str, start_s: float, end_s: float) -> None:
-    """Drop window BPM rows whose midpoint falls inside ``[start_s, end_s]``.
+    """Drop window BPM rows whose ``start_s`` falls inside ``[start_s, end_s]``.
 
     Used by re-analyse so the new pass can write fresh values without
-    accumulating stale duplicates.
+    accumulating stale duplicates. Selection is by start point — windows
+    that begin inside the range get cleared even when their tail extends
+    past ``end_s``.
     """
     table = AnalyserWindowBpm.__table__
     with get_engine().begin() as conn:
@@ -274,6 +303,69 @@ def replace_sections(job_id: str, sections: list[SectionRow]) -> None:
                     for s in sections
                 ],
             )
+
+
+def insert_sections(job_id: str, sections: list[SectionRow]) -> None:
+    """Insert sections without touching existing rows (re-analyse path)."""
+    if not sections:
+        return
+    table = AnalyserSection.__table__
+    with get_engine().begin() as conn:
+        conn.execute(
+            table.insert(),
+            [
+                {
+                    "job_id": job_id,
+                    "section_index": s.section_index,
+                    "start_s": s.start_s,
+                    "end_s": s.end_s,
+                    "confidence": s.confidence,
+                }
+                for s in sections
+            ],
+        )
+
+
+def delete_sections_in_range(job_id: str, start_s: float, end_s: float) -> list[int]:
+    """Delete sections fully contained in ``[start_s, end_s]``.
+
+    Returns the list of removed ``section_index`` values so callers can
+    cascade to ``analyser_track_ids`` (those rows aren't FK-linked).
+    """
+    table = AnalyserSection.__table__
+    with get_engine().begin() as conn:
+        rows = conn.execute(
+            select(table.c.section_index)
+            .where(table.c.job_id == job_id)
+            .where(table.c.start_s >= start_s)
+            .where(table.c.end_s <= end_s)
+        ).all()
+        removed = [r.section_index for r in rows]
+        if removed:
+            conn.execute(delete(table).where(table.c.job_id == job_id).where(table.c.section_index.in_(removed)))
+    return removed
+
+
+def delete_track_ids_for_sections(job_id: str, section_indices: list[int]) -> None:
+    """Drop cached Shazam matches for the given section indices."""
+    if not section_indices:
+        return
+    table = AnalyserTrackId.__table__
+    with get_engine().begin() as conn:
+        conn.execute(delete(table).where(table.c.job_id == job_id).where(table.c.section_index.in_(section_indices)))
+
+
+def max_section_index(job_id: str) -> int | None:
+    """Highest existing ``section_index`` for a job, or ``None`` if no rows."""
+    table = AnalyserSection.__table__
+    with get_engine().begin() as conn:
+        row = conn.execute(
+            select(table.c.section_index)
+            .where(table.c.job_id == job_id)
+            .order_by(table.c.section_index.desc())
+            .limit(1)
+        ).first()
+    return None if row is None else row.section_index
 
 
 def list_sections(job_id: str) -> list[SectionRow]:

@@ -25,6 +25,7 @@ dependencies = [
     "anthropic>=0.97.0",
     "keyring>=25.0.0",
     "shazamio>=0.7.0",
+    "audioop-lts>=0.2.2",
 ]
 
 [dependency-groups]

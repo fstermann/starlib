@@ -175,7 +175,11 @@ def _parse_shazamio_response(raw: dict | None) -> ShazamMatch | None:
     title = track.get("title")
     artist = track.get("subtitle")
     shazam_id = track.get("key")
-    has_hub = bool(track.get("hub", {}).get("actions"))
+    # ``track.hub`` can be missing *or* explicitly ``null`` in the raw
+    # response — guard against both so the parser doesn't crash on the
+    # latter.
+    hub = track.get("hub")
+    has_hub = isinstance(hub, dict) and bool(hub.get("actions"))
     confidence = 0.95 if has_hub else 0.6
     return ShazamMatch(
         title=title,

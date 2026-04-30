@@ -175,6 +175,11 @@ export function jobEventsUrl(jobId: string): string {
  * Subscribe to a job's SSE stream. Returns a cleanup function that closes
  * the underlying `EventSource`. The handler receives one parsed event per
  * line; malformed payloads are dropped silently (logged to console).
+ *
+ * The native `EventSource` reconnects automatically on socket close, so we
+ * explicitly call `source.close()` after `job.complete` / `job.error` —
+ * otherwise the browser would re-open the stream and the backend would
+ * replay the entire DB-backed history forever.
  */
 export function subscribeToJob(
   jobId: string,
@@ -187,6 +192,9 @@ export function subscribeToJob(
     try {
       const parsed = JSON.parse(raw) as AnalyserEvent;
       handler(parsed);
+      if (parsed.type === "job.complete" || parsed.type === "job.error") {
+        source.close();
+      }
     } catch (e) {
       console.warn("analyser: dropping malformed SSE payload", e, raw);
     }

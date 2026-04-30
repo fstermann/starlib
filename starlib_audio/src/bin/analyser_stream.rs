@@ -1,4 +1,4 @@
-//! `bpm-stream` — streaming BPM + section analyser for the Python backend.
+//! `analyser-stream` — streaming BPM + section analyser for the Python backend.
 //!
 //! Reads a decoded audio file from a path passed on argv, runs chunked BPM
 //! detection followed by section segmentation, and emits JSON-lines events
@@ -13,11 +13,11 @@
 //!   {"type":"error","message":...}            (stderr-equivalent; also exit code 1)
 //!
 //! Usage:
-//!   bpm-stream analyse --input <path> [--window-s 30] [--hop-s 25]
-//!                      [--min-bpm 60] [--max-bpm 200] [--target-sr 22050]
-//!                      [--no-sections] [--no-octave-correction]
-//!                      [--bpm-range MIN-MAX]
-//!                      [--start-s S] [--end-s S]
+//!   analyser-stream analyse --input <path> [--window-s 30] [--hop-s 25]
+//!                           [--min-bpm 60] [--max-bpm 200] [--target-sr 22050]
+//!                           [--no-sections] [--no-octave-correction]
+//!                           [--bpm-range MIN-MAX]
+//!                           [--start-s S] [--end-s S]
 
 use std::path::PathBuf;
 use std::process::ExitCode;

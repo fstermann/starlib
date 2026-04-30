@@ -199,12 +199,10 @@ async def start_job(
     state = _JobState(job_id=job_id, options=options)
     await _put_state(state)
     task = asyncio.create_task(
-        _run_job(
+        _run_full_job(
             state,
             fetch_audio=fetch_audio,
             shazam_client=shazam_client or _build_default_shazam(),
-            region=None,
-            replay_meta=True,
         )
     )
     _BACKGROUND_TASKS.add(task)
@@ -222,18 +220,21 @@ async def reanalyse_job(
 ) -> None:
     """Re-run analysis for the given ranges, updating in-place.
 
-    Existing window-BPM rows in those ranges are dropped first so the
-    re-emitted events overwrite cleanly. Outside-range data is preserved.
+    Existing window-BPM rows and section/track rows in those ranges are
+    dropped first so the re-emitted events overwrite cleanly. Outside-range
+    data is preserved. Works for jobs in any terminal state — completed
+    jobs are revived in memory and finalised once at the end of the loop.
     """
-    state = _maybe_revive_state(job_id)
+    state = _maybe_revive_state(job_id, allow_finished=True)
     if state is None:
         raise JobNotFoundError(f"job {job_id} not found")
 
     if overrides:
-        # Spread overrides into a fresh options copy.
         new_opts = state.options.model_copy(update=overrides)
         state.options = new_opts
+        db.update_job_options(job_id, new_opts.model_dump())
 
+    state.finished = False
     db.update_job_status(job_id, status="running")
     await _broadcast(
         state,
@@ -243,15 +244,45 @@ async def reanalyse_job(
         ),
     )
 
+    client = shazam_client or _build_default_shazam()
+    failed = False
     for start_s, end_s in ranges:
         db.delete_windows_in_range(job_id, start_s, end_s)
-        await _run_job(
+        ok = await _run_pipeline_pass(
             state,
             fetch_audio=fetch_audio,
-            shazam_client=shazam_client or _build_default_shazam(),
+            shazam_client=client,
             region=(start_s, end_s),
             replay_meta=False,
         )
+        if not ok:
+            failed = True
+            break
+
+    if not failed:
+        db.update_job_status(job_id, status="complete")
+        await _broadcast(state, JobCompleteEvent(job_id=job_id))
+    await _finalise_job(state)
+
+
+async def _run_full_job(
+    state: _JobState,
+    *,
+    fetch_audio: AudioFetcher,
+    shazam_client: ShazamClient,
+) -> None:
+    """Drive the initial analysis pass to completion + finalise."""
+    ok = await _run_pipeline_pass(
+        state,
+        fetch_audio=fetch_audio,
+        shazam_client=shazam_client,
+        region=None,
+        replay_meta=True,
+    )
+    if ok:
+        db.update_job_status(state.job_id, status="complete")
+        await _broadcast(state, JobCompleteEvent(job_id=state.job_id))
+    await _finalise_job(state)
 
 
 async def subscribe_to_job(job_id: str) -> AsyncIterator[AnalyserEvent]:
@@ -397,31 +428,48 @@ async def _dispatch_subprocess_event(
     # JobCompleteEvent is emitted by the controller, not the subprocess.
 
 
-def _maybe_revive_state(job_id: str) -> _JobState | None:
-    """Return the in-memory state, or rebuild a fresh one for a finished job."""
+def _maybe_revive_state(job_id: str, *, allow_finished: bool = False) -> _JobState | None:
+    """Return the in-memory state, or rebuild a fresh one from the DB.
+
+    ``allow_finished=True`` lets a re-analyse caller revive a completed
+    job. The default (``False``) preserves the subscribe path's contract
+    of replaying from the DB once a job has reached a terminal state.
+    """
     state = _jobs.get(job_id)
     if state is not None:
         return state
     job = db.get_job(job_id)
     if job is None:
         return None
-    if job.status not in ("running", "pending"):
+    if not allow_finished and job.status not in ("running", "pending"):
         return None
     options = AnalyserJobOptions(**job.options) if job.options else AnalyserJobOptions()
-    revived = _JobState(job_id=job_id, options=options, finished=False)
+    revived = _JobState(
+        job_id=job_id,
+        options=options,
+        finished=False,
+        duration_s=job.duration_s,
+    )
     _jobs[job_id] = revived
     return revived
 
 
-async def _run_job(
+async def _run_pipeline_pass(
     state: _JobState,
     *,
     fetch_audio: AudioFetcher,
     shazam_client: ShazamClient,
     region: tuple[float, float] | None,
     replay_meta: bool,
-) -> None:
-    """Drive one analyser pass to completion; broadcast events as they arrive."""
+) -> bool:
+    """Drive one analyser pass; return ``True`` on success, ``False`` on error.
+
+    On error this still broadcasts a :class:`JobErrorEvent` and writes the
+    error to the DB — but does **not** finalise the job (close listener
+    queues / emit ``job.complete``). That's the caller's responsibility,
+    so multi-range re-analyse can chain passes without tearing down the
+    SSE connection between them.
+    """
     job_id = state.job_id
     db.update_job_status(job_id, status="running")
     try:
@@ -430,8 +478,20 @@ async def _run_job(
         logger.exception("analyser: audio fetch failed for job %s", job_id)
         db.update_job_status(job_id, status="error", error=f"audio fetch: {exc}")
         await _broadcast(state, JobErrorEvent(job_id=job_id, message=f"audio fetch: {exc}"))
-        await _finalise_job(state)
-        return
+        return False
+
+    # For a partial re-analyse, new section indices coming off the
+    # subprocess (always ``0..N-1``) would collide with rows from prior
+    # passes. Offset them past the highest surviving index.
+    section_index_offset = 0
+    if region is not None:
+        existing = db.list_sections(job_id)
+        r0, r1 = region
+        survivors_max = max(
+            (s.section_index for s in existing if not (s.start_s >= r0 and s.end_s <= r1)),
+            default=-1,
+        )
+        section_index_offset = survivors_max + 1
 
     binary_path = binary_locator.find_analyser_binary()
     bin_options = state.options.to_binary_options(region=region)
@@ -442,6 +502,8 @@ async def _run_job(
         event = event_from_subprocess_line(job_id, payload)
         if event is None:
             return
+        if isinstance(event, SectionDetectedEvent) and section_index_offset:
+            event.section_index += section_index_offset
         await _dispatch_subprocess_event(
             event,
             state=state,
@@ -460,42 +522,53 @@ async def _run_job(
         logger.exception("analyser: subprocess crashed for job %s", job_id)
         db.update_job_status(job_id, status="error", error=str(exc))
         await _broadcast(state, JobErrorEvent(job_id=job_id, message=str(exc)))
-        await _finalise_job(state)
-        return
+        return False
 
     if rc != 0:
         msg = f"analyser-stream exited with status {rc}"
         db.update_job_status(job_id, status="error", error=msg)
         await _broadcast(state, JobErrorEvent(job_id=job_id, message=msg))
-        await _finalise_job(state)
-        return
+        return False
 
-    # Persist the final section list (the subprocess emits the full set
-    # at the end of the segmentation stage; we store that snapshot).
+    _persist_sections_for_pass(job_id, region, sections_buffer)
     if sections_buffer:
-        rows = [
-            db.SectionRow(
-                section_index=ev.section_index,
-                start_s=ev.start_s,
-                end_s=ev.end_s,
-                confidence=ev.confidence,
-            )
-            for ev in sections_buffer
-        ]
-        db.replace_sections(job_id, rows)
         state.sections = sections_buffer
 
-    # Stage: Shazam.
     await _run_shazam_stage(
         state=state,
         audio_path=audio_path,
         sections=sections_buffer,
         client=shazam_client,
     )
+    return True
 
-    db.update_job_status(job_id, status="complete")
-    await _broadcast(state, JobCompleteEvent(job_id=job_id))
-    await _finalise_job(state)
+
+def _persist_sections_for_pass(
+    job_id: str,
+    region: tuple[float, float] | None,
+    sections_buffer: list[SectionDetectedEvent],
+) -> None:
+    """Write new section rows; full-pass replaces, partial-pass merges."""
+    new_section_rows = [
+        db.SectionRow(
+            section_index=ev.section_index,
+            start_s=ev.start_s,
+            end_s=ev.end_s,
+            confidence=ev.confidence,
+        )
+        for ev in sections_buffer
+    ]
+    if region is None:
+        # Full pass: clean slate replace.
+        db.replace_sections(job_id, new_section_rows)
+        return
+    # Partial pass: drop old in-range sections and their cached
+    # Shazam matches, then insert renumbered new rows.
+    r0, r1 = region
+    removed_indices = db.delete_sections_in_range(job_id, r0, r1)
+    if removed_indices:
+        db.delete_track_ids_for_sections(job_id, removed_indices)
+    db.insert_sections(job_id, new_section_rows)
 
 
 async def _run_shazam_stage(
@@ -523,7 +596,10 @@ async def _run_shazam_stage(
         best: TrackIdentifiedEvent | None = None
         for pitch_offset in offsets:
             cached = db.get_track_id(state.job_id, section.section_index, pitch_offset)
-            if cached is not None:
+            # Only short-circuit on a cached *hit*. A previously-cached miss
+            # (title=None) almost always reflects a transient Shazam blip
+            # (rate-limited slice, network glitch) — let the next pass retry.
+            if cached is not None and cached.title is not None:
                 match = cached
             else:
                 try:

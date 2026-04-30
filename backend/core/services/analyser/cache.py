@@ -23,6 +23,7 @@ import asyncio
 import logging
 import os
 import shutil
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,73 @@ from backend.config import get_backend_settings
 from backend.core.services.metadata import _find_ffmpeg
 
 logger = logging.getLogger(__name__)
+
+# Per-soundcloud-id locks for ``fetch_set_audio``. Two concurrent jobs
+# pointing at the same set must serialise on the download — otherwise both
+# spawn ffmpeg over the same destination path and corrupt the cached file.
+_set_audio_locks: dict[int, asyncio.Lock] = {}
+_set_audio_locks_guard = asyncio.Lock()
+
+
+async def _set_audio_lock(soundcloud_id: int) -> asyncio.Lock:
+    async with _set_audio_locks_guard:
+        lock = _set_audio_locks.get(soundcloud_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _set_audio_locks[soundcloud_id] = lock
+        return lock
+
+
+def _find_ffprobe() -> str:
+    """Locate ``ffprobe`` using the same priority order as ``_find_ffmpeg``."""
+    if getattr(sys, "frozen", False):
+        bundled = Path(sys._MEIPASS) / "ffprobe"  # type: ignore[attr-defined]
+        if bundled.exists():
+            return str(bundled)
+    for candidate in (
+        "/opt/homebrew/bin/ffprobe",
+        "/usr/local/bin/ffprobe",
+        "ffprobe",
+    ):
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return "ffprobe"
+
+
+async def _probe_sample_rate(path: Path) -> int:
+    """Return the first audio stream's sample rate, falling back to 44100.
+
+    The pitch-shift filter chain hardcoded 44100 prior — that miscalibrates
+    every non-44.1 kHz source (SoundCloud commonly serves 48 kHz). Probing
+    keeps the asetrate / aresample pair in lock-step with the input.
+    """
+    ffprobe = _find_ffprobe()
+    proc = await asyncio.create_subprocess_exec(
+        ffprobe,
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=sample_rate",
+        "-of",
+        "csv=p=0",
+        str(path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+    if proc.returncode != 0:
+        return 44100
+    text = stdout.decode(errors="replace").strip().splitlines()
+    if not text:
+        return 44100
+    try:
+        rate = int(text[0])
+    except ValueError:
+        return 44100
+    return rate if rate > 0 else 44100
 
 
 @dataclass(slots=True)
@@ -90,50 +158,62 @@ async def fetch_set_audio(
     single mp4 container without re-encoding (preserves the AAC payload
     bit-exact). Idempotent: if the cache already has a file for this id we
     return it immediately.
+
+    Concurrent calls for the same ``soundcloud_id`` serialise on a per-id
+    asyncio lock so two jobs can't race ffmpeg processes onto the same
+    output path.
     """
     existing = cached_set_path(soundcloud_id)
     if existing is not None:
         return existing
 
-    cfg = _config()
-    out = cfg.sets_dir / f"{soundcloud_id}.mp4"
-    out.parent.mkdir(parents=True, exist_ok=True)
+    lock = await _set_audio_lock(soundcloud_id)
+    async with lock:
+        # Re-check inside the lock: a sibling caller may have downloaded
+        # while we were waiting.
+        existing = cached_set_path(soundcloud_id)
+        if existing is not None:
+            return existing
 
-    ffmpeg = _find_ffmpeg()
-    cmd: list[str] = [ffmpeg, "-y"]
-    if auth_header:
-        cmd.extend(["-headers", f"Authorization: {auth_header}\r\n"])
-    cmd.extend(
-        [
-            "-i",
-            hls_url,
-            "-c",
-            "copy",
-            "-bsf:a",
-            "aac_adtstoasc",
-            "-f",
-            "mp4",
-            str(out),
-        ]
-    )
-    logger.info("downloading SoundCloud set %s via ffmpeg → %s", soundcloud_id, out)
+        cfg = _config()
+        out = cfg.sets_dir / f"{soundcloud_id}.mp4"
+        out.parent.mkdir(parents=True, exist_ok=True)
 
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        # Don't leave a half-written file in the cache.
-        if out.exists():
-            out.unlink()
-        raise RuntimeError(
-            f"ffmpeg HLS download failed (exit {proc.returncode}): {stderr.decode(errors='replace')[:512]}"
+        ffmpeg = _find_ffmpeg()
+        cmd: list[str] = [ffmpeg, "-y"]
+        if auth_header:
+            cmd.extend(["-headers", f"Authorization: {auth_header}\r\n"])
+        cmd.extend(
+            [
+                "-i",
+                hls_url,
+                "-c",
+                "copy",
+                "-bsf:a",
+                "aac_adtstoasc",
+                "-f",
+                "mp4",
+                str(out),
+            ]
         )
+        logger.info("downloading SoundCloud set %s via ffmpeg → %s", soundcloud_id, out)
 
-    enforce_size_cap()
-    return out
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            # Don't leave a half-written file in the cache.
+            if out.exists():
+                out.unlink()
+            raise RuntimeError(
+                f"ffmpeg HLS download failed (exit {proc.returncode}): {stderr.decode(errors='replace')[:512]}"
+            )
+
+        enforce_size_cap()
+        return out
 
 
 def enforce_size_cap() -> None:
@@ -233,7 +313,10 @@ async def make_shazam_slice(
         ratio = 2.0 ** (pitch_semitones / 12.0)
         # Inverse ratio for tempo correction.
         tempo_chain = _atempo_chain(1.0 / ratio)
-        af = f"asetrate=44100*{ratio},aresample=44100,{tempo_chain}"
+        # Probe so the asetrate / aresample pair tracks the source rate.
+        # Hard-coding 44100 mistunes everything else (SoundCloud is 48 kHz).
+        source_sr = await _probe_sample_rate(source)
+        af = f"asetrate={source_sr}*{ratio},aresample={source_sr},{tempo_chain}"
         cmd.extend(["-af", af])
     cmd.extend(["-acodec", "libmp3lame", "-q:a", "5", str(out)])
 
