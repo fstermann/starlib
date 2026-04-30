@@ -61,6 +61,7 @@ import {
   type TrackInfo,
   type TrackInfoUpdateRequest,
 } from "@/lib/api";
+import { onRulesetsChanged } from "@/lib/rulesets-events";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
 import type { SourceTrack } from "@/lib/sources/types";
 import {
@@ -189,18 +190,30 @@ export function TrackEditor({
   // Active ruleset (shown in Apply Rules popover) — only set when the folder has one assigned
   const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
   useEffect(() => {
-    if (folderRulesetId) {
+    if (!folderRulesetId) {
+      setActiveRuleset(null);
+      return;
+    }
+    let cancelled = false;
+    function load() {
       api
         .getRulesets()
-        .then((data) =>
+        .then((data) => {
+          if (cancelled) return;
           setActiveRuleset(
             data.rulesets.find((r) => r.id === folderRulesetId) ?? null,
-          ),
-        )
-        .catch(() => setActiveRuleset(null));
-    } else {
-      setActiveRuleset(null);
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setActiveRuleset(null);
+        });
     }
+    load();
+    const unsubscribe = onRulesetsChanged(load);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [folderRulesetId]);
 
   // Compute which of the ruleset's required attributes are missing on the current track

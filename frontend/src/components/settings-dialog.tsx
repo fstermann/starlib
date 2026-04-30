@@ -50,6 +50,7 @@ import {
   type FolderRulesetBinding,
   type Ruleset,
 } from "@/lib/api";
+import { onRulesetsChanged } from "@/lib/rulesets-events";
 import { getSetting, setSetting } from "@/lib/settings";
 import { isTauri } from "@/lib/tauri";
 import { checkForUpdate, type UpdateResult } from "@/lib/updater";
@@ -200,6 +201,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         setLoaded(true);
       },
     );
+  }, [open]);
+
+  // Re-fetch the ruleset list when it changes elsewhere in the dialog
+  // (RulesetManager create/save/delete) so per-folder dropdowns and the
+  // Folders section see the new rulesets without having to reopen the dialog.
+  useEffect(() => {
+    if (!open) return;
+    return onRulesetsChanged(() => {
+      api.getRulesets().then((data) => setAllRulesets(data.rulesets));
+    });
   }, [open]);
 
   async function handleAutoUpdateChange(checked: boolean) {
