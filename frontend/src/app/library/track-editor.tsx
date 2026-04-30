@@ -2096,8 +2096,8 @@ export function TrackEditor({
                   >
                     {finalizing ? (
                       <p className="px-3 py-2 text-xs">
-                        Applying rules — file conversion runs in the
-                        background, the rest of the app stays usable.
+                        Applying rules — file conversion runs in the background,
+                        the rest of the app stays usable.
                       </p>
                     ) : (
                       <RulesetPreview

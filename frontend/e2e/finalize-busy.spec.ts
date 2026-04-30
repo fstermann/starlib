@@ -76,21 +76,34 @@ test("Apply Rules shows a busy state while finalize is in flight", async ({
     id: "rs-1",
     name: "Test",
     is_builtin: false,
-    rules: [{ id: "copy", type: "copy", input: "source", requires: [], params: { folder: "archive" } }],
+    rules: [
+      {
+        id: "copy",
+        type: "copy",
+        input: "source",
+        requires: [],
+        params: { folder: "archive" },
+      },
+    ],
     required_attributes: [],
   };
   await page.route("**/api/rulesets", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ rulesets: [ruleset], active_ruleset_id: ruleset.id }),
+      body: JSON.stringify({
+        rulesets: [ruleset],
+        active_ruleset_id: ruleset.id,
+      }),
     }),
   );
   await page.route("**/api/folders/rulesets-by-path", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ folder_rulesets: { "/music": { ruleset_id: "rs-1", recursive: true } } }),
+      body: JSON.stringify({
+        folder_rulesets: { "/music": { ruleset_id: "rs-1", recursive: true } },
+      }),
     }),
   );
 
