@@ -4,9 +4,7 @@ import { scrubValue } from "./scrub-number-input";
 
 describe("scrubValue", () => {
   it("returns the start value when delta is zero", () => {
-    expect(
-      scrubValue({ startValue: 128, dx: 0, pxPerUnit: 4 }),
-    ).toBe(128);
+    expect(scrubValue({ startValue: 128, dx: 0, pxPerUnit: 4 })).toBe(128);
   });
 
   it("steps by integer rounded amounts (one unit per pxPerUnit pixels)", () => {
@@ -24,9 +22,9 @@ describe("scrubValue", () => {
   });
 
   it("clamps to min/max when provided", () => {
-    expect(
-      scrubValue({ startValue: 5, dx: -1000, pxPerUnit: 4, min: 0 }),
-    ).toBe(0);
+    expect(scrubValue({ startValue: 5, dx: -1000, pxPerUnit: 4, min: 0 })).toBe(
+      0,
+    );
     expect(
       scrubValue({ startValue: 5, dx: 4000, pxPerUnit: 4, max: 300 }),
     ).toBe(300);
