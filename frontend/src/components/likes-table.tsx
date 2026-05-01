@@ -416,7 +416,7 @@ function TrackRowInner({
       <div
         role="row"
         tabIndex={0}
-        className={`border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isSelected ? "bg-[var(--brand-soft)]" : isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
+        className={`group border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isSelected ? "bg-[var(--brand-soft)]" : isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
         onClick={onExpand}
         onPointerEnter={onPointerEnter}
         onPointerLeave={onPointerLeave}
@@ -435,8 +435,9 @@ function TrackRowInner({
             {...dragHandle.listeners}
             tabIndex={-1}
             aria-label="Drag to reorder"
+            data-testid="likes-row-drag-handle"
             onClick={(e) => e.stopPropagation()}
-            className="text-muted-foreground/50 hover:text-foreground flex size-4 shrink-0 cursor-grab items-center justify-center active:cursor-grabbing"
+            className="text-muted-foreground/50 hover:text-foreground flex size-4 shrink-0 cursor-grab items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
           >
             <GripVertical className="size-3" />
           </button>
