@@ -41,6 +41,7 @@ import { useColumnPrefs } from "@/lib/columns/use-column-prefs";
 import { useFilterSchema } from "@/lib/filters/use-filter-schema";
 import { useFilterState } from "@/lib/filters/use-filter-state";
 import { usePlayer } from "@/lib/player-context";
+import { onRulesetsChanged } from "@/lib/rulesets-events";
 import { searchParams } from "@/lib/search-params";
 import { useResizable } from "@/lib/use-resizable";
 import { cn } from "@/lib/utils";
@@ -115,16 +116,21 @@ export function FilesystemView() {
       })
       .catch(() => {});
 
-    api
-      .getRulesets()
-      .then((data) => {
-        if (!cancelled) setAllRulesets(data.rulesets);
-      })
-      .catch(() => {});
+    function loadRulesets() {
+      api
+        .getRulesets()
+        .then((data) => {
+          if (!cancelled) setAllRulesets(data.rulesets);
+        })
+        .catch(() => {});
+    }
+    loadRulesets();
+    const unsubscribeRulesets = onRulesetsChanged(loadRulesets);
 
     return () => {
       cancelled = true;
       window.removeEventListener("folders-config-changed", loadFolders);
+      unsubscribeRulesets();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

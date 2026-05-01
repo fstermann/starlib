@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Image as ImageIcon,
+  Link2,
   Loader2,
   MoveRight,
   RotateCcw,
@@ -40,6 +41,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import {
   Popover,
   PopoverContent,
@@ -61,6 +63,8 @@ import {
   type TrackInfo,
   type TrackInfoUpdateRequest,
 } from "@/lib/api";
+import { applyRulesGate } from "@/lib/apply-rules-gate";
+import { onRulesetsChanged } from "@/lib/rulesets-events";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
 import type { SourceTrack } from "@/lib/sources/types";
 import {
@@ -194,18 +198,30 @@ export function TrackEditor({
   // Active ruleset (shown in Apply Rules popover) — only set when the folder has one assigned
   const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
   useEffect(() => {
-    if (folderRulesetId) {
+    if (!folderRulesetId) {
+      setActiveRuleset(null);
+      return;
+    }
+    let cancelled = false;
+    function load() {
       api
         .getRulesets()
-        .then((data) =>
+        .then((data) => {
+          if (cancelled) return;
           setActiveRuleset(
             data.rulesets.find((r) => r.id === folderRulesetId) ?? null,
-          ),
-        )
-        .catch(() => setActiveRuleset(null));
-    } else {
-      setActiveRuleset(null);
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setActiveRuleset(null);
+        });
     }
+    load();
+    const unsubscribe = onRulesetsChanged(load);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [folderRulesetId]);
 
   // Compute which of the ruleset's required attributes are missing on the current track
@@ -1311,11 +1327,17 @@ export function TrackEditor({
                     )}
                   </div>
                 </div>
-                <Input
-                  type="number"
+                <NumberInput
                   value={formData.bpm}
-                  onChange={(e) => handleFormChange("bpm", e.target.value)}
-                  className={`h-8 text-xs ${isChanged("bpm") ? "border-warning/70" : ""}`}
+                  onChange={(v) => handleFormChange("bpm", v)}
+                  min={0}
+                  max={400}
+                  ariaLabel="BPM"
+                  testId="bpm-input"
+                  className={cn(
+                    "h-8 text-xs",
+                    isChanged("bpm") && "border-warning/70",
+                  )}
                   placeholder="—"
                 />
               </div>
@@ -1818,56 +1840,84 @@ export function TrackEditor({
                       </span>
                     )}
                   </div>
-                  <div className="flex shrink-0 scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-hover:scale-100 group-hover:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => {
-                        if (!selectedScTrack) return;
-                        const meta =
-                          activeSource.extractMetadata(selectedScTrack);
-                        setCommentData({
-                          soundcloud_id: meta.source_id,
-                          soundcloud_permalink: meta.source_permalink,
-                        });
-                        setScLinkEnabled(true);
-                      }}
-                      disabled={!selectedScTrack}
-                      title="Link selected SC track"
-                    >
-                      <activeSource.Icon className="size-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() =>
-                        setCommentData({
-                          soundcloud_id: "",
-                          soundcloud_permalink: "",
-                        })
-                      }
-                      disabled={
-                        !commentData.soundcloud_id &&
-                        !commentData.soundcloud_permalink
-                      }
-                      title="Clear link"
-                    >
-                      <Trash2 />
-                    </Button>
-                    {(commentData.soundcloud_id !==
-                      originalCommentData.soundcloud_id ||
-                      commentData.soundcloud_permalink !==
-                        originalCommentData.soundcloud_permalink) && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => setCommentData(originalCommentData)}
-                        title="Reset"
-                      >
-                        <RotateCcw />
-                      </Button>
-                    )}
-                  </div>
+                  <TooltipProvider delayDuration={300}>
+                    <div className="flex shrink-0 scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-hover:scale-100 group-hover:opacity-100">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => {
+                              if (!selectedScTrack) return;
+                              const meta =
+                                activeSource.extractMetadata(selectedScTrack);
+                              setCommentData({
+                                soundcloud_id: meta.source_id,
+                                soundcloud_permalink: meta.source_permalink,
+                              });
+                              setScLinkEnabled(true);
+                            }}
+                            disabled={!selectedScTrack}
+                            data-testid="link-sc-track-button"
+                            aria-label="Link selected SoundCloud track to this file"
+                          >
+                            <Link2 className="size-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={4}>
+                          {selectedScTrack
+                            ? "Link selected SoundCloud track"
+                            : "Pick a SoundCloud track in the search panel first"}
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() =>
+                              setCommentData({
+                                soundcloud_id: "",
+                                soundcloud_permalink: "",
+                              })
+                            }
+                            disabled={
+                              !commentData.soundcloud_id &&
+                              !commentData.soundcloud_permalink
+                            }
+                            aria-label="Clear SoundCloud link"
+                          >
+                            <Trash2 />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={4}>
+                          Clear link
+                        </TooltipContent>
+                      </Tooltip>
+                      {(commentData.soundcloud_id !==
+                        originalCommentData.soundcloud_id ||
+                        commentData.soundcloud_permalink !==
+                          originalCommentData.soundcloud_permalink) && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() =>
+                                setCommentData(originalCommentData)
+                              }
+                              aria-label="Reset SoundCloud link"
+                            >
+                              <RotateCcw />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={4}>
+                            Reset
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </TooltipProvider>
                 </div>
 
                 {/* Compact track preview (search closed, track selected) */}
@@ -2061,55 +2111,78 @@ export function TrackEditor({
             </Button>
 
             {/* Apply Rules — shown only when folder has a ruleset */}
-            {activeRuleset?.rules.length ? (
-              <TooltipProvider delayDuration={400} disableHoverableContent>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      onClick={handleApplyRules}
-                      disabled={loading || hasMissingRequired || applying}
-                      data-testid="apply-rules-button"
-                      data-applying={applying ? "true" : undefined}
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "h-7 gap-1 text-xs",
-                        hasMissingRequired
-                          ? "text-muted-foreground"
-                          : "text-primary hover:bg-primary/10 hover:text-primary",
-                      )}
+            {activeRuleset?.rules.length
+              ? (() => {
+                  const gate = applyRulesGate({
+                    loading,
+                    hasUnsavedChanges: hasChanges,
+                    hasMissingRequired,
+                  });
+                  // `applying` is layered on top of the gate: the gate decides
+                  // whether the *next* click is allowed, `applying` blocks
+                  // re-firing while a request is in flight (#375).
+                  const blocked = gate.disabled || applying;
+                  return (
+                    <TooltipProvider
+                      delayDuration={400}
+                      disableHoverableContent
                     >
-                      {applying ? (
-                        <Loader2 className="size-3 animate-spin" />
-                      ) : (
-                        <Workflow className="size-3" />
-                      )}
-                      {applying ? "Applying…" : "Apply rules"}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    sideOffset={6}
-                    showArrow={false}
-                    className="bg-popover text-popover-foreground max-w-64 border p-0"
-                  >
-                    {applying ? (
-                      <p className="px-3 py-2 text-xs">
-                        Applying rules — file conversion runs in the background,
-                        the rest of the app stays usable.
-                      </p>
-                    ) : (
-                      <RulesetPreview
-                        ruleset={activeRuleset}
-                        missingRequired={
-                          hasMissingRequired ? missingRequiredAttrs : undefined
-                        }
-                      />
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            onClick={blocked ? undefined : handleApplyRules}
+                            aria-disabled={blocked || undefined}
+                            data-testid="apply-rules-button"
+                            data-applying={applying ? "true" : undefined}
+                            data-gate-reason={gate.reason ?? ""}
+                            variant="ghost"
+                            size="sm"
+                            className={cn(
+                              "h-7 gap-1 text-xs",
+                              blocked
+                                ? "text-muted-foreground cursor-not-allowed opacity-50"
+                                : "text-primary hover:bg-primary/10 hover:text-primary",
+                            )}
+                          >
+                            {applying ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              <Workflow className="size-3" />
+                            )}
+                            {applying ? "Applying…" : "Apply rules"}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          sideOffset={6}
+                          showArrow={false}
+                          className="bg-popover text-popover-foreground max-w-64 border p-0"
+                        >
+                          {applying ? (
+                            <p className="px-3 py-2 text-xs">
+                              Applying rules — file conversion runs in the
+                              background, the rest of the app stays usable.
+                            </p>
+                          ) : gate.reason === "unsaved" ? (
+                            <p className="px-3 py-2 text-xs">
+                              Save your changes before applying rules.
+                            </p>
+                          ) : (
+                            <RulesetPreview
+                              ruleset={activeRuleset}
+                              missingRequired={
+                                hasMissingRequired
+                                  ? missingRequiredAttrs
+                                  : undefined
+                              }
+                            />
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  );
+                })()
+              : null}
             <div className="flex-1" />
             <Button
               onClick={handleDelete}
