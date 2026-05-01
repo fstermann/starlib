@@ -43,6 +43,7 @@
     "openapi-fetch": "^0.17.0",
     "radix-ui": "^1.4.3",
     "react": "19.2.5",
+    "react-aria-components": "^1.17.0",
     "react-day-picker": "^9.14.0",
     "react-dom": "19.2.5",
     "sonner": "^2.0.7",

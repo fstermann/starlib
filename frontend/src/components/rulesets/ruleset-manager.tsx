@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { api, type Ruleset } from "@/lib/api";
+import { dispatchRulesetsChanged } from "@/lib/rulesets-events";
 import { cn } from "@/lib/utils";
 
 import { RulesetEditor } from "./ruleset-editor";
@@ -45,6 +46,7 @@ export function RulesetManager() {
       const updated = rulesets.filter((r) => r.id !== id);
       setRulesets(updated);
       if (selectedId === id) setSelectedId(updated[0]?.id ?? "");
+      dispatchRulesetsChanged();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to delete";
       toast.error(msg);
@@ -62,6 +64,7 @@ export function RulesetManager() {
       setRulesets((prev) => [...prev, created]);
       setSelectedId(created.id);
       setPendingEdit(created);
+      dispatchRulesetsChanged();
     } catch {
       toast.error("Failed to create ruleset");
     }
@@ -86,6 +89,7 @@ export function RulesetManager() {
       setRulesets((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
       setPendingEdit(null);
       toast.success("Saved");
+      dispatchRulesetsChanged();
     } catch {
       toast.error("Failed to save");
     } finally {
