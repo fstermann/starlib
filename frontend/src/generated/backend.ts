@@ -120,6 +120,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/soundcloud/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Oauth Done
+         * @description Static "you can close this tab" page for the Tauri OAuth flow.
+         *
+         *     The Tauri client polls `/result?state=...` independently to pick up the
+         *     exchanged tokens, so the browser itself just needs a dead-end page.
+         */
+        get: operations["oauth_done_auth_soundcloud_done_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/soundcloud/result": {
         parameters: {
             query?: never;
@@ -131,7 +154,9 @@ export interface paths {
          * Get Oauth Result
          * @description Retrieve completed OAuth result by state token.
          *
-         *     One-time retrieval: the result is removed after being fetched.
+         *     One-time retrieval: the result is removed after being fetched. Per-IP
+         *     rate limited (10 req/min) to keep the polling loop from hammering the
+         *     server or being abused to enumerate state tokens.
          */
         get: operations["get_oauth_result_auth_soundcloud_result_get"];
         put?: never;
@@ -171,6 +196,34 @@ export interface paths {
          *         If token exchange or user info fetch fails.
          */
         post: operations["handle_callback_auth_soundcloud_callback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/soundcloud/session-cookie": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Session Cookie
+         * @description Persist the api-v2 web-session ``oauth_token`` captured by the desktop shell.
+         *
+         *     The Tauri login window opens SoundCloud's OAuth2 authorize URL in an
+         *     in-app webview; after consent the backend's existing ``/redirect``
+         *     handler exchanges the code for OAuth2 tokens as usual. *In addition*,
+         *     the webview's cookie jar now holds the web-session ``oauth_token``,
+         *     which the shell posts here. We persist it to ``config.env`` as
+         *     ``OAUTH_TOKEN`` so :class:`soundcloud_tools.settings.Settings` picks
+         *     it up on the next ``get_settings()`` call.
+         */
+        post: operations["save_session_cookie_auth_soundcloud_session_cookie_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1221,6 +1274,264 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/soundcloud/tracks/{track_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Stream
+         * @description Return a signed HLS playlist URL for the given SoundCloud track.
+         *
+         *     The result is cached in-memory and reused while still valid. Expired
+         *     entries are transparently refetched.
+         *
+         *     Parameters
+         *     ----------
+         *     track_id : int
+         *         SoundCloud track id.
+         *     force_refresh : bool, optional
+         *         When true, evict any cached entry and fetch a fresh URL from
+         *         SoundCloud. Clients should set this after receiving a 403 on a
+         *         cached URL so the server does not hand them the same stale entry.
+         *
+         *     Returns
+         *     -------
+         *     StreamUrlResponse
+         *         ``url`` is the ``.m3u8`` playlist URL; ``expires_at`` is an ISO-8601
+         *         UTC timestamp after which the client should refetch.
+         */
+        get: operations["get_track_stream_api_soundcloud_tracks__track_id__stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soundcloud/tracks/{track_id}/like": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Like Track
+         * @description Like a SoundCloud track on behalf of the authenticated user.
+         */
+        post: operations["like_track_api_soundcloud_tracks__track_id__like_post"];
+        /**
+         * Unlike Track
+         * @description Unlike a SoundCloud track on behalf of the authenticated user.
+         */
+        delete: operations["unlike_track_api_soundcloud_tracks__track_id__like_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soundcloud/system-playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List System Playlists
+         * @description Return the user's system playlists in a stable display order.
+         *
+         *     One api-v2 call (``/mixed-selections``) bootstraps every mix with
+         *     inline slim tracks; track hydration is deferred to per-playlist fetch.
+         */
+        get: operations["list_system_playlists_api_soundcloud_system_playlists_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soundcloud/system-playlists/{urn}/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get System Playlist Tracks
+         * @description Hydrate a system playlist's tracks to full Track payloads.
+         *
+         *     api-v2 returns slim tracks on the system-playlist resource itself;
+         *     we ``/tracks?ids=...`` to get full metadata (title, artwork, user).
+         */
+        get: operations["get_system_playlist_tracks_api_soundcloud_system_playlists__urn__tracks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bpm/local/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Local Candidates
+         * @description Return indexed-but-unanalyzed tracks in `folder` for the batch runner.
+         *
+         *     Filters to tracks with `bpm IS NULL` in cache_db. `recursive=True` (default)
+         *     walks subdirectories, matching the library view's usual display scope.
+         */
+        get: operations["get_local_candidates_api_bpm_local_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bpm/local": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Local Bpm
+         * @description Persist a BPM value for a local track.
+         *
+         *     The cache DB stores BPM as an integer, matching existing metadata-editor
+         *     conventions. Float precision is dropped at write time — if sub-integer
+         *     BPM ever matters, migrate the column first.
+         */
+        post: operations["save_local_bpm_api_bpm_local_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bpm/soundcloud": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Soundcloud Bpm
+         * @description Persist a BPM value for a SoundCloud track.
+         */
+        post: operations["save_soundcloud_bpm_api_bpm_soundcloud_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bpm/soundcloud/{track_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Soundcloud Bpm
+         * @description Return the cached BPM for a SoundCloud track, or 404 if not analyzed.
+         */
+        get: operations["get_soundcloud_bpm_api_bpm_soundcloud__track_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bpm/soundcloud/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Soundcloud Bpms Bulk
+         * @description Bulk lookup of cached SoundCloud BPMs by track_id.
+         */
+        post: operations["get_soundcloud_bpms_bulk_api_bpm_soundcloud_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bpm/soundcloud-client-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Soundcloud Client Token
+         * @description Return a valid Client-Credentials OAuth token for the public API.
+         *
+         *     Used by the Rust BPM pipeline to authenticate /tracks/{id}/streams
+         *     requests. Refreshes transparently via OAuthManager.
+         */
+        get: operations["get_soundcloud_client_token_api_bpm_soundcloud_client_token_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/suggestions/track": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Track Metadata
+         * @description Compute ranked metadata suggestions for a single local track.
+         */
+        post: operations["suggest_track_metadata_api_suggestions_track_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1387,6 +1698,18 @@ export interface components {
             /** File */
             file: string;
         };
+        /** BulkBpmRequest */
+        BulkBpmRequest: {
+            /** Track Ids */
+            track_ids?: number[];
+        };
+        /** BulkBpmResponse */
+        BulkBpmResponse: {
+            /** Bpms */
+            bpms: {
+                [key: string]: number;
+            };
+        };
         /**
          * CallbackRequest
          * @description OAuth callback payload from frontend.
@@ -1417,6 +1740,14 @@ export interface components {
              * @default haiku
              */
             model: string;
+        };
+        /**
+         * ClientTokenResponse
+         * @description Client-Credentials OAuth token for Rust-side API calls.
+         */
+        ClientTokenResponse: {
+            /** Token */
+            token: string;
         };
         /**
          * CollectionSoundcloudIdsResponse
@@ -1464,6 +1795,23 @@ export interface components {
             bpm_min?: number | null;
             /** Bpm Max */
             bpm_max?: number | null;
+        };
+        /**
+         * FieldSuggestion
+         * @description A single ranked candidate value for one editor field.
+         */
+        FieldSuggestion: {
+            /** Value */
+            value: unknown;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "sc_title" | "sc_metadata_artist" | "sc_uploader" | "sc_genre" | "sc_release_date" | "sc_artwork_url" | "sc_bpm" | "sc_key" | "sc_tag" | "filename_parse" | "tag_existing" | "derived" | "list_normalized" | "list_aggregated";
+            /** Confidence */
+            confidence: number;
+            /** Label */
+            label: string;
         };
         /**
          * FileInfoResponse
@@ -1680,6 +2028,44 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * LocalBpmPayload
+         * @description Client-computed BPM for a local audio file.
+         */
+        LocalBpmPayload: {
+            /**
+             * File Path
+             * @description Absolute path of the local audio file.
+             */
+            file_path: string;
+            /**
+             * Bpm
+             * @description Detected BPM from the analysis layer.
+             */
+            bpm: number;
+            /**
+             * Algorithm Version
+             * @description Version tag of the analyzer.
+             */
+            algorithm_version: number;
+        };
+        /** LocalBpmResponse */
+        LocalBpmResponse: {
+            /** File Path */
+            file_path: string;
+            /** Bpm */
+            bpm: number;
+            /** Algorithm Version */
+            algorithm_version: number;
+        };
+        /**
+         * LocalCandidatesResponse
+         * @description Absolute file paths of indexed tracks without a cached BPM.
+         */
+        LocalCandidatesResponse: {
+            /** File Paths */
+            file_paths: string[];
+        };
         /** OllamaPullRequest */
         OllamaPullRequest: {
             /** Name */
@@ -1852,6 +2238,74 @@ export interface components {
             active_ruleset_id: string;
         };
         /**
+         * SCTrackPayload
+         * @description Loose subset of the SoundCloud OpenAPI track shape used by the engine.
+         *
+         *     The frontend sends the raw `SCTrack` (the OpenAPI generated type); we only
+         *     pull the fields suggesters need and ignore the rest. Adding a new
+         *     suggestion source means: add the field here + add a suggester.
+         */
+        SCTrackPayload: {
+            /** Title */
+            title?: string | null;
+            /** Metadata Artist */
+            metadata_artist?: string | null;
+            /** Genre */
+            genre?: string | null;
+            /** Bpm */
+            bpm?: number | null;
+            /** Key Signature */
+            key_signature?: string | null;
+            /** Tag List */
+            tag_list?: string | null;
+            /** Label Name */
+            label_name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Artwork Url */
+            artwork_url?: string | null;
+            /** Permalink Url */
+            permalink_url?: string | null;
+            /** Urn */
+            urn?: string | null;
+            /** Release Year */
+            release_year?: number | null;
+            /** Release Month */
+            release_month?: number | null;
+            /** Release Day */
+            release_day?: number | null;
+            /** Created At */
+            created_at?: string | null;
+            user?: components["schemas"]["SCUserPayload"] | null;
+        };
+        /**
+         * SCUserPayload
+         * @description Loose subset of the SC user object used during suggestion.
+         */
+        SCUserPayload: {
+            /** Username */
+            username?: string | null;
+        };
+        /**
+         * SessionCookieRequest
+         * @description Web-session ``oauth_token`` captured from the SoundCloud cookie jar.
+         *
+         *     Required to reach api-v2.soundcloud.com (system playlists / mixes).
+         *     Format is SoundCloud's session token: ``2-<digits>-<uid>-<rand>``.
+         */
+        SessionCookieRequest: {
+            /** Oauth Token */
+            oauth_token: string;
+        };
+        /**
+         * SessionCookieResponse
+         * @description Result of persisting the web-session token.
+         */
+        SessionCookieResponse: {
+            /** Success */
+            success: boolean;
+        };
+        /**
          * SetupRequest
          * @description Payload from the first-launch setup form.
          */
@@ -1883,6 +2337,102 @@ export interface components {
         SetupStatusResponse: {
             /** Configured */
             configured: boolean;
+        };
+        /**
+         * SoundcloudBpmPayload
+         * @description Client-computed BPM for a SoundCloud track.
+         */
+        SoundcloudBpmPayload: {
+            /** Track Id */
+            track_id: number;
+            /** Bpm */
+            bpm: number;
+        };
+        /** SoundcloudBpmResponse */
+        SoundcloudBpmResponse: {
+            /** Track Id */
+            track_id: number;
+            /** Bpm */
+            bpm: number;
+        };
+        /**
+         * StreamUrlResponse
+         * @description Signed HLS stream URL for a SoundCloud track.
+         */
+        StreamUrlResponse: {
+            /** Url */
+            url: string;
+            /** Expires At */
+            expires_at: string;
+        };
+        /**
+         * SuggestionRequest
+         * @description Request body for the suggestion endpoint.
+         *
+         *     Parameters
+         *     ----------
+         *     file_path:
+         *         Absolute or root-relative path of the local track being edited. The
+         *         server uses it for filename parsing and (in the future) reading
+         *         existing on-disk tags as a suggestion source.
+         *     sc_track:
+         *         Optional SoundCloud track payload. When ``None``, only filename- and
+         *         tag-based suggestions are produced.
+         *     current:
+         *         In-flight editor state. Suggestions equal to a current value are
+         *         suppressed so the UI never proposes a no-op.
+         */
+        SuggestionRequest: {
+            /** File Path */
+            file_path: string;
+            sc_track?: components["schemas"]["SCTrackPayload"] | null;
+            current?: components["schemas"]["TrackInfoUpdateRequest"];
+        };
+        /**
+         * SuggestionResponse
+         * @description Map of field name → ranked candidates (top first).
+         */
+        SuggestionResponse: {
+            /** Fields */
+            fields?: {
+                [key: string]: components["schemas"]["FieldSuggestion"][];
+            };
+        };
+        /**
+         * SystemPlaylistSummary
+         * @description Slim representation of a system playlist for tree display.
+         */
+        SystemPlaylistSummary: {
+            /** Urn */
+            urn: string;
+            /** Title */
+            title: string;
+            /** Short Title */
+            short_title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Artwork Url */
+            artwork_url?: string | null;
+            /** Track Count */
+            track_count: number;
+            /** Last Updated */
+            last_updated?: string | null;
+            /** Permalink Url */
+            permalink_url?: string | null;
+            /** Track Ids */
+            track_ids: number[];
+        };
+        /** SystemPlaylistTracksResponse */
+        SystemPlaylistTracksResponse: {
+            /** Tracks */
+            tracks: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** SystemPlaylistsResponse */
+        SystemPlaylistsResponse: {
+            /** Playlists */
+            playlists: components["schemas"]["SystemPlaylistSummary"][];
         };
         /**
          * TrackBrowseResponse
@@ -2187,6 +2737,26 @@ export interface operations {
             };
         };
     };
+    oauth_done_auth_soundcloud_done_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_oauth_result_auth_soundcloud_result_get: {
         parameters: {
             query: {
@@ -2238,6 +2808,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CallbackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_session_cookie_auth_soundcloud_session_cookie_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionCookieRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionCookieResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3677,6 +4280,368 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiSettingsResponse"];
+                };
+            };
+        };
+    };
+    get_track_stream_api_soundcloud_tracks__track_id__stream_get: {
+        parameters: {
+            query?: {
+                force_refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                track_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StreamUrlResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    like_track_api_soundcloud_tracks__track_id__like_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                track_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlike_track_api_soundcloud_tracks__track_id__like_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                track_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_system_playlists_api_soundcloud_system_playlists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemPlaylistsResponse"];
+                };
+            };
+        };
+    };
+    get_system_playlist_tracks_api_soundcloud_system_playlists__urn__tracks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description System playlist URN, e.g. soundcloud:system-playlists:weekly:123 */
+                urn: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemPlaylistTracksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_local_candidates_api_bpm_local_candidates_get: {
+        parameters: {
+            query: {
+                folder: string;
+                recursive?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalCandidatesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_local_bpm_api_bpm_local_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalBpmPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalBpmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_soundcloud_bpm_api_bpm_soundcloud_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoundcloudBpmPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudBpmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_soundcloud_bpm_api_bpm_soundcloud__track_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudBpmResponse"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_soundcloud_bpms_bulk_api_bpm_soundcloud_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkBpmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkBpmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_soundcloud_client_token_api_bpm_soundcloud_client_token_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientTokenResponse"];
+                };
+            };
+        };
+    };
+    suggest_track_metadata_api_suggestions_track_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

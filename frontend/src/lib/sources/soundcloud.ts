@@ -5,17 +5,12 @@ import type { SCTrack } from "@/lib/soundcloud";
 import type { MusicSource, SourceMetadata, SourceTrack } from "./types";
 
 function toSourceTrack(track: SCTrack): SourceTrack {
-  const artistOptions = [track.metadata_artist, track.user?.username].filter(
-    (x): x is string => !!x,
-  );
-
   return {
     id: String(track.urn?.split(":").pop() ?? ""),
     title: track.title ?? undefined,
     artwork_url: track.artwork_url ?? undefined,
     permalink_url: track.permalink_url ?? undefined,
     username: track.user?.username ?? undefined,
-    artist_options: [...new Set(artistOptions)],
     genre: track.genre ?? undefined,
     raw: track,
   };

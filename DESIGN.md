@@ -375,7 +375,31 @@ Starlib's heart. Rules are strict.
 - Neutral default: `--surface-3` fill, `--text-muted` text.
 - Accent variant reserved for "active/current" state only.
 
-### 9.8 Do / Don't
+### 9.8 Suggestion controls (track editor)
+
+The library track editor offers smart, source-attributed suggestions per
+field. Two distinct controls appear in the per-field toolbar:
+
+- **Accept suggestion** — `Wand2` icon in `--brand` accent, single-source
+  tooltip ("from SoundCloud title", "from filename"). When multiple
+  candidates exist, render as a split: primary icon accepts the top, a
+  `ChevronDown` chevron opens a popover listing every alternative with its
+  source label and a confidence bar (`--brand` at 30% opacity, width
+  proportional to confidence). One-click semantics — the accept always
+  writes the *derived* value (e.g. SC title with mix-suffix stripped).
+- **Copy from SC** — neutral icon button using the source's brand mark
+  (e.g. SoundCloud logo). Always copies the *raw* SC field verbatim. Kept
+  separate from accept so users can pick raw vs. derived behaviour.
+
+Bulk: an `Accept N suggestions` outline button in the editor toolbar
+applies every top-ranked suggestion at once. Hidden when the count is zero;
+its tooltip lists the affected fields so the click isn't a leap of faith.
+
+Equality rule: a suggestion that matches the current field value is never
+shown. Suggestions are *proposals*, not autofill — nothing is written
+without an explicit click.
+
+### 9.9 Do / Don't
 
 **Do**
 - Use `--border` as the first choice for separation.

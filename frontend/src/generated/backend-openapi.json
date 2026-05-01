@@ -164,13 +164,33 @@
         }
       }
     },
+    "/auth/soundcloud/done": {
+      "get": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Oauth Done",
+        "description": "Static \"you can close this tab\" page for the Tauri OAuth flow.\n\nThe Tauri client polls `/result?state=...` independently to pick up the\nexchanged tokens, so the browser itself just needs a dead-end page.",
+        "operationId": "oauth_done_auth_soundcloud_done_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/soundcloud/result": {
       "get": {
         "tags": [
           "authentication"
         ],
         "summary": "Get Oauth Result",
-        "description": "Retrieve completed OAuth result by state token.\n\nOne-time retrieval: the result is removed after being fetched.",
+        "description": "Retrieve completed OAuth result by state token.\n\nOne-time retrieval: the result is removed after being fetched. Per-IP\nrate limited (10 req/min) to keep the polling loop from hammering the\nserver or being abused to enumerate state tokens.",
         "operationId": "get_oauth_result_auth_soundcloud_result_get",
         "parameters": [
           {
@@ -232,6 +252,48 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CallbackResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/soundcloud/session-cookie": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Save Session Cookie",
+        "description": "Persist the api-v2 web-session ``oauth_token`` captured by the desktop shell.\n\nThe Tauri login window opens SoundCloud's OAuth2 authorize URL in an\nin-app webview; after consent the backend's existing ``/redirect``\nhandler exchanges the code for OAuth2 tokens as usual. *In addition*,\nthe webview's cookie jar now holds the web-session ``oauth_token``,\nwhich the shell posts here. We persist it to ``config.env`` as\n``OAUTH_TOKEN`` so :class:`soundcloud_tools.settings.Settings` picks\nit up on the next ``get_settings()`` call.",
+        "operationId": "save_session_cookie_auth_soundcloud_session_cookie_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCookieRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCookieResponse"
                 }
               }
             }
@@ -2680,6 +2742,522 @@
           }
         }
       }
+    },
+    "/api/soundcloud/tracks/{track_id}/stream": {
+      "get": {
+        "tags": [
+          "soundcloud"
+        ],
+        "summary": "Get Track Stream",
+        "description": "Return a signed HLS playlist URL for the given SoundCloud track.\n\nThe result is cached in-memory and reused while still valid. Expired\nentries are transparently refetched.\n\nParameters\n----------\ntrack_id : int\n    SoundCloud track id.\nforce_refresh : bool, optional\n    When true, evict any cached entry and fetch a fresh URL from\n    SoundCloud. Clients should set this after receiving a 403 on a\n    cached URL so the server does not hand them the same stale entry.\n\nReturns\n-------\nStreamUrlResponse\n    ``url`` is the ``.m3u8`` playlist URL; ``expires_at`` is an ISO-8601\n    UTC timestamp after which the client should refetch.",
+        "operationId": "get_track_stream_api_soundcloud_tracks__track_id__stream_get",
+        "parameters": [
+          {
+            "name": "track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Track Id"
+            }
+          },
+          {
+            "name": "force_refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamUrlResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/soundcloud/tracks/{track_id}/like": {
+      "post": {
+        "tags": [
+          "soundcloud"
+        ],
+        "summary": "Like Track",
+        "description": "Like a SoundCloud track on behalf of the authenticated user.",
+        "operationId": "like_track_api_soundcloud_tracks__track_id__like_post",
+        "parameters": [
+          {
+            "name": "track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Track Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "soundcloud"
+        ],
+        "summary": "Unlike Track",
+        "description": "Unlike a SoundCloud track on behalf of the authenticated user.",
+        "operationId": "unlike_track_api_soundcloud_tracks__track_id__like_delete",
+        "parameters": [
+          {
+            "name": "track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Track Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/soundcloud/system-playlists": {
+      "get": {
+        "tags": [
+          "soundcloud"
+        ],
+        "summary": "List System Playlists",
+        "description": "Return the user's system playlists in a stable display order.\n\nOne api-v2 call (``/mixed-selections``) bootstraps every mix with\ninline slim tracks; track hydration is deferred to per-playlist fetch.",
+        "operationId": "list_system_playlists_api_soundcloud_system_playlists_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemPlaylistsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/soundcloud/system-playlists/{urn}/tracks": {
+      "get": {
+        "tags": [
+          "soundcloud"
+        ],
+        "summary": "Get System Playlist Tracks",
+        "description": "Hydrate a system playlist's tracks to full Track payloads.\n\napi-v2 returns slim tracks on the system-playlist resource itself;\nwe ``/tracks?ids=...`` to get full metadata (title, artwork, user).",
+        "operationId": "get_system_playlist_tracks_api_soundcloud_system_playlists__urn__tracks_get",
+        "parameters": [
+          {
+            "name": "urn",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "System playlist URN, e.g. soundcloud:system-playlists:weekly:123",
+              "title": "Urn"
+            },
+            "description": "System playlist URN, e.g. soundcloud:system-playlists:weekly:123"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemPlaylistTracksResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bpm/local/candidates": {
+      "get": {
+        "tags": [
+          "bpm"
+        ],
+        "summary": "Get Local Candidates",
+        "description": "Return indexed-but-unanalyzed tracks in `folder` for the batch runner.\n\nFilters to tracks with `bpm IS NULL` in cache_db. `recursive=True` (default)\nwalks subdirectories, matching the library view's usual display scope.",
+        "operationId": "get_local_candidates_api_bpm_local_candidates_get",
+        "parameters": [
+          {
+            "name": "folder",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Folder"
+            }
+          },
+          {
+            "name": "recursive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Recursive"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalCandidatesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bpm/local": {
+      "post": {
+        "tags": [
+          "bpm"
+        ],
+        "summary": "Save Local Bpm",
+        "description": "Persist a BPM value for a local track.\n\nThe cache DB stores BPM as an integer, matching existing metadata-editor\nconventions. Float precision is dropped at write time \u2014 if sub-integer\nBPM ever matters, migrate the column first.",
+        "operationId": "save_local_bpm_api_bpm_local_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalBpmPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalBpmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bpm/soundcloud": {
+      "post": {
+        "tags": [
+          "bpm"
+        ],
+        "summary": "Save Soundcloud Bpm",
+        "description": "Persist a BPM value for a SoundCloud track.",
+        "operationId": "save_soundcloud_bpm_api_bpm_soundcloud_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SoundcloudBpmPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundcloudBpmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bpm/soundcloud/{track_id}": {
+      "get": {
+        "tags": [
+          "bpm"
+        ],
+        "summary": "Get Soundcloud Bpm",
+        "description": "Return the cached BPM for a SoundCloud track, or 404 if not analyzed.",
+        "operationId": "get_soundcloud_bpm_api_bpm_soundcloud__track_id__get",
+        "parameters": [
+          {
+            "name": "track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Track Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SoundcloudBpmResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Soundcloud Bpm Api Bpm Soundcloud  Track Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bpm/soundcloud/bulk": {
+      "post": {
+        "tags": [
+          "bpm"
+        ],
+        "summary": "Get Soundcloud Bpms Bulk",
+        "description": "Bulk lookup of cached SoundCloud BPMs by track_id.",
+        "operationId": "get_soundcloud_bpms_bulk_api_bpm_soundcloud_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkBpmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkBpmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bpm/soundcloud-client-token": {
+      "get": {
+        "tags": [
+          "bpm"
+        ],
+        "summary": "Get Soundcloud Client Token",
+        "description": "Return a valid Client-Credentials OAuth token for the public API.\n\nUsed by the Rust BPM pipeline to authenticate /tracks/{id}/streams\nrequests. Refreshes transparently via OAuthManager.",
+        "operationId": "get_soundcloud_client_token_api_bpm_soundcloud_client_token_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientTokenResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/suggestions/track": {
+      "post": {
+        "tags": [
+          "suggestions"
+        ],
+        "summary": "Suggest Track Metadata",
+        "description": "Compute ranked metadata suggestions for a single local track.",
+        "operationId": "suggest_track_metadata_api_suggestions_track_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3046,6 +3624,35 @@
         ],
         "title": "Body_update_file_artwork_api_metadata_files__file_path__artwork_post"
       },
+      "BulkBpmRequest": {
+        "properties": {
+          "track_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Track Ids"
+          }
+        },
+        "type": "object",
+        "title": "BulkBpmRequest"
+      },
+      "BulkBpmResponse": {
+        "properties": {
+          "bpms": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Bpms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bpms"
+        ],
+        "title": "BulkBpmResponse"
+      },
       "CallbackRequest": {
         "properties": {
           "code": {
@@ -3116,6 +3723,20 @@
         },
         "type": "object",
         "title": "ClaudeCodeSettings"
+      },
+      "ClientTokenResponse": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "ClientTokenResponse",
+        "description": "Client-Credentials OAuth token for Rust-side API calls."
       },
       "CollectionSoundcloudIdsResponse": {
         "properties": {
@@ -3221,6 +3842,52 @@
         ],
         "title": "CollectionStatsResponse",
         "description": "Response containing collection statistics."
+      },
+      "FieldSuggestion": {
+        "properties": {
+          "value": {
+            "title": "Value"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "sc_title",
+              "sc_metadata_artist",
+              "sc_uploader",
+              "sc_genre",
+              "sc_release_date",
+              "sc_artwork_url",
+              "sc_bpm",
+              "sc_key",
+              "sc_tag",
+              "filename_parse",
+              "tag_existing",
+              "derived",
+              "list_normalized",
+              "list_aggregated"
+            ],
+            "title": "Source"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "source",
+          "confidence",
+          "label"
+        ],
+        "title": "FieldSuggestion",
+        "description": "A single ranked candidate value for one editor field."
       },
       "FileInfoResponse": {
         "properties": {
@@ -3628,6 +4295,75 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "LocalBpmPayload": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path",
+            "description": "Absolute path of the local audio file."
+          },
+          "bpm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Bpm",
+            "description": "Detected BPM from the analysis layer."
+          },
+          "algorithm_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Algorithm Version",
+            "description": "Version tag of the analyzer."
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path",
+          "bpm",
+          "algorithm_version"
+        ],
+        "title": "LocalBpmPayload",
+        "description": "Client-computed BPM for a local audio file."
+      },
+      "LocalBpmResponse": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "bpm": {
+            "type": "integer",
+            "title": "Bpm"
+          },
+          "algorithm_version": {
+            "type": "integer",
+            "title": "Algorithm Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path",
+          "bpm",
+          "algorithm_version"
+        ],
+        "title": "LocalBpmResponse"
+      },
+      "LocalCandidatesResponse": {
+        "properties": {
+          "file_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "File Paths"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_paths"
+        ],
+        "title": "LocalCandidatesResponse",
+        "description": "Absolute file paths of indexed tracks without a cached BPM."
       },
       "OllamaPullRequest": {
         "properties": {
@@ -4068,6 +4804,234 @@
         "title": "RulesetsResponse",
         "description": "Response listing all rulesets."
       },
+      "SCTrackPayload": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "metadata_artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Artist"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "key_signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Signature"
+          },
+          "tag_list": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag List"
+          },
+          "label_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "artwork_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Url"
+          },
+          "permalink_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permalink Url"
+          },
+          "urn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urn"
+          },
+          "release_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Year"
+          },
+          "release_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Month"
+          },
+          "release_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Day"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SCUserPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "SCTrackPayload",
+        "description": "Loose subset of the SoundCloud OpenAPI track shape used by the engine.\n\nThe frontend sends the raw `SCTrack` (the OpenAPI generated type); we only\npull the fields suggesters need and ignore the rest. Adding a new\nsuggestion source means: add the field here + add a suggester."
+      },
+      "SCUserPayload": {
+        "properties": {
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "type": "object",
+        "title": "SCUserPayload",
+        "description": "Loose subset of the SC user object used during suggestion."
+      },
+      "SessionCookieRequest": {
+        "properties": {
+          "oauth_token": {
+            "type": "string",
+            "title": "Oauth Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "oauth_token"
+        ],
+        "title": "SessionCookieRequest",
+        "description": "Web-session ``oauth_token`` captured from the SoundCloud cookie jar.\n\nRequired to reach api-v2.soundcloud.com (system playlists / mixes).\nFormat is SoundCloud's session token: ``2-<digits>-<uid>-<rand>``."
+      },
+      "SessionCookieResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "SessionCookieResponse",
+        "description": "Result of persisting the web-session token."
+      },
       "SetupRequest": {
         "properties": {
           "client_id": {
@@ -4124,6 +5088,228 @@
         ],
         "title": "SetupStatusResponse",
         "description": "Indicates whether the app has been configured."
+      },
+      "SoundcloudBpmPayload": {
+        "properties": {
+          "track_id": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Track Id"
+          },
+          "bpm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Bpm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "track_id",
+          "bpm"
+        ],
+        "title": "SoundcloudBpmPayload",
+        "description": "Client-computed BPM for a SoundCloud track."
+      },
+      "SoundcloudBpmResponse": {
+        "properties": {
+          "track_id": {
+            "type": "integer",
+            "title": "Track Id"
+          },
+          "bpm": {
+            "type": "integer",
+            "title": "Bpm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "track_id",
+          "bpm"
+        ],
+        "title": "SoundcloudBpmResponse"
+      },
+      "StreamUrlResponse": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "StreamUrlResponse",
+        "description": "Signed HLS stream URL for a SoundCloud track."
+      },
+      "SuggestionRequest": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "sc_track": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SCTrackPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current": {
+            "$ref": "#/components/schemas/TrackInfoUpdateRequest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path"
+        ],
+        "title": "SuggestionRequest",
+        "description": "Request body for the suggestion endpoint.\n\nParameters\n----------\nfile_path:\n    Absolute or root-relative path of the local track being edited. The\n    server uses it for filename parsing and (in the future) reading\n    existing on-disk tags as a suggestion source.\nsc_track:\n    Optional SoundCloud track payload. When ``None``, only filename- and\n    tag-based suggestions are produced.\ncurrent:\n    In-flight editor state. Suggestions equal to a current value are\n    suppressed so the UI never proposes a no-op."
+      },
+      "SuggestionResponse": {
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/FieldSuggestion"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Fields"
+          }
+        },
+        "type": "object",
+        "title": "SuggestionResponse",
+        "description": "Map of field name \u2192 ranked candidates (top first)."
+      },
+      "SystemPlaylistSummary": {
+        "properties": {
+          "urn": {
+            "type": "string",
+            "title": "Urn"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "short_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "artwork_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Url"
+          },
+          "track_count": {
+            "type": "integer",
+            "title": "Track Count"
+          },
+          "last_updated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated"
+          },
+          "permalink_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permalink Url"
+          },
+          "track_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Track Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "urn",
+          "title",
+          "track_count",
+          "track_ids"
+        ],
+        "title": "SystemPlaylistSummary",
+        "description": "Slim representation of a system playlist for tree display."
+      },
+      "SystemPlaylistTracksResponse": {
+        "properties": {
+          "tracks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tracks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tracks"
+        ],
+        "title": "SystemPlaylistTracksResponse"
+      },
+      "SystemPlaylistsResponse": {
+        "properties": {
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/SystemPlaylistSummary"
+            },
+            "type": "array",
+            "title": "Playlists"
+          }
+        },
+        "type": "object",
+        "required": [
+          "playlists"
+        ],
+        "title": "SystemPlaylistsResponse"
       },
       "TrackBrowseResponse": {
         "properties": {
