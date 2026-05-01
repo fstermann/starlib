@@ -34,15 +34,65 @@ class SectionDetectedEvent(BaseModel):
     confidence: float
 
 
-class TrackIdentifiedEvent(BaseModel):
-    type: Literal["track.identified"] = "track.identified"
+class ShazamScanEvent(BaseModel):
+    """A single point on the Shazam scan grid — one (scan_s, pitch_offset).
+
+    Surfaces every attempt, including misses (``title=None``), so the UI
+    can reflect scan progress in real time. ``track.timeline`` events
+    carry the post-aggregation view used for the actual tracklist.
+    """
+
+    type: Literal["shazam.scan"] = "shazam.scan"
     job_id: str
-    section_index: int
+    scan_s: float
     title: str | None
     artist: str | None
     shazam_id: str | None
     confidence: float
     pitch_offset: float
+    # Tier this scan was produced under: "sweep" | "refine" | "pinpoint".
+    tier: str = "sweep"
+    # Audio preview URL (~30s m4a, served from shazamcdn.com) and
+    # cover-art URL extracted from the same Shazam response. ``None``
+    # for misses and for matches that don't include either field.
+    preview_url: str | None = None
+    artwork_url: str | None = None
+
+
+class TrackTimelineEvent(BaseModel):
+    """Aggregated run of consecutive matching scan points → one track.
+
+    Manual user-added entries reuse this event with ``source="manual"``
+    and an ``override_id`` so the frontend can issue a delete.
+    """
+
+    type: Literal["track.timeline"] = "track.timeline"
+    job_id: str
+    start_s: float
+    end_s: float
+    title: str
+    artist: str | None
+    shazam_id: str | None
+    confidence: float
+    source: Literal["shazam", "manual"] = "shazam"
+    override_id: int | None = None
+    soundcloud_id: int | None = None
+    soundcloud_permalink_url: str | None = None
+    artwork_url: str | None = None
+    # Original track length (seconds) — present for manual entries that
+    # carry a SoundCloud-sourced duration; ``None`` for Shazam runs.
+    duration_s: float | None = None
+    # Mix tempo at the matched scan point and the semitone offset that
+    # produced the match. ``original_bpm = set_bpm × 2^(pitch_offset/12)``
+    # and ``effective_duration_in_set = duration_s × 2^(pitch_offset/12)``.
+    set_bpm: float | None = None
+    pitch_offset: float | None = None
+    # User-curation flags. Carried on every track.timeline event so SSE
+    # replays after a snapshot refresh don't silently revert a confirm
+    # the user just toggled (the event is the authoritative payload for
+    # the row, so omitting these would clobber them).
+    confirmed: bool = False
+    user_edited: bool = False
 
 
 class JobCompleteEvent(BaseModel):
@@ -62,14 +112,30 @@ class ReanalyseStartedEvent(BaseModel):
     ranges: list[dict[str, float]] = Field(default_factory=list)
 
 
+class ShazamScanStartedEvent(BaseModel):
+    """Marks the start of a Shazam scan pass — lets the frontend reset
+    its per-run progress so a refine over a refresh range doesn't read as
+    "stuck at 99%" because the last sweep scan still sits in state."""
+
+    type: Literal["shazam.scan_started"] = "shazam.scan_started"
+    job_id: str
+    tier: str
+    region: tuple[float, float] | None = None
+    # Count of scan points the scheduler will walk after subtracting
+    # confirmed-track ranges. ``0`` means everything was excluded.
+    total_points: int
+
+
 AnalyserEvent = (
     MetaEvent
     | WindowBpmEvent
     | SectionDetectedEvent
-    | TrackIdentifiedEvent
+    | ShazamScanEvent
+    | TrackTimelineEvent
     | JobCompleteEvent
     | JobErrorEvent
     | ReanalyseStartedEvent
+    | ShazamScanStartedEvent
 )
 
 

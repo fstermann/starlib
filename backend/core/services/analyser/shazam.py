@@ -48,6 +48,12 @@ class ShazamMatch:
     artist: str | None
     shazam_id: str | None
     confidence: float
+    # Audio preview URL (~30s m4a) extracted from ``track.hub.actions``.
+    # Optional — Shazam doesn't return one for every match (especially
+    # for less-popular tracks where rights aren't cleared for preview).
+    preview_url: str | None = None
+    # Cover-art URL extracted from ``track.images.coverart``.
+    artwork_url: str | None = None
 
 
 class ShazamClient(Protocol):
@@ -123,9 +129,17 @@ class MissingShazamClient:
 
 
 class ShazamioClient:
-    """Real `shazamio`_ client with retry + backoff."""
+    """Real `shazamio`_ client with retry + backoff.
 
-    def __init__(self, *, max_attempts: int = 3, base_backoff_s: float = 1.5) -> None:
+    The default ``max_attempts=1`` means we surface failures to the
+    caller immediately rather than retrying inside the call. The
+    analyser caches misses and the next scan run picks them up — so
+    in-call retries just compound latency for points the rate-limited
+    scheduler will revisit anyway. Use ``max_attempts>1`` only for
+    one-shot CLIs that don't have a higher-level retry loop.
+    """
+
+    def __init__(self, *, max_attempts: int = 1, base_backoff_s: float = 1.5) -> None:
         from shazamio import Shazam  # type: ignore[import-not-found]  # optional dep
 
         self._shazam = Shazam()
@@ -186,7 +200,68 @@ def _parse_shazamio_response(raw: dict | None) -> ShazamMatch | None:
         artist=artist,
         shazam_id=str(shazam_id) if shazam_id is not None else None,
         confidence=confidence,
+        preview_url=_extract_preview_url(hub if isinstance(hub, dict) else None),
+        artwork_url=_extract_artwork_url(track),
     )
+
+
+def _extract_preview_url(hub: dict | None) -> str | None:
+    """Pull a 30-second audio-preview URL from a Shazam hub block.
+
+    Shazam embeds preview audio in two related places: ``hub.actions``
+    (preferred — usually a clean ``cdns-preview-*.shazamcdn.com`` m4a)
+    and ``hub.options[].actions`` (fallback for variants like radio).
+    Both are arrays of ``{type, uri}`` entries; we want the first
+    ``type == "uri"`` whose value looks like an audio URL. Returns
+    ``None`` when nothing matches — the caller stores ``NULL`` and
+    the frontend falls back to the SoundCloud preview button.
+    """
+    if not isinstance(hub, dict):
+        return None
+    for action in hub.get("actions") or []:
+        url = _audio_uri_from_action(action)
+        if url:
+            return url
+    for option in hub.get("options") or []:
+        if not isinstance(option, dict):
+            continue
+        for action in option.get("actions") or []:
+            url = _audio_uri_from_action(action)
+            if url:
+                return url
+    return None
+
+
+def _audio_uri_from_action(action: object) -> str | None:
+    if not isinstance(action, dict):
+        return None
+    if action.get("type") != "uri":
+        return None
+    uri = action.get("uri")
+    if not isinstance(uri, str) or not uri:
+        return None
+    # Filter out non-audio links (Shazam mixes share/buy URLs into the
+    # same actions list). The CDN preview audio is consistently m4a or
+    # mp4 over https; everything else (apple.com share links,
+    # spotify:track:... etc.) gets dropped.
+    lower = uri.lower()
+    if not lower.startswith(("http://", "https://")):
+        return None
+    if not (lower.endswith(".m4a") or lower.endswith(".mp4")):
+        return None
+    return uri
+
+
+def _extract_artwork_url(track: dict) -> str | None:
+    """Cover-art URL from ``track.images.coverart`` (or ``coverarthq``)."""
+    images = track.get("images")
+    if not isinstance(images, dict):
+        return None
+    for key in ("coverarthq", "coverart"):
+        url = images.get(key)
+        if isinstance(url, str) and url:
+            return url
+    return None
 
 
 def get_default_client() -> ShazamClient:

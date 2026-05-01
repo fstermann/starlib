@@ -117,24 +117,81 @@ class AnalyserSection(SQLModel, table=True):
     confidence: float
 
 
-class AnalyserTrackId(SQLModel, table=True):
-    """Cached Shazam matches for a section, keyed by ``pitch_offset``.
+class AnalyserShazamScan(SQLModel, table=True):
+    """Cached Shazam matches at a fixed scan grid, decoupled from sections.
 
-    ``pitch_offset`` is the semitone-equivalent shift applied before the
-    Shazam query (0.0 = unmodified). Caching by offset lets the
-    ``range`` pitch strategy memoise its candidate sweeps.
+    The Shazam stage walks the mix at ``scan_cadence_s`` intervals and
+    records the best match (if any) for each ``(scan_s, pitch_offset)``
+    combination. The track timeline shown to the user is derived from
+    runs of consecutive scans with the same ``shazam_id``.
     """
 
-    __tablename__ = "analyser_track_ids"  # type: ignore[assignment]
+    __tablename__ = "analyser_shazam_scans"  # type: ignore[assignment]
 
-    job_id: str = Field(primary_key=True)
-    section_index: int = Field(primary_key=True)
+    job_id: str = Field(primary_key=True, index=True)
+    scan_s: float = Field(primary_key=True)
     pitch_offset: float = Field(primary_key=True)
     title: str | None = None
     artist: str | None = None
     shazam_id: str | None = None
     confidence: float
     matched_at: float
+    # Shazam ``track.hub.actions[].uri`` — usually a 30s preview m4a on
+    # the shazamcdn. ``None`` when no preview is offered for the match.
+    preview_url: str | None = None
+    # Shazam ``track.images.coverart`` — supplements the SoundCloud
+    # cover lookup so each match has its own thumbnail.
+    artwork_url: str | None = None
+    # Tier the scan was produced under: "sweep" (coarse, 60 s cadence),
+    # "refine" (20 s), or "pinpoint" (8 s). Finer tiers supersede coarser
+    # ones at the same time when the timeline is rendered.
+    tier: str = Field(default="sweep")
+
+
+class AnalyserTrack(SQLModel, table=True):
+    """The user-facing tracklist for a job — a single mutable table.
+
+    Replaces the previous ``analyser_track_overrides`` overlay model.
+    Rows are either ``origin='shazam'`` (materialised from the immutable
+    ``analyser_shazam_scans`` cache after a scan) or ``origin='manual'``
+    (created by the user). Once a row exists it's just a row — drag,
+    rename, confirm and delete operate on it directly.
+
+    Sync semantics for re-scans:
+    - ``user_edited`` flips when the user moves/renames a row; subsequent
+      Shazam syncs leave it alone (option (b) — preserve user work).
+    - ``dismissed`` flips when the user removes a Shazam-origin row; the
+      sync sees the existing ``(job_id, shazam_id)`` and does nothing,
+      so re-running Shazam doesn't resurrect deleted entries.
+    """
+
+    __tablename__ = "analyser_tracks"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    job_id: str = Field(index=True)
+    origin: str  # "shazam" | "manual"
+    start_s: float
+    end_s: float | None = None
+    title: str
+    artist: str | None = None
+    shazam_id: str | None = None
+    soundcloud_id: int | None = None
+    soundcloud_permalink_url: str | None = None
+    artwork_url: str | None = None
+    duration_s: float | None = None
+    confirmed: bool = Field(default=False)
+    dismissed: bool = Field(default=False)
+    user_edited: bool = Field(default=False)
+    # Mix tempo at the matched scan point (median of overlapping BPM
+    # windows). ``pitch_offset`` is the semitone shift applied to the
+    # slice that produced the match. Together they let the frontend show
+    # set BPM → estimated original BPM and adjust displayed duration:
+    # ``original_bpm = set_bpm × 2^(pitch_offset/12)``.
+    # Both ``None`` for manual rows or legacy data.
+    set_bpm: float | None = None
+    pitch_offset: float | None = None
+    created_at: float
+    updated_at: float
 
 
 class SoundcloudTrackBpm(SQLModel, table=True):

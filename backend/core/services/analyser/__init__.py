@@ -15,19 +15,25 @@ from __future__ import annotations
 from backend.core.services.analyser.controller import (
     AnalyserJobOptions,
     JobNotFoundError,
+    cancel_shazam_scan,
+    delete_job,
     get_job_snapshot,
     reanalyse_job,
     recent_jobs,
     start_job,
+    start_shazam_scan,
     subscribe_to_job,
 )
 
 __all__ = [
     "AnalyserJobOptions",
     "JobNotFoundError",
+    "cancel_shazam_scan",
+    "delete_job",
     "get_job_snapshot",
     "reanalyse_job",
     "recent_jobs",
     "start_job",
+    "start_shazam_scan",
     "subscribe_to_job",
 ]

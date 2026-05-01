@@ -197,10 +197,34 @@ def select_pitch_offsets(
         lo, hi = float(bpm_range[0]), float(bpm_range[1])
         if hi <= lo:
             return [0.0]
-        # Three evenly-spaced candidates inside the band.
-        candidates = [lo, (lo + hi) / 2.0, hi]
-        return [_bpm_to_semitones(section_bpm, c) for c in candidates]
+        # Three evenly-spaced candidates inside the band — but for tight
+        # bands (e.g. 126–129) the resulting semitone shifts are within
+        # a fraction of a step of each other and Shazam will recognise
+        # the same track from any of them. Dedup so we don't burn
+        # rate-limit budget on near-identical queries. Midpoint goes
+        # first so a fully-collapsed band keeps the centre candidate
+        # (the one with the highest a-priori match probability).
+        mid = (lo + hi) / 2.0
+        candidates = [mid, lo, hi]
+        offsets = [_bpm_to_semitones(section_bpm, c) for c in candidates]
+        # 0.25 ST threshold: 3-BPM bands collapse to one query (the three
+        # candidates land ~0.2 ST apart for typical mix tempos), 6+ BPM
+        # bands keep all three (~0.4 ST apart).
+        return _dedupe_close(offsets, atol_semitones=0.25)
     return [0.0]
+
+
+def _dedupe_close(values: list[float], *, atol_semitones: float) -> list[float]:
+    """Collapse a list of semitone offsets keeping only entries that are
+    at least ``atol_semitones`` apart from previous keepers. Order is
+    preserved so the midpoint candidate (highest a-priori probability)
+    survives when the band is tight enough to collapse to one entry."""
+    kept: list[float] = []
+    for v in values:
+        if any(abs(v - k) < atol_semitones for k in kept):
+            continue
+        kept.append(v)
+    return kept
 
 
 def _bpm_to_semitones(from_bpm: float, to_bpm: float) -> float:

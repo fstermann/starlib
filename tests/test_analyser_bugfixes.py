@@ -8,7 +8,6 @@ audit. The controller pipeline is exercised with the real DB but a mocked
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -28,12 +27,9 @@ from backend.core.services.analyser import controller as analyser_controller
 from backend.core.services.analyser import db as analyser_db
 from backend.core.services.analyser.events import (
     JobCompleteEvent,
-    SectionDetectedEvent,
-    TrackIdentifiedEvent,
     WindowBpmEvent,
 )
 from backend.core.services.analyser.shazam import ShazamMatch, _parse_shazamio_response
-
 
 # ---------------------------------------------------------------------------
 # Test scaffolding
@@ -73,9 +69,7 @@ def _payloads(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return events
 
 
-def _stub_subprocess(
-    monkeypatch: pytest.MonkeyPatch, *, scripts: list[list[dict[str, Any]]]
-) -> list[dict[str, Any]]:
+def _stub_subprocess(monkeypatch: pytest.MonkeyPatch, *, scripts: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
     """Patch ``run_analyser_subprocess`` to replay scripted JSON-line events.
 
     The fake consumes one ``script`` per call (i.e. one per pipeline pass).
@@ -86,11 +80,13 @@ def _stub_subprocess(
     queue = list(scripts)
 
     async def fake_run(*, binary_path, input_path, options, listener):
-        captured.append({
-            "start_s": options.start_s,
-            "end_s": options.end_s,
-            "window_s": options.window_s,
-        })
+        captured.append(
+            {
+                "start_s": options.start_s,
+                "end_s": options.end_s,
+                "window_s": options.window_s,
+            }
+        )
         try:
             payload_list = queue.pop(0)
         except IndexError:
@@ -338,41 +334,37 @@ async def test_multi_range_reanalyse_emits_one_job_complete(monkeypatch: pytest.
 
 @pytest.mark.asyncio
 async def test_null_title_cached_row_does_not_block_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cached scan misses must re-fire on the next ``start_shazam_scan`` run."""
+    from backend.core.services.analyser import start_shazam_scan
+
     initial_script = [
         {"type": "meta", "duration_s": 60.0, "sample_rate": 22050},
-        {"type": "section.detected", "index": 0, "start_s": 0.0, "end_s": 45.0, "confidence": 0.8},
+        {"type": "window.bpm", "start_s": 0.0, "end_s": 30.0, "bpm": 120.0, "confidence": "high"},
     ]
-    rerun_script = [
-        {"type": "meta", "duration_s": 60.0, "sample_rate": 22050},
-        {"type": "section.detected", "index": 0, "start_s": 0.0, "end_s": 45.0, "confidence": 0.9},
-    ]
-    _stub_subprocess(monkeypatch, scripts=[initial_script, rerun_script])
-
-    miss_client = FakeShazam(response=None)  # caches a null-title row.
-    hit_client = FakeShazam(response=ShazamMatch(title="Hit", artist="A", shazam_id="k", confidence=0.95))
+    _stub_subprocess(monkeypatch, scripts=[initial_script])
 
     job_id = await start_job(
-        options=AnalyserJobOptions(window_s=30.0, hop_s=25.0),
+        options=AnalyserJobOptions(window_s=30.0, hop_s=25.0, scan_cadence_s=30.0, scan_window_s=10.0),
         soundcloud_id=7,
         fetch_audio=_fake_fetch_audio,
-        shazam_client=miss_client,
+        shazam_client=FakeShazam(),
     )
     async for ev in subscribe_to_job(job_id):
         if isinstance(ev, JobCompleteEvent):
             break
-    # First pass produced no hit; track row may exist with title=None.
-    # (Section index 0 was inserted, so re-analyse over [0, 45] will replace
-    # it — issue 15 fix clears the corresponding track_id row, and issue 11
-    # fix would also force a retry even if it survived.)
-    await reanalyse_job(
-        job_id,
-        ranges=[(0.0, 45.0)],
-        fetch_audio=_fake_fetch_audio,
-        shazam_client=hit_client,
+
+    miss_client = FakeShazam(response=None)
+    await start_shazam_scan(job_id, fetch_audio=_fake_fetch_audio, shazam_client=miss_client)
+    miss_calls = len(miss_client.calls)
+    assert miss_calls > 0
+
+    hit_client = FakeShazam(response=ShazamMatch(title="Hit", artist="A", shazam_id="k", confidence=0.95))
+    await start_shazam_scan(job_id, fetch_audio=_fake_fetch_audio, shazam_client=hit_client)
+    # Issue 11: the cached miss must NOT short-circuit the retry — the
+    # hit client should have been invoked at every scan point again.
+    assert len(hit_client.calls) == miss_calls, (
+        f"expected cached null rows to retry; miss_calls={miss_calls} hit_calls={len(hit_client.calls)}"
     )
-    # The hit client must have actually been invoked — i.e. we did NOT
-    # short-circuit on the cached miss.
-    assert hit_client.calls, "Shazam was not retried after a cached null match"
 
 
 # ---------------------------------------------------------------------------
@@ -381,9 +373,7 @@ async def test_null_title_cached_row_does_not_block_retry(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_concurrent_fetch_set_audio_runs_ffmpeg_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_concurrent_fetch_set_audio_runs_ffmpeg_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.core.services.analyser import cache
 
     # Point the cache at a temp dir.
@@ -420,6 +410,62 @@ async def test_concurrent_fetch_set_audio_runs_ffmpeg_once(
     )
     assert invocations == 1
     assert results[0] == results[1]
+
+
+# ---------------------------------------------------------------------------
+# Issue 10: in-flight downloads must not be visible to /audio
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_set_audio_hides_partial_file_until_complete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """While ffmpeg is still writing, ``cached_set_path`` must return None.
+
+    Otherwise the ``/audio`` endpoint stat-sizes a still-growing file and
+    streams more bytes than its declared Content-Length, which uvicorn
+    aborts with "Response content longer than Content-Length".
+    """
+    from backend.core.services.analyser import cache
+
+    cfg = cache.AnalyserCacheConfig(sets_dir=tmp_path / "sets", slices_dir=tmp_path / "slices")
+    cfg.sets_dir.mkdir(parents=True, exist_ok=True)
+    cfg.slices_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(cache, "_config", lambda: cfg)
+    cache._set_audio_locks.clear()
+
+    seen_during_download: list[Path | None] = []
+
+    class FakeProc:
+        returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return b"", b""
+
+    async def fake_exec(*args, **kwargs):
+        out_path = Path(args[-1])
+        # Simulate ffmpeg starting to write — observer should NOT see
+        # the final cache path yet.
+        out_path.write_bytes(b"partial")
+        seen_during_download.append(cache.cached_set_path(202))
+        # Then "complete" the download.
+        out_path.write_bytes(b"final-bytes")
+        return FakeProc()
+
+    monkeypatch.setattr("backend.core.services.analyser.cache.asyncio.create_subprocess_exec", fake_exec)
+    monkeypatch.setattr("backend.core.services.analyser.cache._find_ffmpeg", lambda: "/bin/true")
+
+    final_path = await cache.fetch_set_audio(202, hls_url="https://x")
+
+    assert seen_during_download == [None], (
+        "cached_set_path leaked the partial file during download"
+    )
+    assert final_path.exists()
+    assert final_path.read_bytes() == b"final-bytes"
+    assert final_path.suffix == ".mp4"
+    # No leftover .part sibling.
+    assert not (final_path.parent / f"{final_path.name}.part").exists()
 
 
 # ---------------------------------------------------------------------------

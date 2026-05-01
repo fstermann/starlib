@@ -19,7 +19,8 @@ from backend.core.db.engine import get_engine
 from backend.core.db.models import (
     AnalyserJob,
     AnalyserSection,
-    AnalyserTrackId,
+    AnalyserShazamScan,
+    AnalyserTrack,
     AnalyserWindowBpm,
 )
 
@@ -64,14 +65,17 @@ class SectionRow:
 
 
 @dataclass(slots=True)
-class TrackIdRow:
-    section_index: int
+class ShazamScanRow:
+    scan_s: float
     pitch_offset: float
     title: str | None
     artist: str | None
     shazam_id: str | None
     confidence: float
     matched_at: float
+    preview_url: str | None = None
+    artwork_url: str | None = None
+    tier: str = "sweep"
 
 
 # ---------------------------------------------------------------------------
@@ -346,15 +350,6 @@ def delete_sections_in_range(job_id: str, start_s: float, end_s: float) -> list[
     return removed
 
 
-def delete_track_ids_for_sections(job_id: str, section_indices: list[int]) -> None:
-    """Drop cached Shazam matches for the given section indices."""
-    if not section_indices:
-        return
-    table = AnalyserTrackId.__table__
-    with get_engine().begin() as conn:
-        conn.execute(delete(table).where(table.c.job_id == job_id).where(table.c.section_index.in_(section_indices)))
-
-
 def max_section_index(job_id: str) -> int | None:
     """Highest existing ``section_index`` for a job, or ``None`` if no rows."""
     table = AnalyserSection.__table__
@@ -380,95 +375,416 @@ def list_sections(job_id: str) -> list[SectionRow]:
 
 
 # ---------------------------------------------------------------------------
-# Track-ID CRUD
+# Shazam scan CRUD
 # ---------------------------------------------------------------------------
 
 
-def upsert_track_id(
+def upsert_shazam_scan(
     *,
     job_id: str,
-    section_index: int,
+    scan_s: float,
     pitch_offset: float,
     title: str | None,
     artist: str | None,
     shazam_id: str | None,
     confidence: float,
+    preview_url: str | None = None,
+    artwork_url: str | None = None,
+    tier: str = "sweep",
 ) -> None:
-    table = AnalyserTrackId.__table__
+    """Persist (or refresh) a single Shazam-scan attempt.
+
+    The grid is keyed by ``(job_id, scan_s, pitch_offset)``. Caching by
+    pitch lets the ``range`` strategy memoise its candidate sweeps without
+    re-spending ffmpeg / Shazam quota on a re-run with identical params.
+    The ``tier`` records which pass produced the row so the timeline can
+    prefer finer matches over coarser ones.
+    """
+    table = AnalyserShazamScan.__table__
     stmt = sqlite_insert(table).values(
         job_id=job_id,
-        section_index=section_index,
+        scan_s=scan_s,
         pitch_offset=pitch_offset,
         title=title,
         artist=artist,
         shazam_id=shazam_id,
         confidence=confidence,
         matched_at=time.time(),
+        preview_url=preview_url,
+        artwork_url=artwork_url,
+        tier=tier,
     )
     stmt = stmt.on_conflict_do_update(
-        index_elements=[table.c.job_id, table.c.section_index, table.c.pitch_offset],
+        index_elements=[table.c.job_id, table.c.scan_s, table.c.pitch_offset],
         set_={
             "title": stmt.excluded.title,
             "artist": stmt.excluded.artist,
             "shazam_id": stmt.excluded.shazam_id,
             "confidence": stmt.excluded.confidence,
             "matched_at": stmt.excluded.matched_at,
+            "preview_url": stmt.excluded.preview_url,
+            "artwork_url": stmt.excluded.artwork_url,
+            "tier": stmt.excluded.tier,
         },
     )
     with get_engine().begin() as conn:
         conn.execute(stmt)
 
 
-def get_track_id(job_id: str, section_index: int, pitch_offset: float) -> TrackIdRow | None:
-    """Cache lookup keyed by ``(job_id, section_index, pitch_offset)``."""
-    table = AnalyserTrackId.__table__
+def get_shazam_scan(job_id: str, scan_s: float, pitch_offset: float) -> ShazamScanRow | None:
+    """Lookup a single cached scan attempt."""
+    table = AnalyserShazamScan.__table__
     with get_engine().begin() as conn:
         row = conn.execute(
             select(
-                table.c.section_index,
+                table.c.scan_s,
                 table.c.pitch_offset,
                 table.c.title,
                 table.c.artist,
                 table.c.shazam_id,
                 table.c.confidence,
                 table.c.matched_at,
+                table.c.preview_url,
+                table.c.artwork_url,
+                table.c.tier,
             )
             .where(table.c.job_id == job_id)
-            .where(table.c.section_index == section_index)
+            .where(table.c.scan_s == scan_s)
             .where(table.c.pitch_offset == pitch_offset)
         ).first()
     if row is None:
         return None
-    return TrackIdRow(**dict(row._mapping))
+    return ShazamScanRow(**dict(row._mapping))
 
 
-def list_track_ids(job_id: str) -> list[TrackIdRow]:
-    """Return the highest-confidence Shazam match per section for a job."""
-    table = AnalyserTrackId.__table__
+def list_shazam_scans(job_id: str) -> list[ShazamScanRow]:
+    """Return every cached scan attempt for a job, ordered by ``scan_s``.
+
+    Each ``(scan_s, pitch_offset)`` is its own row — ``range`` pitch
+    strategy can fan out 3+ attempts per scan point that resolve to
+    different tracks. The frontend de-duplicates per scan point for
+    the timeline aggregation but surfaces alternatives in the tracklist.
+    """
+    table = AnalyserShazamScan.__table__
     with get_engine().begin() as conn:
         rows = conn.execute(
             select(
-                table.c.section_index,
+                table.c.scan_s,
                 table.c.pitch_offset,
                 table.c.title,
                 table.c.artist,
                 table.c.shazam_id,
                 table.c.confidence,
                 table.c.matched_at,
+                table.c.preview_url,
+                table.c.artwork_url,
+                table.c.tier,
             )
             .where(table.c.job_id == job_id)
-            .order_by(table.c.section_index, table.c.confidence.desc())
+            .order_by(table.c.scan_s, table.c.confidence.desc())
         ).all()
-    # Reduce: one row per section_index — the first one (highest confidence
-    # thanks to the order_by clause).
-    seen: set[int] = set()
-    out: list[TrackIdRow] = []
-    for r in rows:
-        if r.section_index in seen:
-            continue
-        seen.add(r.section_index)
-        out.append(TrackIdRow(**dict(r._mapping)))
-    return out
+    return [ShazamScanRow(**dict(r._mapping)) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Tracklist CRUD — single mutable table for both Shazam-sourced and
+# manual entries. See ``AnalyserTrack`` for the lifecycle model.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class TrackRow:
+    id: int
+    job_id: str
+    origin: str  # "shazam" | "manual"
+    start_s: float
+    end_s: float | None
+    title: str
+    artist: str | None
+    shazam_id: str | None
+    soundcloud_id: int | None
+    soundcloud_permalink_url: str | None
+    artwork_url: str | None
+    duration_s: float | None
+    confirmed: bool
+    dismissed: bool
+    user_edited: bool
+    set_bpm: float | None
+    pitch_offset: float | None
+    created_at: float
+    updated_at: float
+
+
+_TRACK_COLS = (
+    AnalyserTrack.__table__.c.id,
+    AnalyserTrack.__table__.c.job_id,
+    AnalyserTrack.__table__.c.origin,
+    AnalyserTrack.__table__.c.start_s,
+    AnalyserTrack.__table__.c.end_s,
+    AnalyserTrack.__table__.c.title,
+    AnalyserTrack.__table__.c.artist,
+    AnalyserTrack.__table__.c.shazam_id,
+    AnalyserTrack.__table__.c.soundcloud_id,
+    AnalyserTrack.__table__.c.soundcloud_permalink_url,
+    AnalyserTrack.__table__.c.artwork_url,
+    AnalyserTrack.__table__.c.duration_s,
+    AnalyserTrack.__table__.c.confirmed,
+    AnalyserTrack.__table__.c.dismissed,
+    AnalyserTrack.__table__.c.user_edited,
+    AnalyserTrack.__table__.c.set_bpm,
+    AnalyserTrack.__table__.c.pitch_offset,
+    AnalyserTrack.__table__.c.created_at,
+    AnalyserTrack.__table__.c.updated_at,
+)
+
+
+def _row_to_track(row) -> TrackRow:
+    return TrackRow(
+        id=int(row.id),
+        job_id=row.job_id,
+        origin=row.origin,
+        start_s=float(row.start_s),
+        end_s=None if row.end_s is None else float(row.end_s),
+        title=row.title,
+        artist=row.artist,
+        shazam_id=row.shazam_id,
+        soundcloud_id=row.soundcloud_id,
+        soundcloud_permalink_url=row.soundcloud_permalink_url,
+        artwork_url=row.artwork_url,
+        duration_s=None if row.duration_s is None else float(row.duration_s),
+        confirmed=bool(row.confirmed),
+        dismissed=bool(row.dismissed),
+        user_edited=bool(row.user_edited),
+        set_bpm=None if row.set_bpm is None else float(row.set_bpm),
+        pitch_offset=None if row.pitch_offset is None else float(row.pitch_offset),
+        created_at=float(row.created_at),
+        updated_at=float(row.updated_at),
+    )
+
+
+def insert_track(
+    *,
+    job_id: str,
+    origin: str,
+    start_s: float,
+    title: str,
+    end_s: float | None = None,
+    artist: str | None = None,
+    shazam_id: str | None = None,
+    soundcloud_id: int | None = None,
+    soundcloud_permalink_url: str | None = None,
+    artwork_url: str | None = None,
+    duration_s: float | None = None,
+    user_edited: bool = False,
+    set_bpm: float | None = None,
+    pitch_offset: float | None = None,
+) -> TrackRow:
+    table = AnalyserTrack.__table__
+    now = time.time()
+    values = {
+        "job_id": job_id,
+        "origin": origin,
+        "start_s": start_s,
+        "end_s": end_s,
+        "title": title,
+        "artist": artist,
+        "shazam_id": shazam_id,
+        "soundcloud_id": soundcloud_id,
+        "soundcloud_permalink_url": soundcloud_permalink_url,
+        "artwork_url": artwork_url,
+        "duration_s": duration_s,
+        "confirmed": False,
+        "dismissed": False,
+        "user_edited": user_edited,
+        "set_bpm": set_bpm,
+        "pitch_offset": pitch_offset,
+        "created_at": now,
+        "updated_at": now,
+    }
+    with get_engine().begin() as conn:
+        result = conn.execute(table.insert().values(**values))
+        new_id = int(result.inserted_primary_key[0])
+        row = conn.execute(select(*_TRACK_COLS).where(table.c.id == new_id)).first()
+    if row is None:  # belt-and-braces; insert just succeeded
+        raise RuntimeError(f"insert_track: row {new_id} disappeared")
+    return _row_to_track(row)
+
+
+def list_tracks(job_id: str, *, include_dismissed: bool = False) -> list[TrackRow]:
+    table = AnalyserTrack.__table__
+    stmt = select(*_TRACK_COLS).where(table.c.job_id == job_id)
+    if not include_dismissed:
+        stmt = stmt.where(table.c.dismissed == False)  # noqa: E712
+    stmt = stmt.order_by(table.c.start_s)
+    with get_engine().begin() as conn:
+        rows = conn.execute(stmt).all()
+    return [_row_to_track(r) for r in rows]
+
+
+def list_confirmed_ranges(job_id: str) -> list[tuple[float, float]]:
+    """Return (start_s, end_s) for every confirmed, non-dismissed track.
+
+    Used by the Shazam scan scheduler to skip scan points that fall inside
+    a track the user already validated. Tracks without an ``end_s`` are
+    treated as zero-width at ``start_s``. Ranges aren't merged here — the
+    caller (``_grid_minus_ranges``) handles overlaps.
+    """
+    table = AnalyserTrack.__table__
+    with get_engine().begin() as conn:
+        rows = conn.execute(
+            select(table.c.start_s, table.c.end_s)
+            .where(table.c.job_id == job_id)
+            .where(table.c.confirmed == True)  # noqa: E712
+            .where(table.c.dismissed == False)  # noqa: E712
+        ).all()
+    return [(float(r.start_s), float(r.end_s if r.end_s is not None else r.start_s)) for r in rows]
+
+
+def get_track_by_shazam_id(job_id: str, shazam_id: str) -> TrackRow | None:
+    table = AnalyserTrack.__table__
+    with get_engine().begin() as conn:
+        row = conn.execute(
+            select(*_TRACK_COLS)
+            .where(table.c.job_id == job_id)
+            .where(table.c.shazam_id == shazam_id)
+        ).first()
+    return None if row is None else _row_to_track(row)
+
+
+def update_track(
+    job_id: str,
+    track_id: int,
+    *,
+    start_s: float | None = None,
+    end_s: float | None = None,
+    title: str | None = None,
+    artist: str | None = None,
+    soundcloud_id: int | None = None,
+    soundcloud_permalink_url: str | None = None,
+    artwork_url: str | None = None,
+    duration_s: float | None = None,
+    confirmed: bool | None = None,
+    dismissed: bool | None = None,
+    set_bpm: float | None = None,
+    pitch_offset: float | None = None,
+    mark_user_edited: bool = False,
+) -> bool:
+    """Apply a partial update to a track row.
+
+    ``mark_user_edited=True`` flips the row's ``user_edited`` flag so a
+    later Shazam re-sync skips it. Pass it for every drag/rename op,
+    skip it for purely admin updates (sync, dismiss).
+    """
+    values: dict[str, object] = {"updated_at": time.time()}
+    if start_s is not None:
+        values["start_s"] = start_s
+    if end_s is not None:
+        values["end_s"] = end_s
+    if title is not None:
+        values["title"] = title
+    if artist is not None:
+        values["artist"] = artist
+    if soundcloud_id is not None:
+        values["soundcloud_id"] = soundcloud_id
+    if soundcloud_permalink_url is not None:
+        values["soundcloud_permalink_url"] = soundcloud_permalink_url
+    if artwork_url is not None:
+        values["artwork_url"] = artwork_url
+    if duration_s is not None:
+        values["duration_s"] = duration_s
+    if confirmed is not None:
+        values["confirmed"] = confirmed
+    if dismissed is not None:
+        values["dismissed"] = dismissed
+    if set_bpm is not None:
+        values["set_bpm"] = set_bpm
+    if pitch_offset is not None:
+        values["pitch_offset"] = pitch_offset
+    if mark_user_edited:
+        values["user_edited"] = True
+    if len(values) == 1:  # only updated_at would change → no-op
+        return False
+    table = AnalyserTrack.__table__
+    with get_engine().begin() as conn:
+        result = conn.execute(
+            table.update()
+            .where(table.c.job_id == job_id)
+            .where(table.c.id == track_id)
+            .values(**values)
+        )
+    return (result.rowcount or 0) > 0
+
+
+def delete_track(job_id: str, track_id: int) -> bool:
+    """Hard-delete a track row.
+
+    Used for manual entries (no Shazam refresh would re-create them).
+    For Shazam-origin rows the API soft-deletes via ``dismissed=True``
+    instead so a future scan doesn't resurrect them.
+    """
+    table = AnalyserTrack.__table__
+    with get_engine().begin() as conn:
+        result = conn.execute(
+            delete(table)
+            .where(table.c.job_id == job_id)
+            .where(table.c.id == track_id)
+        )
+    return (result.rowcount or 0) > 0
+
+
+def delete_tracks_for_job(job_id: str) -> None:
+    table = AnalyserTrack.__table__
+    with get_engine().begin() as conn:
+        conn.execute(delete(table).where(table.c.job_id == job_id))
+
+
+def delete_job(job_id: str) -> bool:
+    """Hard-delete a job row and every row that references it.
+
+    Returns ``True`` if the job existed. Cascades manually because
+    SQLite doesn't enforce FKs by default in this app's engine config.
+    """
+    with get_engine().begin() as conn:
+        conn.execute(delete(AnalyserWindowBpm.__table__).where(AnalyserWindowBpm.__table__.c.job_id == job_id))
+        conn.execute(delete(AnalyserSection.__table__).where(AnalyserSection.__table__.c.job_id == job_id))
+        conn.execute(delete(AnalyserShazamScan.__table__).where(AnalyserShazamScan.__table__.c.job_id == job_id))
+        conn.execute(delete(AnalyserTrack.__table__).where(AnalyserTrack.__table__.c.job_id == job_id))
+        result = conn.execute(
+            delete(AnalyserJob.__table__).where(AnalyserJob.__table__.c.id == job_id)
+        )
+    return (result.rowcount or 0) > 0
+
+
+def reset_job_data(job_id: str) -> None:
+    """Drop all derived + user-edited data for a job, keep the job row.
+
+    Wipes windows, sections, shazam scans and track overrides in one
+    transaction so a partial failure can't leave the job in a weird
+    half-cleared state. The job row itself (id, soundcloud_id, title,
+    artist, options, duration_s) is preserved so the user can immediately
+    re-run analysis without re-entering the URL.
+    """
+    with get_engine().begin() as conn:
+        conn.execute(delete(AnalyserWindowBpm.__table__).where(AnalyserWindowBpm.__table__.c.job_id == job_id))
+        conn.execute(delete(AnalyserSection.__table__).where(AnalyserSection.__table__.c.job_id == job_id))
+        conn.execute(delete(AnalyserShazamScan.__table__).where(AnalyserShazamScan.__table__.c.job_id == job_id))
+        conn.execute(delete(AnalyserTrack.__table__).where(AnalyserTrack.__table__.c.job_id == job_id))
+        # Status flips back to ``complete`` (not ``pending``) — nothing is
+        # actually queued or running after a reset. ``pending`` would make
+        # the header chip read "Queued" indefinitely until the user kicks
+        # off a fresh pass.
+        conn.execute(
+            AnalyserJob.__table__.update()
+            .where(AnalyserJob.__table__.c.id == job_id)
+            .values(status="complete", error=None, updated_at=time.time())
+        )
+
+
+def delete_shazam_scans_for_job(job_id: str) -> None:
+    """Drop every cached scan for a job (re-analyse 'force a fresh run')."""
+    table = AnalyserShazamScan.__table__
+    with get_engine().begin() as conn:
+        conn.execute(delete(table).where(table.c.job_id == job_id))
 
 
 # ---------------------------------------------------------------------------

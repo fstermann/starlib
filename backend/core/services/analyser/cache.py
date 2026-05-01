@@ -66,13 +66,28 @@ def _find_ffprobe() -> str:
     return "ffprobe"
 
 
+_probe_cache: dict[tuple[str, float], int] = {}
+
+
 async def _probe_sample_rate(path: Path) -> int:
     """Return the first audio stream's sample rate, falling back to 44100.
 
     The pitch-shift filter chain hardcoded 44100 prior — that miscalibrates
     every non-44.1 kHz source (SoundCloud commonly serves 48 kHz). Probing
     keeps the asetrate / aresample pair in lock-step with the input.
+
+    Memoised per ``(path, mtime)`` so a Shazam scan that hits the same
+    cached audio for hundreds of slices doesn't shell out to ffprobe each
+    time.
     """
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    key = (str(path), mtime)
+    cached = _probe_cache.get(key)
+    if cached is not None:
+        return cached
     ffprobe = _find_ffprobe()
     proc = await asyncio.create_subprocess_exec(
         ffprobe,
@@ -89,16 +104,18 @@ async def _probe_sample_rate(path: Path) -> int:
         stderr=asyncio.subprocess.PIPE,
     )
     stdout, _ = await proc.communicate()
-    if proc.returncode != 0:
-        return 44100
-    text = stdout.decode(errors="replace").strip().splitlines()
-    if not text:
-        return 44100
-    try:
-        rate = int(text[0])
-    except ValueError:
-        return 44100
-    return rate if rate > 0 else 44100
+    rate = 44100
+    if proc.returncode == 0:
+        text = stdout.decode(errors="replace").strip().splitlines()
+        if text:
+            try:
+                parsed = int(text[0])
+                if parsed > 0:
+                    rate = parsed
+            except ValueError:
+                pass
+    _probe_cache[key] = rate
+    return rate
 
 
 @dataclass(slots=True)
@@ -177,7 +194,15 @@ async def fetch_set_audio(
 
         cfg = _config()
         out = cfg.sets_dir / f"{soundcloud_id}.mp4"
+        # Write to a sibling ``.part`` and rename on success so the
+        # ``/audio`` endpoint never sees a half-written file (otherwise
+        # FileResponse stats a smaller size and uvicorn raises
+        # "Response content longer than Content-Length" once ffmpeg
+        # appends more bytes mid-stream).
+        partial = out.with_suffix(out.suffix + ".part")
         out.parent.mkdir(parents=True, exist_ok=True)
+        if partial.exists():
+            partial.unlink()
 
         ffmpeg = _find_ffmpeg()
         cmd: list[str] = [ffmpeg, "-y"]
@@ -191,9 +216,15 @@ async def fetch_set_audio(
                 "copy",
                 "-bsf:a",
                 "aac_adtstoasc",
+                # Move the moov atom to the front of the file so subsequent
+                # ffmpeg seeks (per scan-point slice extraction) don't have
+                # to scan to the end of a several-hundred-MB file to find
+                # the index. Negligible cost on the download itself.
+                "-movflags",
+                "+faststart",
                 "-f",
                 "mp4",
-                str(out),
+                str(partial),
             ]
         )
         logger.info("downloading SoundCloud set %s via ffmpeg → %s", soundcloud_id, out)
@@ -206,12 +237,13 @@ async def fetch_set_audio(
         _, stderr = await proc.communicate()
         if proc.returncode != 0:
             # Don't leave a half-written file in the cache.
-            if out.exists():
-                out.unlink()
+            if partial.exists():
+                partial.unlink()
             raise RuntimeError(
                 f"ffmpeg HLS download failed (exit {proc.returncode}): {stderr.decode(errors='replace')[:512]}"
             )
 
+        partial.replace(out)
         enforce_size_cap()
         return out
 
@@ -278,25 +310,55 @@ async def make_shazam_slice(
 ) -> Path:
     """Carve a 12 s slice out of ``source`` and (optionally) pitch-shift it.
 
-    Returns the path to a cached mp3 ready to hand to a Shazam client.
-    Cached by ``(job_id, section_index, pitch_semitones)`` — re-running
-    Shazam with the same parameters never re-spends ffmpeg cycles.
+    Two-stage extraction so a scan point with a ``range`` pitch strategy
+    (3 attempts) doesn't re-seek the big set audio three times:
 
-    Pitch-shift uses the ``asetrate``/``aresample``/``atempo`` chain rather
-    than the rubberband filter so we don't take a libraseq dependency. This
-    is good enough for Shazam matching: the latter cares about the spectral
+    1. **Base slice** — one ffmpeg pass to copy 12 s of the source into a
+       small mp3, cached at ``section-N-base.mp3``. Re-used across pitch
+       attempts at the same point.
+    2. **Pitched variant** — for non-zero ``pitch_semitones``, a second
+       ffmpeg pass that runs the ``asetrate``/``aresample``/``atempo``
+       chain on the small base slice (cheap because the input is already
+       only 12 s of audio).
+
+    The cached SoundCloud mp4 ships with its ``moov`` atom at the end
+    (no ``-movflags +faststart`` on the HLS stream-copy), so seeking it
+    is the dominant cost; reading the small base slice repeatedly is
+    near-free in comparison.
+
+    Pitch-shift uses ``asetrate``/``aresample``/``atempo`` rather than
+    rubberband so we don't take a librubberband dependency — this is
+    good enough for Shazam matching, which cares about the spectral
     fingerprint, not psychoacoustic transparency.
     """
     cfg = _config()
     job_dir = cfg.slices_dir / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
+    base_path = job_dir / f"section-{section_index}-base.mp3"
+    if not base_path.exists():
+        await _extract_base_slice(source=source, start_s=start_s, duration_s=duration_s, out=base_path)
+
+    if pitch_semitones == 0.0:
+        return base_path
+
     pitch_tag = f"{pitch_semitones:+.2f}"
     out = job_dir / f"section-{section_index}-pitch-{pitch_tag}.mp3"
     if out.exists():
         return out
+    await _shift_pitch_from_base(base=base_path, out=out, pitch_semitones=pitch_semitones)
+    return out
 
+
+async def _extract_base_slice(
+    *,
+    source: Path,
+    start_s: float,
+    duration_s: float,
+    out: Path,
+) -> None:
+    """One ffmpeg pass: ``[start_s, start_s+duration_s]`` of ``source`` → mp3."""
     ffmpeg = _find_ffmpeg()
-    cmd: list[str] = [
+    cmd = [
         ffmpeg,
         "-y",
         "-ss",
@@ -305,21 +367,12 @@ async def make_shazam_slice(
         f"{duration_s:.3f}",
         "-i",
         str(source),
+        "-acodec",
+        "libmp3lame",
+        "-q:a",
+        "5",
+        str(out),
     ]
-    if pitch_semitones != 0.0:
-        # asetrate scales sample rate (changes pitch + tempo together);
-        # atempo undoes the tempo change so only pitch shifts. Stack atempo
-        # filters when the ratio is outside [0.5, 2.0] (atempo's clamped range).
-        ratio = 2.0 ** (pitch_semitones / 12.0)
-        # Inverse ratio for tempo correction.
-        tempo_chain = _atempo_chain(1.0 / ratio)
-        # Probe so the asetrate / aresample pair tracks the source rate.
-        # Hard-coding 44100 mistunes everything else (SoundCloud is 48 kHz).
-        source_sr = await _probe_sample_rate(source)
-        af = f"asetrate={source_sr}*{ratio},aresample={source_sr},{tempo_chain}"
-        cmd.extend(["-af", af])
-    cmd.extend(["-acodec", "libmp3lame", "-q:a", "5", str(out)])
-
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -332,7 +385,50 @@ async def make_shazam_slice(
         raise RuntimeError(
             f"ffmpeg slice extraction failed (exit {proc.returncode}): {stderr.decode(errors='replace')[:512]}"
         )
-    return out
+
+
+async def _shift_pitch_from_base(
+    *,
+    base: Path,
+    out: Path,
+    pitch_semitones: float,
+) -> None:
+    """ffmpeg pass over the small base slice to produce a pitched variant.
+
+    Runs the asetrate / aresample / atempo filter chain on ``base``
+    (~12 s of audio) which is cheap regardless of how the original
+    container was indexed.
+    """
+    ratio = 2.0 ** (pitch_semitones / 12.0)
+    tempo_chain = _atempo_chain(1.0 / ratio)
+    source_sr = await _probe_sample_rate(base)
+    af = f"asetrate={source_sr}*{ratio},aresample={source_sr},{tempo_chain}"
+    ffmpeg = _find_ffmpeg()
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(base),
+        "-af",
+        af,
+        "-acodec",
+        "libmp3lame",
+        "-q:a",
+        "5",
+        str(out),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        if out.exists():
+            out.unlink()
+        raise RuntimeError(
+            f"ffmpeg pitch shift failed (exit {proc.returncode}): {stderr.decode(errors='replace')[:512]}"
+        )
 
 
 def _atempo_chain(ratio: float) -> str:

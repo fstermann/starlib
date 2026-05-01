@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useState } from "react";
 
 import {
   getJobSnapshot,
@@ -18,6 +18,14 @@ import {
 export interface UseAnalyserJobResult {
   state: AnalyserUiState;
   dispatch: React.Dispatch<AnalyserAction>;
+  /**
+   * Force a fresh snapshot fetch + SSE re-subscribe. Call this after
+   * triggering a backend action that flips the job back into ``running``
+   * (e.g. ``startShazamScan``) — the previous SSE connection has already
+   * been closed by the close-on-terminal handler, so without an explicit
+   * reconnect the new pass would stream into the void.
+   */
+  refresh: () => void;
 }
 
 /**
@@ -29,6 +37,8 @@ export interface UseAnalyserJobResult {
  */
 export function useAnalyserJob(jobId: string | null): UseAnalyserJobResult {
   const [state, dispatch] = useReducer(analyserReducer, INITIAL_STATE);
+  const [epoch, setEpoch] = useState(0);
+  const refresh = useCallback(() => setEpoch((e) => e + 1), []);
 
   useEffect(() => {
     if (!jobId) {
@@ -58,7 +68,7 @@ export function useAnalyserJob(jobId: string | null): UseAnalyserJobResult {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [jobId]);
+  }, [jobId, epoch]);
 
-  return { state, dispatch };
+  return { state, dispatch, refresh };
 }
