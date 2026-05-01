@@ -1,9 +1,9 @@
 import { expect, test } from "./fixtures";
 
-// #370: BPM widget replaces native up/down arrows with click-and-drag
-// scrubbing while keeping direct numeric typing and integer steps.
-test.describe("BPM scrub input", () => {
-  test("dragging horizontally on the BPM input changes the value in integer steps", async ({
+// #370: BPM widget replaces native up/down arrows with explicit -/+ buttons
+// (react-aria NumberField). Direct numeric typing still works.
+test.describe("BPM number input", () => {
+  test("clicking the increment button bumps the value by one", async ({
     page,
   }) => {
     const filePath = "/music/test - track.mp3";
@@ -86,29 +86,10 @@ test.describe("BPM scrub input", () => {
     await expect(bpm).toBeVisible();
     await expect(bpm).toHaveValue("120");
 
-    // The bug was native up/down arrows — assert no spinner is rendered. The
-    // CSS hides them via [appearance:textfield].
-    await expect(bpm).toHaveCSS("appearance", "textfield");
-
-    // Drag horizontally to scrub. pxPerUnit=4 default, so +40px ≈ +10 BPM.
-    const box = await bpm.boundingBox();
-    if (!box) throw new Error("BPM input has no bounding box");
-    const startX = box.x + box.width / 2;
-    const startY = box.y + box.height / 2;
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    // Move in small steps so move events fire.
-    for (let i = 1; i <= 10; i++) {
-      await page.mouse.move(startX + i * 4, startY, { steps: 1 });
-    }
-    await page.mouse.up();
-
-    // Final value should be an integer ~10 above the start. Allow a small
-    // tolerance for browser rounding of synthetic events.
-    const finalValue = await bpm.inputValue();
-    expect(Number.isInteger(parseFloat(finalValue))).toBe(true);
-    const n = parseInt(finalValue, 10);
-    expect(n).toBeGreaterThan(120);
-    expect(n).toBeLessThanOrEqual(135);
+    const incrementBtn = page.getByRole("button", { name: "Increase BPM" });
+    await incrementBtn.click();
+    await expect(bpm).toHaveValue("121");
+    await incrementBtn.click();
+    await expect(bpm).toHaveValue("122");
   });
 });
