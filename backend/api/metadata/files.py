@@ -1,5 +1,6 @@
 """File and folder operations for the Meta Editor."""
 
+import asyncio
 import base64
 import logging
 from datetime import date
@@ -13,6 +14,8 @@ from backend.api.deps import get_root_folder, validate_file_path, validate_folde
 from backend.api.metadata._helpers import resolve_folder
 from backend.core.services import cache_db, collection, metadata
 from backend.schemas.metadata import (
+    ApplyRulesRequest,
+    ApplyRulesResponse,
     BatchInfoRequest,
     BatchResultItem,
     BatchUpdateRequest,
@@ -20,8 +23,6 @@ from backend.schemas.metadata import (
     FileInfoResponse,
     FileReadinessResponse,
     FilterValuesResponse,
-    FinalizeRequest,
-    FinalizeResponse,
     OperationResponse,
     TrackBrowseResponse,
     TrackInfoResponse,
@@ -34,6 +35,10 @@ from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, TrackHandler, Trac
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Bound concurrent Apply Rules jobs so a stack of clicks can't spawn
+# unbounded ffmpeg conversions in parallel.
+_apply_rules_semaphore = asyncio.Semaphore(2)
 
 
 def _row_value(row, key, default=None):
@@ -628,7 +633,7 @@ def check_file_readiness(
     file_path: str,
     root_folder: Annotated[Path, Depends(get_root_folder)],
 ) -> FileReadinessResponse:
-    """Check if a file is ready for finalization.
+    """Check if a file is ready for rule application.
 
     Parameters
     ----------
@@ -666,37 +671,44 @@ def check_file_readiness(
     )
 
 
-@router.post("/files/{file_path:path}/finalize", response_model=FinalizeResponse)
-def finalize_file(
+@router.post("/files/{file_path:path}/apply-rules", response_model=ApplyRulesResponse)
+async def apply_rules_to_file(
     file_path: str,
-    request: FinalizeRequest,
+    # `request` is currently empty but kept on the signature so the
+    # OpenAPI shape stays stable when per-call options are added later.
+    request: ApplyRulesRequest,
     root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> FinalizeResponse:
-    """Finalize a track: convert format and move to collection.
+) -> ApplyRulesResponse:
+    """Apply the active ruleset to a track (convert, copy, move).
+
+    Runs ffmpeg conversion + file moves in asyncio's default executor rather
+    than the FastAPI sync-endpoint threadpool, so long jobs do not starve
+    other request handlers.  Concurrent jobs are capped via a semaphore.
 
     Parameters
     ----------
     file_path : str
         Relative or absolute path to audio file
-    request : FinalizeRequest
-        Finalization options (target format, quality, collection folder)
+    request : ApplyRulesRequest
+        Per-call options (currently empty; reserved for future use)
     root_folder : Path
         Root music folder (injected)
 
     Returns
     -------
-    FinalizeResponse
-        Result with new file path
+    ApplyRulesResponse
+        Result with new file path and per-step outcomes
 
     Raises
     ------
     HTTPException
-        If file not ready or finalization fails
+        If file is not ready or rule execution fails
     """
     resolved_path = validate_file_path(file_path, root_folder)
+    loop = asyncio.get_event_loop()
 
     try:
-        readiness = metadata.check_file_readiness(resolved_path, root_folder)
+        readiness = await loop.run_in_executor(None, metadata.check_file_readiness, resolved_path, root_folder)
     except Exception as e:
         logger.exception("Failed to check readiness")
         raise HTTPException(
@@ -712,26 +724,28 @@ def finalize_file(
             missing_str = str(missing_fields)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File not ready for finalization. Missing: {missing_str}",
+            detail=f"File not ready for rule application. Missing: {missing_str}",
         )
 
     try:
-        result = metadata.finalize_track(
-            file_path=resolved_path,
-            root_folder=root_folder,
-            target_format=request.target_format,
-        )
+        async with _apply_rules_semaphore:
+            result = await loop.run_in_executor(
+                None,
+                metadata.apply_rules,
+                resolved_path,
+                root_folder,
+            )
     except Exception as e:
-        logger.exception("Finalization failed")
+        logger.exception("Apply rules failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Finalization failed: {e}",
+            detail=f"Apply rules failed: {e}",
         ) from e
 
     # Remove the old file from cache (it's been moved/converted)
     cache_db.delete_track(resolved_path)
 
-    return FinalizeResponse(
+    return ApplyRulesResponse(
         success=result["success"],
         message=result["message"],
         new_file_path=result["output_path"],
