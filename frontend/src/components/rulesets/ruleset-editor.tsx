@@ -594,8 +594,8 @@ function RequiredAttributesPicker({
     <div className="flex flex-col gap-1.5">
       <Label className="text-sm">Required attributes</Label>
       <p className="text-muted-foreground text-xs">
-        Tracks missing any of these can&apos;t be finalized with this ruleset.
-        The Apply Rules button will list what&apos;s missing.
+        Tracks missing any of these can&apos;t have this ruleset applied. The
+        Apply Rules button will list what&apos;s missing.
       </p>
       <div className="flex flex-wrap gap-1.5 pt-0.5">
         {REQUIRED_ATTRIBUTES.map((attr) => {

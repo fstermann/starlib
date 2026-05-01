@@ -208,7 +208,7 @@ function getMissingAttributes(
   });
 }
 
-function canFinalizeItem(
+function canApplyRulesToItem(
   item: TrackBrowse,
   required: RequiredAttribute[],
 ): boolean {
@@ -681,9 +681,9 @@ export function CollectionTable({
   >;
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
-  // Disable batch Apply Rules while one is in flight (#375). Each finalize
-  // is a long ffmpeg job — re-firing the button stacks them.
-  const [finalizingBatch, setFinalizingBatch] = useState(false);
+  // Disable batch Apply Rules while one is in flight (#375). Each job is a
+  // long ffmpeg run — re-firing the button stacks them.
+  const [applyingBatch, setApplyingBatch] = useState(false);
   const [pulseRows, setPulseRows] = useState<Set<string>>(new Set());
   const pulseTimersRef = useRef<Map<string, number>>(new Map());
   const triggerSavePulse = useCallback((filePath: string) => {
@@ -1217,18 +1217,18 @@ export function CollectionTable({
     [items],
   );
 
-  const runFinalizeSelected = useCallback(
+  const runApplyRules = useCallback(
     async (paths: string[]) => {
       const toastId = toast.loading(
         `Applying rules to ${paths.length} track${paths.length !== 1 ? "s" : ""}…`,
       );
-      setFinalizingBatch(true);
+      setApplyingBatch(true);
       let succeeded = 0;
       let failed = 0;
       try {
         for (const fp of paths) {
           try {
-            await api.finalizeTrack(fp, {});
+            await api.applyRules(fp);
             succeeded++;
           } catch {
             failed++;
@@ -1246,7 +1246,7 @@ export function CollectionTable({
         }
         onEditSaved?.();
       } finally {
-        setFinalizingBatch(false);
+        setApplyingBatch(false);
       }
     },
     [onEditSaved],
@@ -1254,7 +1254,7 @@ export function CollectionTable({
 
   /** For a candidate track, determine if it has a resolvable ruleset and
    * whether all required attributes are satisfied under THAT ruleset. */
-  const isTrackFinalizable = useCallback(
+  const resolveApplyRulesEligibility = useCallback(
     (item: TrackBrowse): { ruleset: Ruleset | null; eligible: boolean } => {
       const rs =
         resolveRulesetForFile(item.file_path, folderRulesets, rulesets) ??
@@ -1263,20 +1263,20 @@ export function CollectionTable({
       if (!rs || rs.rules.length === 0) return { ruleset: rs, eligible: false };
       return {
         ruleset: rs,
-        eligible: canFinalizeItem(item, rs.required_attributes),
+        eligible: canApplyRulesToItem(item, rs.required_attributes),
       };
     },
     [folderRulesets, rulesets, activeRuleset],
   );
 
-  const handleFinalizeSelected = useCallback(() => {
+  const handleApplyRulesToSelected = useCallback(() => {
     const candidates =
       selectedPaths.size > 0
         ? items.filter((i) => selectedPaths.has(i.file_path))
         : items;
     const resolved = candidates.map((i) => ({
       item: i,
-      ...isTrackFinalizable(i),
+      ...resolveApplyRulesEligibility(i),
     }));
     const eligible = resolved.filter((r) => r.eligible);
     const skipped = candidates.length - eligible.length;
@@ -1312,19 +1312,19 @@ export function CollectionTable({
           </>
         ),
         onConfirm: () => {
-          void runFinalizeSelected(paths);
+          void runApplyRules(paths);
         },
       });
       return;
     }
-    void runFinalizeSelected(paths);
-  }, [selectedPaths, items, isTrackFinalizable, runFinalizeSelected]);
+    void runApplyRules(paths);
+  }, [selectedPaths, items, resolveApplyRulesEligibility, runApplyRules]);
 
-  const finalizeEligibleCount = (
+  const applyRulesEligibleCount = (
     selectedPaths.size > 0
       ? items.filter((i) => selectedPaths.has(i.file_path))
       : items
-  ).filter((i) => isTrackFinalizable(i).eligible).length;
+  ).filter((i) => resolveApplyRulesEligibility(i).eligible).length;
 
   const virtualItems = virtualizer.getVirtualItems();
   const allChangedPaths = new Set([
@@ -1468,23 +1468,23 @@ export function CollectionTable({
                   size="sm"
                   className={cn(
                     "h-7 gap-1.5 @max-[760px]/toolbar:gap-0 @max-[760px]/toolbar:px-2",
-                    finalizeEligibleCount > 0
+                    applyRulesEligibleCount > 0
                       ? "text-primary hover:bg-primary/10 hover:text-primary"
                       : "text-muted-foreground",
                   )}
-                  disabled={finalizeEligibleCount === 0 || finalizingBatch}
-                  data-finalizing={finalizingBatch ? "true" : undefined}
-                  onClick={handleFinalizeSelected}
+                  disabled={applyRulesEligibleCount === 0 || applyingBatch}
+                  data-applying={applyingBatch ? "true" : undefined}
+                  onClick={handleApplyRulesToSelected}
                 >
-                  {finalizingBatch ? (
+                  {applyingBatch ? (
                     <Loader2 className="size-3.5 animate-spin" />
                   ) : (
                     <Workflow className="size-3.5" />
                   )}
                   <span className="max-w-[140px] overflow-hidden whitespace-nowrap opacity-100 @max-[760px]/toolbar:max-w-0 @max-[760px]/toolbar:opacity-0">
-                    {finalizingBatch ? "Applying…" : "Apply rules"}
-                    {!finalizingBatch && finalizeEligibleCount > 0
-                      ? ` (${finalizeEligibleCount})`
+                    {applyingBatch ? "Applying…" : "Apply rules"}
+                    {!applyingBatch && applyRulesEligibleCount > 0
+                      ? ` (${applyRulesEligibleCount})`
                       : ""}
                   </span>
                 </Button>
@@ -1499,7 +1499,7 @@ export function CollectionTable({
                   <RulesetPreview ruleset={activeRuleset} />
                 ) : (
                   <div className="text-muted-foreground px-3 py-2 text-xs">
-                    Each track is finalized under the ruleset bound to its
+                    Each track has rules applied under the ruleset bound to its
                     folder.
                   </div>
                 )}

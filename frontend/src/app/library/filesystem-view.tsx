@@ -273,7 +273,7 @@ export function FilesystemView() {
   // Table refresh signal
   const [refreshToken, setRefreshToken] = useState(0);
 
-  // Reload the folder tree whenever something changes (save, finalize, etc.)
+  // Reload the folder tree whenever something changes (save, apply rules, etc.)
   // so folder track counts stay in sync.
   useEffect(() => {
     if (refreshToken === 0) return; // initial mount already loads the tree

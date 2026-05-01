@@ -1,9 +1,9 @@
 import { expect, test } from "./fixtures";
 
-// #375: while a Finalize call is in flight, Apply Rules must disable + show
-// a spinner so the user gets feedback (the backend job is multi-second
+// #375: while an Apply Rules call is in flight, the button must disable +
+// show a spinner so the user gets feedback (the backend job is multi-second
 // ffmpeg + file-move work). Without this they thought the app froze.
-test("Apply Rules shows a busy state while finalize is in flight", async ({
+test("Apply Rules shows a busy state while the request is in flight", async ({
   page,
 }) => {
   const filePath = "/music/test - track.mp3";
@@ -107,9 +107,9 @@ test("Apply Rules shows a busy state while finalize is in flight", async ({
     }),
   );
 
-  // Slow finalize endpoint — held open for ~600ms so we can observe the
+  // Slow apply-rules endpoint — held open for ~600ms so we can observe the
   // intermediate busy state.
-  await page.route(/\/api\/metadata\/files\/.+\/finalize/, async (route) => {
+  await page.route(/\/api\/metadata\/files\/.+\/apply-rules/, async (route) => {
     await new Promise((r) => setTimeout(r, 600));
     await route.fulfill({
       status: 200,
@@ -136,11 +136,11 @@ test("Apply Rules shows a busy state while finalize is in flight", async ({
   await applyBtn.waitFor({ state: "visible" });
   await expect(applyBtn).toBeEnabled();
 
-  // Click → button should immediately flip to busy: disabled + data-finalizing.
+  // Click → button should immediately flip to busy: disabled + data-applying.
   // Without the fix the button stayed enabled and the user could re-fire the
   // multi-second backend job, which read as "the whole app froze."
   await applyBtn.click();
   await expect(applyBtn).toBeDisabled();
-  await expect(applyBtn).toHaveAttribute("data-finalizing", "true");
+  await expect(applyBtn).toHaveAttribute("data-applying", "true");
   await expect(applyBtn).toContainText(/Applying/i);
 });

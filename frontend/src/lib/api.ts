@@ -100,7 +100,7 @@ export type TrackInfoUpdateRequest =
 
 export type OperationResponse = components["schemas"]["OperationResponse"];
 
-export type FinalizeResponse = components["schemas"]["FinalizeResponse"] & {
+export type ApplyRulesResponse = components["schemas"]["ApplyRulesResponse"] & {
   steps?: {
     id: string;
     type: RuleType;
@@ -328,18 +328,11 @@ export const api = {
     });
   },
 
-  async finalizeTrack(
-    filePath: string,
-    options: {
-      target_format?: "mp3" | "aiff";
-      quality?: number;
-      collection_folder?: string;
-    },
-  ): Promise<FinalizeResponse> {
+  async applyRules(filePath: string): Promise<ApplyRulesResponse> {
     const encoded = encodeURIComponent(filePath);
-    return fetchApi(`/api/metadata/files/${encoded}/finalize`, {
+    return fetchApi(`/api/metadata/files/${encoded}/apply-rules`, {
       method: "POST",
-      body: JSON.stringify(options),
+      body: JSON.stringify({}),
     });
   },
 

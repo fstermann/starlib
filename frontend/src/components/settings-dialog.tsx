@@ -572,10 +572,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <div className="flex flex-col gap-4">
                   <h2 className="text-base font-semibold">Folder rulesets</h2>
                   <p className="text-muted-foreground text-sm">
-                    Assign rulesets to specific folders. Tracks finalized from a
-                    folder with a bound ruleset will use that ruleset instead of
-                    the global default. You can also assign rulesets via
-                    right-click in the folder tree.
+                    Assign rulesets to specific folders. When you apply rules to
+                    a track in a folder with a bound ruleset, that ruleset is
+                    used instead of the global default. You can also assign
+                    rulesets via right-click in the folder tree.
                   </p>
 
                   <FolderRulesetAdder
@@ -669,9 +669,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <div className="flex flex-col gap-4">
                 <h2 className="text-base font-semibold">Rulesets</h2>
                 <p className="text-muted-foreground text-sm">
-                  A ruleset is a sequence of steps that run automatically when
-                  you finalize a track. Each step can convert, move, or copy the
-                  file — and can reference the output of an earlier step.
+                  A ruleset is a sequence of steps that run when you apply rules
+                  to a track. Each step can convert, move, or copy the file —
+                  and can reference the output of an earlier step.
                 </p>
                 <p className="text-muted-foreground text-xs">
                   Steps under <span className="font-medium">if converted</span>{" "}

@@ -94,7 +94,7 @@ export interface TrackEditorProps {
   onClose: () => void;
   /** Called after save to update the parent's selectedFile reference (may have new path). */
   onFileChange: (file: FileInfo) => void;
-  /** Called after finalize — selects the next track in the list. */
+  /** Called after Apply Rules — selects the next track in the list. */
   onSelectNext: (currentFilePath: string) => void;
   /** Shared pending field edits — lifted to the page so this editor and the
    * batch table stay in sync while typing. */
@@ -186,10 +186,10 @@ export function TrackEditor({
   // BPM detection state (Rust-side analysis via Tauri invoke)
   const [bpmAnalyzing, setBpmAnalyzing] = useState(false);
 
-  // Finalize is a long-running backend job (ffmpeg conversion + file moves).
-  // Track it so we can disable the Apply Rules button + sibling actions and
-  // show a spinner instead of letting users re-fire it. See #375.
-  const [finalizing, setFinalizing] = useState(false);
+  // Apply Rules is a long-running backend job (ffmpeg conversion + file moves).
+  // Track it so we can disable the button + sibling actions and show a spinner
+  // instead of letting users re-fire it. See #375.
+  const [applying, setApplying] = useState(false);
 
   // Active ruleset (shown in Apply Rules popover) — only set when the folder has one assigned
   const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
@@ -730,15 +730,14 @@ export function TrackEditor({
     }
   };
 
-  const handleFinalize = () => {
-    if (!trackInfo || finalizing) return;
-    const filePathToFinalize = trackInfo.file_path;
-    const trackName =
-      formData.title || selectedFile.file_name || filePathToFinalize;
+  const handleApplyRules = () => {
+    if (!trackInfo || applying) return;
+    const filePath = trackInfo.file_path;
+    const trackName = formData.title || selectedFile.file_name || filePath;
     const toastId = toast.loading(`Applying rules to "${trackName}"…`);
-    setFinalizing(true);
+    setApplying(true);
     api
-      .finalizeTrack(filePathToFinalize, {})
+      .applyRules(filePath)
       .then((result) => {
         const steps = result.steps ?? [];
         toast.success(
@@ -776,7 +775,7 @@ export function TrackEditor({
           </div>,
           { id: toastId },
         );
-        onSelectNext(filePathToFinalize);
+        onSelectNext(filePath);
         onTableRefresh();
       })
       .catch((err) => {
@@ -784,7 +783,7 @@ export function TrackEditor({
           err instanceof Error ? err.message : "Failed to apply rules";
         toast.error(message, { id: toastId, duration: Infinity });
       })
-      .finally(() => setFinalizing(false));
+      .finally(() => setApplying(false));
   };
 
   const handleDelete = () => {
@@ -2043,7 +2042,7 @@ export function TrackEditor({
             {/* Save */}
             <Button
               onClick={handleSave}
-              disabled={!hasChanges || loading || finalizing}
+              disabled={!hasChanges || loading || applying}
               variant="ghost"
               size="sm"
               className={cn(
@@ -2067,10 +2066,10 @@ export function TrackEditor({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      onClick={handleFinalize}
-                      disabled={loading || hasMissingRequired || finalizing}
+                      onClick={handleApplyRules}
+                      disabled={loading || hasMissingRequired || applying}
                       data-testid="apply-rules-button"
-                      data-finalizing={finalizing ? "true" : undefined}
+                      data-applying={applying ? "true" : undefined}
                       variant="ghost"
                       size="sm"
                       className={cn(
@@ -2080,12 +2079,12 @@ export function TrackEditor({
                           : "text-primary hover:bg-primary/10 hover:text-primary",
                       )}
                     >
-                      {finalizing ? (
+                      {applying ? (
                         <Loader2 className="size-3 animate-spin" />
                       ) : (
                         <Workflow className="size-3" />
                       )}
-                      {finalizing ? "Applying…" : "Apply rules"}
+                      {applying ? "Applying…" : "Apply rules"}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent
@@ -2094,7 +2093,7 @@ export function TrackEditor({
                     showArrow={false}
                     className="bg-popover text-popover-foreground max-w-64 border p-0"
                   >
-                    {finalizing ? (
+                    {applying ? (
                       <p className="px-3 py-2 text-xs">
                         Applying rules — file conversion runs in the background,
                         the rest of the app stays usable.
@@ -2114,7 +2113,7 @@ export function TrackEditor({
             <div className="flex-1" />
             <Button
               onClick={handleDelete}
-              disabled={loading || finalizing}
+              disabled={loading || applying}
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground hover:text-destructive"

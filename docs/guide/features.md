@@ -35,7 +35,7 @@ Edit ID3/AIFF tags on your local audio files and enrich them with data from Soun
 2. Search SoundCloud for the track (or let Starlib match it automatically).
 3. Review and edit the metadata fields.
 4. Click **Save** to write the tags to the file.
-5. When the track is ready (all required fields filled), click **Apply Rules** to finalize.
+5. When the track is ready (all required fields filled), click **Apply Rules** to run the active ruleset.
 
 #### Folder tree
 
@@ -131,7 +131,7 @@ Add a new binding from this panel, or directly from the folder tree (right-click
 
 #### Rulesets
 
-Under **Settings > Rulesets**, define how files are processed when you finalize a track. A ruleset is a sequence of steps that run in order.
+Under **Settings > Rulesets**, define how files are processed when you apply rules to a track. A ruleset is a sequence of steps that run in order.
 
 ![Ruleset settings](../assets/images/screenshots/settings-rulesets.png)
 
