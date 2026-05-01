@@ -2071,8 +2071,8 @@ export function TrackEditor({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
-                            onClick={handleFinalize}
-                            disabled={gate.disabled}
+                            onClick={gate.disabled ? undefined : handleFinalize}
+                            aria-disabled={gate.disabled || undefined}
                             data-testid="apply-rules-button"
                             data-gate-reason={gate.reason ?? ""}
                             variant="ghost"
@@ -2080,7 +2080,7 @@ export function TrackEditor({
                             className={cn(
                               "h-7 gap-1 text-xs",
                               gate.disabled
-                                ? "text-muted-foreground"
+                                ? "text-muted-foreground cursor-not-allowed opacity-50"
                                 : "text-primary hover:bg-primary/10 hover:text-primary",
                             )}
                           >
