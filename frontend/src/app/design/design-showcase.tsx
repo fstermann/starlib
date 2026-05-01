@@ -390,7 +390,7 @@ export function DesignShowcase() {
               </Button>
             </div>
             <p className="mt-2 text-[10px] text-[var(--text-muted)]">
-              Primary (brand) · Finalize (emerald) · Secondary (muted) ·
+              Primary (brand) · Apply rules (emerald) · Secondary (muted) ·
               Disabled primary (kept in slot, muted)
             </p>
           </SubSection>

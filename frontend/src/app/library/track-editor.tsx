@@ -98,7 +98,7 @@ export interface TrackEditorProps {
   onClose: () => void;
   /** Called after save to update the parent's selectedFile reference (may have new path). */
   onFileChange: (file: FileInfo) => void;
-  /** Called after finalize — selects the next track in the list. */
+  /** Called after Apply Rules — selects the next track in the list. */
   onSelectNext: (currentFilePath: string) => void;
   /** Shared pending field edits — lifted to the page so this editor and the
    * batch table stay in sync while typing. */
@@ -189,6 +189,11 @@ export function TrackEditor({
 
   // BPM detection state (Rust-side analysis via Tauri invoke)
   const [bpmAnalyzing, setBpmAnalyzing] = useState(false);
+
+  // Apply Rules is a long-running backend job (ffmpeg conversion + file moves).
+  // Track it so we can disable the button + sibling actions and show a spinner
+  // instead of letting users re-fire it. See #375.
+  const [applying, setApplying] = useState(false);
 
   // Active ruleset (shown in Apply Rules popover) — only set when the folder has one assigned
   const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
@@ -741,14 +746,14 @@ export function TrackEditor({
     }
   };
 
-  const handleFinalize = () => {
-    if (!trackInfo) return;
-    const filePathToFinalize = trackInfo.file_path;
-    const trackName =
-      formData.title || selectedFile.file_name || filePathToFinalize;
+  const handleApplyRules = () => {
+    if (!trackInfo || applying) return;
+    const filePath = trackInfo.file_path;
+    const trackName = formData.title || selectedFile.file_name || filePath;
     const toastId = toast.loading(`Applying rules to "${trackName}"…`);
+    setApplying(true);
     api
-      .finalizeTrack(filePathToFinalize, {})
+      .applyRules(filePath)
       .then((result) => {
         const steps = result.steps ?? [];
         toast.success(
@@ -786,14 +791,15 @@ export function TrackEditor({
           </div>,
           { id: toastId },
         );
-        onSelectNext(filePathToFinalize);
+        onSelectNext(filePath);
         onTableRefresh();
       })
       .catch((err) => {
         const message =
           err instanceof Error ? err.message : "Failed to apply rules";
         toast.error(message, { id: toastId, duration: Infinity });
-      });
+      })
+      .finally(() => setApplying(false));
   };
 
   const handleDelete = () => {
@@ -2086,7 +2092,7 @@ export function TrackEditor({
             {/* Save */}
             <Button
               onClick={handleSave}
-              disabled={!hasChanges || loading}
+              disabled={!hasChanges || loading || applying}
               variant="ghost"
               size="sm"
               className={cn(
@@ -2112,6 +2118,10 @@ export function TrackEditor({
                     hasUnsavedChanges: hasChanges,
                     hasMissingRequired,
                   });
+                  // `applying` is layered on top of the gate: the gate decides
+                  // whether the *next* click is allowed, `applying` blocks
+                  // re-firing while a request is in flight (#375).
+                  const blocked = gate.disabled || applying;
                   return (
                     <TooltipProvider
                       delayDuration={400}
@@ -2120,21 +2130,26 @@ export function TrackEditor({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
-                            onClick={gate.disabled ? undefined : handleFinalize}
-                            aria-disabled={gate.disabled || undefined}
+                            onClick={blocked ? undefined : handleApplyRules}
+                            aria-disabled={blocked || undefined}
                             data-testid="apply-rules-button"
+                            data-applying={applying ? "true" : undefined}
                             data-gate-reason={gate.reason ?? ""}
                             variant="ghost"
                             size="sm"
                             className={cn(
                               "h-7 gap-1 text-xs",
-                              gate.disabled
+                              blocked
                                 ? "text-muted-foreground cursor-not-allowed opacity-50"
                                 : "text-primary hover:bg-primary/10 hover:text-primary",
                             )}
                           >
-                            <Workflow className="size-3" />
-                            Apply rules
+                            {applying ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              <Workflow className="size-3" />
+                            )}
+                            {applying ? "Applying…" : "Apply rules"}
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent
@@ -2143,7 +2158,12 @@ export function TrackEditor({
                           showArrow={false}
                           className="bg-popover text-popover-foreground max-w-64 border p-0"
                         >
-                          {gate.reason === "unsaved" ? (
+                          {applying ? (
+                            <p className="px-3 py-2 text-xs">
+                              Applying rules — file conversion runs in the
+                              background, the rest of the app stays usable.
+                            </p>
+                          ) : gate.reason === "unsaved" ? (
                             <p className="px-3 py-2 text-xs">
                               Save your changes before applying rules.
                             </p>
@@ -2166,7 +2186,7 @@ export function TrackEditor({
             <div className="flex-1" />
             <Button
               onClick={handleDelete}
-              disabled={loading}
+              disabled={loading || applying}
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground hover:text-destructive"

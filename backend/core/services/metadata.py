@@ -11,7 +11,7 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -145,16 +145,16 @@ def save_track_metadata(
     return handler.rename(track_info.filename)
 
 
-def finalize_track(
+def apply_rules(
     file_path: Path,
     root_folder: Path,
-    target_format: Literal["mp3", "aiff"] | None = None,
 ) -> dict[str, str | bool]:
-    """Finalize a track using the active ruleset.
+    """Apply the active ruleset to a track.
 
-    The active ruleset defines the ordered sequence of operations (convert,
-    archive, move).  ``target_format`` is accepted for backward-compatibility
-    but is ignored when the ruleset already contains a convert rule.
+    The ruleset defines the ordered sequence of operations (convert, copy,
+    move) executed against the file.  Resolution walks the file's parent
+    folder ancestors for any folder-bound ruleset and falls back to the
+    globally active one.
 
     Parameters
     ----------
@@ -162,8 +162,6 @@ def finalize_track(
         Path to the audio file
     root_folder : Path
         Root folder for the music library
-    target_format : str | None
-        Ignored — kept for API compatibility.
 
     Returns
     -------
@@ -248,7 +246,7 @@ def get_track_info(file_path: Path, root_folder: Path) -> TrackInfo:
 
 def check_file_readiness(file_path: Path, root_folder: Path) -> dict[str, bool | list[str] | int]:
     """
-    Check if a file is ready for finalization.
+    Check if a file is ready for rule application.
 
     A file is ready when:
     - Metadata is complete (title, artist, genre, release_date, artwork)
