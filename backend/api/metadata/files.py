@@ -1,5 +1,6 @@
 """File and folder operations for the Meta Editor."""
 
+import asyncio
 import base64
 import logging
 from datetime import date
@@ -34,6 +35,10 @@ from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, TrackHandler, Trac
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Bound concurrent finalize jobs so a stack of Apply Rules clicks can't
+# spawn unbounded ffmpeg conversions in parallel.
+_finalize_semaphore = asyncio.Semaphore(2)
 
 
 def _row_value(row, key, default=None):
@@ -667,12 +672,17 @@ def check_file_readiness(
 
 
 @router.post("/files/{file_path:path}/finalize", response_model=FinalizeResponse)
-def finalize_file(
+async def finalize_file(
     file_path: str,
     request: FinalizeRequest,
     root_folder: Annotated[Path, Depends(get_root_folder)],
 ) -> FinalizeResponse:
     """Finalize a track: convert format and move to collection.
+
+    Runs ffmpeg conversion + file moves in asyncio's default executor rather
+    than the FastAPI sync-endpoint threadpool, so long conversions do not
+    starve other request handlers.  Concurrent finalize jobs are capped via
+    a semaphore.
 
     Parameters
     ----------
@@ -694,9 +704,10 @@ def finalize_file(
         If file not ready or finalization fails
     """
     resolved_path = validate_file_path(file_path, root_folder)
+    loop = asyncio.get_event_loop()
 
     try:
-        readiness = metadata.check_file_readiness(resolved_path, root_folder)
+        readiness = await loop.run_in_executor(None, metadata.check_file_readiness, resolved_path, root_folder)
     except Exception as e:
         logger.exception("Failed to check readiness")
         raise HTTPException(
@@ -716,11 +727,14 @@ def finalize_file(
         )
 
     try:
-        result = metadata.finalize_track(
-            file_path=resolved_path,
-            root_folder=root_folder,
-            target_format=request.target_format,
-        )
+        async with _finalize_semaphore:
+            result = await loop.run_in_executor(
+                None,
+                metadata.finalize_track,
+                resolved_path,
+                root_folder,
+                request.target_format,
+            )
     except Exception as e:
         logger.exception("Finalization failed")
         raise HTTPException(
