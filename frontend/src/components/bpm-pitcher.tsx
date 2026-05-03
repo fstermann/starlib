@@ -202,25 +202,22 @@ export function BpmPitcher() {
             type="button"
             data-testid="bpm-pitcher-trigger"
             className={cn(
-              "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs tabular-nums transition-colors",
+              "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex h-10 cursor-pointer flex-col items-center justify-center rounded-md px-2 leading-none tabular-nums transition-colors",
               pitchEnabled && "text-primary hover:text-primary",
             )}
             title="Target BPM"
             aria-label="Target BPM pitcher"
           >
-            <Gauge className="size-3.5" />
-            <span className="font-medium">{bpmLabel}</span>
-            <span className="text-2xs opacity-70">BPM</span>
+            <span className="flex items-baseline gap-1">
+              <span className="text-xs font-medium">{bpmLabel}</span>
+              <span className="text-2xs opacity-70">BPM</span>
+            </span>
             {pitchEnabled && currentBpm != null && (
               <span
                 data-testid="bpm-pitcher-rate-badge"
                 className={cn(
-                  "text-2xs ml-0.5 rounded px-1 py-0.5 tabular-nums",
-                  ratePercent === 0
-                    ? "bg-surface-3"
-                    : ratePercent > 0
-                      ? "bg-primary/15 text-primary"
-                      : "bg-primary/15 text-primary",
+                  "text-2xs mt-0.5 tabular-nums",
+                  ratePercent === 0 ? "opacity-60" : "text-primary",
                 )}
               >
                 {ratePercent > 0 ? "+" : ""}
