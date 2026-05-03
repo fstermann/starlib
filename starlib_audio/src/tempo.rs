@@ -1,15 +1,14 @@
 //! Tempo (BPM) detection via spectral-flux onset envelope + autocorrelation.
 //!
-//! Ported from the `bpm_bench_rs` prototype. Adds parabolic peak
-//! interpolation on the autocorrelation lag so the estimate isn't quantised
-//! to integer-lag BPMs, and returns a confidence bucket derived from peak
-//! sharpness.
+//! Includes parabolic peak interpolation on the autocorrelation lag so the
+//! estimate isn't quantised to integer-lag BPMs, and returns a confidence
+//! bucket derived from peak sharpness.
 
 use anyhow::{anyhow, Result};
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
 
-use super::types::{BpmError, BpmOptions, BpmResult, Confidence, ALGORITHM_VERSION};
+use crate::types::{BpmError, BpmOptions, BpmResult, Confidence, ALGORITHM_VERSION};
 
 /// Combine multiple single-shot BPM results into one consensus estimate.
 ///
@@ -37,9 +36,6 @@ pub fn consensus(results: &[BpmResult]) -> Result<BpmResult> {
         Confidence::Low
     };
 
-    // Consensus doesn't "correct" itself — correction already happened per
-    // window. Expose any pre-correction median for debugging if every run
-    // carries a corrected_from value.
     let corrected_from = if results.iter().all(|r| r.corrected_from.is_some()) {
         let mut pre: Vec<f32> = results.iter().map(|r| r.corrected_from.unwrap()).collect();
         pre.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -99,12 +95,10 @@ pub fn analyze(samples: &[f32], sr: u32, options: &BpmOptions) -> Result<BpmResu
 /// Spectral-flux onset envelope: STFT magnitude differences (positive only),
 /// mean-subtracted and half-wave rectified.
 ///
-/// The 2048-sample window / 512-sample hop combo is the usual MIR default:
-/// at the pipeline's target sample rate of 22050 Hz this gives ~93 ms frames
-/// with ~23 ms steps (43 Hz frame rate) — fine-grained enough to catch
-/// percussive onsets while keeping FFT cost low. If `BpmOptions::target_sr`
-/// changes, revisit these constants.
-fn spectral_flux_onset(samples: &[f32]) -> Result<Vec<f32>> {
+/// 2048-sample window / 512-sample hop at the pipeline's target sample rate
+/// of 22050 Hz gives ~93 ms frames with ~23 ms steps (43 Hz frame rate) —
+/// fine-grained enough to catch percussive onsets while keeping FFT cost low.
+pub(crate) fn spectral_flux_onset(samples: &[f32]) -> Result<Vec<f32>> {
     let win = 2048usize;
     let hop = 512usize;
 
@@ -180,8 +174,6 @@ fn autocorrelate_bpm(onset: &[f32], sr: u32, options: &BpmOptions) -> Result<(f3
         .into());
     }
 
-    // Classic autocorrelation. We need lags [min_lag - 1, max_lag + 1]
-    // available so parabolic interpolation has neighbours.
     let lo = min_lag - 1;
     let hi = (max_lag + 1).min(n - 1);
     let mut acorr = vec![0.0f32; hi + 1];
@@ -193,7 +185,6 @@ fn autocorrelate_bpm(onset: &[f32], sr: u32, options: &BpmOptions) -> Result<(f3
         acorr[lag] = s;
     }
 
-    // Find best integer lag in [min_lag, max_lag].
     let mut best_lag = min_lag;
     let mut best_score = f32::NEG_INFINITY;
     for (lag, &score) in acorr.iter().enumerate().take(max_lag + 1).skip(min_lag) {
@@ -203,7 +194,6 @@ fn autocorrelate_bpm(onset: &[f32], sr: u32, options: &BpmOptions) -> Result<(f3
         }
     }
 
-    // Parabolic peak interpolation around best_lag.
     let offset = parabolic_offset(acorr[best_lag - 1], acorr[best_lag], acorr[best_lag + 1]);
     let refined_lag = best_lag as f32 + offset;
 
@@ -213,7 +203,6 @@ fn autocorrelate_bpm(onset: &[f32], sr: u32, options: &BpmOptions) -> Result<(f3
         0.0
     };
 
-    // Peak sharpness: best score / median of acorr in the search range.
     let mut search: Vec<f32> = acorr[min_lag..=max_lag].to_vec();
     search.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let median = search[search.len() / 2].max(1e-9);
@@ -231,7 +220,6 @@ pub(crate) fn parabolic_offset(y0: f32, y1: f32, y2: f32) -> f32 {
         return 0.0;
     }
     let off = 0.5 * (y0 - y2) / denom;
-    // Guard pathological cases where the three points aren't a concave peak.
     if !off.is_finite() || off.abs() > 1.0 {
         0.0
     } else {
@@ -259,15 +247,12 @@ mod tests {
 
     #[test]
     fn parabolic_interpolation_symmetric_peak() {
-        // Symmetric parabola centred on y1 → offset ~ 0.
         let off = parabolic_offset(1.0, 2.0, 1.0);
         assert!(off.abs() < 1e-6, "offset={off}");
     }
 
     #[test]
     fn parabolic_interpolation_shifted_peak() {
-        // Construct y = -(x - 0.25)^2 + 1 sampled at x = -1, 0, 1.
-        // Peak is at x = 0.25, so interpolation should return ~0.25.
         let f = |x: f32| -(x - 0.25).powi(2) + 1.0;
         let off = parabolic_offset(f(-1.0), f(0.0), f(1.0));
         assert!((off - 0.25).abs() < 1e-4, "offset={off}");
@@ -275,7 +260,6 @@ mod tests {
 
     #[test]
     fn parabolic_interpolation_zero_denominator() {
-        // Flat line → denominator zero → offset 0.
         let off = parabolic_offset(1.0, 1.0, 1.0);
         assert_eq!(off, 0.0);
     }
@@ -319,20 +303,16 @@ mod tests {
 
     #[test]
     fn consensus_moderate_spread_is_medium() {
-        let c = consensus(&[result(125.0), result(128.0), max_dev_helper()]).unwrap();
+        let c = consensus(&[result(125.0), result(128.0), result(132.0)]).unwrap();
         assert_eq!(c.bpm, 128.0);
         assert_eq!(c.confidence, Confidence::Medium);
-    }
-
-    fn max_dev_helper() -> BpmResult {
-        result(132.0) // 4 BPM from median 128 → Medium (≤5)
     }
 
     #[test]
     fn consensus_wide_spread_is_low() {
         let c = consensus(&[result(120.0), result(128.0), result(140.0)]).unwrap();
         assert_eq!(c.bpm, 128.0);
-        assert_eq!(c.confidence, Confidence::Low); // 12 BPM from median
+        assert_eq!(c.confidence, Confidence::Low);
     }
 
     #[test]

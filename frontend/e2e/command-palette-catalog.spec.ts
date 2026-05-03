@@ -28,10 +28,15 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   // Nav / Go to
   "nav:/library",
   "nav:/weekly",
+  "nav:/analyser",
   "nav:/library?source=filesystem",
   "nav:/library?source=soundcloud&tab=me",
   "nav:/library?source=soundcloud&tab=discover",
   "nav:/library?source=soundcloud&tab=search",
+  // Analyser feature commands
+  "analyser.paste-url",
+  "analyser.reanalyse-selection",
+  "analyser.export-tracklist",
 ]);
 
 /** Allowed ID prefixes for dynamic providers (folder shortcuts, search hits). */
