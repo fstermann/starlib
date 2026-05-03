@@ -610,6 +610,18 @@ def insert_track(
     return _row_to_track(row)
 
 
+def count_tracks(job_id: str, *, include_dismissed: bool = False) -> int:
+    """Count tracks for a job without materialising rows."""
+    from sqlalchemy import func
+
+    table = AnalyserTrack.__table__
+    stmt = select(func.count()).select_from(table).where(table.c.job_id == job_id)
+    if not include_dismissed:
+        stmt = stmt.where(table.c.dismissed == False)  # noqa: E712
+    with get_engine().begin() as conn:
+        return int(conn.execute(stmt).scalar() or 0)
+
+
 def list_tracks(job_id: str, *, include_dismissed: bool = False) -> list[TrackRow]:
     table = AnalyserTrack.__table__
     stmt = select(*_TRACK_COLS).where(table.c.job_id == job_id)
@@ -644,9 +656,7 @@ def get_track_by_shazam_id(job_id: str, shazam_id: str) -> TrackRow | None:
     table = AnalyserTrack.__table__
     with get_engine().begin() as conn:
         row = conn.execute(
-            select(*_TRACK_COLS)
-            .where(table.c.job_id == job_id)
-            .where(table.c.shazam_id == shazam_id)
+            select(*_TRACK_COLS).where(table.c.job_id == job_id).where(table.c.shazam_id == shazam_id)
         ).first()
     return None if row is None else _row_to_track(row)
 
@@ -707,10 +717,7 @@ def update_track(
     table = AnalyserTrack.__table__
     with get_engine().begin() as conn:
         result = conn.execute(
-            table.update()
-            .where(table.c.job_id == job_id)
-            .where(table.c.id == track_id)
-            .values(**values)
+            table.update().where(table.c.job_id == job_id).where(table.c.id == track_id).values(**values)
         )
     return (result.rowcount or 0) > 0
 
@@ -724,11 +731,7 @@ def delete_track(job_id: str, track_id: int) -> bool:
     """
     table = AnalyserTrack.__table__
     with get_engine().begin() as conn:
-        result = conn.execute(
-            delete(table)
-            .where(table.c.job_id == job_id)
-            .where(table.c.id == track_id)
-        )
+        result = conn.execute(delete(table).where(table.c.job_id == job_id).where(table.c.id == track_id))
     return (result.rowcount or 0) > 0
 
 
@@ -749,9 +752,7 @@ def delete_job(job_id: str) -> bool:
         conn.execute(delete(AnalyserSection.__table__).where(AnalyserSection.__table__.c.job_id == job_id))
         conn.execute(delete(AnalyserShazamScan.__table__).where(AnalyserShazamScan.__table__.c.job_id == job_id))
         conn.execute(delete(AnalyserTrack.__table__).where(AnalyserTrack.__table__.c.job_id == job_id))
-        result = conn.execute(
-            delete(AnalyserJob.__table__).where(AnalyserJob.__table__.c.id == job_id)
-        )
+        result = conn.execute(delete(AnalyserJob.__table__).where(AnalyserJob.__table__.c.id == job_id))
     return (result.rowcount or 0) > 0
 
 

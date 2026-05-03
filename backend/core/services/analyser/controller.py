@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
@@ -158,7 +159,12 @@ class _JobState:
 
 
 _jobs: dict[str, _JobState] = {}
-_jobs_lock = asyncio.Lock()
+# ``threading.Lock`` (not ``asyncio.Lock``) so sync FastAPI endpoints —
+# which run in a worker threadpool — can hold the same lock as the event-
+# loop tasks that mutate ``_jobs`` and per-state listener lists. We never
+# hold this lock across an ``await``; every protected section is O(1)
+# dict / list mutation.
+_jobs_lock = threading.Lock()
 
 # Holds strong refs to fire-and-forget pipeline tasks so the GC doesn't
 # reap them while they're still streaming events to listeners.
@@ -169,24 +175,37 @@ class JobNotFoundError(LookupError):
     """Raised when a job_id has no in-memory state and isn't in the DB."""
 
 
-async def _get_state(job_id: str) -> _JobState:
-    async with _jobs_lock:
+def _get_state(job_id: str) -> _JobState:
+    with _jobs_lock:
         state = _jobs.get(job_id)
     if state is None:
         raise JobNotFoundError(f"job {job_id} not found")
     return state
 
 
-async def _put_state(state: _JobState) -> None:
-    async with _jobs_lock:
+def _put_state(state: _JobState) -> None:
+    with _jobs_lock:
         _jobs[state.job_id] = state
 
 
-async def _maybe_remove_state(job_id: str) -> None:
-    async with _jobs_lock:
+def _maybe_remove_state(job_id: str) -> None:
+    with _jobs_lock:
         state = _jobs.get(job_id)
         if state and state.finished and not state.listeners:
             _jobs.pop(job_id, None)
+
+
+def _add_listener(state: _JobState, queue: asyncio.Queue[AnalyserEvent | None]) -> None:
+    with _jobs_lock:
+        state.listeners.append(queue)
+
+
+def _remove_listener(state: _JobState, queue: asyncio.Queue[AnalyserEvent | None]) -> None:
+    with _jobs_lock:
+        try:
+            state.listeners.remove(queue)
+        except ValueError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -196,17 +215,21 @@ async def _maybe_remove_state(job_id: str) -> None:
 
 async def _broadcast(state: _JobState, event: AnalyserEvent) -> None:
     """Send event to every active listener. Drops listeners whose queue is full."""
+    with _jobs_lock:
+        listeners = list(state.listeners)
     dead: list[asyncio.Queue[AnalyserEvent | None]] = []
-    for queue in state.listeners:
+    for queue in listeners:
         try:
             queue.put_nowait(event)
         except asyncio.QueueFull:
             dead.append(queue)
-    for queue in dead:
-        try:
-            state.listeners.remove(queue)
-        except ValueError:
-            pass
+    if dead:
+        with _jobs_lock:
+            for queue in dead:
+                try:
+                    state.listeners.remove(queue)
+                except ValueError:
+                    pass
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +264,7 @@ async def start_job(
         options=options.model_dump(),
     )
     state = _JobState(job_id=job_id, options=options)
-    await _put_state(state)
+    _put_state(state)
     task = asyncio.create_task(
         _run_full_job(
             state,
@@ -346,7 +369,7 @@ async def subscribe_to_job(job_id: str) -> AsyncIterator[AnalyserEvent]:
         return
 
     queue: asyncio.Queue[AnalyserEvent | None] = asyncio.Queue(maxsize=1024)
-    state.listeners.append(queue)
+    _add_listener(state, queue)
 
     # Replay persisted state so a late subscriber can render the timeline
     # without waiting for the next live event.
@@ -362,11 +385,8 @@ async def subscribe_to_job(job_id: str) -> AsyncIterator[AnalyserEvent]:
             if isinstance(queued, (JobCompleteEvent, JobErrorEvent)):
                 return
     finally:
-        try:
-            state.listeners.remove(queue)
-        except ValueError:
-            pass
-        await _maybe_remove_state(job_id)
+        _remove_listener(state, queue)
+        _maybe_remove_state(job_id)
 
 
 def get_job_snapshot(job_id: str) -> dict | None:
@@ -437,8 +457,11 @@ def _materialised_tracks(job_id: str) -> list[db.TrackRow]:
 def recent_jobs(limit: int = 25) -> list[dict]:
     out: list[dict] = []
     for j in db.list_recent_jobs(limit=limit):
-        # Count from the materialised tracklist (excludes dismissed rows).
-        track_count = len(_materialised_tracks(j.id))
+        # Count straight from the materialised tracks table — the list
+        # endpoint must not write. Jobs whose Shazam scans haven't been
+        # materialised yet show 0 until the user opens them (the snapshot
+        # path runs the lazy backfill).
+        track_count = db.count_tracks(j.id)
         out.append(
             {
                 "id": j.id,
@@ -460,13 +483,14 @@ def delete_job(job_id: str) -> bool:
     Drops the in-memory state first so any in-flight subscriber stops
     receiving events from a row that's about to disappear from the DB.
     """
-    state = _jobs.pop(job_id, None)
-    if state is not None:
-        for queue in list(state.listeners):
-            try:
-                queue.put_nowait(None)
-            except asyncio.QueueFull:
-                pass
+    with _jobs_lock:
+        state = _jobs.pop(job_id, None)
+        listeners = list(state.listeners) if state is not None else []
+    for queue in listeners:
+        try:
+            queue.put_nowait(None)
+        except asyncio.QueueFull:
+            pass
     return db.delete_job(job_id)
 
 
@@ -522,7 +546,8 @@ def _maybe_revive_state(job_id: str, *, allow_finished: bool = False) -> _JobSta
     job. The default (``False``) preserves the subscribe path's contract
     of replaying from the DB once a job has reached a terminal state.
     """
-    state = _jobs.get(job_id)
+    with _jobs_lock:
+        state = _jobs.get(job_id)
     if state is not None:
         return state
     job = db.get_job(job_id)
@@ -537,7 +562,14 @@ def _maybe_revive_state(job_id: str, *, allow_finished: bool = False) -> _JobSta
         finished=False,
         duration_s=job.duration_s,
     )
-    _jobs[job_id] = revived
+    with _jobs_lock:
+        # Race: another caller may have revived first while we built ours.
+        # Stick with whichever landed first so listeners aren't split
+        # across two parallel state objects.
+        existing = _jobs.get(job_id)
+        if existing is not None:
+            return existing
+        _jobs[job_id] = revived
     return revived
 
 
@@ -742,7 +774,8 @@ def cancel_shazam_scan(job_id: str) -> bool:
     re-run later and the cache will short-circuit the points already
     processed.
     """
-    state = _jobs.get(job_id)
+    with _jobs_lock:
+        state = _jobs.get(job_id)
     if state is None:
         return False
     state.cancel_requested = True
@@ -1161,7 +1194,6 @@ class _TimelineRun:
     override_id: int | None = None
     soundcloud_id: int | None = None
     soundcloud_permalink_url: str | None = None
-    artwork_url: str | None = None
     duration_s: float | None = None
     # Representative pitch_offset (semitones) for the run — taken from
     # the highest-confidence scan in the run, since that's the offset
@@ -1309,17 +1341,11 @@ def sync_shazam_runs_to_tracks(job_id: str) -> int:
     return inserted
 
 
-def _median_bpm_in_range(
-    windows: list[db.WindowBpmRow], start_s: float, end_s: float
-) -> float | None:
+def _median_bpm_in_range(windows: list[db.WindowBpmRow], start_s: float, end_s: float) -> float | None:
     """Median BPM of windows overlapping ``[start_s, end_s]``. ``None`` if
     no usable window touches the range — keeps the column honestly empty
     rather than seeded with 0.0."""
-    hits = [
-        w.bpm
-        for w in windows
-        if w.bpm > 0 and w.start_s <= end_s and w.end_s >= start_s
-    ]
+    hits = [w.bpm for w in windows if w.bpm > 0 and w.start_s <= end_s and w.end_s >= start_s]
     if not hits:
         return None
     hits.sort()
@@ -1483,7 +1509,9 @@ async def _replay_finished_job(job_id: str) -> AsyncIterator[AnalyserEvent]:
 
 async def _finalise_job(state: _JobState) -> None:
     state.finished = True
-    for queue in list(state.listeners):
+    with _jobs_lock:
+        listeners = list(state.listeners)
+    for queue in listeners:
         try:
             queue.put_nowait(None)  # sentinel: subscribers exit
         except asyncio.QueueFull:

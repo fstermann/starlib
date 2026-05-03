@@ -316,7 +316,7 @@ async def shazam_scan(job_id: str, payload: ShazamScanRequest) -> dict:
     # Count confirmed tracks whose span overlaps the requested region — the
     # scheduler will skip those scan points; surfacing the count lets the
     # frontend flag "N confirmed tracks excluded".
-    region_tuple = tuple(payload.region) if payload.region is not None else None
+    region_tuple = payload.region
     excluded_confirmed = _count_confirmed_in_region(job_id, region_tuple)
 
     task = asyncio.create_task(
@@ -341,9 +341,7 @@ async def shazam_scan(job_id: str, payload: ShazamScanRequest) -> dict:
     }
 
 
-def _count_confirmed_in_region(
-    job_id: str, region: tuple[float, float] | None
-) -> int:
+def _count_confirmed_in_region(job_id: str, region: tuple[float, float] | None) -> int:
     """Confirmed tracks whose span overlaps the requested scan region.
 
     With ``region=None`` (whole-mix scan) every confirmed track is excluded.
@@ -403,11 +401,7 @@ class UpdateTrackRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate(self) -> UpdateTrackRequest:
-        if (
-            self.start_s is not None
-            and self.end_s is not None
-            and self.end_s <= self.start_s
-        ):
+        if self.start_s is not None and self.end_s is not None and self.end_s <= self.start_s:
             raise ValueError("end_s must be greater than start_s")
         return self
 
@@ -535,7 +529,8 @@ def reset_job(job_id: str) -> dict:
     analyser_db.reset_job_data(job_id)
     # Drop the in-memory job state so a resubscribe replays cleanly from
     # the now-empty DB instead of hanging on stale listener queues.
-    analyser_controller._jobs.pop(job_id, None)
+    with analyser_controller._jobs_lock:
+        analyser_controller._jobs.pop(job_id, None)
     return {"job_id": job_id, "reset": True}
 
 

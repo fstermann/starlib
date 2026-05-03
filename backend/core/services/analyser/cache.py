@@ -66,6 +66,7 @@ def _find_ffprobe() -> str:
     return "ffprobe"
 
 
+_PROBE_CACHE_MAX = 256
 _probe_cache: dict[tuple[str, float], int] = {}
 
 
@@ -114,6 +115,10 @@ async def _probe_sample_rate(path: Path) -> int:
                     rate = parsed
             except ValueError:
                 pass
+    if len(_probe_cache) >= _PROBE_CACHE_MAX:
+        # Bound memory growth in long-running processes; the cache is keyed
+        # by (path, mtime) so entries become useless after re-download.
+        _probe_cache.pop(next(iter(_probe_cache)))
     _probe_cache[key] = rate
     return rate
 

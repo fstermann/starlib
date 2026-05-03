@@ -131,15 +131,13 @@ class MissingShazamClient:
 class ShazamioClient:
     """Real `shazamio`_ client with retry + backoff.
 
-    The default ``max_attempts=1`` means we surface failures to the
-    caller immediately rather than retrying inside the call. The
-    analyser caches misses and the next scan run picks them up — so
-    in-call retries just compound latency for points the rate-limited
-    scheduler will revisit anyway. Use ``max_attempts>1`` only for
-    one-shot CLIs that don't have a higher-level retry loop.
+    Default ``max_attempts=3`` retries transient transport errors with
+    exponential backoff + full jitter. Set ``max_attempts=1`` to surface
+    failures to the caller immediately (e.g. when a higher-level retry
+    loop already owns the policy).
     """
 
-    def __init__(self, *, max_attempts: int = 1, base_backoff_s: float = 1.5) -> None:
+    def __init__(self, *, max_attempts: int = 3, base_backoff_s: float = 1.5) -> None:
         from shazamio import Shazam  # type: ignore[import-not-found]  # optional dep
 
         self._shazam = Shazam()
@@ -286,8 +284,13 @@ class RateLimitedClient:
     semaphore: asyncio.Semaphore
 
     async def match(self, audio_path: str) -> ShazamMatch | None:
-        await self.bucket.acquire()
+        # Acquire the concurrency slot first, then the rate-limit token.
+        # Reversing these would let tokens accumulate against calls
+        # waiting on a saturated semaphore, then drain in a burst when a
+        # slot frees — defeating the per-second cap exactly when slow
+        # responses make the cap matter most.
         async with self.semaphore:
+            await self.bucket.acquire()
             return await self.inner.match(audio_path)
 
 
