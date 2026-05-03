@@ -18,6 +18,8 @@ interface SoundcloudRowPlayButtonProps {
   permalinkUrl?: string;
   /** Track artwork URL. */
   artworkUrl?: string;
+  /** Known BPM for the track (cached or metadata) — seeds the pitcher. */
+  bpm?: number | null;
   className?: string;
   /** When provided, called instead of the button's default single-track
    * playback. Lets the parent install queue context before playback begins.
@@ -34,6 +36,7 @@ export function SoundcloudRowPlayButton({
   waveformUrl,
   permalinkUrl,
   artworkUrl,
+  bpm,
   className,
   onStartPlay,
 }: SoundcloudRowPlayButtonProps) {
@@ -66,6 +69,7 @@ export function SoundcloudRowPlayButton({
           streamRefreshKey: trackId,
           permalinkUrl,
           artworkUrl,
+          bpm: bpm ?? null,
         });
       }
     } catch (err) {

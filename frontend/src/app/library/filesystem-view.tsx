@@ -385,6 +385,7 @@ export function FilesystemView() {
       artist: Array.isArray(it.artist)
         ? it.artist.join(", ")
         : (it.artist ?? undefined),
+      bpm: it.bpm ?? null,
     }));
     player.playQueue(queue, idx);
     setPlayFilePath("");

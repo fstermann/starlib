@@ -25,6 +25,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "auth:disconnect",
   "sc:create-playlist-from-selection",
   "sc:reload",
+  "pitcher.toggle",
   // Nav / Go to
   "nav:/library",
   "nav:/weekly",

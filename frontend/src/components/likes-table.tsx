@@ -714,11 +714,12 @@ export function LikesTable({
           streamRefreshKey: id,
           permalinkUrl: t.permalink_url ?? undefined,
           artworkUrl: artworkUrl(t) ?? undefined,
+          bpm: bpmCache.get(id) ?? t.bpm ?? null,
         };
       });
       playQueue(queue, index);
     },
-    [sortedTracks, playQueue],
+    [sortedTracks, playQueue, bpmCache],
   );
 
   // Report the current visible order (after sort) to callers so they can save

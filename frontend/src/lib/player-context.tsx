@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -14,6 +15,9 @@ export interface PlayerTrack {
   fileName: string;
   title?: string;
   artist?: string;
+  /** BPM hint provided by the caller when known (local file tag, SC cache,
+   * or metadata). Seeds the pitcher's `currentBpm` on track load. */
+  bpm?: number | null;
   /** When set, WaveformPlayer loads this URL directly (local file path is
    * ignored for audio). `.m3u8` URLs are played via hls.js. Used for
    * SoundCloud HLS playback where there is no local file. */
@@ -66,7 +70,21 @@ interface PlayerContextValue {
   duration: number;
   /** Called by WaveformPlayer once the track is decoded. */
   reportDuration: (d: number) => void;
+  /** Detected/known BPM of the current track. Null when unknown. */
+  currentBpm: number | null;
+  /** Override the current track's BPM (e.g. after a manual or auto detect). */
+  setCurrentBpm: (bpm: number | null) => void;
+  /** Target BPM the pitcher pitches playback to. Persisted to localStorage. */
+  targetBpm: number;
+  setTargetBpm: (bpm: number) => void;
+  /** When true, playback is pitched to `targetBpm / currentBpm`. Persisted. */
+  pitchEnabled: boolean;
+  setPitchEnabled: (enabled: boolean) => void;
 }
+
+const PITCH_TARGET_KEY = "starlib.pitcher.targetBpm";
+const PITCH_ENABLED_KEY = "starlib.pitcher.enabled";
+const DEFAULT_TARGET_BPM = 124;
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
 
@@ -80,6 +98,42 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [queueIndex, setQueueIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [currentBpm, setCurrentBpmState] = useState<number | null>(null);
+  const [targetBpm, setTargetBpmState] = useState<number>(DEFAULT_TARGET_BPM);
+  const [pitchEnabled, setPitchEnabledState] = useState<boolean>(false);
+
+  // Hydrate pitcher prefs from localStorage. Done in an effect to keep SSR
+  // safe — the initial server render gets the defaults and the client
+  // upgrades on mount.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const rawTarget = window.localStorage.getItem(PITCH_TARGET_KEY);
+    if (rawTarget) {
+      const parsed = Number(rawTarget);
+      if (Number.isFinite(parsed) && parsed > 0) setTargetBpmState(parsed);
+    }
+    const rawEnabled = window.localStorage.getItem(PITCH_ENABLED_KEY);
+    if (rawEnabled === "1") setPitchEnabledState(true);
+  }, []);
+
+  const setTargetBpm = useCallback((bpm: number) => {
+    if (!Number.isFinite(bpm) || bpm <= 0) return;
+    setTargetBpmState(bpm);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(PITCH_TARGET_KEY, String(bpm));
+    }
+  }, []);
+
+  const setPitchEnabled = useCallback((enabled: boolean) => {
+    setPitchEnabledState(enabled);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(PITCH_ENABLED_KEY, enabled ? "1" : "0");
+    }
+  }, []);
+
+  const setCurrentBpm = useCallback((bpm: number | null) => {
+    setCurrentBpmState(bpm);
+  }, []);
 
   const queueRef = useRef<PlayerTrack[]>([]);
   const queueIndexRef = useRef(-1);
@@ -88,6 +142,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const seekFnRef = useRef<((ratio: number) => void) | null>(null);
 
   const currentTrack = queueIndex >= 0 ? (queue[queueIndex] ?? null) : null;
+
+  // Re-seed `currentBpm` whenever the loaded track changes. If the caller
+  // supplied a `bpm` hint on the PlayerTrack, use it; otherwise reset to
+  // unknown so the pitcher shows "Detect" / triggers auto-detect.
+  const trackKey = currentTrack?.filePath ?? null;
+  useEffect(() => {
+    setCurrentBpmState(currentTrack?.bpm ?? null);
+    // Only react to track identity, not full object; bpm hint is read from
+    // the latest currentTrack at the moment the track changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackKey]);
 
   const setQueueState = useCallback((tracks: PlayerTrack[], index: number) => {
     queueRef.current = tracks;
@@ -223,6 +288,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       registerSeek,
       duration,
       reportDuration,
+      currentBpm,
+      setCurrentBpm,
+      targetBpm,
+      setTargetBpm,
+      pitchEnabled,
+      setPitchEnabled,
     }),
     [
       currentTrack,
@@ -244,6 +315,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       registerSeek,
       duration,
       reportDuration,
+      currentBpm,
+      setCurrentBpm,
+      targetBpm,
+      setTargetBpm,
+      pitchEnabled,
+      setPitchEnabled,
     ],
   );
 

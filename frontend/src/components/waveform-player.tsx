@@ -6,6 +6,7 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type WaveSurferType from "wavesurfer.js";
 
+import { BpmPitcher, computePlaybackRate } from "@/components/bpm-pitcher";
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
 import {
@@ -72,6 +73,9 @@ export function WaveformPlayer() {
     reportProgress,
     registerSeek,
     reportDuration,
+    currentBpm,
+    targetBpm,
+    pitchEnabled,
   } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurferType | null>(null);
@@ -476,6 +480,19 @@ export function WaveformPlayer() {
     }
   }, [isPlaying, ready]);
 
+  // Apply BPM-pitcher playback rate. `playbackRate` resets to 1 whenever the
+  // audio element's `src` changes, so this effect re-fires after every track
+  // load via the `ready` dependency.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.playbackRate = computePlaybackRate(
+      pitchEnabled,
+      currentBpm,
+      targetBpm,
+    );
+  }, [pitchEnabled, currentBpm, targetBpm, ready]);
+
   // Prefetch the next queued track's stream URL + peaks as soon as the
   // current track is decoded. When the user skips, the caches are already
   // warm and only the HLS manifest + first-segment download remains.
@@ -759,6 +776,10 @@ export function WaveformPlayer() {
             <SkipForward className="size-4" />
           </button>
         </div>
+
+        {/* Target-BPM pitcher — displays current BPM and allows pitching
+          playback. Sits between transport and waveform. */}
+        <BpmPitcher />
 
         {errorMsg ? (
           <div
