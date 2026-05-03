@@ -5,6 +5,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useCommand } from "@/components/command-palette/use-command";
+import {
+  SC_BPM_UPDATED_EVENT,
+  type ScBpmUpdatedDetail,
+} from "@/components/soundcloud-batch-analyze-button";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -13,7 +17,9 @@ import {
 } from "@/components/ui/popover";
 import { api } from "@/lib/api";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
-import { analyzeLocalBpm, analyzeScBpm, isTauri } from "@/lib/tauri";
+import { analyzeSc, TrackUnanalysableError } from "@/lib/sc-bpm";
+import { markScUnplayable } from "@/lib/sc-unplayable";
+import { analyzeLocalBpm, isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 const PITCH_RATE_MIN = 0.5;
@@ -46,12 +52,19 @@ function getScTrackId(track: PlayerTrack): number | null {
 async function detectBpmForTrack(track: PlayerTrack): Promise<number | null> {
   const scId = getScTrackId(track);
   if (scId !== null) {
-    const { token } = await api.getSoundcloudClientToken();
-    const result = await analyzeScBpm(scId, token);
+    const result = await analyzeSc(scId);
+    const rounded = Math.round(result.bpm);
     await api.saveSoundcloudBpm(scId, result.bpm).catch(() => {
       /* Persisting to backend cache is best-effort. */
     });
-    return Math.round(result.bpm);
+    // Notify table cells (and any other listener) so the visible BPM
+    // updates without a full re-fetch of the bulk prefill.
+    window.dispatchEvent(
+      new CustomEvent<ScBpmUpdatedDetail>(SC_BPM_UPDATED_EVENT, {
+        detail: { trackId: scId, bpm: rounded },
+      }),
+    );
+    return rounded;
   }
   // Local file path.
   const result = await analyzeLocalBpm(track.filePath);
@@ -97,6 +110,14 @@ export function BpmPitcher() {
         toast.success(`Detected ${bpm} BPM`);
       })
       .catch((err) => {
+        if (err instanceof TrackUnanalysableError) {
+          // SoundCloud refused the stream URL. Auto-detect runs silently —
+          // no toast, the user didn't ask for this in the first place.
+          const scId = currentTrack ? getScTrackId(currentTrack) : null;
+          if (scId !== null) markScUnplayable(scId);
+          console.warn("[bpm-pitcher] auto-detect skipped:", err.message);
+          return;
+        }
         toast.error(
           `BPM detection failed: ${err instanceof Error ? err.message : String(err)}`,
         );
@@ -114,9 +135,17 @@ export function BpmPitcher() {
         toast.success(`Detected ${bpm} BPM`);
       }
     } catch (err) {
-      toast.error(
-        `BPM detection failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      // For a manual click the user is owed feedback either way — but soften
+      // the message when SoundCloud just refuses the track.
+      if (err instanceof TrackUnanalysableError) {
+        const scId = currentTrack ? getScTrackId(currentTrack) : null;
+        if (scId !== null) markScUnplayable(scId);
+        toast.warning(err.message);
+      } else {
+        toast.error(
+          `BPM detection failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     } finally {
       setDetecting(false);
     }
@@ -152,7 +181,17 @@ export function BpmPitcher() {
 
   const rate = computePlaybackRate(pitchEnabled, currentBpm, targetBpm);
   const ratePercent = (rate - 1) * 100;
-  const bpmLabel = currentBpm != null ? `${currentBpm}` : "—";
+  // When pitching is on, show the effective playback BPM (what you actually
+  // hear). The rate is clamped to [0.5, 2.0], so this isn't always equal to
+  // ``targetBpm`` — derive it from the rate so the readout stays honest.
+  const effectiveBpm =
+    pitchEnabled && currentBpm != null ? Math.round(currentBpm * rate) : null;
+  const bpmLabel =
+    effectiveBpm != null
+      ? `${effectiveBpm}`
+      : currentBpm != null
+        ? `${currentBpm}`
+        : "—";
   const tauri = isTauri();
 
   return (

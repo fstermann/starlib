@@ -1,11 +1,12 @@
 "use client";
 
-import { Loader2, Pause, Play } from "lucide-react";
+import { Ban, Loader2, Pause, Play } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
+import { useIsScUnplayable } from "@/lib/sc-unplayable";
 import { cn } from "@/lib/utils";
 
 interface SoundcloudRowPlayButtonProps {
@@ -42,6 +43,10 @@ export function SoundcloudRowPlayButton({
 }: SoundcloudRowPlayButtonProps) {
   const { currentTrack, isPlaying, play, toggle } = usePlayer();
   const [loading, setLoading] = useState(false);
+  const numericId = typeof trackId === "number" ? trackId : Number(trackId);
+  const unplayable = useIsScUnplayable(
+    Number.isFinite(numericId) ? numericId : null,
+  );
 
   const trackKey = `soundcloud:${trackId}`;
   const isCurrent = currentTrack?.filePath === trackKey;
@@ -77,6 +82,22 @@ export function SoundcloudRowPlayButton({
     } finally {
       setLoading(false);
     }
+  }
+
+  if (unplayable) {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        disabled
+        title="SoundCloud refused to stream this track"
+        aria-label="Track unavailable for playback"
+        className={cn("opacity-50", className)}
+      >
+        <Ban />
+      </Button>
+    );
   }
 
   return (

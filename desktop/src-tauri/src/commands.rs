@@ -118,6 +118,7 @@ pub async fn analyze_sc_bpm(
     Ok(to_response(result))
 }
 
+
 // ----- SoundCloud login window -----
 //
 // Opens SoundCloud's OAuth2 authorize URL inside an in-app WebviewWindow so
