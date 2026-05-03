@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  Ban,
   ChevronDown,
   ChevronsUpDown,
   ChevronUp,
@@ -51,6 +52,7 @@ import {
 import { api } from "@/lib/api";
 import type { ColumnDef } from "@/lib/columns/types";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
+import { useIsScUnplayable } from "@/lib/sc-unplayable";
 import type { SCTrack } from "@/lib/soundcloud";
 import {
   getCachedSoundcloudPeaks,
@@ -86,6 +88,31 @@ interface LikesCol {
   }) => React.ReactNode;
 }
 
+/** Small ban-circle next to the title when SC won't let us stream the
+ * track. Driven by two signals:
+ *  - ``track.streamable === false`` from SoundCloud's metadata (rare,
+ *    catches outright takedowns).
+ *  - The session-level "discovered unplayable" set, populated by the
+ *    player and BPM analyser when SC actually 403s. */
+function UnstreamableBadge({ track }: { track: SCTrack }) {
+  const trackId = extractId(track);
+  const sessionUnplayable = useIsScUnplayable(trackId);
+  const metadataUnstreamable = track.streamable === false;
+  if (!sessionUnplayable && !metadataUnstreamable) return null;
+  const reason = sessionUnplayable
+    ? "SoundCloud refused to stream this track"
+    : "Marked unstreamable by SoundCloud";
+  return (
+    <span
+      className="text-muted-foreground/70 inline-flex shrink-0 items-center"
+      title={reason}
+      aria-label={reason}
+    >
+      <Ban className="size-3" />
+    </span>
+  );
+}
+
 const LIKES_COLUMNS: LikesCol[] = [
   {
     id: "title",
@@ -96,6 +123,7 @@ const LIKES_COLUMNS: LikesCol[] = [
     cellClassName: "flex min-w-0 shrink-0 items-center gap-1.5",
     renderBody: ({ track, isExpanded, isNew }) => (
       <>
+        <UnstreamableBadge track={track} />
         <span
           className={`truncate text-xs leading-tight font-medium ${isExpanded ? "text-primary" : ""}`}
         >
@@ -714,11 +742,12 @@ export function LikesTable({
           streamRefreshKey: id,
           permalinkUrl: t.permalink_url ?? undefined,
           artworkUrl: artworkUrl(t) ?? undefined,
+          bpm: bpmCache.get(id) ?? t.bpm ?? null,
         };
       });
       playQueue(queue, index);
     },
-    [sortedTracks, playQueue],
+    [sortedTracks, playQueue, bpmCache],
   );
 
   // Report the current visible order (after sort) to callers so they can save

@@ -6,8 +6,10 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type WaveSurferType from "wavesurfer.js";
 
+import { BpmPitcher, computePlaybackRate } from "@/components/bpm-pitcher";
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
+import { markScUnplayable } from "@/lib/sc-unplayable";
 import {
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
@@ -72,6 +74,9 @@ export function WaveformPlayer() {
     reportProgress,
     registerSeek,
     reportDuration,
+    currentBpm,
+    targetBpm,
+    pitchEnabled,
   } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurferType | null>(null);
@@ -281,13 +286,20 @@ export function WaveformPlayer() {
           hls?.destroy();
           hls = attachAudioSource(audio, url, {
             onExpired: () => {
-              // Fresh URL also 403'd — likely an account/auth problem rather
-              // than expiry. Warn instead of error so the Next dev overlay
-              // stays quiet.
+              // Fresh URL also 403'd — this isn't expiry, it's SoundCloud
+              // refusing to stream the track to our app entirely (label
+              // upload, geo-restriction, owner-disabled streaming).
               console.warn(
-                "[player] refreshed HLS URL also returned 403; giving up",
+                "[player] refreshed HLS URL also returned 403; track restricted",
               );
-              setErrorMsg("Stream expired. Please try again.");
+              const sid =
+                typeof currentTrack!.streamRefreshKey === "number"
+                  ? currentTrack!.streamRefreshKey
+                  : Number(currentTrack!.streamRefreshKey);
+              if (Number.isFinite(sid) && sid > 0) markScUnplayable(sid);
+              setErrorMsg(
+                "This track isn't available for playback (SoundCloud restricted).",
+              );
             },
           });
         } catch (err) {
@@ -475,6 +487,23 @@ export function WaveformPlayer() {
       ws.pause();
     }
   }, [isPlaying, ready]);
+
+  // Apply BPM-pitcher playback rate. `playbackRate` resets to 1 whenever the
+  // audio element's `src` changes, so this effect re-fires after every track
+  // load via the `ready` dependency.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    // Couple pitch to rate (vinyl-style) — browsers default preservesPitch to
+    // true, which keeps the original pitch while changing tempo. For a DJ
+    // pitcher we want both to shift together.
+    audio.preservesPitch = false;
+    audio.playbackRate = computePlaybackRate(
+      pitchEnabled,
+      currentBpm,
+      targetBpm,
+    );
+  }, [pitchEnabled, currentBpm, targetBpm, ready]);
 
   // Prefetch the next queued track's stream URL + peaks as soon as the
   // current track is decoded. When the user skips, the caches are already
@@ -759,6 +788,10 @@ export function WaveformPlayer() {
             <SkipForward className="size-4" />
           </button>
         </div>
+
+        {/* Target-BPM pitcher — displays current BPM and allows pitching
+          playback. Sits between transport and waveform. */}
+        <BpmPitcher />
 
         {errorMsg ? (
           <div

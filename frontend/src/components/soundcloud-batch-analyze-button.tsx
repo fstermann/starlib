@@ -12,8 +12,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
+import { analyzeSc, TrackUnanalysableError } from "@/lib/sc-bpm";
 import type { SCTrack } from "@/lib/soundcloud";
-import { analyzeScBpm, isTauri } from "@/lib/tauri";
+import { isTauri } from "@/lib/tauri";
 import {
   useBatchBpmRunner,
   useConsensusPref,
@@ -96,31 +97,35 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
       return;
     }
 
-    let token: string;
-    try {
-      ({ token } = await api.getSoundcloudClientToken());
-    } catch (err) {
-      toast.error(
-        `Couldn't fetch SoundCloud token: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return;
-    }
-
+    let unanalysable = 0;
     const { completed, failures, cancelled } = await start(
       queue,
       async (trackId) => {
-        const result = await analyzeScBpm(trackId, token, consensus);
-        await api.saveSoundcloudBpm(trackId, result.bpm);
-        dispatchBpmUpdate(trackId, Math.round(result.bpm));
+        try {
+          const result = await analyzeSc(trackId, consensus);
+          await api.saveSoundcloudBpm(trackId, result.bpm);
+          dispatchBpmUpdate(trackId, Math.round(result.bpm));
+        } catch (err) {
+          // Tracks SC refuses to stream count as a clean skip, not a
+          // failure — they would never succeed no matter how many times
+          // we retried, so the summary should make that clear.
+          if (err instanceof TrackUnanalysableError) {
+            unanalysable += 1;
+            return;
+          }
+          throw err;
+        }
       },
     );
 
+    const succeeded = completed - failures - unanalysable;
     if (cancelled) {
       toast(`Cancelled after ${completed} track${completed === 1 ? "" : "s"}`);
-    } else if (failures > 0) {
-      toast.warning(
-        `Analyzed ${completed - failures}/${queue.length} — ${failures} failed`,
-      );
+    } else if (failures > 0 || unanalysable > 0) {
+      const parts = [`Analyzed ${succeeded}/${queue.length}`];
+      if (failures > 0) parts.push(`${failures} failed`);
+      if (unanalysable > 0) parts.push(`${unanalysable} unavailable`);
+      toast.warning(parts.join(" — "));
     } else {
       toast.success(`Analyzed ${completed} track${completed === 1 ? "" : "s"}`);
     }

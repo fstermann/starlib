@@ -893,6 +893,7 @@ export function CollectionTable({
       artist: Array.isArray(item.artist)
         ? item.artist.join(", ")
         : (item.artist ?? undefined),
+      bpm: item.bpm ?? null,
     });
     onSelect?.(item);
   }
@@ -905,6 +906,7 @@ export function CollectionTable({
       artist: Array.isArray(it.artist)
         ? it.artist.join(", ")
         : (it.artist ?? undefined),
+      bpm: it.bpm ?? null,
     }));
     playQueue(queue, index);
   }
