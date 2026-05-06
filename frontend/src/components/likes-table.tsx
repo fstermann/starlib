@@ -54,7 +54,6 @@ import { api } from "@/lib/api";
 import type { ColumnDef } from "@/lib/columns/types";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import type { SourceProfile } from "@/lib/profile-groups";
-import { useIsScUnplayable } from "@/lib/sc-unplayable";
 import type { SCTrack } from "@/lib/soundcloud";
 import {
   getCachedSoundcloudPeaks,
@@ -90,20 +89,13 @@ interface LikesCol {
   }) => React.ReactNode;
 }
 
-/** Small ban-circle next to the title when SC won't let us stream the
- * track. Driven by two signals:
- *  - ``track.streamable === false`` from SoundCloud's metadata (rare,
- *    catches outright takedowns).
- *  - The session-level "discovered unplayable" set, populated by the
- *    player and BPM analyser when SC actually 403s. */
+/** Small ban-circle next to the title when SC's metadata flags a track as
+ * unstreamable (rare; catches outright takedowns). The session-discovered
+ * unplayable case is already conveyed by the row's play-button switching
+ * to a Ban icon, so showing both there would double up. */
 function UnstreamableBadge({ track }: { track: SCTrack }) {
-  const trackId = extractId(track);
-  const sessionUnplayable = useIsScUnplayable(trackId);
-  const metadataUnstreamable = track.streamable === false;
-  if (!sessionUnplayable && !metadataUnstreamable) return null;
-  const reason = sessionUnplayable
-    ? "SoundCloud refused to stream this track"
-    : "Marked unstreamable by SoundCloud";
+  if (track.streamable !== false) return null;
+  const reason = "Marked unstreamable by SoundCloud";
   return (
     <span
       className="text-muted-foreground/70 inline-flex shrink-0 items-center"
@@ -830,6 +822,14 @@ export function LikesTable({
   const virtualizer = useVirtualizer({
     count: sortedTracks.length,
     getScrollElement: () => scrollParentRef.current,
+    // Key rows by track identity so cell state (analyzed BPM, expanded, etc.)
+    // doesn't leak when the underlying tracks change — sort, reorder, or
+    // playlist switch would otherwise reuse the same cell instance for a
+    // different track and show its prior state on the wrong row.
+    getItemKey: useCallback(
+      (index: number) => sortedTracks[index]?.urn ?? `__idx_${index}`,
+      [sortedTracks],
+    ),
     estimateSize: useCallback(
       (index: number) => {
         const track = sortedTracks[index];

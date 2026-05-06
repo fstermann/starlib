@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { AutoHideTabLabel } from "@/components/auto-hide-tab-label";
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
 import { useCommand } from "@/components/command-palette";
 import {
@@ -406,24 +407,36 @@ export function SoundcloudView() {
         >
           <ToggleGroupItem
             value="me"
-            className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
+            aria-label="My Library"
+            className="group h-7 cursor-pointer gap-0 px-2 text-xs"
           >
-            <Heart className="size-3.5" />
-            My Library
+            <AutoHideTabLabel
+              icon={Heart}
+              label="My Library"
+              active={tab === "me"}
+            />
           </ToggleGroupItem>
           <ToggleGroupItem
             value="discover"
-            className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
+            aria-label="Discover"
+            className="group h-7 cursor-pointer gap-0 px-2 text-xs"
           >
-            <Compass className="size-3.5" />
-            Discover
+            <AutoHideTabLabel
+              icon={Compass}
+              label="Discover"
+              active={tab === "discover"}
+            />
           </ToggleGroupItem>
           <ToggleGroupItem
             value="search"
-            className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
+            aria-label="Search"
+            className="group h-7 cursor-pointer gap-0 px-2 text-xs"
           >
-            <Search className="size-3.5" />
-            Search
+            <AutoHideTabLabel
+              icon={Search}
+              label="Search"
+              active={tab === "search"}
+            />
           </ToggleGroupItem>
         </ToggleGroup>
       </LibraryTitle>
