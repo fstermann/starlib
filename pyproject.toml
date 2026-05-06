@@ -16,7 +16,7 @@ dependencies = [
     "mutagen>=1.47.0",
     "fastapi>=0.136.1",
     "uvicorn[standard]>=0.46.0",
-    "python-multipart>=0.0.26",
+    "python-multipart>=0.0.27",
     "fastapi-pagination>=0.12.0",
     "watchdog>=4.0.0",
     "platformdirs>=4.9.6",
@@ -32,7 +32,7 @@ dev = [
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=0.25.0",
-    "zensical>=0.0.36",
+    "zensical>=0.0.39",
     # pygments 2.20 added `filename` as a recognized HtmlFormatter option; pymdownx 10.21
     # passes filename=None when no code block title is given, which causes html.escape(None)
     # to fail and silently breaks all code block rendering. Pin until pymdownx is fixed.
