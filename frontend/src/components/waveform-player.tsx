@@ -66,6 +66,7 @@ export function WaveformPlayer() {
     currentTrack,
     isPlaying,
     toggle,
+    pause,
     next,
     previous,
     peekNext,
@@ -229,7 +230,24 @@ export function WaveformPlayer() {
 
       const audio = new Audio();
       audio.preload = "auto";
+      // Attach to DOM so platform pause events (headphones unplugged, etc.)
+      // dispatch reliably and so tests can reach the element.
+      audio.hidden = true;
+      document.body.appendChild(audio);
       audioRef.current = audio;
+
+      // Sync React state when the OS pauses our audio behind our back —
+      // e.g. headphones unplugged or Bluetooth device disconnects. Without
+      // this, isPlaying stays true and the UI shows "playing" with no sound.
+      // We ignore self-initiated pauses two ways: ws.pause() fires this
+      // event, but by then isPlayingRef is already false (the [isPlaying]
+      // effect updated it). Track-change cleanup also fires pause(), but by
+      // then audioRef has been swapped to the new track's element, so the
+      // ref-equality check skips it.
+      audio.addEventListener("pause", () => {
+        if (audioRef.current !== audio) return;
+        if (isPlayingRef.current && audio.paused) pause();
+      });
 
       // Start playback as soon as the browser has enough buffered data.
       // This fires well before WaveSurfer's `ready` (which waits for peaks
@@ -472,6 +490,7 @@ export function WaveformPlayer() {
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";
+        audioRef.current.remove();
         audioRef.current = null;
       }
     };
