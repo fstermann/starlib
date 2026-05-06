@@ -16,13 +16,19 @@ export function UserSearch({ onSelect }: UserSearchProps) {
   const [results, setResults] = useState<SCUser[]>([]);
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks the latest query the user typed so a slow in-flight response for
+  // an older query can't restore stale results after the user has cleared
+  // the input or moved on to something else.
+  const latestQueryRef = useRef("");
 
   function handleChange(value: string) {
     setQuery(value);
+    latestQueryRef.current = value;
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (!value.trim()) {
       setResults([]);
+      setSearching(false);
       return;
     }
 
@@ -31,6 +37,7 @@ export function UserSearch({ onSelect }: UserSearchProps) {
       try {
         if (value.includes("soundcloud.com/")) {
           const resolved = await resolveUrl(value.trim());
+          if (latestQueryRef.current !== value) return;
           if (resolved && "username" in resolved && resolved.kind === "user") {
             setResults([resolved as SCUser]);
           } else {
@@ -38,12 +45,14 @@ export function UserSearch({ onSelect }: UserSearchProps) {
           }
         } else {
           const users = await searchUsers(value.trim());
+          if (latestQueryRef.current !== value) return;
           setResults(users);
         }
       } catch {
+        if (latestQueryRef.current !== value) return;
         setResults([]);
       } finally {
-        setSearching(false);
+        if (latestQueryRef.current === value) setSearching(false);
       }
     }, 500);
   }
