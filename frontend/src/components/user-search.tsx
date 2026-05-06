@@ -90,8 +90,14 @@ export function UserSearch({ onSelect }: UserSearchProps) {
                   key={user.urn ?? user.permalink}
                   onClick={() => {
                     onSelect(user);
+                    // Bust the in-flight stale-response guard so any
+                    // searchUsers call still pending for the just-cleared
+                    // query is dropped instead of re-populating results.
+                    latestQueryRef.current = "";
+                    if (debounceRef.current) clearTimeout(debounceRef.current);
                     setQuery("");
                     setResults([]);
+                    setSearching(false);
                   }}
                   className="border-border hover:border-primary/40 hover:bg-accent flex w-full cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors"
                 >
