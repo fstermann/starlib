@@ -370,7 +370,7 @@ export function SoundcloudView() {
           <ToggleGroupItem
             value="me"
             aria-label="My Library"
-            className="group h-7 cursor-pointer px-2 text-xs"
+            className="group h-7 cursor-pointer gap-0 px-2 text-xs"
           >
             <AutoHideTabLabel
               icon={Heart}
@@ -381,7 +381,7 @@ export function SoundcloudView() {
           <ToggleGroupItem
             value="discover"
             aria-label="Discover"
-            className="group h-7 cursor-pointer px-2 text-xs"
+            className="group h-7 cursor-pointer gap-0 px-2 text-xs"
           >
             <AutoHideTabLabel
               icon={Compass}
@@ -392,7 +392,7 @@ export function SoundcloudView() {
           <ToggleGroupItem
             value="search"
             aria-label="Search"
-            className="group h-7 cursor-pointer px-2 text-xs"
+            className="group h-7 cursor-pointer gap-0 px-2 text-xs"
           >
             <AutoHideTabLabel
               icon={Search}
