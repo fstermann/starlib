@@ -84,6 +84,12 @@ export function UserSearch({ onSelect }: UserSearchProps) {
         <Input
           value={query}
           onChange={(e) => handleChange(e.target.value)}
+          // Re-running through handleChange replays the debounced search for
+          // whatever text is already in the box, so refocusing brings the
+          // results back without the user having to retype.
+          onFocus={() => {
+            if (query.trim()) handleChange(query);
+          }}
           placeholder="Search users or paste a SoundCloud profile URL…"
           className="pl-9"
         />
