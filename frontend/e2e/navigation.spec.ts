@@ -15,10 +15,10 @@ test.describe("Navigation", () => {
     await expect(page).toHaveURL(/\/library/);
   });
 
-  test("sidebar logo links to home", async ({ page }) => {
+  test("topbar logo links to home", async ({ page }) => {
     await page.goto("/library");
-    const sidebar = page.locator("aside");
-    const homeLink = sidebar.getByRole("link", { name: /Starlib/i });
+    const topbar = page.locator("header");
+    const homeLink = topbar.getByRole("link", { name: /Starlib/i });
     await homeLink.click();
     await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/(\?.*)?$/);
   });
