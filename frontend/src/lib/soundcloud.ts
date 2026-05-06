@@ -258,14 +258,14 @@ export async function getFeedTracksPage(
   const tracks = (data.collection ?? [])
     .filter(
       (item) =>
-        (item.type === "track" || item.type === "track-repost") && item.origin,
+        (item.type === "track" || item.type === "track:repost") && item.origin,
     )
     .map((item) => ({
       ...(item.origin as SCTrack),
       // Use the activity date (when it appeared in the feed / was reposted),
       // not the track's original upload date.
       created_at: item.created_at ?? (item.origin as SCTrack).created_at,
-      isRepost: item.type === "track-repost",
+      isRepost: item.type === "track:repost",
     }));
 
   return { tracks, nextHref: data.next_href ?? undefined };
