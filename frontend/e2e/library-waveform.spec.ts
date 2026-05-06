@@ -135,9 +135,9 @@ test.describe("Library waveform visibility", () => {
   }) => {
     await selectFileAndWaitForPlayer(page);
 
-    // Navigate to the home page via the sidebar logo
+    // Navigate to the home page via the topbar logo
     await page
-      .locator("aside")
+      .locator("header")
       .getByRole("link", { name: /Starlib/i })
       .click();
     await expect(page).toHaveURL("/");
