@@ -237,13 +237,20 @@ test.describe("ProfileGroups", () => {
       "Alpha track",
     );
 
-    // The UserSearch stays visible while the group is transient — the user
-    // can keep adding members without opening the manage dialog.
+    // After picking the first profile the inline search collapses behind
+    // an "Add profile" button. Click it to add bob.
+    await expect(
+      page.getByPlaceholder(/search users or paste/i),
+    ).toBeHidden();
+    await page.getByTestId("add-profile-button").click();
     await page
       .getByPlaceholder(/search users or paste/i)
       .fill("bob");
     await page.getByText("bob").first().click();
-    // Bar now shows "2 profiles".
+    // Search collapses again after the select; bar shows "2 profiles".
+    await expect(
+      page.getByPlaceholder(/search users or paste/i),
+    ).toBeHidden();
     await expect(page.getByTestId("group-bar")).toContainText("2 profiles");
 
     // Save the transient group via the bar's "Save group" trigger.
