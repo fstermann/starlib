@@ -126,9 +126,9 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
             transition={
               racing
                 ? {
-                    duration: 1.0,
+                    duration: 0.65,
                     repeat: Infinity,
-                    delay: i * 0.18,
+                    delay: i * 0.12,
                     ease: [0.45, 0, 0.9, 0.4],
                     times: [0, 0.3, 0.65, 1],
                   }
