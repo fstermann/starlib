@@ -66,6 +66,7 @@ export function WaveformPlayer() {
     currentTrack,
     isPlaying,
     toggle,
+    pause,
     next,
     previous,
     peekNext,
@@ -154,8 +155,12 @@ export function WaveformPlayer() {
         : undefined,
     });
     ms.playbackState = isPlaying ? "playing" : "paused";
-    ms.setActionHandler("play", () => toggle());
-    ms.setActionHandler("pause", () => toggle());
+    ms.setActionHandler("play", () => {
+      if (!isPlayingRef.current) toggle();
+    });
+    ms.setActionHandler("pause", () => {
+      if (isPlayingRef.current) toggle();
+    });
     ms.setActionHandler("nexttrack", hasNext ? () => next() : null);
     ms.setActionHandler("previoustrack", hasPrevious ? () => previous() : null);
     return () => {
@@ -165,6 +170,35 @@ export function WaveformPlayer() {
       ms.setActionHandler("previoustrack", null);
     };
   }, [currentTrack, isPlaying, toggle, next, previous, hasNext, hasPrevious]);
+
+  // Pause when the active audio output device disappears (AirPods disconnect,
+  // headphones unplugged). The audio element's own `pause` event isn't
+  // reliable here — WKWebView/Safari pauses natively, but Chromium-based
+  // engines keep playing through the new default output. `devicechange` plus
+  // an audiooutput count drop is the canonical signal in both.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices) return;
+    const md = navigator.mediaDevices;
+    let prevCount = 0;
+    let cancelled = false;
+    const countOutputs = async () => {
+      const devices = await md.enumerateDevices();
+      return devices.filter((d) => d.kind === "audiooutput").length;
+    };
+    countOutputs().then((n) => {
+      if (!cancelled) prevCount = n;
+    });
+    const onChange = async () => {
+      const next = await countOutputs();
+      if (next < prevCount && isPlayingRef.current) pause();
+      prevCount = next;
+    };
+    md.addEventListener("devicechange", onChange);
+    return () => {
+      cancelled = true;
+      md.removeEventListener("devicechange", onChange);
+    };
+  }, [pause]);
 
   useEffect(() => {
     if (!currentTrack) return;
@@ -229,7 +263,24 @@ export function WaveformPlayer() {
 
       const audio = new Audio();
       audio.preload = "auto";
+      // Attach to DOM so platform pause events (headphones unplugged, etc.)
+      // dispatch reliably and so tests can reach the element.
+      audio.hidden = true;
+      document.body.appendChild(audio);
       audioRef.current = audio;
+
+      // Sync React state when the OS pauses our audio behind our back —
+      // e.g. headphones unplugged or Bluetooth device disconnects. Without
+      // this, isPlaying stays true and the UI shows "playing" with no sound.
+      // We ignore self-initiated pauses two ways: ws.pause() fires this
+      // event, but by then isPlayingRef is already false (the [isPlaying]
+      // effect updated it). Track-change cleanup also fires pause(), but by
+      // then audioRef has been swapped to the new track's element, so the
+      // ref-equality check skips it.
+      audio.addEventListener("pause", () => {
+        if (audioRef.current !== audio) return;
+        if (isPlayingRef.current && audio.paused) pause();
+      });
 
       // Start playback as soon as the browser has enough buffered data.
       // This fires well before WaveSurfer's `ready` (which waits for peaks
@@ -472,6 +523,7 @@ export function WaveformPlayer() {
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";
+        audioRef.current.remove();
         audioRef.current = null;
       }
     };
