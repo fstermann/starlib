@@ -105,20 +105,21 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
               racing
                 ? {
                     // Trajectory points at the eventual home position so the
-                    // stars race toward where they'll land.
+                    // stars race toward where they'll land. The far waypoint
+                    // is pushed well past home for a fast hyperspace feel.
                     x: [
                       startX,
-                      startX + dx * 0.55,
+                      startX + dx * 0.5,
                       startX + dx * 1.0,
-                      startX + dx * 1.7,
+                      startX + dx * 2.6,
                     ],
                     y: [
                       startY,
-                      startY + dy * 0.55,
+                      startY + dy * 0.5,
                       startY + dy * 1.0,
-                      startY + dy * 1.7,
+                      startY + dy * 2.6,
                     ],
-                    scale: [0.05, 0.55, 1, 2.2],
+                    scale: [0.05, 0.5, 1.0, 3.6],
                     opacity: [0, 1, 1, 0],
                   }
                 : { x: home.x, y: home.y, scale: 1, opacity: 1 }
@@ -126,11 +127,11 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
             transition={
               racing
                 ? {
-                    duration: 0.65,
+                    duration: 0.95,
                     repeat: Infinity,
-                    delay: i * 0.12,
-                    ease: [0.45, 0, 0.9, 0.4],
-                    times: [0, 0.3, 0.65, 1],
+                    delay: i * 0.16,
+                    ease: [0.4, 0, 1, 1],
+                    times: [0, 0.3, 0.6, 1],
                   }
                 : {
                     duration: arrived ? 0 : 0.55,
