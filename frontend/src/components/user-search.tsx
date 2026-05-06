@@ -1,7 +1,7 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
@@ -16,13 +16,20 @@ export function UserSearch({ onSelect }: UserSearchProps) {
   const [results, setResults] = useState<SCUser[]>([]);
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks the latest query the user typed so a slow in-flight response for
+  // an older query can't restore stale results after the user has cleared
+  // the input or moved on to something else.
+  const latestQueryRef = useRef("");
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   function handleChange(value: string) {
     setQuery(value);
+    latestQueryRef.current = value;
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (!value.trim()) {
       setResults([]);
+      setSearching(false);
       return;
     }
 
@@ -31,6 +38,7 @@ export function UserSearch({ onSelect }: UserSearchProps) {
       try {
         if (value.includes("soundcloud.com/")) {
           const resolved = await resolveUrl(value.trim());
+          if (latestQueryRef.current !== value) return;
           if (resolved && "username" in resolved && resolved.kind === "user") {
             setResults([resolved as SCUser]);
           } else {
@@ -38,32 +46,63 @@ export function UserSearch({ onSelect }: UserSearchProps) {
           }
         } else {
           const users = await searchUsers(value.trim());
+          if (latestQueryRef.current !== value) return;
           setResults(users);
         }
       } catch {
+        if (latestQueryRef.current !== value) return;
         setResults([]);
       } finally {
-        setSearching(false);
+        if (latestQueryRef.current === value) setSearching(false);
       }
     }, 500);
   }
 
+  const showResults = searching || results.length > 0;
+
+  // Dismiss the floating results panel on outside click. The input keeps its
+  // text so the user can come back; only the results overlay collapses.
+  useEffect(() => {
+    if (!showResults) return;
+    function onMouseDown(e: MouseEvent) {
+      const root = wrapperRef.current;
+      if (!root) return;
+      if (root.contains(e.target as Node)) return;
+      latestQueryRef.current = "";
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      setResults([]);
+      setSearching(false);
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [showResults]);
+
   return (
-    <div className="space-y-3">
+    <div ref={wrapperRef} className="relative">
       <div className="relative">
         <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
         <Input
           value={query}
           onChange={(e) => handleChange(e.target.value)}
+          // Re-running through handleChange replays the debounced search for
+          // whatever text is already in the box, so refocusing brings the
+          // results back without the user having to retype.
+          onFocus={() => {
+            if (query.trim()) handleChange(query);
+          }}
           placeholder="Search users or paste a SoundCloud profile URL…"
           className="pl-9"
         />
       </div>
 
-      {searching && <p className="text-muted-foreground text-xs">Searching…</p>}
-
-      {results.length > 0 && (
-        <div className="grid gap-2">
+      {showResults && (
+        // Absolute overlay so the result list floats on top of whatever
+        // page content sits below the search input (likes table, etc.)
+        // instead of being clipped at its bottom edge.
+        <div className="bg-popover border-border absolute top-full right-0 left-0 z-50 mt-2 max-h-[60vh] space-y-2 overflow-auto rounded-md border p-2 shadow-lg">
+          {searching && (
+            <p className="text-muted-foreground text-xs">Searching…</p>
+          )}
           {results
             .filter((u): u is NonNullable<typeof u> => u != null)
             .map((user) => {
@@ -75,10 +114,16 @@ export function UserSearch({ onSelect }: UserSearchProps) {
                   key={user.urn ?? user.permalink}
                   onClick={() => {
                     onSelect(user);
+                    // Bust the in-flight stale-response guard so any
+                    // searchUsers call still pending for the just-cleared
+                    // query is dropped instead of re-populating results.
+                    latestQueryRef.current = "";
+                    if (debounceRef.current) clearTimeout(debounceRef.current);
                     setQuery("");
                     setResults([]);
+                    setSearching(false);
                   }}
-                  className="border-border hover:border-primary/40 hover:bg-accent flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors"
+                  className="border-border hover:border-primary/40 hover:bg-accent flex w-full cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors"
                 >
                   <div className="bg-muted flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full">
                     {avatarUrl ? (
