@@ -10,7 +10,11 @@ import type { components, paths } from "@/generated/soundcloud";
 
 import { ensureValidToken } from "./auth";
 
-export type SCTrack = components["schemas"]["Track"];
+export type SCTrack = components["schemas"]["Track"] & {
+  /** Set by the weekly feed parser when the activity was a track-repost
+   * rather than an original release. Undefined elsewhere. */
+  isRepost?: boolean;
+};
 export type SCPlaylist = components["schemas"]["Playlist"];
 export type SCUser = components["schemas"]["User"];
 
@@ -252,12 +256,16 @@ export async function getFeedTracksPage(
   }
 
   const tracks = (data.collection ?? [])
-    .filter((item) => item.type === "track" && item.origin)
+    .filter(
+      (item) =>
+        (item.type === "track" || item.type === "track-repost") && item.origin,
+    )
     .map((item) => ({
       ...(item.origin as SCTrack),
       // Use the activity date (when it appeared in the feed / was reposted),
       // not the track's original upload date.
       created_at: item.created_at ?? (item.origin as SCTrack).created_at,
+      isRepost: item.type === "track-repost",
     }));
 
   return { tracks, nextHref: data.next_href ?? undefined };
