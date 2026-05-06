@@ -9,7 +9,7 @@ import { StarMate } from "@/components/home/star-mate";
 type Phase = "travel" | "exit" | "done";
 type Stage = "entrance" | "cruise";
 
-const ENTRANCE_MS = 600;
+const ENTRANCE_MS = 500;
 const CRUISE_MS = 700;
 const EXIT_MS = 550;
 
@@ -20,7 +20,6 @@ const EXIT_MS = 550;
 // deceleration out of the loop.
 const CRUISE_START = 0.25; // along ray, scale 0.5
 const CRUISE_END = 2.4; // along ray, off-screen, scale 3
-const CRUISE_OVERSHOOT = 2.55; // a hair further so opacity-fade lands off-screen
 
 // Mirrors the placements that used to live in floating-stars.tsx so the
 // loader's racing stars settle into the exact title-screen layout.
@@ -114,8 +113,6 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
         const cruiseStartY = startY + dy * CRUISE_START;
         const cruiseEndX = startX + dx * CRUISE_END;
         const cruiseEndY = startY + dy * CRUISE_END;
-        const cruiseOverX = startX + dx * CRUISE_OVERSHOOT;
-        const cruiseOverY = startY + dy * CRUISE_OVERSHOOT;
 
         const arrived = phase === "done";
         const cruising = phase === "travel" && stage === "cruise";
@@ -136,32 +133,40 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
             ease: [0.2, 0, 0, 1],
           };
         } else if (cruising) {
-          // 5 keyframes: visible streak → fade out at far → invisible
-          // teleport back to cruise start → fade in. The teleport happens
-          // entirely while opacity is 0, so the loop seam is invisible.
+          // 5 keyframes designed so the loop seam is a no-op (start and
+          // end are identical) and every position change happens while
+          // either the star is moving forward or invisible:
+          //
+          //   0–80%: visible streak from cruiseStart → cruiseEnd
+          //   80–90%: fade out in place at cruiseEnd (no motion)
+          //   90–95%: invisible teleport cruiseEnd → cruiseStart
+          //   95–100%: fade in in place at cruiseStart (no motion)
+          //
+          // The user never sees the star "drop back" because the only
+          // backward position change happens entirely at opacity 0.
           animate = {
             x: [
               cruiseStartX,
               cruiseEndX,
-              cruiseOverX,
+              cruiseEndX,
               cruiseStartX,
               cruiseStartX,
             ],
             y: [
               cruiseStartY,
               cruiseEndY,
-              cruiseOverY,
+              cruiseEndY,
               cruiseStartY,
               cruiseStartY,
             ],
-            scale: [0.5, 3, 3.3, 0.5, 0.5],
+            scale: [0.5, 3, 3, 0.5, 0.5],
             opacity: [1, 1, 0, 0, 1],
           };
           transition = {
             duration: CRUISE_MS / 1000,
             repeat: Infinity,
             ease: "linear",
-            times: [0, 0.85, 0.92, 0.93, 1],
+            times: [0, 0.8, 0.9, 0.95, 1],
             delay: i * 0.08,
           };
         } else {
