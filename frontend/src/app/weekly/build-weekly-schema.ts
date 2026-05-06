@@ -25,6 +25,7 @@ export function buildWeeklySchema(
   let durationMax = -Infinity;
   let hasDuration = false;
   const trackTypeCounts: Record<string, number> = { track: 0, set: 0 };
+  const releaseTypeCounts: Record<string, number> = { release: 0, repost: 0 };
 
   for (const t of tracks) {
     if (t.genre) genreCounts[t.genre] = (genreCounts[t.genre] ?? 0) + 1;
@@ -36,6 +37,8 @@ export function buildWeeklySchema(
       if (s < 720) trackTypeCounts.track += 1;
       else trackTypeCounts.set += 1;
     }
+    if (t.isRepost) releaseTypeCounts.repost += 1;
+    else releaseTypeCounts.release += 1;
   }
 
   const genres = Object.keys(genreCounts).sort((a, b) => a.localeCompare(b));
@@ -70,6 +73,13 @@ export function buildWeeklySchema(
         kind: "enum",
         options: ["track", "set"],
         counts: trackTypeCounts,
+      },
+      {
+        id: "release_type",
+        label: "Source",
+        kind: "enum",
+        options: ["release", "repost"],
+        counts: releaseTypeCounts,
       },
       { id: "include_seen", label: "Include previously added", kind: "bool" },
       {
