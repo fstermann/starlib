@@ -113,9 +113,7 @@ def delete_group(group_id: str) -> None:
     settings = settings_service.load()
     if not any(g.id == group_id for g in settings.profile_groups.items):
         raise KeyError(f"ProfileGroup {group_id!r} not found")
-    settings.profile_groups.items = [
-        g for g in settings.profile_groups.items if g.id != group_id
-    ]
+    settings.profile_groups.items = [g for g in settings.profile_groups.items if g.id != group_id]
     if settings.profile_groups.active_group_id == group_id:
         settings.profile_groups.active_group_id = ""
     settings_service.save(settings)

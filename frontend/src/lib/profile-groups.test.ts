@@ -30,7 +30,10 @@ describe("mergeGroupedLikes", () => {
   it("returns a single member's tracks tagged with their user", () => {
     const alice = user(1, "alice");
     const result = mergeGroupedLikes([
-      { source: alice, tracks: [track(10, "2024-01-02"), track(11, "2024-01-01")] },
+      {
+        source: alice,
+        tracks: [track(10, "2024-01-02"), track(11, "2024-01-01")],
+      },
     ]);
     expect(result).toHaveLength(2);
     expect(result[0].__sources).toEqual([alice]);

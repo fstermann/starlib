@@ -1,7 +1,6 @@
+import type { components } from "@/generated/backend";
 import { fetchApi } from "@/lib/api";
 import type { SCTrack } from "@/lib/soundcloud";
-
-import type { components } from "@/generated/backend";
 
 export type ProfileGroupMember = components["schemas"]["ProfileGroupMember"];
 export type ProfileGroup = components["schemas"]["ProfileGroup"];
@@ -98,8 +97,10 @@ export function mergeGroupedLikes(
 
   return [...byUrn.values()].sort((a, b) => {
     if (a.__likedAt === b.__likedAt) {
-      return (insertOrder.get(a.urn ?? "") ?? 0) -
-        (insertOrder.get(b.urn ?? "") ?? 0);
+      return (
+        (insertOrder.get(a.urn ?? "") ?? 0) -
+        (insertOrder.get(b.urn ?? "") ?? 0)
+      );
     }
     return a.__likedAt < b.__likedAt ? 1 : -1;
   });

@@ -11,10 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
-import type {
-  ProfileGroup,
-  ProfileGroupMember,
-} from "@/lib/profile-groups";
+import type { ProfileGroup, ProfileGroupMember } from "@/lib/profile-groups";
 import { TRANSIENT_GROUP_ID } from "@/lib/profile-groups";
 
 const MAX_VISIBLE_AVATARS = 4;
@@ -70,7 +67,11 @@ export function GroupBar({
                       title={m.username}
                     >
                       {url ? (
-                        <img src={url} alt="" className="size-10 object-cover" />
+                        <img
+                          src={url}
+                          alt=""
+                          className="size-10 object-cover"
+                        />
                       ) : (
                         <span className="text-muted-foreground text-sm font-medium">
                           {(m.username ?? "?")[0]?.toUpperCase()}

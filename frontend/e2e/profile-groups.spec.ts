@@ -75,7 +75,7 @@ async function setup(page: import("@playwright/test").Page) {
   let groups: Array<{
     id: string;
     name: string;
-    members: typeof ALICE_TRACK.user[];
+    members: (typeof ALICE_TRACK.user)[];
   }> = [];
   let activeGroupId = "";
 
@@ -224,44 +224,34 @@ test.describe("ProfileGroups", () => {
     await expect(page.getByTestId("group-bar")).toBeHidden();
 
     // Pick alice → transient group appears.
-    await page
-      .getByPlaceholder(/search users or paste/i)
-      .fill("alice");
+    await page.getByPlaceholder(/search users or paste/i).fill("alice");
     await page.getByText("alice").first().click();
     await expect(page.getByTestId("group-bar")).toBeVisible();
     await expect(page.getByTestId("group-bar")).toContainText("Untitled group");
     await expect(page.getByTestId("group-bar")).toContainText("(unsaved)");
 
     // The source column should NOT appear yet (1 member).
-    await expect(page.locator('[data-index]').first()).toContainText(
+    await expect(page.locator("[data-index]").first()).toContainText(
       "Alpha track",
     );
 
     // The inline search stays visible while the group is transient — the
     // user can keep adding members. After each select the input clears.
-    await expect(
-      page.getByPlaceholder(/search users or paste/i),
-    ).toBeVisible();
-    await page
-      .getByPlaceholder(/search users or paste/i)
-      .fill("bob");
+    await expect(page.getByPlaceholder(/search users or paste/i)).toBeVisible();
+    await page.getByPlaceholder(/search users or paste/i).fill("bob");
     await page.getByText("bob").first().click();
     await expect(page.getByTestId("group-bar")).toContainText("2 profiles");
     // Input is now empty.
-    await expect(
-      page.getByPlaceholder(/search users or paste/i),
-    ).toHaveValue("");
+    await expect(page.getByPlaceholder(/search users or paste/i)).toHaveValue(
+      "",
+    );
 
     // Save the transient group via the bar's "Save group" trigger.
     await page.getByTestId("group-bar-manage").click();
     const dialog = page.getByTestId("profile-group-dialog");
     await expect(dialog).toBeVisible();
-    await dialog
-      .getByTestId("profile-group-name-input")
-      .fill("My DJs");
-    await expect(
-      dialog.getByTestId("profile-group-member-row"),
-    ).toHaveCount(2);
+    await dialog.getByTestId("profile-group-name-input").fill("My DJs");
+    await expect(dialog.getByTestId("profile-group-member-row")).toHaveCount(2);
 
     await dialog.getByTestId("profile-group-save").click();
     await expect(dialog).toBeHidden();
@@ -272,7 +262,7 @@ test.describe("ProfileGroups", () => {
 
     // Now both tracks are visible (alice + bob feeds merged) and the
     // source-profile column renders for the multi-member group.
-    await expect(page.locator('[data-index]')).toHaveCount(2);
+    await expect(page.locator("[data-index]")).toHaveCount(2);
     // The source column has data-testid via the avatar's tooltip trigger;
     // simplest assertion: each data-index row contains the source avatar
     // image OR fallback initial.

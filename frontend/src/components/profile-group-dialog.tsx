@@ -4,7 +4,6 @@ import { Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { UserSearch } from "@/components/user-search";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { UserSearch } from "@/components/user-search";
 import { api } from "@/lib/api";
 import {
   profileGroupsApi,
@@ -129,12 +129,11 @@ export function ProfileGroupDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-lg"
-        data-testid="profile-group-dialog"
-      >
+      <DialogContent className="max-w-lg" data-testid="profile-group-dialog">
         <DialogHeader>
-          <DialogTitle>{isNew ? "New profile group" : "Manage group"}</DialogTitle>
+          <DialogTitle>
+            {isNew ? "New profile group" : "Manage group"}
+          </DialogTitle>
           <DialogDescription>
             Aggregate likes from up to {MAX_MEMBERS} SoundCloud profiles.
           </DialogDescription>
@@ -153,7 +152,9 @@ export function ProfileGroupDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Members ({members.length}/{MAX_MEMBERS})</Label>
+            <Label>
+              Members ({members.length}/{MAX_MEMBERS})
+            </Label>
             {members.length === 0 ? (
               <p className="text-muted-foreground text-xs">
                 Add at least one profile below.

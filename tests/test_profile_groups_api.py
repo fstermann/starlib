@@ -109,9 +109,7 @@ def test_update_missing_group_returns_404(api_client: TestClient) -> None:
 
 
 def test_delete_group(api_client: TestClient) -> None:
-    create = api_client.post(
-        "/api/profile-groups", json={"name": "Bye", "members": []}
-    )
+    create = api_client.post("/api/profile-groups", json={"name": "Bye", "members": []})
     group_id = create.json()["id"]
 
     resp = api_client.delete(f"/api/profile-groups/{group_id}")
@@ -127,9 +125,7 @@ def test_delete_missing_group_returns_404(api_client: TestClient) -> None:
 
 
 def test_delete_active_group_clears_active(api_client: TestClient) -> None:
-    create = api_client.post(
-        "/api/profile-groups", json={"name": "Active", "members": []}
-    )
+    create = api_client.post("/api/profile-groups", json={"name": "Active", "members": []})
     group_id = create.json()["id"]
     api_client.put(f"/api/profile-groups/{group_id}/activate")
 
@@ -144,9 +140,7 @@ def test_delete_active_group_clears_active(api_client: TestClient) -> None:
 
 
 def test_activate_group_persists(api_client: TestClient) -> None:
-    create = api_client.post(
-        "/api/profile-groups", json={"name": "Pin me", "members": []}
-    )
+    create = api_client.post("/api/profile-groups", json={"name": "Pin me", "members": []})
     group_id = create.json()["id"]
 
     resp = api_client.put(f"/api/profile-groups/{group_id}/activate")

@@ -53,8 +53,8 @@ import {
 import { api } from "@/lib/api";
 import type { ColumnDef } from "@/lib/columns/types";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
-import { useIsScUnplayable } from "@/lib/sc-unplayable";
 import type { SourceProfile } from "@/lib/profile-groups";
+import { useIsScUnplayable } from "@/lib/sc-unplayable";
 import type { SCTrack } from "@/lib/soundcloud";
 import {
   getCachedSoundcloudPeaks,
@@ -122,7 +122,9 @@ const LIKES_COLUMNS: LikesCol[] = [
     defaultWidth: 32,
     cellClassName: "shrink-0 flex items-center",
     renderBody: ({ track }) => (
-      <SourceProfileAvatar sources={(track as { __sources?: SourceProfile[] }).__sources} />
+      <SourceProfileAvatar
+        sources={(track as { __sources?: SourceProfile[] }).__sources}
+      />
     ),
   },
   {

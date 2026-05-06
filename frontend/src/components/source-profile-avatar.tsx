@@ -22,7 +22,9 @@ interface Props {
 export function SourceProfileAvatar({ sources }: Props) {
   if (!sources || sources.length === 0) return null;
   const first = sources[0];
-  const avatarUrl = first.avatar_url ? api.proxyImageUrl(first.avatar_url) : null;
+  const avatarUrl = first.avatar_url
+    ? api.proxyImageUrl(first.avatar_url)
+    : null;
   const extra = sources.length - 1;
   const tooltipText = sources.map((s) => s.username).join(", ");
 

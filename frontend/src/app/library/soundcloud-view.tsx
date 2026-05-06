@@ -463,7 +463,10 @@ export function SoundcloudView() {
                 setGroupDialogState({
                   open: true,
                   initial: {
-                    id: activeGroup.id === TRANSIENT_GROUP_ID ? "" : activeGroup.id,
+                    id:
+                      activeGroup.id === TRANSIENT_GROUP_ID
+                        ? ""
+                        : activeGroup.id,
                     name: activeGroup.name,
                     members: activeGroup.members,
                   },
@@ -484,9 +487,7 @@ export function SoundcloudView() {
               className="flex flex-wrap items-center gap-2"
               data-testid="saved-groups-picker"
             >
-              <span className="text-muted-foreground text-xs">
-                Your groups
-              </span>
+              <span className="text-muted-foreground text-xs">Your groups</span>
               {savedGroups.map((g) => (
                 <Button
                   key={g.id ?? g.name}
@@ -526,7 +527,9 @@ export function SoundcloudView() {
                       members: [member],
                     };
                   }
-                  if (prev.members.some((m) => m.user_urn === member.user_urn)) {
+                  if (
+                    prev.members.some((m) => m.user_urn === member.user_urn)
+                  ) {
                     return prev;
                   }
                   return { ...prev, members: [...prev.members, member] };
@@ -541,9 +544,7 @@ export function SoundcloudView() {
       <ProfileGroupDialog
         group={groupDialogState.initial}
         open={groupDialogState.open}
-        onOpenChange={(open) =>
-          setGroupDialogState((s) => ({ ...s, open }))
-        }
+        onOpenChange={(open) => setGroupDialogState((s) => ({ ...s, open }))}
         onSaved={(saved) => {
           setSavedGroups((prev) => {
             const without = prev.filter((g) => g.id !== saved.id);
@@ -558,7 +559,6 @@ export function SoundcloudView() {
           if (activeGroupId === removedId) setActiveGroupId("");
         }}
       />
-
 
       {/* Search tab: free-text SoundCloud track search */}
       {tab === "search" && (

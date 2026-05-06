@@ -50,9 +50,7 @@ def test_load_groups_empty_on_first_run(tmp_path: Path) -> None:
 
 def test_create_group_adds_to_config(tmp_path: Path) -> None:
     with _patch_paths(tmp_path):
-        new_group, config = svc.create_group(
-            name="DJs I follow", members=[_member()]
-        )
+        new_group, config = svc.create_group(name="DJs I follow", members=[_member()])
 
     assert new_group.name == "DJs I follow"
     assert new_group.id  # non-empty UUID
