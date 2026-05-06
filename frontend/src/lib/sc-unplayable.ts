@@ -32,6 +32,14 @@ export function isScUnplayable(trackId: number): boolean {
   return _unplayable.has(trackId);
 }
 
+// Tests need to drive the unplayable state without setting up a real 403
+// stream, so expose the writer on window. The set holds session-scoped
+// boolean flags — no secrets — so this is harmless in production too.
+if (typeof window !== "undefined") {
+  (window as unknown as { __starlibScUnplayable?: unknown }).__starlibScUnplayable =
+    { markScUnplayable, isScUnplayable };
+}
+
 /** React hook: re-renders the caller when the unplayable set changes. */
 export function useIsScUnplayable(trackId: number | null | undefined): boolean {
   return useSyncExternalStore(

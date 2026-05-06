@@ -10,6 +10,8 @@ import {
   useState,
 } from "react";
 
+import { useIsScUnplayable } from "@/lib/sc-unplayable";
+
 export interface PlayerTrack {
   filePath: string;
   fileName: string;
@@ -266,6 +268,31 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (idx < 0 || idx >= queueRef.current.length) return null;
     return queueRef.current[idx] ?? null;
   }, []);
+
+  // Auto-skip the current track when it gets flagged unplayable. Triggers
+  // for both pre-play (the queue advanced to a track that was already in
+  // the unplayable set) and mid-play (player or pitcher just flagged it
+  // after a 403). The unplayable store dedupes repeated `markScUnplayable`
+  // calls for the same id, and the effect only re-runs on (track, flag)
+  // transitions — so concurrent writers can't trigger a double-skip.
+  const currentScId = (() => {
+    const k = currentTrack?.streamRefreshKey;
+    if (k == null) return null;
+    const n = typeof k === "number" ? k : Number(k);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  })();
+  const currentUnplayable = useIsScUnplayable(currentScId);
+  useEffect(() => {
+    if (!currentUnplayable || !currentTrack) return;
+    const nextIdx = queueIndexRef.current + 1;
+    if (nextIdx >= 0 && nextIdx < queueRef.current.length) {
+      queueIndexRef.current = nextIdx;
+      setQueueIndex(nextIdx);
+      setIsPlaying(true);
+    } else {
+      setIsPlaying(false);
+    }
+  }, [currentUnplayable, currentTrack]);
 
   const value = useMemo<PlayerContextValue>(
     () => ({
