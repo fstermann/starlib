@@ -1,14 +1,66 @@
 "use client";
 
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
 import { CommandPaletteTrigger } from "@/components/command-palette";
+import { isTauri } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 
 import { useTopBarContent } from "./top-bar-context";
 
+function useIsFullscreen() {
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const w = getCurrentWindow();
+    let unlisten: (() => void) | undefined;
+
+    const sync = () => {
+      void w.isFullscreen().then(setFullscreen);
+    };
+    sync();
+    w.onResized(sync).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  return fullscreen;
+}
+
 export function TopBar() {
   const { title, actions } = useTopBarContent();
+  const fullscreen = useIsFullscreen();
 
   return (
-    <header className="border-border bg-card fixed top-0 right-0 left-14 z-40 flex h-11 items-center gap-3 border-b px-4">
+    <header
+      data-tauri-drag-region
+      className={cn(
+        "border-border bg-card fixed top-0 right-0 left-0 z-40 flex h-11 items-center gap-3 border-b pr-4 transition-[padding]",
+        fullscreen ? "pl-4" : "pl-20",
+      )}
+    >
+      <Link href="/" aria-label="Starlib home" className="shrink-0">
+        <span
+          className="bg-primary block size-5"
+          style={{
+            maskImage: "url(/starlib-logo.svg)",
+            WebkitMaskImage: "url(/starlib-logo.svg)",
+            maskSize: "contain",
+            WebkitMaskSize: "contain",
+            maskRepeat: "no-repeat",
+            WebkitMaskRepeat: "no-repeat",
+            maskPosition: "center",
+            WebkitMaskPosition: "center",
+          }}
+        />
+      </Link>
       <div className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium">
         {title ?? null}
       </div>

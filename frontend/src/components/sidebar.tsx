@@ -120,26 +120,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="border-border bg-card fixed top-0 bottom-0 left-0 z-50 flex w-14 shrink-0 flex-col border-r">
-      {/* Logo */}
-      <div className="flex h-14 shrink-0 items-center justify-center">
-        <Link href="/" aria-label="Starlib home">
-          <span
-            className="bg-primary block size-6"
-            style={{
-              maskImage: "url(/starlib-logo.svg)",
-              WebkitMaskImage: "url(/starlib-logo.svg)",
-              maskSize: "contain",
-              WebkitMaskSize: "contain",
-              maskRepeat: "no-repeat",
-              WebkitMaskRepeat: "no-repeat",
-              maskPosition: "center",
-              WebkitMaskPosition: "center",
-            }}
-          />
-        </Link>
-      </div>
-
+    <aside className="border-border bg-card fixed top-11 bottom-0 left-0 z-50 flex w-14 shrink-0 flex-col border-r">
       {/* Nav links */}
       <nav className="flex flex-1 flex-col gap-1 px-2 py-3">
         {NAV_LINKS.map(({ href, label, icon: Icon }) => {

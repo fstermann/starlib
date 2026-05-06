@@ -5,6 +5,8 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-fullscreen",
     "shell:allow-open",
     "shell:allow-spawn",
     "shell:allow-stdin-write",
