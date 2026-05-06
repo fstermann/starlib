@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { ComponentType, SVGProps } from "react";
 
+import { AutoHideTabLabel } from "@/components/auto-hide-tab-label";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +41,6 @@ export function LibraryTitle({ children }: { children?: React.ReactNode }) {
         {SOURCE_IDS.map((id) => {
           const active = id === current;
           const meta = SOURCE_META[id];
-          const Icon = meta.icon;
           const href = `${pathname}?source=${id}`;
           return (
             <Link
@@ -56,17 +56,11 @@ export function LibraryTitle({ children }: { children?: React.ReactNode }) {
                   : "text-muted-foreground hover:text-foreground hover:bg-accent",
               )}
             >
-              <Icon className="size-3.5 shrink-0" />
-              <span
-                className={cn(
-                  "overflow-hidden whitespace-nowrap transition-[max-width,margin-left,opacity] duration-200 ease-out",
-                  active
-                    ? "ml-1.5 max-w-32 opacity-100"
-                    : "ml-0 max-w-0 opacity-0 group-hover:ml-1.5 group-hover:max-w-32 group-hover:opacity-100",
-                )}
-              >
-                {meta.label}
-              </span>
+              <AutoHideTabLabel
+                icon={meta.icon}
+                label={meta.label}
+                active={active}
+              />
             </Link>
           );
         })}
