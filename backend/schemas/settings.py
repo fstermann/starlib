@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.schemas.ai import AiSettings
 from backend.schemas.folder_config import FoldersConfig
+from backend.schemas.profile_group import ProfileGroupsConfig
 from backend.schemas.ruleset import RulesetsConfig
 
 
@@ -36,6 +37,7 @@ class Settings(BaseModel):
     rulesets: RulesetsConfig = Field(default_factory=RulesetsConfig)
     folders: FoldersConfig = Field(default_factory=FoldersConfig)
     ai: AiSettings = Field(default_factory=AiSettings)
+    profile_groups: ProfileGroupsConfig = Field(default_factory=ProfileGroupsConfig)
     folder_rulesets: dict[str, FolderRulesetBinding] = Field(default_factory=dict)
     """Mapping of absolute folder paths to ruleset bindings.
 

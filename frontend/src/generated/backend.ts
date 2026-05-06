@@ -1010,6 +1010,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/profile-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Groups
+         * @description Return all groups and the active group id.
+         */
+        get: operations["list_groups_api_profile_groups_get"];
+        put?: never;
+        /**
+         * Create Group
+         * @description Create a new ProfileGroup.
+         */
+        post: operations["create_group_api_profile_groups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profile-groups/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Active Group
+         * @description Return the currently active group, or null if none is active.
+         */
+        get: operations["get_active_group_api_profile_groups_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profile-groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Group
+         * @description Update a group's name and/or members.
+         *
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         404 if not found.
+         */
+        put: operations["update_group_api_profile_groups__group_id__put"];
+        post?: never;
+        /**
+         * Delete Group
+         * @description Delete a group.
+         *
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         404 if not found.
+         */
+        delete: operations["delete_group_api_profile_groups__group_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profile-groups/{group_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Activate Group
+         * @description Set the active group.
+         *
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         404 if not found.
+         */
+        put: operations["activate_group_api_profile_groups__group_id__activate_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/folders/config": {
         parameters: {
             query?: never;
@@ -2082,6 +2185,76 @@ export interface components {
         PeaksResponse: {
             /** Peaks */
             peaks: number[];
+        };
+        /**
+         * ProfileGroup
+         * @description A persisted ProfileGroup.
+         */
+        ProfileGroup: {
+            /** Id */
+            id?: string;
+            /** Name */
+            name: string;
+            /** Members */
+            members?: components["schemas"]["ProfileGroupMember"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /**
+         * ProfileGroupCreate
+         * @description Payload for creating a new group.
+         */
+        ProfileGroupCreate: {
+            /** Name */
+            name: string;
+            /** Members */
+            members?: components["schemas"]["ProfileGroupMember"][];
+        };
+        /**
+         * ProfileGroupMember
+         * @description A SoundCloud profile pinned into a group.
+         *
+         *     Cached display fields (`username`, `avatar_url`) snapshot the profile at
+         *     add-time so the UI can render members without a per-row SoundCloud API
+         *     call. They drift over time — we accept that for v1.
+         */
+        ProfileGroupMember: {
+            /** User Urn */
+            user_urn: string;
+            /** Permalink */
+            permalink: string;
+            /** Username */
+            username: string;
+            /** Avatar Url */
+            avatar_url?: string | null;
+        };
+        /**
+         * ProfileGroupUpdate
+         * @description Payload for updating an existing group.
+         */
+        ProfileGroupUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Members */
+            members?: components["schemas"]["ProfileGroupMember"][] | null;
+        };
+        /**
+         * ProfileGroupsResponse
+         * @description Response listing all groups plus the active one.
+         */
+        ProfileGroupsResponse: {
+            /** Groups */
+            groups: components["schemas"]["ProfileGroup"][];
+            /** Active Group Id */
+            active_group_id: string;
         };
         /**
          * RefreshRequest
@@ -3636,6 +3809,174 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Ruleset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_groups_api_profile_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileGroupsResponse"];
+                };
+            };
+        };
+    };
+    create_group_api_profile_groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileGroupCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileGroup"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_group_api_profile_groups_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileGroup"] | null;
+                };
+            };
+        };
+    };
+    update_group_api_profile_groups__group_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileGroupUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileGroup"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_group_api_profile_groups__group_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_group_api_profile_groups__group_id__activate_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileGroup"];
                 };
             };
             /** @description Validation Error */

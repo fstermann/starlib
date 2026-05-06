@@ -42,6 +42,7 @@ import {
 } from "@/components/soundcloud-bpm-cell";
 import { SoundcloudLikeButton } from "@/components/soundcloud-like-button";
 import { SoundcloudRowPlayButton } from "@/components/soundcloud-row-play-button";
+import { SourceProfileAvatar } from "@/components/source-profile-avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
@@ -53,6 +54,7 @@ import { api } from "@/lib/api";
 import type { ColumnDef } from "@/lib/columns/types";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import { useIsScUnplayable } from "@/lib/sc-unplayable";
+import type { SourceProfile } from "@/lib/profile-groups";
 import type { SCTrack } from "@/lib/soundcloud";
 import {
   getCachedSoundcloudPeaks,
@@ -114,6 +116,15 @@ function UnstreamableBadge({ track }: { track: SCTrack }) {
 }
 
 const LIKES_COLUMNS: LikesCol[] = [
+  {
+    id: "source",
+    header: "",
+    defaultWidth: 32,
+    cellClassName: "shrink-0 flex items-center",
+    renderBody: ({ track }) => (
+      <SourceProfileAvatar sources={(track as { __sources?: SourceProfile[] }).__sources} />
+    ),
+  },
   {
     id: "title",
     header: "Title",
@@ -304,7 +315,13 @@ const LIKES_COLUMNS: LikesCol[] = [
   },
 ];
 
-export const LIKES_COLUMN_DEFS: ColumnDef[] = LIKES_COLUMNS.map((c) => ({
+// "source" is opt-in (Discover with 2+ group members); excluded from the
+// standard column-prefs vocabulary so it doesn't appear in the visibility
+// menu and doesn't get auto-shown for callers that don't pass an
+// `isColumnVisible` predicate.
+export const LIKES_COLUMN_DEFS: ColumnDef[] = LIKES_COLUMNS.filter(
+  (c) => c.id !== "source",
+).map((c) => ({
   id: c.id,
   header: c.header,
   required: c.required,
@@ -662,7 +679,13 @@ export function LikesTable({
   }, [tracks]);
 
   const colVisible = React.useCallback(
-    (id: string) => (isColumnVisible ? isColumnVisible(id) : true),
+    (id: string) => {
+      // "source" is opt-in: only renders when the caller explicitly returns
+      // true from isColumnVisible. Without this guard, callers that don't
+      // pass a predicate would see an empty 32px column on every row.
+      if (id === "source") return isColumnVisible?.(id) === true;
+      return isColumnVisible ? isColumnVisible(id) : true;
+    },
     [isColumnVisible],
   );
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
