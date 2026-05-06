@@ -4,7 +4,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 
 import { HyperspaceLoader } from "@/components/hyperspace-loader";
-import { LogoSpinner } from "@/components/logo-spinner";
+import { HyperspaceStars } from "@/components/hyperspace-stars";
+import { LoaderPhaseProvider } from "@/components/loader-phase-context";
 import { api } from "@/lib/api";
 
 const POLL_INTERVAL_MS = 500;
@@ -75,22 +76,14 @@ export function BackendGate({ children }: { children: React.ReactNode }) {
             transition={{ duration: EXIT_MS / 1000, ease: [0.4, 0, 1, 1] }}
           >
             <HyperspaceLoader phase={phase === "exit" ? "exit" : "travel"} />
-            <motion.div
-              className="pointer-events-none absolute inset-0 flex items-center justify-center"
-              initial={{ opacity: 0.9 }}
-              animate={{ opacity: phase === "exit" ? 0 : 0.9 }}
-              transition={{
-                duration: phase === "exit" ? EXIT_MS / 1000 : 0.6,
-                ease: phase === "exit" ? [0.4, 0, 1, 1] : [0.2, 0, 0, 1],
-              }}
-            >
-              <LogoSpinner className="size-24" />
-            </motion.div>
+            <HyperspaceStars phase={phase === "exit" ? "exit" : "travel"} />
           </motion.div>
         )}
       </AnimatePresence>
 
-      {phase !== "travel" && children}
+      {phase !== "travel" && (
+        <LoaderPhaseProvider value={phase}>{children}</LoaderPhaseProvider>
+      )}
     </>
   );
 }

@@ -1,6 +1,16 @@
+"use client";
+
+import { useLoaderPhase } from "@/components/loader-phase-context";
+
 import { StarMate } from "./star-mate";
 
 export function FloatingStars() {
+  // Hide while the hyperspace loader is racing its own stars in — they
+  // animate to these exact positions, so we mount only once the loader is
+  // gone to avoid a duplicated set during the handoff.
+  const phase = useLoaderPhase();
+  if (phase !== "done") return null;
+
   return (
     <div
       aria-hidden="true"
