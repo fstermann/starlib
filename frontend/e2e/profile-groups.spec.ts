@@ -237,6 +237,15 @@ test.describe("ProfileGroups", () => {
       "Alpha track",
     );
 
+    // The UserSearch stays visible while the group is transient — the user
+    // can keep adding members without opening the manage dialog.
+    await page
+      .getByPlaceholder(/search users or paste/i)
+      .fill("bob");
+    await page.getByText("bob").first().click();
+    // Bar now shows "2 profiles".
+    await expect(page.getByTestId("group-bar")).toContainText("2 profiles");
+
     // Save the transient group via the bar's "Save group" trigger.
     await page.getByTestId("group-bar-manage").click();
     const dialog = page.getByTestId("profile-group-dialog");
@@ -244,12 +253,6 @@ test.describe("ProfileGroups", () => {
     await dialog
       .getByTestId("profile-group-name-input")
       .fill("My DJs");
-
-    // Add bob as a second member.
-    await dialog
-      .getByPlaceholder(/search users or paste/i)
-      .fill("bob");
-    await dialog.getByText("bob").first().click();
     await expect(
       dialog.getByTestId("profile-group-member-row"),
     ).toHaveCount(2);

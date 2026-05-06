@@ -444,8 +444,8 @@ export function SoundcloudView() {
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Discover tab: profile-group bar / user search */}
       {tab === "discover" && (
-        <div className="border-border border-b px-4 py-2">
-          {activeGroup ? (
+        <div className="border-border space-y-2 border-b px-4 py-2">
+          {activeGroup && (
             <GroupBar
               group={activeGroup}
               savedGroups={savedGroups}
@@ -474,7 +474,12 @@ export function SoundcloudView() {
                 setActiveGroupId("");
               }}
             />
-          ) : (
+          )}
+          {/* Show UserSearch when no group is selected (initial Discover) and
+              also while editing an unsaved transient group, so the user can
+              keep adding members without opening the manage dialog. Saved
+              groups are edited through Manage to keep the inline bar clean. */}
+          {(!activeGroup || activeGroup.id === TRANSIENT_GROUP_ID) && (
             <UserSearch
               onSelect={(u) => {
                 if (!u) return;
@@ -485,10 +490,18 @@ export function SoundcloudView() {
                   avatar_url: u.avatar_url ?? null,
                 };
                 if (!member.user_urn) return;
-                setTransientGroup({
-                  id: TRANSIENT_GROUP_ID,
-                  name: "",
-                  members: [member],
+                setTransientGroup((prev) => {
+                  if (!prev) {
+                    return {
+                      id: TRANSIENT_GROUP_ID,
+                      name: "",
+                      members: [member],
+                    };
+                  }
+                  if (prev.members.some((m) => m.user_urn === member.user_urn)) {
+                    return prev;
+                  }
+                  return { ...prev, members: [...prev.members, member] };
                 });
                 setActiveGroupId("");
               }}
