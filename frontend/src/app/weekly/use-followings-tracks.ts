@@ -37,7 +37,12 @@ async function fetchRecentPages(
 ): Promise<SCTrack[]> {
   const cutoff = new Date(Date.now() - TWO_WEEKS_MS);
 
-  let allTracks: SCTrack[] = [];
+  // The feed can surface the same track more than once (e.g. an original post
+  // and reposts from multiple followed users). Dedupe by urn so downstream
+  // consumers — most importantly the virtualizer keying rows by track.urn —
+  // never see duplicate identities.
+  const seen = new Set<string>();
+  const allTracks: SCTrack[] = [];
   let nextHref: string | undefined;
 
   do {
@@ -49,7 +54,14 @@ async function fetchRecentPages(
 
     if (signal.aborted) return [];
 
-    allTracks = [...allTracks, ...tracks];
+    for (const t of tracks) {
+      const key = t.urn;
+      if (key) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      allTracks.push(t);
+    }
     onProgress([...allTracks]);
 
     // Feed is newest-first. Once the oldest item on this page is before the
