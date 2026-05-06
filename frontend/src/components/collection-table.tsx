@@ -7,7 +7,6 @@ import {
   ChevronsUpDown,
   ChevronUp,
   Eraser,
-  Loader2,
   Music,
   PencilLine,
   Workflow,
@@ -30,6 +29,7 @@ import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { MiniWaveform } from "@/components/mini-waveform";
 import { RulesetPreview } from "@/components/rulesets/ruleset-preview";
+import { Spinner } from "@/components/spinner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1479,7 +1479,7 @@ export function CollectionTable({
                   onClick={handleApplyRulesToSelected}
                 >
                   {applyingBatch ? (
-                    <Loader2 className="size-3.5 animate-spin" />
+                    <Spinner className="size-3.5" />
                   ) : (
                     <Workflow className="size-3.5" />
                   )}

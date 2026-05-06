@@ -6,7 +6,6 @@ import {
   Clapperboard,
   Download,
   FolderOpen,
-  Loader2,
   Monitor,
   Moon,
   Paintbrush,
@@ -24,6 +23,7 @@ import React, { useEffect, useState } from "react";
 
 import { FolderConfigManager } from "@/components/rulesets/folder-config-manager";
 import { RulesetManager } from "@/components/rulesets/ruleset-manager";
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -555,7 +555,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         onClick={handleSaveRootFolder}
                       >
                         {rootFolderSaving ? (
-                          <Loader2 className="size-3.5 animate-spin" />
+                          <Spinner className="size-3.5" />
                         ) : (
                           "Save"
                         )}
@@ -787,7 +787,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               disabled={ollamaStopping}
                             >
                               {ollamaStopping ? (
-                                <Loader2 className="size-3 animate-spin" />
+                                <Spinner className="size-3" />
                               ) : (
                                 <Square className="size-3" />
                               )}
@@ -818,10 +818,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         >
                           {ollamaChecking ? (
                             <>
-                              <Loader2
-                                data-icon="inline-start"
-                                className="animate-spin"
-                              />
+                              <Spinner data-icon="inline-start" />
                               Starting…
                             </>
                           ) : (
@@ -901,7 +898,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           onClick={handleOllamaSaveUrl}
                         >
                           {ollamaSaving ? (
-                            <Loader2 className="size-3.5 animate-spin" />
+                            <Spinner className="size-3.5" />
                           ) : (
                             "Save"
                           )}
@@ -916,7 +913,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               disabled={ollamaChecking}
                             >
                               {ollamaChecking ? (
-                                <Loader2 className="size-3.5 animate-spin" />
+                                <Spinner className="size-3.5" />
                               ) : (
                                 <Zap className="size-3.5" />
                               )}
@@ -1082,7 +1079,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           onClick={handleSaveApiKey}
                         >
                           {apiKeySaving ? (
-                            <Loader2 className="size-3.5 animate-spin" />
+                            <Spinner className="size-3.5" />
                           ) : (
                             "Save"
                           )}
@@ -1167,10 +1164,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     >
                       {checking ? (
                         <>
-                          <Loader2
-                            data-icon="inline-start"
-                            className="animate-spin"
-                          />
+                          <Spinner data-icon="inline-start" />
                           Checking…
                         </>
                       ) : (
@@ -1205,10 +1199,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         >
                           {installing ? (
                             <>
-                              <Loader2
-                                data-icon="inline-start"
-                                className="animate-spin"
-                              />
+                              <Spinner data-icon="inline-start" />
                               Installing…
                             </>
                           ) : (
@@ -1353,7 +1344,7 @@ function FolderRulesetAdder({
           disabled={!canSubmit}
           onClick={handleAdd}
         >
-          {saving ? <Loader2 className="size-3.5 animate-spin" /> : "Add"}
+          {saving ? <Spinner className="size-3.5" /> : "Add"}
         </Button>
       </div>
       {error && <p className="text-destructive text-xs">{error}</p>}

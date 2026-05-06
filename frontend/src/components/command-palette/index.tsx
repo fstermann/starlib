@@ -1,9 +1,9 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { Spinner } from "@/components/spinner";
 import {
   CommandDialog,
   CommandEmpty,
@@ -272,7 +272,7 @@ export function CommandPalette() {
           {!hasAny && pending === 0 && <CommandEmpty>No results.</CommandEmpty>}
           {pending > 0 && (
             <div className="text-muted-foreground flex items-center gap-2 px-3 py-2 text-xs">
-              <Loader2 className="size-3 animate-spin" />
+              <Spinner className="size-3" />
               Searching…
             </div>
           )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Gauge, Loader2, Waves } from "lucide-react";
+import { Gauge, Waves } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -9,6 +9,7 @@ import {
   SC_BPM_UPDATED_EVENT,
   type ScBpmUpdatedDetail,
 } from "@/components/soundcloud-batch-analyze-button";
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -316,7 +317,7 @@ export function BpmPitcher() {
               >
                 {detecting ? (
                   <>
-                    <Loader2 className="animate-spin" />
+                    <Spinner />
                     Detecting…
                   </>
                 ) : (
