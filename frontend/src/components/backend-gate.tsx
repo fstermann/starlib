@@ -9,8 +9,9 @@ import { api } from "@/lib/api";
 
 const POLL_INTERVAL_MS = 500;
 // Minimum time the hyperspace effect plays even if the backend answers
-// instantly — gives the animation a beat to land.
-const MIN_TRAVEL_MS = 1100;
+// instantly — long enough to show the StarMate fly-in plus at least one
+// cruise loop before deceleration.
+const MIN_TRAVEL_MS = 1500;
 // Deceleration window from "exit" trigger to fully unmounting the loader.
 const EXIT_MS = 700;
 
