@@ -113,4 +113,98 @@ test.describe("audio output disconnect", () => {
     // the toggle button flips back to "Play".
     await expect(toggle).toHaveAttribute("aria-label", "Play");
   });
+
+  test("audiooutput count drop on devicechange flips React state to paused", async ({
+    page,
+  }) => {
+    await page.route("**/api/metadata/folders/*/browse*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [MOCK_FILE],
+          total: 1,
+          page: 1,
+          size: 50,
+          pages: 1,
+        }),
+      }),
+    );
+    await page.route(/\/api\/metadata\/folders\/browse-path\?/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [MOCK_FILE],
+          total: 1,
+          page: 1,
+          size: 50,
+          pages: 1,
+        }),
+      }),
+    );
+    await page.route("**/api/metadata/files/*/info", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MOCK_TRACK_INFO),
+      }),
+    );
+    await page.route("**/api/metadata/files/*/peaks*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ peaks: Array(200).fill(0.3) }),
+      }),
+    );
+
+    // Stub enumerateDevices BEFORE navigation so the player effect's initial
+    // count snapshot uses our two-output baseline. The listener pauses when a
+    // devicechange event fires and the count has dropped — same signal a real
+    // AirPods disconnect produces in WKWebView/Chromium.
+    await page.addInitScript(() => {
+      const w = window as unknown as { __outputCount: number };
+      w.__outputCount = 2;
+      const fakeDevices = () =>
+        Array.from({ length: w.__outputCount }, () => ({
+          deviceId: "",
+          kind: "audiooutput" as const,
+          label: "",
+          groupId: "",
+          toJSON() {
+            return {
+              deviceId: "",
+              kind: "audiooutput",
+              label: "",
+              groupId: "",
+            };
+          },
+        }));
+      navigator.mediaDevices.enumerateDevices = async () =>
+        fakeDevices() as unknown as MediaDeviceInfo[];
+    });
+
+    await page.goto("/library");
+    await page.waitForLoadState("networkidle");
+    await page.locator('[data-file-path="track.mp3"]').click();
+
+    const player = page.getByTestId("waveform-player");
+    await expect(player).toBeVisible();
+
+    const toggle = page.getByTestId("player-toggle");
+    if ((await toggle.getAttribute("aria-label")) !== "Pause") {
+      await toggle.click();
+    }
+    await expect(toggle).toHaveAttribute("aria-label", "Pause");
+
+    // Drop one output and fire devicechange — mirrors AirPods leaving the
+    // device list. The listener should observe the count decrease and pause.
+    await page.evaluate(() => {
+      const w = window as unknown as { __outputCount: number };
+      w.__outputCount = 1;
+      navigator.mediaDevices.dispatchEvent(new Event("devicechange"));
+    });
+
+    await expect(toggle).toHaveAttribute("aria-label", "Play");
+  });
 });

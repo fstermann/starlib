@@ -155,8 +155,12 @@ export function WaveformPlayer() {
         : undefined,
     });
     ms.playbackState = isPlaying ? "playing" : "paused";
-    ms.setActionHandler("play", () => toggle());
-    ms.setActionHandler("pause", () => toggle());
+    ms.setActionHandler("play", () => {
+      if (!isPlayingRef.current) toggle();
+    });
+    ms.setActionHandler("pause", () => {
+      if (isPlayingRef.current) toggle();
+    });
     ms.setActionHandler("nexttrack", hasNext ? () => next() : null);
     ms.setActionHandler("previoustrack", hasPrevious ? () => previous() : null);
     return () => {
@@ -166,6 +170,35 @@ export function WaveformPlayer() {
       ms.setActionHandler("previoustrack", null);
     };
   }, [currentTrack, isPlaying, toggle, next, previous, hasNext, hasPrevious]);
+
+  // Pause when the active audio output device disappears (AirPods disconnect,
+  // headphones unplugged). The audio element's own `pause` event isn't
+  // reliable here — WKWebView/Safari pauses natively, but Chromium-based
+  // engines keep playing through the new default output. `devicechange` plus
+  // an audiooutput count drop is the canonical signal in both.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices) return;
+    const md = navigator.mediaDevices;
+    let prevCount = 0;
+    let cancelled = false;
+    const countOutputs = async () => {
+      const devices = await md.enumerateDevices();
+      return devices.filter((d) => d.kind === "audiooutput").length;
+    };
+    countOutputs().then((n) => {
+      if (!cancelled) prevCount = n;
+    });
+    const onChange = async () => {
+      const next = await countOutputs();
+      if (next < prevCount && isPlayingRef.current) pause();
+      prevCount = next;
+    };
+    md.addEventListener("devicechange", onChange);
+    return () => {
+      cancelled = true;
+      md.removeEventListener("devicechange", onChange);
+    };
+  }, [pause]);
 
   useEffect(() => {
     if (!currentTrack) return;
