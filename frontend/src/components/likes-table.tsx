@@ -54,7 +54,7 @@ import { api } from "@/lib/api";
 import type { ColumnDef } from "@/lib/columns/types";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import type { SourceProfile } from "@/lib/profile-groups";
-import type { SCTrack } from "@/lib/soundcloud";
+import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
 import {
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
@@ -64,7 +64,14 @@ import { cn } from "@/lib/utils";
 const ROW_HEIGHT = 48;
 const DESCRIPTION_HEIGHT = 120;
 
-type SortKey = "title" | "artist" | "genre" | "duration" | "playback_count";
+type SortKey =
+  | "title"
+  | "artist"
+  | "genre"
+  | "duration"
+  | "playback_count"
+  | "uploaded"
+  | "added";
 type SortOrder = "asc" | "desc";
 
 /** A single source of truth for likes-table columns. Drives both the header
@@ -188,6 +195,24 @@ const LIKES_COLUMNS: LikesCol[] = [
     cellClassName:
       "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
     renderBody: ({ track }) => <>{formatPlays(track.playback_count)}</>,
+  },
+  {
+    id: "uploaded",
+    header: "Uploaded",
+    sortKey: "uploaded",
+    defaultWidth: 96,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatDate(track.created_at)}</>,
+  },
+  {
+    id: "added",
+    header: "Added",
+    sortKey: "added",
+    defaultWidth: 96,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatDate(track.addedAt)}</>,
   },
   {
     id: "links",
@@ -344,6 +369,20 @@ function formatDuration(ms: number | undefined): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** Render an SC timestamp as `DD.MM.YYYY`; em-dash for missing/unparseable. */
+function formatDate(value: string | undefined): string {
+  const t = parseSCTimestamp(value);
+  if (t == null) return "—";
+  const d = new Date(t);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
+
+function dateValue(value: string | undefined): number {
+  return parseSCTimestamp(value) ?? 0;
 }
 
 function formatPlays(count: number | undefined): string {
@@ -729,6 +768,12 @@ export function LikesTable({
           break;
         case "playback_count":
           cmp = (a.playback_count ?? 0) - (b.playback_count ?? 0);
+          break;
+        case "uploaded":
+          cmp = dateValue(a.created_at) - dateValue(b.created_at);
+          break;
+        case "added":
+          cmp = dateValue(a.addedAt) - dateValue(b.addedAt);
           break;
       }
       return sortOrder === "asc" ? cmp : -cmp;

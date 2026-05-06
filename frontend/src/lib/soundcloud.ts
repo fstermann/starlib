@@ -14,9 +14,30 @@ export type SCTrack = components["schemas"]["Track"] & {
   /** Set by the weekly feed parser when the activity was a track-repost
    * rather than an original release. Undefined elsewhere. */
   isRepost?: boolean;
+  /** Activity timestamp from the feed: when the track was posted/reposted
+   * into the user's feed (distinct from `created_at`, which is when the
+   * track itself was uploaded). Only set for feed-derived tracks; in
+   * other contexts (likes, playlists) this remains undefined since the
+   * SoundCloud API doesn't expose liked-at on those endpoints. */
+  addedAt?: string;
 };
 export type SCPlaylist = components["schemas"]["Playlist"];
 export type SCUser = components["schemas"]["User"];
+
+/** Parse a SoundCloud timestamp to epoch ms.
+ *
+ * Accepts both the legacy `YYYY/MM/DD HH:MM:SS +0000` format and ISO-8601.
+ * Returns `null` for missing/unparseable values so callers can branch instead
+ * of guarding `NaN`. */
+export function parseSCTimestamp(value: string | undefined): number | null {
+  if (!value) return null;
+  const normalized = value
+    .replace(/\//g, "-")
+    .replace(" ", "T")
+    .replace(" +0000", "Z");
+  const t = Date.parse(normalized);
+  return Number.isFinite(t) ? t : null;
+}
 
 function createSCClient(token: string) {
   const client = createClient<paths>({ baseUrl: "https://api.soundcloud.com" });
@@ -228,9 +249,11 @@ export type SCActivities = components["schemas"]["Activities"];
 /**
  * Fetches one page of the authenticated user's recent track feed.
  *
- * Each returned track's `created_at` is overridden with the activity timestamp
- * (i.e. when it appeared in the feed, not when it was originally uploaded), so
- * that reposts are bucketed correctly in weekly groups.
+ * Each returned track keeps its origin `created_at` (upload date) and gains an
+ * `addedAt` field carrying the feed activity timestamp — the moment the
+ * track or repost surfaced in the feed. Weekly grouping uses `addedAt` so
+ * reposts bucket by when they appeared, not when the underlying track was
+ * uploaded.
  */
 export async function getFeedTracksPage(
   limit = 50,
@@ -262,9 +285,7 @@ export async function getFeedTracksPage(
     )
     .map((item) => ({
       ...(item.origin as SCTrack),
-      // Use the activity date (when it appeared in the feed / was reposted),
-      // not the track's original upload date.
-      created_at: item.created_at ?? (item.origin as SCTrack).created_at,
+      addedAt: item.created_at ?? (item.origin as SCTrack).created_at,
       isRepost: item.type === "track:repost",
     }));
 

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import type { SCTrack } from "@/lib/soundcloud";
+import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
 
 export type GroupingMode = "weekly" | "biweekly";
 
@@ -159,10 +159,10 @@ export function useWeeklyGroups(
     }
 
     for (const track of tracks) {
-      if (!track.created_at) continue;
-      const created = new Date(track.created_at);
+      const ts = parseSCTimestamp(track.addedAt ?? track.created_at);
+      if (ts == null) continue;
       for (const bucket of buckets) {
-        if (created >= bucket.start && created < bucket.end) {
+        if (ts >= bucket.start.getTime() && ts < bucket.end.getTime()) {
           bucketTracks
             .get(buildKey(bucket.start, bucket.end, bucket.half))!
             .push(track);

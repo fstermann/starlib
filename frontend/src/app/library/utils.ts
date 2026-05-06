@@ -1,4 +1,4 @@
-import type { SCTrack } from "@/lib/soundcloud";
+import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
 
 /** Parse the backend's semicolon-delimited comment string into structured fields. */
 export function parseComment(raw: string | null | undefined): {
@@ -59,16 +59,8 @@ export function scReleaseDate(track: SCTrack): string | undefined {
       track.release_day && track.release_day > 0 ? track.release_day : 1;
     return `${track.release_year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
-  if (track.created_at) {
-    const normalized = track.created_at
-      .replace(/\//g, "-")
-      .replace(" ", "T")
-      .replace(" +0000", "Z");
-    const date = new Date(normalized);
-    if (!isNaN(date.getTime())) {
-      return date.toISOString().slice(0, 10);
-    }
-  }
+  const ts = parseSCTimestamp(track.created_at);
+  if (ts != null) return new Date(ts).toISOString().slice(0, 10);
   return undefined;
 }
 
