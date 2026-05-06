@@ -805,6 +805,14 @@ export function LikesTable({
   const virtualizer = useVirtualizer({
     count: sortedTracks.length,
     getScrollElement: () => scrollParentRef.current,
+    // Key rows by track identity so cell state (analyzed BPM, expanded, etc.)
+    // doesn't leak when the underlying tracks change — sort, reorder, or
+    // playlist switch would otherwise reuse the same cell instance for a
+    // different track and show its prior state on the wrong row.
+    getItemKey: useCallback(
+      (index: number) => sortedTracks[index]?.urn ?? `__idx_${index}`,
+      [sortedTracks],
+    ),
     estimateSize: useCallback(
       (index: number) => {
         const track = sortedTracks[index];
