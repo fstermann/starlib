@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { CalendarDays } from "lucide-react";
 
 import { ConstellationCard } from "@/components/home/constellation-card";
-import { FloatingStars } from "@/components/home/floating-stars";
 import { GalaxyBackground } from "@/components/home/galaxy-background";
 import { LibraryIcon } from "@/components/icons/library-icon";
 
@@ -66,7 +65,6 @@ export default function Home() {
   return (
     <div className="relative flex h-full min-h-full w-full flex-col overflow-hidden">
       <GalaxyBackground />
-      <FloatingStars />
 
       <motion.div
         className="relative z-10 mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center px-6 py-16"

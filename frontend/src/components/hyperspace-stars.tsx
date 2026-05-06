@@ -1,14 +1,15 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { StarMate } from "@/components/home/star-mate";
 
-type Phase = "travel" | "exit";
+type Phase = "travel" | "exit" | "done";
 
-// Mirrors the placements in components/home/floating-stars.tsx so the loader
-// hands off to identical positions when it unmounts.
+// Mirrors the placements that used to live in floating-stars.tsx so the
+// loader's racing stars settle into the exact title-screen layout.
 const STARS = [
   {
     size: 64,
@@ -48,13 +49,14 @@ const STARS = [
 ];
 
 /**
- * Three StarMates racing through hyperspace — each flies along a trajectory
- * pointing at its eventual home position on the title screen, scaling from
- * tiny to huge as it "passes the camera". When `phase === "exit"` they ease
- * to their final size + position so the loader hands off seamlessly to the
- * home page's FloatingStars.
+ * Three StarMates that race through hyperspace and end up as the home page's
+ * floating stars. Mounted once at app start and never remounted, so the same
+ * React instances (and Zdog canvases) hand off cleanly: no fade, no flicker.
+ *
+ * Visible only on the home route — they belong to the title screen.
  */
 export function HyperspaceStars({ phase }: { phase: Phase }) {
+  const pathname = usePathname();
   const [size, setSize] = useState({ vw: 0, vh: 0 });
 
   useEffect(() => {
@@ -66,6 +68,7 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
   }, []);
 
   if (size.vw === 0) return null;
+  if (pathname !== "/") return null;
 
   const cx = size.vw / 2;
   const cy = size.vh / 2;
@@ -74,13 +77,14 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
     <>
       {STARS.map((s, i) => {
         const home = s.home(size.vw, size.vh, s.size);
-        // Position when centered on screen (top-left of element).
+        // Top-left of the star when centered on screen.
         const startX = cx - s.size / 2;
         const startY = cy - s.size / 2;
         const dx = home.x - startX;
         const dy = home.y - startY;
 
         const racing = phase === "travel";
+        const arrived = phase === "done";
 
         return (
           <motion.div
@@ -92,26 +96,29 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
               left: 0,
               width: s.size,
               height: s.size,
+              zIndex: 101,
               pointerEvents: "none",
-              willChange: "transform, opacity",
+              willChange: "transform",
             }}
             initial={{ x: startX, y: startY, scale: 0.05, opacity: 0 }}
             animate={
               racing
                 ? {
+                    // Trajectory points at the eventual home position so the
+                    // stars race toward where they'll land.
                     x: [
                       startX,
-                      startX + dx * 0.4,
-                      startX + dx * 1.4,
-                      startX + dx * 2.6,
+                      startX + dx * 0.55,
+                      startX + dx * 1.0,
+                      startX + dx * 1.7,
                     ],
                     y: [
                       startY,
-                      startY + dy * 0.4,
-                      startY + dy * 1.4,
-                      startY + dy * 2.6,
+                      startY + dy * 0.55,
+                      startY + dy * 1.0,
+                      startY + dy * 1.7,
                     ],
-                    scale: [0.05, 0.45, 1.6, 4.5],
+                    scale: [0.05, 0.55, 1, 2.2],
                     opacity: [0, 1, 1, 0],
                   }
                 : { x: home.x, y: home.y, scale: 1, opacity: 1 }
@@ -119,13 +126,16 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
             transition={
               racing
                 ? {
-                    duration: 1.05,
+                    duration: 1.0,
                     repeat: Infinity,
                     delay: i * 0.18,
                     ease: [0.45, 0, 0.9, 0.4],
-                    times: [0, 0.25, 0.7, 1],
+                    times: [0, 0.3, 0.65, 1],
                   }
-                : { duration: 0.55, ease: [0.2, 0, 0, 1] }
+                : {
+                    duration: arrived ? 0 : 0.55,
+                    ease: [0.2, 0, 0, 1],
+                  }
             }
           >
             <StarMate

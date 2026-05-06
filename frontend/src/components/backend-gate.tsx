@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 
 import { HyperspaceLoader } from "@/components/hyperspace-loader";
 import { HyperspaceStars } from "@/components/hyperspace-stars";
-import { LoaderPhaseProvider } from "@/components/loader-phase-context";
 import { api } from "@/lib/api";
 
 const POLL_INTERVAL_MS = 500;
@@ -67,7 +66,7 @@ export function BackendGate({ children }: { children: React.ReactNode }) {
         {phase !== "done" && (
           <motion.div
             key="hyperspace"
-            className={`bg-background fixed inset-0 z-100 flex items-center justify-center overflow-hidden ${
+            className={`bg-background fixed inset-0 z-100 overflow-hidden ${
               phase === "exit" ? "pointer-events-none" : ""
             }`}
             initial={{ opacity: 1 }}
@@ -76,14 +75,16 @@ export function BackendGate({ children }: { children: React.ReactNode }) {
             transition={{ duration: EXIT_MS / 1000, ease: [0.4, 0, 1, 1] }}
           >
             <HyperspaceLoader phase={phase === "exit" ? "exit" : "travel"} />
-            <HyperspaceStars phase={phase === "exit" ? "exit" : "travel"} />
           </motion.div>
         )}
       </AnimatePresence>
 
-      {phase !== "travel" && (
-        <LoaderPhaseProvider value={phase}>{children}</LoaderPhaseProvider>
-      )}
+      {/* StarMates persist across travel → exit → done so the same React
+          instances (and Zdog canvases) literally land at the title-screen
+          positions — no fade, no remount. */}
+      <HyperspaceStars phase={phase} />
+
+      {phase !== "travel" && children}
     </>
   );
 }
