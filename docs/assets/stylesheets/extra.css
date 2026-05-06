@@ -29,6 +29,21 @@
   color: #111111;
 }
 
+/* Wordmark heading on the docs landing page */
+.md-typeset h1:has(> .wordmark) {
+  border: 0;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.md-typeset .wordmark {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  margin-inline: auto;
+}
+
 /* Hero cards on the index page */
 .hero-card {
   padding: 1.5rem;
