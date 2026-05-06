@@ -1,7 +1,7 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
@@ -20,6 +20,7 @@ export function UserSearch({ onSelect }: UserSearchProps) {
   // an older query can't restore stale results after the user has cleared
   // the input or moved on to something else.
   const latestQueryRef = useRef("");
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   function handleChange(value: string) {
     setQuery(value);
@@ -59,8 +60,25 @@ export function UserSearch({ onSelect }: UserSearchProps) {
 
   const showResults = searching || results.length > 0;
 
+  // Dismiss the floating results panel on outside click. The input keeps its
+  // text so the user can come back; only the results overlay collapses.
+  useEffect(() => {
+    if (!showResults) return;
+    function onMouseDown(e: MouseEvent) {
+      const root = wrapperRef.current;
+      if (!root) return;
+      if (root.contains(e.target as Node)) return;
+      latestQueryRef.current = "";
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      setResults([]);
+      setSearching(false);
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [showResults]);
+
   return (
-    <div className="relative">
+    <div ref={wrapperRef} className="relative">
       <div className="relative">
         <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
         <Input
