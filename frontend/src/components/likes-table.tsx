@@ -129,16 +129,16 @@ const LIKES_COLUMNS: LikesCol[] = [
     renderBody: ({ track, isExpanded, isNew }) => (
       <>
         <UnstreamableBadge track={track} />
-        <span
-          className={`truncate text-xs leading-tight font-medium ${isExpanded ? "text-primary" : ""}`}
-        >
-          {track.title || "—"}
-        </span>
         {isNew && (
           <span className="shrink-0 rounded bg-[var(--brand-soft)] px-1 py-0.5 text-xs leading-none font-semibold text-[var(--brand)]">
             NEW
           </span>
         )}
+        <span
+          className={`truncate text-xs leading-tight font-medium ${isExpanded ? "text-primary" : ""}`}
+        >
+          {track.title || "—"}
+        </span>
       </>
     ),
   },
