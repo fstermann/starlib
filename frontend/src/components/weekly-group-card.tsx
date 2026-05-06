@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   addTracksToPlaylist,
+  parseSCTimestamp,
   type SCPlaylist,
   type SCTrack,
 } from "@/lib/soundcloud";
@@ -102,8 +103,8 @@ export function WeeklyGroupCard({
       filterTrack ? filterTrack(t) : true,
     );
     const newSorted = [...newTracks].sort((a, b) => {
-      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      const ta = parseSCTimestamp(a.addedAt ?? a.created_at) ?? 0;
+      const tb = parseSCTimestamp(b.addedAt ?? b.created_at) ?? 0;
       return tb - ta;
     });
     return [...existingFiltered, ...newSorted];
