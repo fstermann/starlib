@@ -475,6 +475,35 @@ export function SoundcloudView() {
               }}
             />
           )}
+          {/* Saved-group picker on the empty Discover state — without it
+              there's no way to re-open a previously saved group when none
+              is active. Hidden once a group is loaded since the GroupBar's
+              own dropdown handles switching from there. */}
+          {!activeGroup && savedGroups.length > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-2"
+              data-testid="saved-groups-picker"
+            >
+              <span className="text-muted-foreground text-xs">
+                Your groups
+              </span>
+              {savedGroups.map((g) => (
+                <Button
+                  key={g.id ?? g.name}
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setActiveGroupId(g.id ?? "")}
+                  data-testid={`saved-groups-pick-${g.id ?? ""}`}
+                >
+                  {g.name}
+                  <span className="text-muted-foreground ml-1.5 tabular-nums">
+                    {g.members?.length ?? 0}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          )}
           {/* No group → search is the primary entry point. Transient group →
               search stays inline so the user can add more members without
               opening the manage dialog. Saved groups are edited via Manage. */}
