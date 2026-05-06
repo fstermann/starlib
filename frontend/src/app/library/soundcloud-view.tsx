@@ -121,14 +121,6 @@ export function SoundcloudView() {
     open: boolean;
     initial: { id: string; name: string; members: ProfileGroupMember[] };
   }>({ open: false, initial: { id: "", name: "", members: [] } });
-  // Inline UserSearch is auto-collapsed when adding a member to an existing
-  // transient group; the user re-opens it via "Add profile". Empty Discover
-  // (no group) keeps the search expanded so it's the primary entry point.
-  const [addProfileOpen, setAddProfileOpen] = useState(false);
-  useEffect(() => {
-    // Reset the add-profile UI when the transient group is cleared.
-    if (!transientGroup) setAddProfileOpen(false);
-  }, [transientGroup]);
 
   // Track search state (Search tab)
   const [searchQuery, setSearchQuery] = useQueryState("q", {
@@ -483,11 +475,10 @@ export function SoundcloudView() {
               }}
             />
           )}
-          {/* No group → search is the primary entry point (always expanded).
-              Transient group → search is collapsed behind an "Add profile"
-              trigger; expands on click and auto-collapses after a select.
-              Saved groups → editing happens in the manage dialog. */}
-          {!activeGroup && (
+          {/* No group → search is the primary entry point. Transient group →
+              search stays inline so the user can add more members without
+              opening the manage dialog. Saved groups are edited via Manage. */}
+          {(!activeGroup || activeGroup.id === TRANSIENT_GROUP_ID) && (
             <UserSearch
               onSelect={(u) => {
                 if (!u) return;
@@ -498,49 +489,23 @@ export function SoundcloudView() {
                   avatar_url: u.avatar_url ?? null,
                 };
                 if (!member.user_urn) return;
-                setTransientGroup({
-                  id: TRANSIENT_GROUP_ID,
-                  name: "",
-                  members: [member],
+                setTransientGroup((prev) => {
+                  if (!prev) {
+                    return {
+                      id: TRANSIENT_GROUP_ID,
+                      name: "",
+                      members: [member],
+                    };
+                  }
+                  if (prev.members.some((m) => m.user_urn === member.user_urn)) {
+                    return prev;
+                  }
+                  return { ...prev, members: [...prev.members, member] };
                 });
                 setActiveGroupId("");
               }}
             />
           )}
-          {activeGroup &&
-            activeGroup.id === TRANSIENT_GROUP_ID &&
-            (addProfileOpen ? (
-              <UserSearch
-                onSelect={(u) => {
-                  if (!u) return;
-                  const member: ProfileGroupMember = {
-                    user_urn: u.urn ?? "",
-                    permalink: u.permalink ?? "",
-                    username: u.username ?? "",
-                    avatar_url: u.avatar_url ?? null,
-                  };
-                  if (!member.user_urn) return;
-                  setTransientGroup((prev) => {
-                    if (!prev) return prev;
-                    if (prev.members.some((m) => m.user_urn === member.user_urn)) {
-                      return prev;
-                    }
-                    return { ...prev, members: [...prev.members, member] };
-                  });
-                  setAddProfileOpen(false);
-                }}
-              />
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setAddProfileOpen(true)}
-                data-testid="add-profile-button"
-              >
-                + Add profile
-              </Button>
-            ))}
         </div>
       )}
 

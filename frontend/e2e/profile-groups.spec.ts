@@ -237,21 +237,20 @@ test.describe("ProfileGroups", () => {
       "Alpha track",
     );
 
-    // After picking the first profile the inline search collapses behind
-    // an "Add profile" button. Click it to add bob.
+    // The inline search stays visible while the group is transient — the
+    // user can keep adding members. After each select the input clears.
     await expect(
       page.getByPlaceholder(/search users or paste/i),
-    ).toBeHidden();
-    await page.getByTestId("add-profile-button").click();
+    ).toBeVisible();
     await page
       .getByPlaceholder(/search users or paste/i)
       .fill("bob");
     await page.getByText("bob").first().click();
-    // Search collapses again after the select; bar shows "2 profiles".
+    await expect(page.getByTestId("group-bar")).toContainText("2 profiles");
+    // Input is now empty.
     await expect(
       page.getByPlaceholder(/search users or paste/i),
-    ).toBeHidden();
-    await expect(page.getByTestId("group-bar")).toContainText("2 profiles");
+    ).toHaveValue("");
 
     // Save the transient group via the bar's "Save group" trigger.
     await page.getByTestId("group-bar-manage").click();

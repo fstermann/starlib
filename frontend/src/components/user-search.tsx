@@ -48,8 +48,10 @@ export function UserSearch({ onSelect }: UserSearchProps) {
     }, 500);
   }
 
+  const showResults = searching || results.length > 0;
+
   return (
-    <div className="space-y-3">
+    <div className="relative">
       <div className="relative">
         <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
         <Input
@@ -60,10 +62,14 @@ export function UserSearch({ onSelect }: UserSearchProps) {
         />
       </div>
 
-      {searching && <p className="text-muted-foreground text-xs">Searching…</p>}
-
-      {results.length > 0 && (
-        <div className="grid gap-2">
+      {showResults && (
+        // Absolute overlay so the result list floats on top of whatever
+        // page content sits below the search input (likes table, etc.)
+        // instead of being clipped at its bottom edge.
+        <div className="bg-popover border-border absolute top-full right-0 left-0 z-50 mt-2 max-h-[60vh] space-y-2 overflow-auto rounded-md border p-2 shadow-lg">
+          {searching && (
+            <p className="text-muted-foreground text-xs">Searching…</p>
+          )}
           {results
             .filter((u): u is NonNullable<typeof u> => u != null)
             .map((user) => {
@@ -78,7 +84,7 @@ export function UserSearch({ onSelect }: UserSearchProps) {
                     setQuery("");
                     setResults([]);
                   }}
-                  className="border-border hover:border-primary/40 hover:bg-accent flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors"
+                  className="border-border hover:border-primary/40 hover:bg-accent flex w-full cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors"
                 >
                   <div className="bg-muted flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full">
                     {avatarUrl ? (
