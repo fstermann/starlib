@@ -237,11 +237,21 @@ export function WaveformPlayer() {
       const resolvedStreamUrl = await streamUrlPromise;
       if (cancelled) return;
       // For SC tracks the resolve can fail — bail before attaching a bad src.
+      // Flag the track unplayable so the queue's auto-skip effect advances
+      // past it. Don't set errorMsg here: the JSX swaps the container div
+      // out for the error text, and the next track's init() runs synchronously
+      // before React re-renders to clear the error — so containerRef.current
+      // is null and that init bails too, leaving the waveform unrendered.
       if (
         currentTrack!.streamRefreshKey !== undefined &&
         currentTrack!.streamRefreshKey !== null &&
         !resolvedStreamUrl
       ) {
+        const sid =
+          typeof currentTrack!.streamRefreshKey === "number"
+            ? currentTrack!.streamRefreshKey
+            : Number(currentTrack!.streamRefreshKey);
+        if (Number.isFinite(sid) && sid > 0) markScUnplayable(sid);
         return;
       }
       const sourceUrl =
@@ -297,9 +307,9 @@ export function WaveformPlayer() {
                   ? currentTrack!.streamRefreshKey
                   : Number(currentTrack!.streamRefreshKey);
               if (Number.isFinite(sid) && sid > 0) markScUnplayable(sid);
-              setErrorMsg(
-                "This track isn't available for playback (SoundCloud restricted).",
-              );
+              // No setErrorMsg: the unplayable flag triggers auto-skip,
+              // and showing the error swaps out containerRef before the
+              // next track's init() can use it (see initial-bail comment).
             },
           });
         } catch (err) {

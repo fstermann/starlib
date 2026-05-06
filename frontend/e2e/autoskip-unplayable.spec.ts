@@ -89,6 +89,19 @@ async function setup(page: import("@playwright/test").Page) {
       body: JSON.stringify({ root_music_folder: "/music" }),
     }),
   );
+  // Default /stream success — without this the init() catch path now
+  // flags the track unplayable and auto-skips before tests can observe it.
+  // Specs that exercise the failure path override this with page.route().
+  await page.route("**/api/soundcloud/tracks/*/stream*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        url: "https://example.com/fake.m3u8",
+        expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      }),
+    }),
+  );
 }
 
 test.describe("autoskip unplayable tracks", () => {
@@ -140,6 +153,57 @@ test.describe("autoskip unplayable tracks", () => {
     });
 
     // The auto-skip effect should advance the queue to Bravo.
+    await expect(player).toContainText("Bravo track");
+    await expect(player).not.toContainText("Alpha track");
+  });
+
+  test("404 from /stream auto-skips without manual flagging", async ({
+    page,
+  }) => {
+    await setup(page);
+
+    // Backend refuses Alpha's stream URL (the "No HLS stream variant" case
+    // from production logs); Bravo resolves normally. The player's init()
+    // catch should flag Alpha unplayable, which trips the auto-skip effect.
+    await page.route("**/api/soundcloud/tracks/42/stream*", (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "No HLS stream variant available for this track",
+        }),
+      }),
+    );
+    await page.route("**/api/soundcloud/tracks/99/stream*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          url: "https://example.com/bravo.m3u8",
+          expires_at: new Date(Date.now() + 3600_000).toISOString(),
+        }),
+      }),
+    );
+
+    await page.goto("/library?source=soundcloud");
+    await expect(page.locator("[data-index]")).toHaveCount(2, {
+      timeout: 5000,
+    });
+
+    await page
+      .locator('[data-index="0"]')
+      .getByRole("button", { name: /play/i })
+      .first()
+      .click()
+      .catch(async () => {
+        await page.locator('[data-index="0"]').click();
+      });
+
+    const player = page.getByTestId("waveform-player");
+    await expect(player).toBeVisible();
+    // The player loads Alpha, /stream 404s, init flags it unplayable, and
+    // the queue advances to Bravo — all without the test touching the
+    // unplayable API directly.
     await expect(player).toContainText("Bravo track");
     await expect(player).not.toContainText("Alpha track");
   });

@@ -97,6 +97,12 @@ export function BpmPitcher() {
   const autoDetectGuardRef = useRef<string | null>(null);
   useEffect(() => {
     if (!pitchEnabled || !currentTrack || currentBpm != null) return;
+    // PlayerProvider reseeds `currentBpm` from `currentTrack.bpm` in a
+    // post-commit effect, so on track switch this effect can briefly see
+    // the previous render's `currentBpm = null` while the new track
+    // already has a hint. Bail on the stable hint to avoid re-detecting
+    // (and re-toasting) tracks that already have a BPM.
+    if (currentTrack.bpm != null) return;
     if (!isTauri()) return;
     if (detecting) return;
     if (autoDetectGuardRef.current === currentTrack.filePath) return;
