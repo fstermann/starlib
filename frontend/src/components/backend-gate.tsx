@@ -77,18 +77,14 @@ export function BackendGate({ children }: { children: React.ReactNode }) {
             <HyperspaceLoader phase={phase === "exit" ? "exit" : "travel"} />
             <motion.div
               className="pointer-events-none absolute inset-0 flex items-center justify-center"
-              initial={{ opacity: 0.9, scale: 0.95 }}
-              animate={
-                phase === "exit"
-                  ? { opacity: 0, scale: 1.4 }
-                  : { opacity: 0.9, scale: 1 }
-              }
+              initial={{ opacity: 0.9 }}
+              animate={{ opacity: phase === "exit" ? 0 : 0.9 }}
               transition={{
                 duration: phase === "exit" ? EXIT_MS / 1000 : 0.6,
                 ease: phase === "exit" ? [0.4, 0, 1, 1] : [0.2, 0, 0, 1],
               }}
             >
-              <LogoSpinner className="size-24 opacity-90 drop-shadow-[0_0_24px_var(--brand)]" />
+              <LogoSpinner className="size-24" />
             </motion.div>
           </motion.div>
         )}
