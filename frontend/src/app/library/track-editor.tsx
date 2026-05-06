@@ -9,7 +9,6 @@ import {
   ChevronDown,
   Image as ImageIcon,
   Link2,
-  Loader2,
   MoveRight,
   RotateCcw,
   Search,
@@ -28,6 +27,7 @@ import { toast } from "sonner";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { RULE_ICON_COLORS, RULE_ICONS } from "@/components/rulesets/rule-card";
 import { RulesetPreview } from "@/components/rulesets/ruleset-preview";
+import { Spinner } from "@/components/spinner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1306,11 +1306,7 @@ export function TrackEditor({
                         disabled={bpmAnalyzing}
                         title="Detect BPM from audio"
                       >
-                        {bpmAnalyzing ? (
-                          <Loader2 className="animate-spin" />
-                        ) : (
-                          <Waves />
-                        )}
+                        {bpmAnalyzing ? <Spinner /> : <Waves />}
                       </Button>
                     )}
                     {isChanged("bpm") && (
@@ -2145,7 +2141,7 @@ export function TrackEditor({
                             )}
                           >
                             {applying ? (
-                              <Loader2 className="size-3 animate-spin" />
+                              <Spinner className="size-3" />
                             ) : (
                               <Workflow className="size-3" />
                             )}

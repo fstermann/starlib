@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Waves } from "lucide-react";
+import { Waves } from "lucide-react";
 import React, { useContext, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -8,6 +8,7 @@ import {
   SC_BPM_UPDATED_EVENT,
   type ScBpmUpdatedDetail,
 } from "@/components/soundcloud-batch-analyze-button";
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { analyzeSc, TrackUnanalysableError } from "@/lib/sc-bpm";
@@ -113,7 +114,7 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
       disabled={loading}
       title="Detect BPM"
     >
-      {loading ? <Loader2 className="animate-spin" /> : <Waves />}
+      {loading ? <Spinner /> : <Waves />}
     </Button>
   );
 }
