@@ -104,7 +104,7 @@ test.describe("SC table — BPM stays attached to its track on resort", () => {
     await page.goto("/library?source=soundcloud");
 
     // Wait for both rows to render.
-    const rows = page.locator('[data-index]');
+    const rows = page.locator("[data-index]");
     await expect(rows).toHaveCount(2, { timeout: 5000 });
 
     // Initial order: Alpha (index 0, id 42), Bravo (index 1, id 99).
