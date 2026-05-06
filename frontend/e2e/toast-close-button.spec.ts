@@ -27,7 +27,7 @@ test.describe("toast close button", () => {
     await expect(toast).toBeVisible();
 
     const closeBtn = page
-      .locator('[data-sonner-toast] [data-close-button]')
+      .locator("[data-sonner-toast] [data-close-button]")
       .first();
     await expect(closeBtn).toBeVisible();
     await closeBtn.click();
