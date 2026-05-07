@@ -91,8 +91,8 @@ type EditableField =
   | "mix_name";
 
 /** Field key universe for the column system. Editable keys map to track
- * metadata fields; "folder" + "soundcloud_linked" are read-only columns. */
-type FieldKey = EditableField | "folder" | "soundcloud_linked";
+ * metadata fields; read-only columns: folder, soundcloud_linked, file_format. */
+type FieldKey = EditableField | "folder" | "soundcloud_linked" | "file_format";
 
 /** Fields shown in the table — editable or read-only. Order here is the
  * default render order; user reorders persist via the column-prefs store.
@@ -125,6 +125,7 @@ const COLUMN_FIELDS: {
   },
   { key: "mix_name", label: "Mix", defaultWidth: 80, editable: true },
   { key: "release_date", label: "Release", defaultWidth: 96, editable: true },
+  { key: "file_format", label: "Format", defaultWidth: 64, editable: false },
 ];
 
 type ResolvedField = (typeof COLUMN_FIELDS)[number] & { width: number };
@@ -142,6 +143,7 @@ export const FILESYSTEM_COLUMN_DEFS: import("@/lib/columns/types").ColumnDef[] =
     { id: "original_artist", header: "Orig. Artist" },
     { id: "mix_name", header: "Mix" },
     { id: "release_date", header: "Release" },
+    { id: "file_format", header: "Format" },
   ];
 
 /** Fields not stored in the API — remix composition helpers (not remixer itself, which is a real field) */
@@ -194,6 +196,7 @@ const SORTABLE_FIELDS: Partial<Record<FieldKey, SortBy>> = {
   bpm: "bpm",
   key: "key",
   release_date: "release_date",
+  file_format: "file_format",
 };
 
 function getMissingAttributes(
@@ -503,6 +506,22 @@ function EditRow({
                   ? item.folder.slice(folderPath.length + 1) || "."
                   : item.folder
                 : "—"}
+            </span>
+          );
+        }
+        if (f.key === "file_format") {
+          const fmt = item.file_format
+            ? item.file_format.replace(/^\./, "").toLowerCase()
+            : "";
+          return (
+            <span
+              key={f.key}
+              data-format-cell
+              className="text-muted-foreground min-w-0 shrink-0 truncate text-xs tabular-nums"
+              style={{ width: f.width }}
+              title={item.file_format ?? ""}
+            >
+              {fmt || "—"}
             </span>
           );
         }

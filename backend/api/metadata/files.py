@@ -40,6 +40,8 @@ router = APIRouter()
 # unbounded ffmpeg conversions in parallel.
 _apply_rules_semaphore = asyncio.Semaphore(2)
 
+_SORT_BY_PATTERN = "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format)$"
+
 
 def _row_value(row, key, default=None):
     """sqlite3.Row doesn't support .get(); guard column-missing safely."""
@@ -153,7 +155,7 @@ def browse_by_path(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     has_soundcloud_id: bool | None = Query(None),
-    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$"),
+    sort_by: str = Query("file_name", pattern=_SORT_BY_PATTERN),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
     """Browse tracks by absolute folder path with optional recursion."""
@@ -329,7 +331,7 @@ def browse_folder_files(
     date_from: date | None = Query(None, description="Earliest release date (YYYY-MM-DD)"),
     date_to: date | None = Query(None, description="Latest release date (YYYY-MM-DD)"),
     has_soundcloud_id: bool | None = Query(None, description="Filter by SoundCloud link presence"),
-    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$"),
+    sort_by: str = Query("file_name", pattern=_SORT_BY_PATTERN),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
     """Browse tracks in a folder with filtering, sorting, and pagination.

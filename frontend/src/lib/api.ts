@@ -85,7 +85,8 @@ export interface BrowseParams {
     | "release_date"
     | "file_name"
     | "folder"
-    | "mtime";
+    | "mtime"
+    | "file_format";
   sort_order?: "asc" | "desc";
 }
 

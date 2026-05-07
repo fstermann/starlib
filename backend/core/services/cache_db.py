@@ -59,8 +59,9 @@ _SORT_COLS: dict[str, str] = {
     "file_name": "file_name",
     "folder": "folder",
     "mtime": "mtime",
+    "file_format": "file_format",
 }
-_NULLABLE_SORT_COLS = {"bpm", "release_date", "release_year"}
+_NULLABLE_SORT_COLS = {"bpm", "release_date", "release_year", "file_format"}
 
 # Columns matched by search_query LIKE clauses — derived from registry.
 _SEARCH_COLS: tuple[str, ...] = tuple(_REGISTRY_COL.get(f.name, f.name) for f in SIMPLE_TAG_FIELDS if f.searchable)
