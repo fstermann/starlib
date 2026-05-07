@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import type { ColumnDef } from "@/lib/columns/types";
+import { parseFallbackDownloadUrl } from "@/lib/parse-fallback-download";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import type { SourceProfile } from "@/lib/profile-groups";
 import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
@@ -241,24 +242,53 @@ const LIKES_COLUMNS: LikesCol[] = [
           ) : (
             <div className="size-5" />
           )}
-          {track.download_url ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <a
-                  href={track.download_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Download className="size-3" />
-                </a>
-              </TooltipTrigger>
-              <TooltipContent>Download</TooltipContent>
-            </Tooltip>
-          ) : (
-            <div className="size-5" />
-          )}
+          {(() => {
+            if (track.download_url) {
+              return (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <a
+                      href={track.download_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                      data-testid="sc-download-link"
+                    >
+                      <Download className="size-3" />
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent>Download</TooltipContent>
+                </Tooltip>
+              );
+            }
+            const fallback = parseFallbackDownloadUrl(track.description);
+            if (!fallback) return <div className="size-5" />;
+            const icon = purchaseIcon(fallback);
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <a
+                    href={fallback}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                    data-testid="sc-download-fallback"
+                  >
+                    {icon ? (
+                      <img src={icon.src} alt={icon.alt} className="size-3.5" />
+                    ) : (
+                      <Download className="size-3" />
+                    )}
+                  </a>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Download via {icon?.alt ?? "external link"}
+                </TooltipContent>
+              </Tooltip>
+            );
+          })()}
           {track.purchase_url ? (
             (() => {
               const icon = purchaseIcon(track.purchase_url);
