@@ -1,9 +1,10 @@
 "use client";
 
-import { Heart, ListMusic, Repeat2, Sparkles } from "lucide-react";
+import { Heart, ListMusic, Repeat2, Sparkles, User } from "lucide-react";
 import { useMemo } from "react";
 
 import { TreeView } from "@/components/tree/tree-view";
+import type { SourceProfile } from "@/lib/profile-groups";
 import type { SCPlaylist } from "@/lib/soundcloud";
 
 import type { SystemPlaylistSummary } from "./use-system-playlists";
@@ -14,12 +15,14 @@ export const PLAYLISTS_GROUP_ID = "playlists";
 export const MIXES_GROUP_ID = "mixes";
 export const playlistNodeId = (urn: string) => `pl:${urn}`;
 export const mixNodeId = (urn: string) => `mix:${urn}`;
+export const memberNodeId = (userUrn: string) => `member:${userUrn}`;
 
 export type LikesTreeNodeKind =
   | "root"
   | "likes"
   | "reposts"
   | "group"
+  | "member"
   | "playlist"
   | "mix";
 
@@ -61,6 +64,13 @@ interface LikesTreePanelProps {
    * on the Discover tab where mixes don't apply (per-user playlists only).
    */
   showMixes?: boolean;
+  /**
+   * Per-member playlist breakdown. When provided AND has 2+ members the
+   * "Playlists" group is rendered with a member-folder layer (one folder
+   * per profile) so a multi-profile group on Discover can browse each
+   * member's playlists. Falls through to the flat `playlists` list when
+   * absent or single-member. */
+  playlistsByMember?: Array<{ source: SourceProfile; playlists: SCPlaylist[] }>;
 }
 
 export function LikesTreePanel({
@@ -75,9 +85,10 @@ export function LikesTreePanel({
   mixes,
   perMixFilteredCount,
   showMixes,
+  playlistsByMember,
 }: LikesTreePanelProps) {
   const tree = useMemo<LikesTreeNode>(() => {
-    const playlistNodes: LikesTreeNode[] = playlists.map((pl, idx) => {
+    const toPlaylistNode = (pl: SCPlaylist, idx: number): LikesTreeNode => {
       const urn = pl.urn;
       const filtered = urn ? perPlaylistFilteredCount.get(urn) : undefined;
       return {
@@ -85,12 +96,22 @@ export function LikesTreePanel({
         name: (pl.title ?? "Untitled").trim() || "Untitled",
         children: [],
         kind: "playlist",
-        // Use filtered count when we have loaded tracks; fall back to the
-        // playlist's self-reported size.
         trackCount: filtered ?? pl.track_count,
         playlist: pl,
       };
-    });
+    };
+
+    const useMemberLayer =
+      playlistsByMember != null && playlistsByMember.length >= 2;
+    const playlistNodes: LikesTreeNode[] = useMemberLayer
+      ? playlistsByMember!.map((m) => ({
+          id: memberNodeId(m.source.user_urn),
+          name: m.source.username || m.source.user_urn,
+          kind: "member",
+          children: m.playlists.map(toPlaylistNode),
+          trackCount: m.playlists.length || undefined,
+        }))
+      : playlists.map(toPlaylistNode);
 
     const mixNodes: LikesTreeNode[] = (mixes ?? []).map((m) => ({
       id: mixNodeId(m.urn),
@@ -152,6 +173,7 @@ export function LikesTreePanel({
     mixes,
     perMixFilteredCount,
     showMixes,
+    playlistsByMember,
   ]);
 
   return (
@@ -181,6 +203,9 @@ export function LikesTreePanel({
           return (
             <Sparkles className="text-muted-foreground size-3.5 shrink-0" />
           );
+        }
+        if (node.kind === "member") {
+          return <User className="text-muted-foreground size-3.5 shrink-0" />;
         }
         return null;
       }}

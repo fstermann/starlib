@@ -62,6 +62,7 @@ import {
 } from "./likes-tree-panel";
 import { useCombinedPlaylistsTracks } from "./use-combined-playlists-tracks";
 import { useGroupLikes } from "./use-group-likes";
+import { useGroupPlaylists } from "./use-group-playlists";
 import { useGroupReposts } from "./use-group-reposts";
 import { useLikes } from "./use-likes";
 import {
@@ -161,14 +162,15 @@ export function SoundcloudView() {
     };
   }, [transientGroup, activeGroupId, savedGroups]);
 
-  // Group-of-one preserves today's "browse one profile's playlists" UX.
-  // Multi-member groups disable the per-profile playlists feature in v1.
-  const activeUrn: string | "me" | null =
+  // Scope identifier for selection-reset effects: changes when the user
+  // switches tab or swaps the active Discover group, but is stable while
+  // browsing within the same scope.
+  const scopeKey: string =
     tab === "me"
       ? "me"
-      : tab === "discover" && activeGroup?.members.length === 1
-        ? (activeGroup.members[0]?.user_urn ?? null)
-        : null;
+      : tab === "discover"
+        ? `discover:${activeGroup?.id ?? ""}`
+        : "search";
 
   const myLikes = useLikes("me");
   const myReposts = useReposts("me");
@@ -258,7 +260,20 @@ export function SoundcloudView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playUrn, tab, trackSearch.tracks, setPlayUrn]);
 
-  const { playlists } = useUserPlaylists(activeUrn);
+  // Tab=me uses the personal playlists endpoint; tab=discover uses the
+  // group hook so multi-profile groups get a per-member breakdown. Both
+  // paths feed the same flat `playlists` list to downstream selection /
+  // combined-tracks code.
+  const myPlaylists = useUserPlaylists(tab === "me" ? "me" : null);
+  const groupPlaylists = useGroupPlaylists(
+    tab === "discover" ? activeGroup : null,
+  );
+  const playlists =
+    tab === "discover" ? groupPlaylists.allPlaylists : myPlaylists.playlists;
+  const playlistsByMember =
+    tab === "discover" && (activeGroup?.members.length ?? 0) >= 2
+      ? groupPlaylists.byMember
+      : undefined;
   // Mixes (system playlists) are only personal — tab "me" only.
   const { playlists: mixes, available: mixesAvailable } = useSystemPlaylists(
     tab === "me",
@@ -320,16 +335,16 @@ export function SoundcloudView() {
       .catch(() => {});
   }, []);
 
-  // Reset selection to Likes when the active user changes. Skip the initial
-  // mount so a `?node=` URL param survives — otherwise this effect would
-  // clobber it back to Likes before the page rendered.
-  const prevActiveUrnRef = useRef(activeUrn);
+  // Reset selection to Likes when the user switches tab or active group.
+  // Skip the initial mount so a `?node=` URL param survives — otherwise
+  // this effect would clobber it back to Likes before the page rendered.
+  const prevScopeKeyRef = useRef(scopeKey);
   useEffect(() => {
-    if (prevActiveUrnRef.current === activeUrn) return;
-    prevActiveUrnRef.current = activeUrn;
+    if (prevScopeKeyRef.current === scopeKey) return;
+    prevScopeKeyRef.current = scopeKey;
     setNodeId(LIKES_NODE_ID);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeUrn]);
+  }, [scopeKey]);
 
   // ----- Filter state (lifted so the tree can show filtered counts) -----
   // Seed schema fixes the attribute set so URL parsers stay bound even when
@@ -625,6 +640,7 @@ export function SoundcloudView() {
         {!hideTreePanel && (
           <LikesTreePanel
             playlists={playlists}
+            playlistsByMember={playlistsByMember}
             selectedId={nodeId ?? LIKES_NODE_ID}
             onSelect={setNodeId}
             storageKey={storageKey}
