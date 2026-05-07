@@ -69,4 +69,45 @@ describe("mergeGroupedLikes", () => {
     expect(result).toHaveLength(1);
     expect(result[0].__sources).toEqual([alice, bob]);
   });
+
+  it("interleaves members round-robin so each member's most-recent like surfaces near the top", () => {
+    const alice = user(1, "alice");
+    const bob = user(2, "bob");
+    // Each list is liked-at desc per member. Without interleave, all of
+    // alice's likes would precede any of bob's; with interleave, bob's
+    // most-recent like (20) should sit between alice's first two.
+    const result = mergeGroupedLikes([
+      {
+        source: alice,
+        tracks: [
+          track(10, "2024-01-01"),
+          track(11, "2023-01-01"),
+          track(12, "2022-01-01"),
+        ],
+      },
+      {
+        source: bob,
+        tracks: [track(20, "2024-02-01"), track(21, "2023-02-01")],
+      },
+    ]);
+    expect(result.map((t) => t.urn)).toEqual([
+      "soundcloud:tracks:10",
+      "soundcloud:tracks:20",
+      "soundcloud:tracks:11",
+      "soundcloud:tracks:21",
+      "soundcloud:tracks:12",
+    ]);
+  });
+
+  it("does not duplicate sources when the same member supplies the same urn twice", () => {
+    const alice = user(1, "alice");
+    const result = mergeGroupedLikes([
+      {
+        source: alice,
+        tracks: [track(10, "2024-01-01"), track(10, "2024-01-01")],
+      },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].__sources).toEqual([alice]);
+  });
 });
