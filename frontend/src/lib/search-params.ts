@@ -13,6 +13,7 @@ export const SORT_FIELDS = [
   "folder",
   "mtime",
   "file_format",
+  "file_size",
 ] as const;
 export const SORT_ORDERS = ["asc", "desc"] as const;
 

@@ -40,7 +40,7 @@ router = APIRouter()
 # unbounded ffmpeg conversions in parallel.
 _apply_rules_semaphore = asyncio.Semaphore(2)
 
-_SORT_BY_PATTERN = "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format)$"
+_SORT_BY_PATTERN = "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$"
 
 
 def _row_value(row, key, default=None):
@@ -155,6 +155,9 @@ def browse_by_path(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     has_soundcloud_id: bool | None = Query(None),
+    file_formats: list[str] | None = Query(None),
+    size_min: int | None = Query(None, ge=0),
+    size_max: int | None = Query(None, ge=0),
     sort_by: str = Query("file_name", pattern=_SORT_BY_PATTERN),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
@@ -185,6 +188,9 @@ def browse_by_path(
             start_date=date_from,
             end_date=date_to,
             has_soundcloud_id=has_soundcloud_id,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
             sort_by=sort_by,
             sort_order=sort_order,
             recursive=recursive,
@@ -226,6 +232,9 @@ def browse_path_filter_values(
     keys: list[str] | None = Query(None),
     bpm_min: int | None = Query(None, ge=0),
     bpm_max: int | None = Query(None, ge=0),
+    file_formats: list[str] | None = Query(None),
+    size_min: int | None = Query(None, ge=0),
+    size_max: int | None = Query(None, ge=0),
 ) -> FilterValuesResponse:
     """Get available filter values for a folder path."""
     folder_path = Path(path).resolve()
@@ -249,6 +258,9 @@ def browse_path_filter_values(
         keys=keys,
         bpm_min=bpm_min,
         bpm_max=bpm_max,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
     )
     return FilterValuesResponse(**result)
 
@@ -331,6 +343,9 @@ def browse_folder_files(
     date_from: date | None = Query(None, description="Earliest release date (YYYY-MM-DD)"),
     date_to: date | None = Query(None, description="Latest release date (YYYY-MM-DD)"),
     has_soundcloud_id: bool | None = Query(None, description="Filter by SoundCloud link presence"),
+    file_formats: list[str] | None = Query(None, description="Filter by file format (e.g. mp3, flac)"),
+    size_min: int | None = Query(None, ge=0, description="Minimum file size in bytes"),
+    size_max: int | None = Query(None, ge=0, description="Maximum file size in bytes"),
     sort_by: str = Query("file_name", pattern=_SORT_BY_PATTERN),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
@@ -362,6 +377,9 @@ def browse_folder_files(
             start_date=date_from,
             end_date=date_to,
             has_soundcloud_id=has_soundcloud_id,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
             sort_by=sort_by,
             sort_order=sort_order,
         )
@@ -401,6 +419,9 @@ def get_folder_filter_values(
     keys: list[str] | None = Query(None, description="Active key filters"),
     bpm_min: int | None = Query(None, ge=0, description="Active BPM minimum"),
     bpm_max: int | None = Query(None, ge=0, description="Active BPM maximum"),
+    file_formats: list[str] | None = Query(None, description="Active file-format filters"),
+    size_min: int | None = Query(None, ge=0, description="Active file-size minimum (bytes)"),
+    size_max: int | None = Query(None, ge=0, description="Active file-size maximum (bytes)"),
 ) -> FilterValuesResponse:
     """Get available filter values for a folder (genres, artists, keys, BPM range).
 
@@ -426,6 +447,9 @@ def get_folder_filter_values(
             keys=keys,
             bpm_min=bpm_min,
             bpm_max=bpm_max,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
         )
     except Exception as e:
         logger.exception("Failed to get filter values")

@@ -1,6 +1,16 @@
 import type { LucideIcon } from "lucide-react";
-import { Cloud, Disc3, Music2, Search, Tag, Timer } from "lucide-react";
+import {
+  Cloud,
+  Disc3,
+  FileAudio,
+  HardDrive,
+  Music2,
+  Search,
+  Tag,
+  Timer,
+} from "lucide-react";
 
+import { formatFileSize } from "@/app/library/utils";
 import type { FilterAttribute } from "@/lib/filters/schema";
 
 /**
@@ -40,6 +50,12 @@ const REGISTRY: Record<string, FilterDisplay> = {
   bpm: { icon: Disc3 },
   duration: { icon: Timer, format: formatDuration },
   soundcloud_linked: { icon: Cloud, label: "SoundCloud" },
+  file_format: {
+    icon: FileAudio,
+    label: "Format",
+    compareOptions: (a, b) => a.localeCompare(b),
+  },
+  file_size: { icon: HardDrive, label: "Size", format: formatFileSize },
 };
 
 function humanize(id: string): string {
@@ -70,6 +86,9 @@ export function resolveFromHints(attr: FilterAttribute): FilterDisplay & {
   }
   if (!base.format && attr.formatHint === "duration") {
     return { ...base, format: formatDuration };
+  }
+  if (!base.format && attr.formatHint === "size") {
+    return { ...base, format: formatFileSize };
   }
   return base;
 }

@@ -27,7 +27,7 @@ export interface FilterAttribute {
   step?: number;
   /** Hints the display registry can use; purely cosmetic. */
   sortHint?: "camelot" | "alpha" | "count";
-  formatHint?: "bpm" | "duration" | "date";
+  formatHint?: "bpm" | "duration" | "date" | "size";
 }
 
 export interface FilterSchemaResponse {

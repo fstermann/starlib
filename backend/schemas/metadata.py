@@ -212,6 +212,10 @@ class FilterValuesResponse(BaseModel):
     key_counts: dict[str, int] = {}
     bpm_min: int | None = None
     bpm_max: int | None = None
+    file_formats: list[str] = []
+    file_format_counts: dict[str, int] = {}
+    file_size_min: int | None = None
+    file_size_max: int | None = None
 
 
 class CollectionStatsResponse(BaseModel):
