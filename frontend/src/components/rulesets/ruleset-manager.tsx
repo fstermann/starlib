@@ -1,9 +1,10 @@
 "use client";
 
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { api, type Ruleset } from "@/lib/api";
@@ -104,7 +105,7 @@ export function RulesetManager() {
   if (loading) {
     return (
       <div className="text-muted-foreground flex items-center gap-2 py-4 text-sm">
-        <Loader2 className="size-4 animate-spin" />
+        <Spinner className="size-4" />
         Loading rulesets…
       </div>
     );

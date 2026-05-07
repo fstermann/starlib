@@ -15,9 +15,10 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { Archive, Loader2, MoveRight, Plus, RefreshCw } from "lucide-react";
+import { Archive, MoveRight, Plus, RefreshCw } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -549,7 +550,7 @@ export function RulesetEditor({
           </DropdownMenu>
           {hasPendingEdit && onSave && (
             <Button size="sm" onClick={onSave} disabled={saving}>
-              {saving && <Loader2 className="size-3.5 animate-spin" />}
+              {saving && <Spinner className="size-3.5" />}
               Save changes
             </Button>
           )}

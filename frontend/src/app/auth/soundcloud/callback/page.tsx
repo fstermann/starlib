@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
+import { Spinner } from "@/components/spinner";
 import { fetchApi } from "@/lib/api";
 import { storeTokens } from "@/lib/auth";
 
@@ -99,7 +100,7 @@ function CallbackHandler() {
 
   return (
     <div className="text-center">
-      <div className="border-border border-t-foreground mx-auto mb-4 size-6 animate-spin rounded-full border-2" />
+      <Spinner className="text-foreground mx-auto mb-4 size-6" />
       <p className="text-muted-foreground text-sm">Authenticating…</p>
     </div>
   );
@@ -112,7 +113,7 @@ export default function CallbackPage() {
         <Suspense
           fallback={
             <div className="text-center">
-              <div className="border-border border-t-foreground mx-auto mb-4 size-6 animate-spin rounded-full border-2" />
+              <Spinner className="text-foreground mx-auto mb-4 size-6" />
               <p className="text-muted-foreground text-sm">Loading…</p>
             </div>
           }

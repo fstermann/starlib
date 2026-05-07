@@ -1,8 +1,9 @@
 "use client";
 
-import { Ban, Loader2, Pause, Play } from "lucide-react";
+import { Ban, Pause, Play } from "lucide-react";
 import { useState } from "react";
 
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
@@ -111,13 +112,7 @@ export function SoundcloudRowPlayButton({
       onClick={handleClick}
       className={cn(isActive && "text-primary", className)}
     >
-      {loading ? (
-        <Loader2 className="animate-spin" />
-      ) : isActive ? (
-        <Pause />
-      ) : (
-        <Play />
-      )}
+      {loading ? <Spinner /> : isActive ? <Pause /> : <Play />}
     </Button>
   );
 }
