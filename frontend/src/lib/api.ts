@@ -105,6 +105,14 @@ export type TrackInfoUpdateRequest =
 
 export type OperationResponse = components["schemas"]["OperationResponse"];
 
+export type FetchFromDownloadsResponse =
+  components["schemas"]["FetchFromDownloadsResponse"];
+
+export type FetchFromDownloadsPreview =
+  components["schemas"]["FetchFromDownloadsPreview"];
+
+export type FetchCandidate = components["schemas"]["FetchCandidate"];
+
 export type ApplyRulesResponse = components["schemas"]["ApplyRulesResponse"] & {
   steps?: {
     id: string;
@@ -459,6 +467,35 @@ export const api = {
 
   async initializeFolders(): Promise<OperationResponse> {
     return fetchApi("/api/metadata/folders/initialize", { method: "POST" });
+  },
+  async fetchFromDownloads(
+    destPath: string,
+    windowDays: number,
+    fileNames?: string[],
+  ): Promise<FetchFromDownloadsResponse> {
+    return fetchApi("/api/metadata/folders/fetch-from-downloads", {
+      method: "POST",
+      body: JSON.stringify({
+        dest_path: destPath,
+        window_days: windowDays,
+        ...(fileNames !== undefined ? { file_names: fileNames } : {}),
+      }),
+    });
+  },
+
+  async fetchFromDownloadsPreview(
+    destPath: string,
+    windowDays: number,
+    signal?: AbortSignal,
+  ): Promise<FetchFromDownloadsPreview> {
+    const qs = new URLSearchParams({
+      dest_path: destPath,
+      window_days: String(windowDays),
+    });
+    return fetchApi(
+      `/api/metadata/folders/fetch-from-downloads/preview?${qs.toString()}`,
+      { signal },
+    );
   },
   // Browse (view mode) — full metadata with filtering, sorting, pagination
   async browseFiles(

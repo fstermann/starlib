@@ -375,6 +375,105 @@
         }
       }
     },
+    "/api/metadata/folders/fetch-from-downloads/preview": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Fetch From Downloads Preview",
+        "description": "List recent audio files in ~/Downloads that would be moved into *dest_path*.\n\nFiles already present in the destination (collisions) are reported under\n``skipped`` and are not part of ``candidates``.",
+        "operationId": "fetch_from_downloads_preview_api_metadata_folders_fetch_from_downloads_preview_get",
+        "parameters": [
+          {
+            "name": "dest_path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Destination folder under the music root",
+              "title": "Dest Path"
+            },
+            "description": "Destination folder under the music root"
+          },
+          {
+            "name": "window_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 1,
+              "title": "Window Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchFromDownloadsPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/folders/fetch-from-downloads": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Fetch From Downloads",
+        "description": "Move recent audio files from ~/Downloads into a library subfolder.\n\nFiles are filtered by extension (audio formats only) and mtime (within\n``window_days`` of now). A file is skipped when the destination already\ncontains an entry with the same name \u2014 making the operation idempotent.\nWhen ``request.file_names`` is set, only those names are eligible to move.",
+        "operationId": "fetch_from_downloads_api_metadata_folders_fetch_from_downloads_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FetchFromDownloadsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchFromDownloadsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metadata/folders/tree": {
       "get": {
         "tags": [
@@ -4089,6 +4188,119 @@
         ],
         "title": "CollectionStatsResponse",
         "description": "Response containing collection statistics."
+      },
+      "FetchCandidate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "mtime": {
+            "type": "number",
+            "title": "Mtime"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "size",
+          "mtime"
+        ],
+        "title": "FetchCandidate",
+        "description": "One candidate audio file under ~/Downloads for the preview dialog."
+      },
+      "FetchFromDownloadsPreview": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/FetchCandidate"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "default": []
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "FetchFromDownloadsPreview",
+        "description": "Preview of what a Fetch-from-Downloads call would do."
+      },
+      "FetchFromDownloadsRequest": {
+        "properties": {
+          "dest_path": {
+            "type": "string",
+            "title": "Dest Path"
+          },
+          "window_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Window Days",
+            "default": 1
+          },
+          "file_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dest_path"
+        ],
+        "title": "FetchFromDownloadsRequest",
+        "description": "Request to move recent audio files from ~/Downloads into a folder."
+      },
+      "FetchFromDownloadsResponse": {
+        "properties": {
+          "moved": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Moved",
+            "default": []
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped",
+            "default": []
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "FetchFromDownloadsResponse",
+        "description": "Result of a Fetch-from-Downloads operation."
       },
       "FileInfoResponse": {
         "properties": {

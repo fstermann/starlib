@@ -285,6 +285,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metadata/folders/fetch-from-downloads/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch From Downloads Preview
+         * @description List recent audio files in ~/Downloads that would be moved into *dest_path*.
+         *
+         *     Files already present in the destination (collisions) are reported under
+         *     ``skipped`` and are not part of ``candidates``.
+         */
+        get: operations["fetch_from_downloads_preview_api_metadata_folders_fetch_from_downloads_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metadata/folders/fetch-from-downloads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch From Downloads
+         * @description Move recent audio files from ~/Downloads into a library subfolder.
+         *
+         *     Files are filtered by extension (audio formats only) and mtime (within
+         *     ``window_days`` of now). A file is skipped when the destination already
+         *     contains an entry with the same name — making the operation idempotent.
+         *     When ``request.file_names`` is set, only those names are eligible to move.
+         */
+        post: operations["fetch_from_downloads_api_metadata_folders_fetch_from_downloads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metadata/folders/tree": {
         parameters: {
             query?: never;
@@ -1925,6 +1973,70 @@ export interface components {
             bpm_max?: number | null;
         };
         /**
+         * FetchCandidate
+         * @description One candidate audio file under ~/Downloads for the preview dialog.
+         */
+        FetchCandidate: {
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+            /** Mtime */
+            mtime: number;
+        };
+        /**
+         * FetchFromDownloadsPreview
+         * @description Preview of what a Fetch-from-Downloads call would do.
+         */
+        FetchFromDownloadsPreview: {
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["FetchCandidate"][];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: string[];
+        };
+        /**
+         * FetchFromDownloadsRequest
+         * @description Request to move recent audio files from ~/Downloads into a folder.
+         */
+        FetchFromDownloadsRequest: {
+            /** Dest Path */
+            dest_path: string;
+            /**
+             * Window Days
+             * @default 1
+             */
+            window_days: number;
+            /** File Names */
+            file_names?: string[] | null;
+        };
+        /**
+         * FetchFromDownloadsResponse
+         * @description Result of a Fetch-from-Downloads operation.
+         */
+        FetchFromDownloadsResponse: {
+            /**
+             * Moved
+             * @default []
+             */
+            moved: string[];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: string[];
+            /**
+             * Errors
+             * @default []
+             */
+            errors: string[];
+        };
+        /**
          * FileInfoResponse
          * @description Response containing basic file information.
          */
@@ -2963,6 +3075,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OperationResponse"];
+                };
+            };
+        };
+    };
+    fetch_from_downloads_preview_api_metadata_folders_fetch_from_downloads_preview_get: {
+        parameters: {
+            query: {
+                /** @description Destination folder under the music root */
+                dest_path: string;
+                window_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FetchFromDownloadsPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fetch_from_downloads_api_metadata_folders_fetch_from_downloads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FetchFromDownloadsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FetchFromDownloadsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
