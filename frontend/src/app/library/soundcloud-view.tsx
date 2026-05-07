@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useQueryState } from "nuqs";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AutoHideTabLabel } from "@/components/auto-hide-tab-label";
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
@@ -320,8 +320,13 @@ export function SoundcloudView() {
       .catch(() => {});
   }, []);
 
-  // Reset selection to Likes when the active user changes
+  // Reset selection to Likes when the active user changes. Skip the initial
+  // mount so a `?node=` URL param survives — otherwise this effect would
+  // clobber it back to Likes before the page rendered.
+  const prevActiveUrnRef = useRef(activeUrn);
   useEffect(() => {
+    if (prevActiveUrnRef.current === activeUrn) return;
+    prevActiveUrnRef.current = activeUrn;
     setNodeId(LIKES_NODE_ID);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUrn]);
