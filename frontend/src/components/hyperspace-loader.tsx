@@ -112,20 +112,6 @@ export function HyperspaceLoader({
       ctx.fillStyle = `oklch(0 0 0 / ${fade})`;
       ctx.fillRect(0, 0, width, height);
 
-      // Subtle brand nebula wash, matching GalaxyBackground.
-      const nebula = ctx.createRadialGradient(
-        width * 0.5,
-        height * 0.5,
-        0,
-        width * 0.5,
-        height * 0.5,
-        Math.max(width, height) * 0.7,
-      );
-      nebula.addColorStop(0, `oklch(0.55 ${chroma * 0.5} ${hue} / 0.06)`);
-      nebula.addColorStop(1, `oklch(0.55 ${chroma * 0.5} ${hue} / 0)`);
-      ctx.fillStyle = nebula;
-      ctx.fillRect(0, 0, width, height);
-
       for (const s of stars) {
         const prevZ = s.z;
         s.z -= SPEED * speedMul;
