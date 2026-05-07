@@ -64,6 +64,23 @@ Nav commands are derived from `src/lib/nav-config.ts` — adding a sidebar route
 
 The catalog spec opens the palette across several contexts, scrapes every rendered `data-command-id`, and fails CI if any id is missing from the known set — so the docs can't silently drift.
 
+# SoundCloud API
+
+The authoritative spec for the SoundCloud v1 API is the public OpenAPI explorer:
+**https://developers.soundcloud.com/docs/api/explorer/open-api**
+
+Raw JSON (machine-readable; same source the generate script consumes):
+**https://developers.soundcloud.com/docs/api/explorer/api.json**
+
+When in doubt about response shapes, query params, or available endpoints, consult that spec — not the locally generated types in `frontend/src/generated/soundcloud.ts`, which can lag or simplify the real schema (e.g. omitting envelope fields like a like/repost `created_at`). Trust the official spec; if the generated types are wrong, regenerate or hand-write the missing shape.
+
+Regenerate the typed client from the upstream OpenAPI doc with:
+
+```bash
+cd frontend && npm run generate:soundcloud   # SC types only
+cd frontend && npm run generate               # SC + backend types
+```
+
 # Backend
 
 - Use Google-style docstrings.

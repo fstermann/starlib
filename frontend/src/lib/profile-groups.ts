@@ -63,34 +63,44 @@ export const profileGroupsApi = {
  * Dedupe by `track.urn`; the first occurrence keeps the row identity but
  * `__sources` accumulates every member who liked the track.
  *
- * Order: insertion order across `perMember`. SoundCloud returns each
- * member's likes/reposts in activity-desc (most-recent-first) order; a
- * track's own `created_at` is its upload date, not the liked-at, so we
- * trust the API order rather than re-sorting. For multi-member groups
- * this means: member-A's most-recent likes first, then member-B's likes
- * not already in A, etc.
+ * Order: position-based k-way interleave across members. SoundCloud v1
+ * returns each member's likes/reposts in liked-at-desc order but does not
+ * expose a per-like timestamp, so we can't sort the merged feed by true
+ * activity time (tracked in #451). Instead we round-robin by index:
+ * A[0], B[0], C[0], A[1], B[1], … This surfaces the most-recent like from
+ * every member at the top, rather than dumping all of A before any of B.
+ * Already-seen tracks are skipped at later positions but their source is
+ * appended to the existing entry's `__sources`.
  */
 export function mergeGroupedLikes(
   perMember: Array<{ source: SourceProfile; tracks: SCTrack[] }>,
 ): GroupedTrack[] {
   const byUrn = new Map<string, GroupedTrack>();
+  const order: GroupedTrack[] = [];
+  const maxLen = perMember.reduce((m, p) => Math.max(m, p.tracks.length), 0);
 
-  for (const { source, tracks } of perMember) {
-    for (const t of tracks) {
+  for (let i = 0; i < maxLen; i++) {
+    for (const { source, tracks } of perMember) {
+      const t = tracks[i];
+      if (!t) continue;
       const key = t.urn ?? "";
       if (!key) continue;
       const existing = byUrn.get(key);
       if (existing) {
-        existing.__sources.push(source);
+        if (!existing.__sources.some((s) => s.user_urn === source.user_urn)) {
+          existing.__sources.push(source);
+        }
       } else {
-        byUrn.set(key, {
+        const entry: GroupedTrack = {
           ...t,
           __sources: [source],
           __likedAt: t.created_at ?? "",
-        });
+        };
+        byUrn.set(key, entry);
+        order.push(entry);
       }
     }
   }
 
-  return [...byUrn.values()];
+  return order;
 }
