@@ -61,47 +61,36 @@ export const profileGroupsApi = {
 /** Merge per-member liked-tracks into one feed.
  *
  * Dedupe by `track.urn`; the first occurrence keeps the row identity but
- * `__sources` accumulates every member who liked it. `__likedAt` resolves
- * to the latest (max) liked-at across sources, so a re-like by another
- * member resurfaces the track. Final order: `__likedAt` desc, with member
- * order breaking ties (stable sort).
+ * `__sources` accumulates every member who liked the track.
+ *
+ * Order: insertion order across `perMember`. SoundCloud returns each
+ * member's likes/reposts in activity-desc (most-recent-first) order; a
+ * track's own `created_at` is its upload date, not the liked-at, so we
+ * trust the API order rather than re-sorting. For multi-member groups
+ * this means: member-A's most-recent likes first, then member-B's likes
+ * not already in A, etc.
  */
 export function mergeGroupedLikes(
   perMember: Array<{ source: SourceProfile; tracks: SCTrack[] }>,
 ): GroupedTrack[] {
   const byUrn = new Map<string, GroupedTrack>();
-  let order = 0;
-  const insertOrder = new Map<string, number>();
 
   for (const { source, tracks } of perMember) {
     for (const t of tracks) {
       const key = t.urn ?? "";
       if (!key) continue;
-      const likedAt = t.created_at ?? "";
       const existing = byUrn.get(key);
       if (existing) {
         existing.__sources.push(source);
-        if (likedAt > (existing.__likedAt ?? "")) {
-          existing.__likedAt = likedAt;
-        }
       } else {
         byUrn.set(key, {
           ...t,
           __sources: [source],
-          __likedAt: likedAt,
+          __likedAt: t.created_at ?? "",
         });
-        insertOrder.set(key, order++);
       }
     }
   }
 
-  return [...byUrn.values()].sort((a, b) => {
-    if (a.__likedAt === b.__likedAt) {
-      return (
-        (insertOrder.get(a.urn ?? "") ?? 0) -
-        (insertOrder.get(b.urn ?? "") ?? 0)
-      );
-    }
-    return a.__likedAt < b.__likedAt ? 1 : -1;
-  });
+  return [...byUrn.values()];
 }
