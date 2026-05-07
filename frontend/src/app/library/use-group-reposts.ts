@@ -6,12 +6,12 @@ import {
   type ProfileGroup,
 } from "@/lib/profile-groups";
 import {
-  fetchLikesPage,
-  getUserLikedTracks,
+  fetchRepostsPage,
+  getUserRepostedTracks,
   type SCTrack,
 } from "@/lib/soundcloud";
 
-interface UseGroupLikesResult {
+interface UseGroupRepostsResult {
   tracks: GroupedTrack[];
   loading: boolean;
   error: string | null;
@@ -19,32 +19,31 @@ interface UseGroupLikesResult {
 
 const PAGE_SIZE = 200;
 
-async function fetchAllUserLikes(
+async function fetchAllUserReposts(
   userUrn: string,
   isCancelled: () => boolean,
   onPage: (tracks: SCTrack[]) => void,
 ): Promise<void> {
-  const first = await getUserLikedTracks(userUrn, PAGE_SIZE);
+  const first = await getUserRepostedTracks(userUrn, PAGE_SIZE);
   if (isCancelled()) return;
   if (first.collection?.length) onPage(first.collection);
   let nextUrl = first.next_href;
   while (nextUrl && !isCancelled()) {
-    const resp = await fetchLikesPage(nextUrl);
+    const resp = await fetchRepostsPage(nextUrl);
     if (isCancelled()) return;
     if (resp.collection?.length) onPage(resp.collection);
     nextUrl = resp.next_href;
   }
 }
 
-/** Fetches all likes for each member of a ProfileGroup (following SoundCloud
- * cursor pagination) and merges them via `mergeGroupedLikes`. */
-export function useGroupLikes(group: ProfileGroup | null): UseGroupLikesResult {
+/** Reposts equivalent of `useGroupLikes` — paginates fully per member. */
+export function useGroupReposts(
+  group: ProfileGroup | null,
+): UseGroupRepostsResult {
   const [tracks, setTracks] = useState<GroupedTrack[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Stable string key that changes only when the relevant member set changes,
-  // so the effect doesn't refire on group-name edits.
   const memberKey = group
     ? `${group.id ?? ""}|${(group.members ?? [])
         .map((m) => m.user_urn)
@@ -75,7 +74,7 @@ export function useGroupLikes(group: ProfileGroup | null): UseGroupLikesResult {
 
     Promise.all(
       members.map((m, idx) =>
-        fetchAllUserLikes(
+        fetchAllUserReposts(
           m.user_urn,
           () => cancelled,
           (page) => {
@@ -92,7 +91,7 @@ export function useGroupLikes(group: ProfileGroup | null): UseGroupLikesResult {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load likes");
+        setError(err instanceof Error ? err.message : "Failed to load reposts");
         setLoading(false);
       });
     return () => {

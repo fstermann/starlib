@@ -1,6 +1,6 @@
 "use client";
 
-import { Heart, ListMusic, Sparkles } from "lucide-react";
+import { Heart, ListMusic, Repeat2, Sparkles } from "lucide-react";
 import { useMemo } from "react";
 
 import { TreeView } from "@/components/tree/tree-view";
@@ -9,12 +9,19 @@ import type { SCPlaylist } from "@/lib/soundcloud";
 import type { SystemPlaylistSummary } from "./use-system-playlists";
 
 export const LIKES_NODE_ID = "likes";
+export const REPOSTS_NODE_ID = "reposts";
 export const PLAYLISTS_GROUP_ID = "playlists";
 export const MIXES_GROUP_ID = "mixes";
 export const playlistNodeId = (urn: string) => `pl:${urn}`;
 export const mixNodeId = (urn: string) => `mix:${urn}`;
 
-export type LikesTreeNodeKind = "root" | "likes" | "group" | "playlist" | "mix";
+export type LikesTreeNodeKind =
+  | "root"
+  | "likes"
+  | "reposts"
+  | "group"
+  | "playlist"
+  | "mix";
 
 export interface LikesTreeNode {
   id: string;
@@ -33,6 +40,8 @@ interface LikesTreePanelProps {
   storageKey: string;
   /** Filtered count for the Likes node. */
   likesCount: number;
+  /** Filtered count for the Reposts node. */
+  repostsCount: number;
   /** Filtered count for the "Playlists" aggregate group (tracks across all). */
   combinedCount: number;
   /**
@@ -60,6 +69,7 @@ export function LikesTreePanel({
   onSelect,
   storageKey,
   likesCount,
+  repostsCount,
   combinedCount,
   perPlaylistFilteredCount,
   mixes,
@@ -99,6 +109,13 @@ export function LikesTreePanel({
         kind: "likes",
         trackCount: likesCount,
       },
+      {
+        id: REPOSTS_NODE_ID,
+        name: "Reposts",
+        children: [],
+        kind: "reposts",
+        trackCount: repostsCount,
+      },
     ];
     // Always surface Mixes on tabs where it applies. When the user hasn't
     // connected yet we still render the group (empty) so the CTA in the
@@ -129,6 +146,7 @@ export function LikesTreePanel({
   }, [
     playlists,
     likesCount,
+    repostsCount,
     combinedCount,
     perPlaylistFilteredCount,
     mixes,
@@ -146,6 +164,11 @@ export function LikesTreePanel({
       renderIcon={(node) => {
         if (node.kind === "likes") {
           return <Heart className="text-muted-foreground size-3.5 shrink-0" />;
+        }
+        if (node.kind === "reposts") {
+          return (
+            <Repeat2 className="text-muted-foreground size-3.5 shrink-0" />
+          );
         }
         // Match group headers (Mixes/Playlists) to the icon used by their
         // children so the sidebar reads cohesively even when collapsed.

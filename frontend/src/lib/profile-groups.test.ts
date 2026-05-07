@@ -12,11 +12,11 @@ function user(id: number, username: string): SourceProfile {
   };
 }
 
-function track(id: number, likedAt: string): SCTrack {
+function track(id: number, uploadedAt: string): SCTrack {
   return {
     urn: `soundcloud:tracks:${id}`,
     title: `Track ${id}`,
-    created_at: likedAt,
+    created_at: uploadedAt,
     duration: 200_000,
     user: { username: "owner" },
   } as SCTrack;
@@ -27,32 +27,36 @@ describe("mergeGroupedLikes", () => {
     expect(mergeGroupedLikes([])).toEqual([]);
   });
 
-  it("returns a single member's tracks tagged with their user", () => {
+  it("preserves a single member's API order (liked-at desc from SoundCloud)", () => {
     const alice = user(1, "alice");
+    // SoundCloud already returns these in liked-at desc; we must not
+    // reorder by track.created_at (which is upload date, not liked-at).
     const result = mergeGroupedLikes([
       {
         source: alice,
-        tracks: [track(10, "2024-01-02"), track(11, "2024-01-01")],
+        tracks: [track(10, "2020-01-02"), track(11, "2024-01-01")],
       },
     ]);
-    expect(result).toHaveLength(2);
+    expect(result.map((t) => t.urn)).toEqual([
+      "soundcloud:tracks:10",
+      "soundcloud:tracks:11",
+    ]);
     expect(result[0].__sources).toEqual([alice]);
-    expect(result[0].__likedAt).toBe("2024-01-02");
-    expect(result[1].__likedAt).toBe("2024-01-01");
   });
 
-  it("unions disjoint tracks from two members, sorted by likedAt desc", () => {
+  it("unions disjoint tracks from two members in member order", () => {
     const alice = user(1, "alice");
     const bob = user(2, "bob");
     const result = mergeGroupedLikes([
       { source: alice, tracks: [track(10, "2024-01-01")] },
       { source: bob, tracks: [track(20, "2024-02-01")] },
     ]);
-    expect(result).toHaveLength(2);
-    expect(result[0].urn).toBe("soundcloud:tracks:20");
-    expect(result[0].__sources).toEqual([bob]);
-    expect(result[1].urn).toBe("soundcloud:tracks:10");
-    expect(result[1].__sources).toEqual([alice]);
+    expect(result.map((t) => t.urn)).toEqual([
+      "soundcloud:tracks:10",
+      "soundcloud:tracks:20",
+    ]);
+    expect(result[0].__sources).toEqual([alice]);
+    expect(result[1].__sources).toEqual([bob]);
   });
 
   it("dedupes a track liked by multiple members and accumulates sources", () => {
@@ -64,19 +68,46 @@ describe("mergeGroupedLikes", () => {
     ]);
     expect(result).toHaveLength(1);
     expect(result[0].__sources).toEqual([alice, bob]);
-    expect(result[0].__likedAt).toBe("2024-03-01");
   });
 
-  it("orders ties by first-seen member order (stable)", () => {
+  it("interleaves members round-robin so each member's most-recent like surfaces near the top", () => {
     const alice = user(1, "alice");
     const bob = user(2, "bob");
+    // Each list is liked-at desc per member. Without interleave, all of
+    // alice's likes would precede any of bob's; with interleave, bob's
+    // most-recent like (20) should sit between alice's first two.
     const result = mergeGroupedLikes([
-      { source: alice, tracks: [track(10, "2024-01-01")] },
-      { source: bob, tracks: [track(20, "2024-01-01")] },
+      {
+        source: alice,
+        tracks: [
+          track(10, "2024-01-01"),
+          track(11, "2023-01-01"),
+          track(12, "2022-01-01"),
+        ],
+      },
+      {
+        source: bob,
+        tracks: [track(20, "2024-02-01"), track(21, "2023-02-01")],
+      },
     ]);
     expect(result.map((t) => t.urn)).toEqual([
       "soundcloud:tracks:10",
       "soundcloud:tracks:20",
+      "soundcloud:tracks:11",
+      "soundcloud:tracks:21",
+      "soundcloud:tracks:12",
     ]);
+  });
+
+  it("does not duplicate sources when the same member supplies the same urn twice", () => {
+    const alice = user(1, "alice");
+    const result = mergeGroupedLikes([
+      {
+        source: alice,
+        tracks: [track(10, "2024-01-01"), track(10, "2024-01-01")],
+      },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].__sources).toEqual([alice]);
   });
 });

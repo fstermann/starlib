@@ -218,6 +218,50 @@ export async function fetchLikesPage(nextHref: string): Promise<SCTracks> {
   return (await resp.json()) as SCTracks;
 }
 
+// Reposts mirror likes but the public typegen omits the endpoints — call them
+// directly with the same response shape (Tracks).
+async function fetchRepostsUrl(url: string): Promise<SCTracks> {
+  const token = await ensureValidToken();
+  const resp = await fetch(url, {
+    headers: { Authorization: `OAuth ${token}` },
+  });
+  if (!resp.ok) throw new Error(`Failed to fetch reposts: ${resp.status}`);
+  return (await resp.json()) as SCTracks;
+}
+
+function buildRepostsUrl(path: string, limit: number, cursor?: string): string {
+  const url = new URL(`https://api.soundcloud.com${path}`);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("linked_partitioning", "true");
+  if (cursor) url.searchParams.set("offset", cursor);
+  return url.toString();
+}
+
+export async function getMyRepostedTracks(
+  limit = 200,
+  cursor?: string,
+): Promise<SCTracks> {
+  return fetchRepostsUrl(buildRepostsUrl("/me/reposts/tracks", limit, cursor));
+}
+
+export async function getUserRepostedTracks(
+  userUrn: string,
+  limit = 200,
+  cursor?: string,
+): Promise<SCTracks> {
+  return fetchRepostsUrl(
+    buildRepostsUrl(
+      `/users/${encodeURIComponent(userUrn)}/reposts/tracks`,
+      limit,
+      cursor,
+    ),
+  );
+}
+
+export async function fetchRepostsPage(nextHref: string): Promise<SCTracks> {
+  return fetchRepostsUrl(nextHref);
+}
+
 export async function getUser(userUrn: string): Promise<SCUser | null> {
   const client = await getClient();
   const { data, error } = await client.GET("/users/{user_urn}", {

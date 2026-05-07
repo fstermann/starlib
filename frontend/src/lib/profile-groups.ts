@@ -61,47 +61,46 @@ export const profileGroupsApi = {
 /** Merge per-member liked-tracks into one feed.
  *
  * Dedupe by `track.urn`; the first occurrence keeps the row identity but
- * `__sources` accumulates every member who liked it. `__likedAt` resolves
- * to the latest (max) liked-at across sources, so a re-like by another
- * member resurfaces the track. Final order: `__likedAt` desc, with member
- * order breaking ties (stable sort).
+ * `__sources` accumulates every member who liked the track.
+ *
+ * Order: position-based k-way interleave across members. SoundCloud v1
+ * returns each member's likes/reposts in liked-at-desc order but does not
+ * expose a per-like timestamp, so we can't sort the merged feed by true
+ * activity time (tracked in #451). Instead we round-robin by index:
+ * A[0], B[0], C[0], A[1], B[1], … This surfaces the most-recent like from
+ * every member at the top, rather than dumping all of A before any of B.
+ * Already-seen tracks are skipped at later positions but their source is
+ * appended to the existing entry's `__sources`.
  */
 export function mergeGroupedLikes(
   perMember: Array<{ source: SourceProfile; tracks: SCTrack[] }>,
 ): GroupedTrack[] {
   const byUrn = new Map<string, GroupedTrack>();
-  let order = 0;
-  const insertOrder = new Map<string, number>();
+  const order: GroupedTrack[] = [];
+  const maxLen = perMember.reduce((m, p) => Math.max(m, p.tracks.length), 0);
 
-  for (const { source, tracks } of perMember) {
-    for (const t of tracks) {
+  for (let i = 0; i < maxLen; i++) {
+    for (const { source, tracks } of perMember) {
+      const t = tracks[i];
+      if (!t) continue;
       const key = t.urn ?? "";
       if (!key) continue;
-      const likedAt = t.created_at ?? "";
       const existing = byUrn.get(key);
       if (existing) {
-        existing.__sources.push(source);
-        if (likedAt > (existing.__likedAt ?? "")) {
-          existing.__likedAt = likedAt;
+        if (!existing.__sources.some((s) => s.user_urn === source.user_urn)) {
+          existing.__sources.push(source);
         }
       } else {
-        byUrn.set(key, {
+        const entry: GroupedTrack = {
           ...t,
           __sources: [source],
-          __likedAt: likedAt,
-        });
-        insertOrder.set(key, order++);
+          __likedAt: t.created_at ?? "",
+        };
+        byUrn.set(key, entry);
+        order.push(entry);
       }
     }
   }
 
-  return [...byUrn.values()].sort((a, b) => {
-    if (a.__likedAt === b.__likedAt) {
-      return (
-        (insertOrder.get(a.urn ?? "") ?? 0) -
-        (insertOrder.get(b.urn ?? "") ?? 0)
-      );
-    }
-    return a.__likedAt < b.__likedAt ? 1 : -1;
-  });
+  return order;
 }
