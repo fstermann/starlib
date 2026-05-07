@@ -4,13 +4,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 
 import { HyperspaceLoader } from "@/components/hyperspace-loader";
-import { LogoSpinner } from "@/components/logo-spinner";
+import { HyperspaceStars } from "@/components/hyperspace-stars";
 import { api } from "@/lib/api";
 
 const POLL_INTERVAL_MS = 500;
 // Minimum time the hyperspace effect plays even if the backend answers
-// instantly — gives the animation a beat to land.
-const MIN_TRAVEL_MS = 1100;
+// instantly — long enough to show the StarMate fly-in plus at least one
+// cruise loop before deceleration.
+const MIN_TRAVEL_MS = 1500;
 // Deceleration window from "exit" trigger to fully unmounting the loader.
 const EXIT_MS = 700;
 
@@ -66,7 +67,7 @@ export function BackendGate({ children }: { children: React.ReactNode }) {
         {phase !== "done" && (
           <motion.div
             key="hyperspace"
-            className={`bg-background fixed inset-0 z-100 flex items-center justify-center overflow-hidden ${
+            className={`bg-background fixed inset-0 z-100 overflow-hidden ${
               phase === "exit" ? "pointer-events-none" : ""
             }`}
             initial={{ opacity: 1 }}
@@ -75,20 +76,14 @@ export function BackendGate({ children }: { children: React.ReactNode }) {
             transition={{ duration: EXIT_MS / 1000, ease: [0.4, 0, 1, 1] }}
           >
             <HyperspaceLoader phase={phase === "exit" ? "exit" : "travel"} />
-            <motion.div
-              className="pointer-events-none absolute inset-0 flex items-center justify-center"
-              initial={{ opacity: 0.9 }}
-              animate={{ opacity: phase === "exit" ? 0 : 0.9 }}
-              transition={{
-                duration: phase === "exit" ? EXIT_MS / 1000 : 0.6,
-                ease: phase === "exit" ? [0.4, 0, 1, 1] : [0.2, 0, 0, 1],
-              }}
-            >
-              <LogoSpinner className="size-24" />
-            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* StarMates persist across travel → exit → done so the same React
+          instances (and Zdog canvases) literally land at the title-screen
+          positions — no fade, no remount. */}
+      <HyperspaceStars phase={phase} />
 
       {phase !== "travel" && children}
     </>
