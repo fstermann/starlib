@@ -44,11 +44,7 @@ async function setup(page: import("@playwright/test").Page) {
       // assertions don't depend on driving chevron clicks.
       window.localStorage.setItem(
         "tree-panel-expanded:library:soundcloud:discover",
-        JSON.stringify([
-          "playlists",
-          `member:${aliceUrn}`,
-          `member:${bobUrn}`,
-        ]),
+        JSON.stringify(["playlists", `member:${aliceUrn}`, `member:${bobUrn}`]),
       );
     },
     { aliceUrn: ALICE_URN, bobUrn: BOB_URN },
@@ -77,26 +73,27 @@ async function setup(page: import("@playwright/test").Page) {
     }),
   );
   await page.route(/\/api\/profile-groups\/active$/, (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: "null" }),
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: "null",
+    }),
   );
 
   // Per-user playlists — alice and bob each return one playlist.
-  await page.route(
-    /api\.soundcloud\.com\/users\/[^/]+\/playlists/,
-    (route) => {
-      const url = route.request().url();
-      const collection = url.includes(`%3A42`)
-        ? [ALICE_PLAYLIST]
-        : url.includes(`%3A99`)
-          ? [BOB_PLAYLIST]
-          : [];
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ collection, next_href: null }),
-      });
-    },
-  );
+  await page.route(/api\.soundcloud\.com\/users\/[^/]+\/playlists/, (route) => {
+    const url = route.request().url();
+    const collection = url.includes(`%3A42`)
+      ? [ALICE_PLAYLIST]
+      : url.includes(`%3A99`)
+        ? [BOB_PLAYLIST]
+        : [];
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ collection, next_href: null }),
+    });
+  });
 
   // Per-user likes/reposts can be empty — Likes tree still renders.
   await page.route(
@@ -110,12 +107,14 @@ async function setup(page: import("@playwright/test").Page) {
   );
 
   // Quiet "me" endpoints.
-  await page.route(/api\.soundcloud\.com\/me\/(likes|reposts)\/tracks/, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ collection: [], next_href: null }),
-    }),
+  await page.route(
+    /api\.soundcloud\.com\/me\/(likes|reposts)\/tracks/,
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ collection: [], next_href: null }),
+      }),
   );
   await page.route(/api\.soundcloud\.com\/me\/playlists/, (route) =>
     route.fulfill({
@@ -141,9 +140,7 @@ test.describe("Discover playlists tree (multi-profile group)", () => {
     page,
   }) => {
     await setup(page);
-    await page.goto(
-      "/library?source=soundcloud&tab=discover&group=g-multi",
-    );
+    await page.goto("/library?source=soundcloud&tab=discover&group=g-multi");
 
     // Wait until both members' playlist endpoints have been hit.
     await page.waitForResponse(

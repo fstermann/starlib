@@ -81,7 +81,9 @@ export function useGroupPlaylists(
           (page) => {
             if (cancelled) return;
             buf[idx].playlists = buf[idx].playlists.concat(page);
-            setByMember(buf.map((m) => ({ ...m, playlists: [...m.playlists] })));
+            setByMember(
+              buf.map((m) => ({ ...m, playlists: [...m.playlists] })),
+            );
           },
         ),
       ),
