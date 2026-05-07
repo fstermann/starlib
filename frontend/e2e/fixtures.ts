@@ -89,6 +89,10 @@ async function mockBackendApi(page: Page) {
         key_counts: {},
         bpm_min: null,
         bpm_max: null,
+        file_formats: [],
+        file_format_counts: {},
+        file_size_min: null,
+        file_size_max: null,
       }),
     }),
   );

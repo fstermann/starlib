@@ -1995,6 +1995,22 @@ export interface components {
             bpm_min?: number | null;
             /** Bpm Max */
             bpm_max?: number | null;
+            /**
+             * File Formats
+             * @default []
+             */
+            file_formats: string[];
+            /**
+             * File Format Counts
+             * @default {}
+             */
+            file_format_counts: {
+                [key: string]: number;
+            };
+            /** File Size Min */
+            file_size_min?: number | null;
+            /** File Size Max */
+            file_size_max?: number | null;
         };
         /**
          * FolderConfig

@@ -20,7 +20,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { serializeComment } from "@/app/library/utils";
+import { formatFileSize, serializeComment } from "@/app/library/utils";
 import {
   SortableColumnHeader,
   SortableHeaderCell,
@@ -91,8 +91,14 @@ type EditableField =
   | "mix_name";
 
 /** Field key universe for the column system. Editable keys map to track
- * metadata fields; "folder" + "soundcloud_linked" are read-only columns. */
-type FieldKey = EditableField | "folder" | "soundcloud_linked";
+ * metadata fields; read-only columns: folder, soundcloud_linked, file_format,
+ * file_size. */
+type FieldKey =
+  | EditableField
+  | "folder"
+  | "soundcloud_linked"
+  | "file_format"
+  | "file_size";
 
 /** Fields shown in the table — editable or read-only. Order here is the
  * default render order; user reorders persist via the column-prefs store.
@@ -125,6 +131,8 @@ const COLUMN_FIELDS: {
   },
   { key: "mix_name", label: "Mix", defaultWidth: 80, editable: true },
   { key: "release_date", label: "Release", defaultWidth: 96, editable: true },
+  { key: "file_format", label: "Format", defaultWidth: 64, editable: false },
+  { key: "file_size", label: "Size", defaultWidth: 72, editable: false },
 ];
 
 type ResolvedField = (typeof COLUMN_FIELDS)[number] & { width: number };
@@ -142,6 +150,8 @@ export const FILESYSTEM_COLUMN_DEFS: import("@/lib/columns/types").ColumnDef[] =
     { id: "original_artist", header: "Orig. Artist" },
     { id: "mix_name", header: "Mix" },
     { id: "release_date", header: "Release" },
+    { id: "file_format", header: "Format" },
+    { id: "file_size", header: "Size" },
   ];
 
 /** Fields not stored in the API — remix composition helpers (not remixer itself, which is a real field) */
@@ -194,6 +204,8 @@ const SORTABLE_FIELDS: Partial<Record<FieldKey, SortBy>> = {
   bpm: "bpm",
   key: "key",
   release_date: "release_date",
+  file_format: "file_format",
+  file_size: "file_size",
 };
 
 function getMissingAttributes(
@@ -506,6 +518,36 @@ function EditRow({
             </span>
           );
         }
+        if (f.key === "file_size") {
+          const bytes = item.file_size ?? 0;
+          return (
+            <span
+              key={f.key}
+              data-size-cell
+              className="text-muted-foreground min-w-0 shrink-0 truncate text-right text-xs tabular-nums"
+              style={{ width: f.width }}
+              title={bytes ? `${bytes.toLocaleString()} bytes` : ""}
+            >
+              {bytes ? formatFileSize(bytes) : "—"}
+            </span>
+          );
+        }
+        if (f.key === "file_format") {
+          const fmt = item.file_format
+            ? item.file_format.replace(/^\./, "").toLowerCase()
+            : "";
+          return (
+            <span
+              key={f.key}
+              data-format-cell
+              className="text-muted-foreground min-w-0 shrink-0 truncate text-xs tabular-nums"
+              style={{ width: f.width }}
+              title={item.file_format ?? ""}
+            >
+              {fmt || "—"}
+            </span>
+          );
+        }
         if (f.key === "soundcloud_linked") {
           return (
             <div
@@ -648,6 +690,12 @@ export function CollectionTable({
   );
   const [bpmMin] = useQueryState("bpmMin", parseAsInteger);
   const [bpmMax] = useQueryState("bpmMax", parseAsInteger);
+  const [fileFormats] = useQueryState(
+    "file_format",
+    parseAsArrayOf(parseAsString).withDefault([]),
+  );
+  const [sizeMin] = useQueryState("file_sizeMin", parseAsInteger);
+  const [sizeMax] = useQueryState("file_sizeMax", parseAsInteger);
   // SoundCloud-link bool filter (writes "true" / "false" to the URL via the
   // shared filter hook; null = unset / show all).
   const [scLinkedRaw] = useQueryState("soundcloud_linked", parseAsString);
@@ -770,6 +818,9 @@ export function CollectionTable({
           keys: keys.length ? keys : undefined,
           bpm_min: bpmMin ?? undefined,
           bpm_max: bpmMax ?? undefined,
+          file_formats: fileFormats.length ? fileFormats : undefined,
+          size_min: sizeMin ?? undefined,
+          size_max: sizeMax ?? undefined,
           has_soundcloud_id: scLinked,
           sort_by: overrideSortBy ?? sortBy,
           sort_order: overrideSortOrder ?? sortOrder,
@@ -810,6 +861,9 @@ export function CollectionTable({
       keys,
       bpmMin,
       bpmMax,
+      fileFormats,
+      sizeMin,
+      sizeMax,
       scLinked,
       sortBy,
       sortOrder,
@@ -819,7 +873,7 @@ export function CollectionTable({
   );
 
   // Reload on mode / folderPath / filter / sort change
-  const filtersKey = `${mode}|${folderPath ?? ""}|${search}|${genres.join(",")}|${keys.join(",")}|${bpmMin}|${bpmMax}|${scLinked ?? ""}|${sortBy}|${sortOrder}`;
+  const filtersKey = `${mode}|${folderPath ?? ""}|${search}|${genres.join(",")}|${keys.join(",")}|${bpmMin}|${bpmMax}|${fileFormats.join(",")}|${sizeMin}|${sizeMax}|${scLinked ?? ""}|${sortBy}|${sortOrder}`;
   useEffect(() => {
     // Cancel any in-flight request from the previous mode/filters
     abortRef.current?.abort(
@@ -875,11 +929,15 @@ export function CollectionTable({
   function handleSort(col: SortBy) {
     if (col !== sortBy) {
       setSortBy(col);
-      setSortOrder("asc");
+      // Date-like columns default to newest-first; everything else asc-first.
+      setSortOrder(col === "mtime" || col === "release_date" ? "desc" : "asc");
     } else if (sortOrder === "asc") {
       setSortOrder("desc");
+    } else if (col === "mtime") {
+      // mtime is the default — toggle instead of resetting (which would no-op).
+      setSortOrder("asc");
     } else {
-      // Third click: reset to default (added date, newest first)
+      // Third click resets to the default sort.
       setSortBy("mtime");
       setSortOrder("desc");
     }
