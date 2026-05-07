@@ -5,7 +5,11 @@ import {
   type GroupedTrack,
   type ProfileGroup,
 } from "@/lib/profile-groups";
-import { getUserLikedTracks } from "@/lib/soundcloud";
+import {
+  fetchLikesPage,
+  getUserLikedTracks,
+  type SCTrack,
+} from "@/lib/soundcloud";
 
 interface UseGroupLikesResult {
   tracks: GroupedTrack[];
@@ -15,10 +19,26 @@ interface UseGroupLikesResult {
 
 const PAGE_SIZE = 200;
 
-/** Fetches first-page likes for each member of a ProfileGroup and merges
- * them into one feed via `mergeGroupedLikes`. v1 deliberately stops at the
- * first page per member — multi-member infinite scroll is non-trivial and
- * deferred. The cap of 200 likes/member matches `useLikes`. */
+async function fetchAllUserLikes(
+  userUrn: string,
+  isCancelled: () => boolean,
+): Promise<SCTrack[]> {
+  const all: SCTrack[] = [];
+  const first = await getUserLikedTracks(userUrn, PAGE_SIZE);
+  if (isCancelled()) return all;
+  if (first.collection) all.push(...first.collection);
+  let nextUrl = first.next_href;
+  while (nextUrl && !isCancelled()) {
+    const resp = await fetchLikesPage(nextUrl);
+    if (isCancelled()) return all;
+    if (resp.collection) all.push(...resp.collection);
+    nextUrl = resp.next_href;
+  }
+  return all;
+}
+
+/** Fetches all likes for each member of a ProfileGroup (following SoundCloud
+ * cursor pagination) and merges them via `mergeGroupedLikes`. */
 export function useGroupLikes(group: ProfileGroup | null): UseGroupLikesResult {
   const [tracks, setTracks] = useState<GroupedTrack[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,14 +65,14 @@ export function useGroupLikes(group: ProfileGroup | null): UseGroupLikesResult {
     setError(null);
     Promise.all(
       members.map(async (m) => {
-        const resp = await getUserLikedTracks(m.user_urn, PAGE_SIZE);
+        const tracks = await fetchAllUserLikes(m.user_urn, () => cancelled);
         return {
           source: {
             user_urn: m.user_urn,
             username: m.username,
             avatar_url: m.avatar_url ?? null,
           },
-          tracks: resp.collection ?? [],
+          tracks,
         };
       }),
     )

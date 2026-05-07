@@ -5,7 +5,11 @@ import {
   type GroupedTrack,
   type ProfileGroup,
 } from "@/lib/profile-groups";
-import { getUserRepostedTracks } from "@/lib/soundcloud";
+import {
+  fetchRepostsPage,
+  getUserRepostedTracks,
+  type SCTrack,
+} from "@/lib/soundcloud";
 
 interface UseGroupRepostsResult {
   tracks: GroupedTrack[];
@@ -15,7 +19,25 @@ interface UseGroupRepostsResult {
 
 const PAGE_SIZE = 200;
 
-/** Reposts equivalent of `useGroupLikes` — first page per member, merged. */
+async function fetchAllUserReposts(
+  userUrn: string,
+  isCancelled: () => boolean,
+): Promise<SCTrack[]> {
+  const all: SCTrack[] = [];
+  const first = await getUserRepostedTracks(userUrn, PAGE_SIZE);
+  if (isCancelled()) return all;
+  if (first.collection) all.push(...first.collection);
+  let nextUrl = first.next_href;
+  while (nextUrl && !isCancelled()) {
+    const resp = await fetchRepostsPage(nextUrl);
+    if (isCancelled()) return all;
+    if (resp.collection) all.push(...resp.collection);
+    nextUrl = resp.next_href;
+  }
+  return all;
+}
+
+/** Reposts equivalent of `useGroupLikes` — paginates fully per member. */
 export function useGroupReposts(
   group: ProfileGroup | null,
 ): UseGroupRepostsResult {
@@ -42,14 +64,14 @@ export function useGroupReposts(
     setError(null);
     Promise.all(
       members.map(async (m) => {
-        const resp = await getUserRepostedTracks(m.user_urn, PAGE_SIZE);
+        const tracks = await fetchAllUserReposts(m.user_urn, () => cancelled);
         return {
           source: {
             user_urn: m.user_urn,
             username: m.username,
             avatar_url: m.avatar_url ?? null,
           },
-          tracks: resp.collection ?? [],
+          tracks,
         };
       }),
     )
