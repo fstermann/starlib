@@ -18,6 +18,7 @@ import {
   FILESYSTEM_COLUMN_DEFS,
 } from "@/components/collection-table";
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
+import { FetchFromDownloadsButton } from "@/components/fetch-from-downloads-button";
 import { FilesystemBatchAnalyzeButton } from "@/components/filesystem-batch-analyze-button";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
@@ -669,6 +670,10 @@ export function FilesystemView() {
               cacheLoading={tableCacheLoading}
               actions={
                 <>
+                  <FetchFromDownloadsButton
+                    folderPath={selectedNodeId ?? undefined}
+                    onComplete={() => setRefreshToken((t) => t + 1)}
+                  />
                   <FilesystemBatchAnalyzeButton
                     folderPath={selectedNodeId ?? undefined}
                     onComplete={() => setRefreshToken((t) => t + 1)}

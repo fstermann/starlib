@@ -250,3 +250,18 @@ class RenameResponse(BaseModel):
     old_path: str
     new_path: str
     message: str
+
+
+class FetchFromDownloadsRequest(BaseModel):
+    """Request to move recent audio files from ~/Downloads into a folder."""
+
+    dest_path: str
+    window_days: int = Field(1, ge=1, le=365)
+
+
+class FetchFromDownloadsResponse(BaseModel):
+    """Result of a Fetch-from-Downloads operation."""
+
+    moved: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []

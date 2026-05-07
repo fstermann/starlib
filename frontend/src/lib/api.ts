@@ -100,6 +100,9 @@ export type TrackInfoUpdateRequest =
 
 export type OperationResponse = components["schemas"]["OperationResponse"];
 
+export type FetchFromDownloadsResponse =
+  components["schemas"]["FetchFromDownloadsResponse"];
+
 export type ApplyRulesResponse = components["schemas"]["ApplyRulesResponse"] & {
   steps?: {
     id: string;
@@ -454,6 +457,15 @@ export const api = {
 
   async initializeFolders(): Promise<OperationResponse> {
     return fetchApi("/api/metadata/folders/initialize", { method: "POST" });
+  },
+  async fetchFromDownloads(
+    destPath: string,
+    windowDays: number,
+  ): Promise<FetchFromDownloadsResponse> {
+    return fetchApi("/api/metadata/folders/fetch-from-downloads", {
+      method: "POST",
+      body: JSON.stringify({ dest_path: destPath, window_days: windowDays }),
+    });
   },
   // Browse (view mode) — full metadata with filtering, sorting, pagination
   async browseFiles(

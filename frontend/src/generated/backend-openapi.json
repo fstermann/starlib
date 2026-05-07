@@ -375,6 +375,48 @@
         }
       }
     },
+    "/api/metadata/folders/fetch-from-downloads": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Fetch From Downloads",
+        "description": "Move recent audio files from ~/Downloads into a library subfolder.\n\nFiles are filtered by extension (audio formats only) and mtime (within\n``window_days`` of now). A file is skipped when the destination already\ncontains an entry with the same name \u2014 making the operation idempotent.",
+        "operationId": "fetch_from_downloads_api_metadata_folders_fetch_from_downloads_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FetchFromDownloadsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchFromDownloadsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metadata/folders/tree": {
       "get": {
         "tags": [
@@ -4089,6 +4131,58 @@
         ],
         "title": "CollectionStatsResponse",
         "description": "Response containing collection statistics."
+      },
+      "FetchFromDownloadsRequest": {
+        "properties": {
+          "dest_path": {
+            "type": "string",
+            "title": "Dest Path"
+          },
+          "window_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Window Days",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "dest_path"
+        ],
+        "title": "FetchFromDownloadsRequest",
+        "description": "Request to move recent audio files from ~/Downloads into a folder."
+      },
+      "FetchFromDownloadsResponse": {
+        "properties": {
+          "moved": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Moved",
+            "default": []
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped",
+            "default": []
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "FetchFromDownloadsResponse",
+        "description": "Result of a Fetch-from-Downloads operation."
       },
       "FileInfoResponse": {
         "properties": {

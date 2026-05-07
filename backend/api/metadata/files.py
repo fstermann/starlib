@@ -3,6 +3,8 @@
 import asyncio
 import base64
 import logging
+import shutil
+import time
 from datetime import date
 from pathlib import Path
 from typing import Annotated
@@ -20,6 +22,8 @@ from backend.schemas.metadata import (
     BatchResultItem,
     BatchUpdateRequest,
     BatchUpdateResponse,
+    FetchFromDownloadsRequest,
+    FetchFromDownloadsResponse,
     FileInfoResponse,
     FileReadinessResponse,
     FilterValuesResponse,
@@ -99,6 +103,87 @@ def initialize_folders(
     for subfolder in ["prepare", "collection", "cleaned", "archive"]:
         (root_folder / subfolder).mkdir(exist_ok=True)
     return OperationResponse(success=True, message=f"Folders created under {root_folder}")
+
+
+# Audio file extensions accepted by the Fetch-from-Downloads action.
+# Mirrors the keys of AUDIO_MIME_TYPES in backend.api.metadata.audio without
+# importing that module (avoids cross-router coupling).
+_FETCH_AUDIO_EXTENSIONS = frozenset({".mp3", ".aiff", ".aif", ".wav", ".flac", ".m4a"})
+
+
+def _is_recent_audio(src: Path, cutoff: float) -> bool:
+    """True if *src* is a non-hidden audio file modified at or after *cutoff*."""
+    if not src.is_file() or src.name.startswith("."):
+        return False
+    if src.suffix.lower() not in _FETCH_AUDIO_EXTENSIONS:
+        return False
+    try:
+        return src.stat().st_mtime >= cutoff
+    except OSError:
+        return False
+
+
+@router.post("/folders/fetch-from-downloads", response_model=FetchFromDownloadsResponse)
+def fetch_from_downloads(
+    request: FetchFromDownloadsRequest,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> FetchFromDownloadsResponse:
+    """Move recent audio files from ~/Downloads into a library subfolder.
+
+    Files are filtered by extension (audio formats only) and mtime (within
+    ``window_days`` of now). A file is skipped when the destination already
+    contains an entry with the same name — making the operation idempotent.
+    """
+    downloads = (Path.home() / "Downloads").resolve()
+    if not downloads.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Downloads folder not found at {downloads}",
+        )
+
+    dest = Path(request.dest_path).resolve()
+    resolved_root = root_folder.resolve()
+    try:
+        dest.relative_to(resolved_root)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Destination is outside the music library root.",
+        ) from e
+    if not dest.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Destination folder does not exist: {dest}",
+        )
+
+    cutoff = time.time() - request.window_days * 86400
+    moved: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []
+
+    for src in downloads.iterdir():
+        if not _is_recent_audio(src, cutoff):
+            continue
+
+        target = dest / src.name
+        if target.exists():
+            skipped.append(src.name)
+            continue
+
+        try:
+            shutil.move(str(src), str(target))
+        except Exception as e:
+            logger.exception("Failed to move %s to %s", src, target)
+            errors.append(f"{src.name}: {e}")
+            continue
+
+        try:
+            collection.reindex_file(resolved_root, target)
+        except Exception:
+            logger.exception("Failed to reindex %s after move", target)
+        moved.append(src.name)
+
+    return FetchFromDownloadsResponse(moved=moved, skipped=skipped, errors=errors)
 
 
 @router.get("/folders/tree", response_model=TreeNode)

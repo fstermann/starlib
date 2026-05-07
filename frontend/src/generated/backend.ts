@@ -285,6 +285,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metadata/folders/fetch-from-downloads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch From Downloads
+         * @description Move recent audio files from ~/Downloads into a library subfolder.
+         *
+         *     Files are filtered by extension (audio formats only) and mtime (within
+         *     ``window_days`` of now). A file is skipped when the destination already
+         *     contains an entry with the same name — making the operation idempotent.
+         */
+        post: operations["fetch_from_downloads_api_metadata_folders_fetch_from_downloads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metadata/folders/tree": {
         parameters: {
             query?: never;
@@ -1925,6 +1949,40 @@ export interface components {
             bpm_max?: number | null;
         };
         /**
+         * FetchFromDownloadsRequest
+         * @description Request to move recent audio files from ~/Downloads into a folder.
+         */
+        FetchFromDownloadsRequest: {
+            /** Dest Path */
+            dest_path: string;
+            /**
+             * Window Days
+             * @default 1
+             */
+            window_days: number;
+        };
+        /**
+         * FetchFromDownloadsResponse
+         * @description Result of a Fetch-from-Downloads operation.
+         */
+        FetchFromDownloadsResponse: {
+            /**
+             * Moved
+             * @default []
+             */
+            moved: string[];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: string[];
+            /**
+             * Errors
+             * @default []
+             */
+            errors: string[];
+        };
+        /**
          * FileInfoResponse
          * @description Response containing basic file information.
          */
@@ -2947,6 +3005,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OperationResponse"];
+                };
+            };
+        };
+    };
+    fetch_from_downloads_api_metadata_folders_fetch_from_downloads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FetchFromDownloadsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FetchFromDownloadsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
