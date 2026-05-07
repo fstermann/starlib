@@ -86,6 +86,59 @@ def test_skips_files_already_present(
     assert (downloads / "track.mp3").exists()
 
 
+def test_preview_lists_recent_audio_and_collisions(
+    patched_client: TestClient,
+    tmp_music_folder: Path,
+    fake_downloads: Path,
+):
+    downloads = fake_downloads / "Downloads"
+    _touch(downloads / "recent.mp3")
+    _touch(downloads / "another.wav")
+    _touch(downloads / "old.mp3", mtime_offset_s=-3 * 86400)
+    _touch(downloads / "doc.pdf")
+    _touch(downloads / "unsupported.m4a")  # not in FILETYPE_MAP
+    dest = tmp_music_folder / "prepare"
+    _touch(dest / "another.wav")  # collision
+
+    resp = patched_client.get(
+        "/api/metadata/folders/fetch-from-downloads/preview",
+        params={"dest_path": str(dest), "window_days": 1},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [c["name"] for c in body["candidates"]] == ["recent.mp3"]
+    assert body["candidates"][0]["size"] == len(b"data")
+    assert body["skipped"] == ["another.wav"]
+
+
+def test_post_with_file_names_only_moves_selected(
+    patched_client: TestClient,
+    tmp_music_folder: Path,
+    fake_downloads: Path,
+):
+    downloads = fake_downloads / "Downloads"
+    _touch(downloads / "keep.mp3")
+    _touch(downloads / "drop.mp3")
+    dest = tmp_music_folder / "prepare"
+
+    with patch("backend.api.metadata.files.collection.reindex_file"):
+        resp = patched_client.post(
+            "/api/metadata/folders/fetch-from-downloads",
+            json={
+                "dest_path": str(dest),
+                "window_days": 1,
+                "file_names": ["keep.mp3"],
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["moved"] == ["keep.mp3"]
+    assert (dest / "keep.mp3").is_file()
+    # Excluded file stays in Downloads.
+    assert (downloads / "drop.mp3").exists()
+    assert not (dest / "drop.mp3").exists()
+
+
 def test_rejects_destination_outside_root(
     patched_client: TestClient,
     fake_downloads: Path,

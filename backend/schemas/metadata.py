@@ -257,6 +257,24 @@ class FetchFromDownloadsRequest(BaseModel):
 
     dest_path: str
     window_days: int = Field(1, ge=1, le=365)
+    # When provided, only files whose names appear here are moved. None = move
+    # every eligible candidate (back-compat with one-shot callers).
+    file_names: list[str] | None = None
+
+
+class FetchCandidate(BaseModel):
+    """One candidate audio file under ~/Downloads for the preview dialog."""
+
+    name: str
+    size: int
+    mtime: float
+
+
+class FetchFromDownloadsPreview(BaseModel):
+    """Preview of what a Fetch-from-Downloads call would do."""
+
+    candidates: list[FetchCandidate] = []
+    skipped: list[str] = []
 
 
 class FetchFromDownloadsResponse(BaseModel):
