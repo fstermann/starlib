@@ -22,19 +22,18 @@ const PAGE_SIZE = 200;
 async function fetchAllUserReposts(
   userUrn: string,
   isCancelled: () => boolean,
-): Promise<SCTrack[]> {
-  const all: SCTrack[] = [];
+  onPage: (tracks: SCTrack[]) => void,
+): Promise<void> {
   const first = await getUserRepostedTracks(userUrn, PAGE_SIZE);
-  if (isCancelled()) return all;
-  if (first.collection) all.push(...first.collection);
+  if (isCancelled()) return;
+  if (first.collection?.length) onPage(first.collection);
   let nextUrl = first.next_href;
   while (nextUrl && !isCancelled()) {
     const resp = await fetchRepostsPage(nextUrl);
-    if (isCancelled()) return all;
-    if (resp.collection) all.push(...resp.collection);
+    if (isCancelled()) return;
+    if (resp.collection?.length) onPage(resp.collection);
     nextUrl = resp.next_href;
   }
-  return all;
 }
 
 /** Reposts equivalent of `useGroupLikes` — paginates fully per member. */
@@ -60,24 +59,34 @@ export function useGroupReposts(
       return;
     }
     let cancelled = false;
+    setTracks([]);
     setLoading(true);
     setError(null);
+
+    const perMember = members.map((m) => ({
+      source: {
+        user_urn: m.user_urn,
+        username: m.username,
+        avatar_url: m.avatar_url ?? null,
+      },
+      tracks: [] as SCTrack[],
+    }));
+
     Promise.all(
-      members.map(async (m) => {
-        const tracks = await fetchAllUserReposts(m.user_urn, () => cancelled);
-        return {
-          source: {
-            user_urn: m.user_urn,
-            username: m.username,
-            avatar_url: m.avatar_url ?? null,
+      members.map((m, idx) =>
+        fetchAllUserReposts(
+          m.user_urn,
+          () => cancelled,
+          (page) => {
+            if (cancelled) return;
+            perMember[idx].tracks = perMember[idx].tracks.concat(page);
+            setTracks(mergeGroupedLikes(perMember));
           },
-          tracks,
-        };
-      }),
+        ),
+      ),
     )
-      .then((perMember) => {
+      .then(() => {
         if (cancelled) return;
-        setTracks(mergeGroupedLikes(perMember));
         setLoading(false);
       })
       .catch((err) => {
