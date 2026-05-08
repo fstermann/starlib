@@ -10,16 +10,13 @@ type Phase = "travel" | "exit" | "done";
 type Stage = "entrance" | "cruise";
 
 const ENTRANCE_MS = 500;
-const CRUISE_MS = 700;
+const ORBIT_MS = 4000;
 const EXIT_MS = 550;
 
-// How far along each star's trajectory the cruise loop runs.
-// Cruise sits between the camera and well past the home position so the
-// streak feels like constant outward flight. The home position sits inside
-// the cruise window — when exit lands at scale 1 there, it's a clean
-// deceleration out of the loop.
-const CRUISE_START = 0.25; // along ray, scale 0.5
-const CRUISE_END = 2.4; // along ray, off-screen, scale 3
+// Cruise is a circular orbit around screen center — a "tunnel" of stars
+// rotating around the camera axis.
+const ORBIT_RADIUS = 110;
+const ORBIT_SAMPLES = 32;
 
 // Mirrors the placements that used to live in floating-stars.tsx so the
 // loader's racing stars settle into the exact title-screen layout.
@@ -67,9 +64,9 @@ const STARS = [
  * React instances (and Zdog canvases) hand off cleanly: no fade, no flicker.
  *
  * Stages:
- * - entrance: one-shot fly-in from screen center to the cruise start
- * - cruise:   continuous outward streak while the backend keeps loading
- * - exit:     decelerate to the title-screen home positions
+ * - entrance: one-shot fly-in from screen center to each star's orbit slot
+ * - cruise:   continuous orbit around screen center while the backend loads
+ * - exit:     tween from the current orbit position to the title-screen home
  *
  * Visible only on the home route — they belong to the title screen.
  */
@@ -105,14 +102,12 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
         // Top-left of the star when centered on screen.
         const startX = cx - s.size / 2;
         const startY = cy - s.size / 2;
-        const dx = home.x - startX;
-        const dy = home.y - startY;
 
-        // Cruise endpoints along the ray from screen-center toward home.
-        const cruiseStartX = startX + dx * CRUISE_START;
-        const cruiseStartY = startY + dy * CRUISE_START;
-        const cruiseEndX = startX + dx * CRUISE_END;
-        const cruiseEndY = startY + dy * CRUISE_END;
+        // Each star starts at a different angle so they spread around the
+        // circle instead of stacking.
+        const startAngle = (i / STARS.length) * Math.PI * 2;
+        const orbitX = (a: number) => startX + Math.cos(a) * ORBIT_RADIUS;
+        const orbitY = (a: number) => startY + Math.sin(a) * ORBIT_RADIUS;
 
         const arrived = phase === "done";
         const cruising = phase === "travel" && stage === "cruise";
@@ -123,9 +118,9 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
 
         if (entering) {
           animate = {
-            x: cruiseStartX,
-            y: cruiseStartY,
-            scale: 0.5,
+            x: orbitX(startAngle),
+            y: orbitY(startAngle),
+            scale: 1,
             opacity: 1,
           };
           transition = {
@@ -133,41 +128,22 @@ export function HyperspaceStars({ phase }: { phase: Phase }) {
             ease: [0.2, 0, 0, 1],
           };
         } else if (cruising) {
-          // 5 keyframes designed so the loop seam is a no-op (start and
-          // end are identical) and every position change happens while
-          // either the star is moving forward or invisible:
-          //
-          //   0–80%: visible streak from cruiseStart → cruiseEnd
-          //   80–90%: fade out in place at cruiseEnd (no motion)
-          //   90–95%: invisible teleport cruiseEnd → cruiseStart
-          //   95–100%: fade in in place at cruiseStart (no motion)
-          //
-          // The user never sees the star "drop back" because the only
-          // backward position change happens entirely at opacity 0.
+          // Start and end angles differ by exactly 2π, so the loop seam
+          // is a no-op — no fade, no teleport.
+          const angles = Array.from(
+            { length: ORBIT_SAMPLES + 1 },
+            (_, k) => startAngle + (k / ORBIT_SAMPLES) * Math.PI * 2,
+          );
           animate = {
-            x: [
-              cruiseStartX,
-              cruiseEndX,
-              cruiseEndX,
-              cruiseStartX,
-              cruiseStartX,
-            ],
-            y: [
-              cruiseStartY,
-              cruiseEndY,
-              cruiseEndY,
-              cruiseStartY,
-              cruiseStartY,
-            ],
-            scale: [0.5, 3, 3, 0.5, 0.5],
-            opacity: [1, 1, 0, 0, 1],
+            x: angles.map(orbitX),
+            y: angles.map(orbitY),
+            scale: 1,
+            opacity: 1,
           };
           transition = {
-            duration: CRUISE_MS / 1000,
+            duration: ORBIT_MS / 1000,
             repeat: Infinity,
             ease: "linear",
-            times: [0, 0.8, 0.9, 0.95, 1],
-            delay: i * 0.08,
           };
         } else {
           // exit / done
