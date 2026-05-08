@@ -1,6 +1,13 @@
 "use client";
 
-import { Heart, ListMusic, Repeat2, Sparkles, User } from "lucide-react";
+import {
+  AudioLines,
+  Heart,
+  ListMusic,
+  Repeat2,
+  Sparkles,
+  User,
+} from "lucide-react";
 import { useMemo } from "react";
 
 import { TreeView } from "@/components/tree/tree-view";
@@ -11,6 +18,7 @@ import type { SystemPlaylistSummary } from "./use-system-playlists";
 
 export const LIKES_NODE_ID = "likes";
 export const REPOSTS_NODE_ID = "reposts";
+export const TRACKS_NODE_ID = "tracks";
 export const PLAYLISTS_GROUP_ID = "playlists";
 export const MIXES_GROUP_ID = "mixes";
 export const playlistNodeId = (urn: string) => `pl:${urn}`;
@@ -21,6 +29,7 @@ export type LikesTreeNodeKind =
   | "root"
   | "likes"
   | "reposts"
+  | "tracks"
   | "group"
   | "member"
   | "playlist"
@@ -45,6 +54,8 @@ interface LikesTreePanelProps {
   likesCount: number;
   /** Filtered count for the Reposts node. */
   repostsCount: number;
+  /** Filtered count for the Tracks node (uploads by the user/group). */
+  tracksCount: number;
   /** Filtered count for the "Playlists" aggregate group (tracks across all). */
   combinedCount: number;
   /**
@@ -80,6 +91,7 @@ export function LikesTreePanel({
   storageKey,
   likesCount,
   repostsCount,
+  tracksCount,
   combinedCount,
   perPlaylistFilteredCount,
   mixes,
@@ -137,6 +149,13 @@ export function LikesTreePanel({
         kind: "reposts",
         trackCount: repostsCount,
       },
+      {
+        id: TRACKS_NODE_ID,
+        name: "Tracks",
+        children: [],
+        kind: "tracks",
+        trackCount: tracksCount,
+      },
     ];
     // Always surface Mixes on tabs where it applies. When the user hasn't
     // connected yet we still render the group (empty) so the CTA in the
@@ -168,6 +187,7 @@ export function LikesTreePanel({
     playlists,
     likesCount,
     repostsCount,
+    tracksCount,
     combinedCount,
     perPlaylistFilteredCount,
     mixes,
@@ -190,6 +210,11 @@ export function LikesTreePanel({
         if (node.kind === "reposts") {
           return (
             <Repeat2 className="text-muted-foreground size-3.5 shrink-0" />
+          );
+        }
+        if (node.kind === "tracks") {
+          return (
+            <AudioLines className="text-muted-foreground size-3.5 shrink-0" />
           );
         }
         // Match group headers (Mixes/Playlists) to the icon used by their
