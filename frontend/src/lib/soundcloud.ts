@@ -10,9 +10,34 @@ import type { components, paths } from "@/generated/soundcloud";
 
 import { ensureValidToken } from "./auth";
 
-export type SCTrack = components["schemas"]["Track"];
+export type SCTrack = components["schemas"]["Track"] & {
+  /** Set by the weekly feed parser when the activity was a track-repost
+   * rather than an original release. Undefined elsewhere. */
+  isRepost?: boolean;
+  /** Activity timestamp from the feed: when the track was posted/reposted
+   * into the user's feed (distinct from `created_at`, which is when the
+   * track itself was uploaded). Only set for feed-derived tracks; in
+   * other contexts (likes, playlists) this remains undefined since the
+   * SoundCloud API doesn't expose liked-at on those endpoints. */
+  addedAt?: string;
+};
 export type SCPlaylist = components["schemas"]["Playlist"];
 export type SCUser = components["schemas"]["User"];
+
+/** Parse a SoundCloud timestamp to epoch ms.
+ *
+ * Accepts both the legacy `YYYY/MM/DD HH:MM:SS +0000` format and ISO-8601.
+ * Returns `null` for missing/unparseable values so callers can branch instead
+ * of guarding `NaN`. */
+export function parseSCTimestamp(value: string | undefined): number | null {
+  if (!value) return null;
+  const normalized = value
+    .replace(/\//g, "-")
+    .replace(" ", "T")
+    .replace(" +0000", "Z");
+  const t = Date.parse(normalized);
+  return Number.isFinite(t) ? t : null;
+}
 
 function createSCClient(token: string) {
   const client = createClient<paths>({ baseUrl: "https://api.soundcloud.com" });
@@ -193,6 +218,99 @@ export async function fetchLikesPage(nextHref: string): Promise<SCTracks> {
   return (await resp.json()) as SCTracks;
 }
 
+// Reposts mirror likes but the public typegen omits the endpoints — call them
+// directly with the same response shape (Tracks).
+async function fetchRepostsUrl(url: string): Promise<SCTracks> {
+  const token = await ensureValidToken();
+  const resp = await fetch(url, {
+    headers: { Authorization: `OAuth ${token}` },
+  });
+  if (!resp.ok) throw new Error(`Failed to fetch reposts: ${resp.status}`);
+  return (await resp.json()) as SCTracks;
+}
+
+function buildRepostsUrl(path: string, limit: number, cursor?: string): string {
+  const url = new URL(`https://api.soundcloud.com${path}`);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("linked_partitioning", "true");
+  if (cursor) url.searchParams.set("offset", cursor);
+  return url.toString();
+}
+
+export async function getMyRepostedTracks(
+  limit = 200,
+  cursor?: string,
+): Promise<SCTracks> {
+  return fetchRepostsUrl(buildRepostsUrl("/me/reposts/tracks", limit, cursor));
+}
+
+export async function getUserRepostedTracks(
+  userUrn: string,
+  limit = 200,
+  cursor?: string,
+): Promise<SCTracks> {
+  return fetchRepostsUrl(
+    buildRepostsUrl(
+      `/users/${encodeURIComponent(userUrn)}/reposts/tracks`,
+      limit,
+      cursor,
+    ),
+  );
+}
+
+export async function fetchRepostsPage(nextHref: string): Promise<SCTracks> {
+  return fetchRepostsUrl(nextHref);
+}
+
+export async function getMyTracks(
+  limit = 200,
+  cursor?: string,
+): Promise<SCTracks> {
+  const client = await getClient();
+  const { data, error } = await client.GET("/me/tracks", {
+    params: {
+      query: {
+        limit,
+        linked_partitioning: true,
+        ...(cursor ? { offset: cursor } : {}),
+      } as never,
+    },
+  });
+  if (error)
+    throw new Error(`Failed to fetch my tracks: ${JSON.stringify(error)}`);
+  return data as SCTracks;
+}
+
+export async function getUserTracks(
+  userUrn: string,
+  limit = 200,
+  cursor?: string,
+): Promise<SCTracks> {
+  const client = await getClient();
+  const { data, error } = await client.GET("/users/{user_urn}/tracks", {
+    params: {
+      path: { user_urn: userUrn },
+      query: {
+        limit,
+        linked_partitioning: true,
+        ...(cursor ? { offset: cursor } : {}),
+      } as never,
+    },
+  });
+  if (error)
+    throw new Error(`Failed to fetch user tracks: ${JSON.stringify(error)}`);
+  return data as SCTracks;
+}
+
+export async function fetchTracksPage(nextHref: string): Promise<SCTracks> {
+  const token = await ensureValidToken();
+  const resp = await fetch(nextHref, {
+    headers: { Authorization: `OAuth ${token}` },
+  });
+  if (!resp.ok) throw new Error(`Failed to fetch tracks page: ${resp.status}`);
+  return (await resp.json()) as SCTracks;
+}
+
 export async function getUser(userUrn: string): Promise<SCUser | null> {
   const client = await getClient();
   const { data, error } = await client.GET("/users/{user_urn}", {
@@ -224,9 +342,11 @@ export type SCActivities = components["schemas"]["Activities"];
 /**
  * Fetches one page of the authenticated user's recent track feed.
  *
- * Each returned track's `created_at` is overridden with the activity timestamp
- * (i.e. when it appeared in the feed, not when it was originally uploaded), so
- * that reposts are bucketed correctly in weekly groups.
+ * Each returned track keeps its origin `created_at` (upload date) and gains an
+ * `addedAt` field carrying the feed activity timestamp — the moment the
+ * track or repost surfaced in the feed. Weekly grouping uses `addedAt` so
+ * reposts bucket by when they appeared, not when the underlying track was
+ * uploaded.
  */
 export async function getFeedTracksPage(
   limit = 50,
@@ -252,12 +372,14 @@ export async function getFeedTracksPage(
   }
 
   const tracks = (data.collection ?? [])
-    .filter((item) => item.type === "track" && item.origin)
+    .filter(
+      (item) =>
+        (item.type === "track" || item.type === "track:repost") && item.origin,
+    )
     .map((item) => ({
       ...(item.origin as SCTrack),
-      // Use the activity date (when it appeared in the feed / was reposted),
-      // not the track's original upload date.
-      created_at: item.created_at ?? (item.origin as SCTrack).created_at,
+      addedAt: item.created_at ?? (item.origin as SCTrack).created_at,
+      isRepost: item.type === "track:repost",
     }));
 
   return { tracks, nextHref: data.next_href ?? undefined };

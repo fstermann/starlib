@@ -25,15 +25,9 @@ function extractMetadata(track: SourceTrack): SourceMetadata {
       raw.release_month && raw.release_month > 0 ? raw.release_month : 1;
     const d = raw.release_day && raw.release_day > 0 ? raw.release_day : 1;
     releaseDate = `${raw.release_year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  } else if (raw.created_at) {
-    const normalized = raw.created_at
-      .replace(/\//g, "-")
-      .replace(" ", "T")
-      .replace(" +0000", "Z");
-    const date = new Date(normalized);
-    if (!isNaN(date.getTime())) {
-      releaseDate = date.toISOString().slice(0, 10);
-    }
+  } else {
+    const ts = sc.parseSCTimestamp(raw.created_at);
+    if (ts != null) releaseDate = new Date(ts).toISOString().slice(0, 10);
   }
 
   // Use HQ artwork (SoundCloud serves large artwork as -large, t500x500 is the HQ version)

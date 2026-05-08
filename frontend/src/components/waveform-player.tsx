@@ -6,8 +6,10 @@ import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type WaveSurferType from "wavesurfer.js";
 
+import { BpmPitcher, computePlaybackRate } from "@/components/bpm-pitcher";
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
+import { markScUnplayable } from "@/lib/sc-unplayable";
 import {
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
@@ -64,6 +66,7 @@ export function WaveformPlayer() {
     currentTrack,
     isPlaying,
     toggle,
+    pause,
     next,
     previous,
     peekNext,
@@ -72,6 +75,9 @@ export function WaveformPlayer() {
     reportProgress,
     registerSeek,
     reportDuration,
+    currentBpm,
+    targetBpm,
+    pitchEnabled,
   } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurferType | null>(null);
@@ -149,8 +155,12 @@ export function WaveformPlayer() {
         : undefined,
     });
     ms.playbackState = isPlaying ? "playing" : "paused";
-    ms.setActionHandler("play", () => toggle());
-    ms.setActionHandler("pause", () => toggle());
+    ms.setActionHandler("play", () => {
+      if (!isPlayingRef.current) toggle();
+    });
+    ms.setActionHandler("pause", () => {
+      if (isPlayingRef.current) toggle();
+    });
     ms.setActionHandler("nexttrack", hasNext ? () => next() : null);
     ms.setActionHandler("previoustrack", hasPrevious ? () => previous() : null);
     return () => {
@@ -160,6 +170,35 @@ export function WaveformPlayer() {
       ms.setActionHandler("previoustrack", null);
     };
   }, [currentTrack, isPlaying, toggle, next, previous, hasNext, hasPrevious]);
+
+  // Pause when the active audio output device disappears (AirPods disconnect,
+  // headphones unplugged). The audio element's own `pause` event isn't
+  // reliable here — WKWebView/Safari pauses natively, but Chromium-based
+  // engines keep playing through the new default output. `devicechange` plus
+  // an audiooutput count drop is the canonical signal in both.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices) return;
+    const md = navigator.mediaDevices;
+    let prevCount = 0;
+    let cancelled = false;
+    const countOutputs = async () => {
+      const devices = await md.enumerateDevices();
+      return devices.filter((d) => d.kind === "audiooutput").length;
+    };
+    countOutputs().then((n) => {
+      if (!cancelled) prevCount = n;
+    });
+    const onChange = async () => {
+      const next = await countOutputs();
+      if (next < prevCount && isPlayingRef.current) pause();
+      prevCount = next;
+    };
+    md.addEventListener("devicechange", onChange);
+    return () => {
+      cancelled = true;
+      md.removeEventListener("devicechange", onChange);
+    };
+  }, [pause]);
 
   useEffect(() => {
     if (!currentTrack) return;
@@ -224,7 +263,24 @@ export function WaveformPlayer() {
 
       const audio = new Audio();
       audio.preload = "auto";
+      // Attach to DOM so platform pause events (headphones unplugged, etc.)
+      // dispatch reliably and so tests can reach the element.
+      audio.hidden = true;
+      document.body.appendChild(audio);
       audioRef.current = audio;
+
+      // Sync React state when the OS pauses our audio behind our back —
+      // e.g. headphones unplugged or Bluetooth device disconnects. Without
+      // this, isPlaying stays true and the UI shows "playing" with no sound.
+      // We ignore self-initiated pauses two ways: ws.pause() fires this
+      // event, but by then isPlayingRef is already false (the [isPlaying]
+      // effect updated it). Track-change cleanup also fires pause(), but by
+      // then audioRef has been swapped to the new track's element, so the
+      // ref-equality check skips it.
+      audio.addEventListener("pause", () => {
+        if (audioRef.current !== audio) return;
+        if (isPlayingRef.current && audio.paused) pause();
+      });
 
       // Start playback as soon as the browser has enough buffered data.
       // This fires well before WaveSurfer's `ready` (which waits for peaks
@@ -232,11 +288,21 @@ export function WaveformPlayer() {
       const resolvedStreamUrl = await streamUrlPromise;
       if (cancelled) return;
       // For SC tracks the resolve can fail — bail before attaching a bad src.
+      // Flag the track unplayable so the queue's auto-skip effect advances
+      // past it. Don't set errorMsg here: the JSX swaps the container div
+      // out for the error text, and the next track's init() runs synchronously
+      // before React re-renders to clear the error — so containerRef.current
+      // is null and that init bails too, leaving the waveform unrendered.
       if (
         currentTrack!.streamRefreshKey !== undefined &&
         currentTrack!.streamRefreshKey !== null &&
         !resolvedStreamUrl
       ) {
+        const sid =
+          typeof currentTrack!.streamRefreshKey === "number"
+            ? currentTrack!.streamRefreshKey
+            : Number(currentTrack!.streamRefreshKey);
+        if (Number.isFinite(sid) && sid > 0) markScUnplayable(sid);
         return;
       }
       const sourceUrl =
@@ -281,13 +347,20 @@ export function WaveformPlayer() {
           hls?.destroy();
           hls = attachAudioSource(audio, url, {
             onExpired: () => {
-              // Fresh URL also 403'd — likely an account/auth problem rather
-              // than expiry. Warn instead of error so the Next dev overlay
-              // stays quiet.
+              // Fresh URL also 403'd — this isn't expiry, it's SoundCloud
+              // refusing to stream the track to our app entirely (label
+              // upload, geo-restriction, owner-disabled streaming).
               console.warn(
-                "[player] refreshed HLS URL also returned 403; giving up",
+                "[player] refreshed HLS URL also returned 403; track restricted",
               );
-              setErrorMsg("Stream expired. Please try again.");
+              const sid =
+                typeof currentTrack!.streamRefreshKey === "number"
+                  ? currentTrack!.streamRefreshKey
+                  : Number(currentTrack!.streamRefreshKey);
+              if (Number.isFinite(sid) && sid > 0) markScUnplayable(sid);
+              // No setErrorMsg: the unplayable flag triggers auto-skip,
+              // and showing the error swaps out containerRef before the
+              // next track's init() can use it (see initial-bail comment).
             },
           });
         } catch (err) {
@@ -460,6 +533,7 @@ export function WaveformPlayer() {
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";
+        audioRef.current.remove();
         audioRef.current = null;
       }
     };
@@ -475,6 +549,23 @@ export function WaveformPlayer() {
       ws.pause();
     }
   }, [isPlaying, ready]);
+
+  // Apply BPM-pitcher playback rate. `playbackRate` resets to 1 whenever the
+  // audio element's `src` changes, so this effect re-fires after every track
+  // load via the `ready` dependency.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    // Couple pitch to rate (vinyl-style) — browsers default preservesPitch to
+    // true, which keeps the original pitch while changing tempo. For a DJ
+    // pitcher we want both to shift together.
+    audio.preservesPitch = false;
+    audio.playbackRate = computePlaybackRate(
+      pitchEnabled,
+      currentBpm,
+      targetBpm,
+    );
+  }, [pitchEnabled, currentBpm, targetBpm, ready]);
 
   // Prefetch the next queued track's stream URL + peaks as soon as the
   // current track is decoded. When the user skips, the caches are already
@@ -759,6 +850,10 @@ export function WaveformPlayer() {
             <SkipForward className="size-4" />
           </button>
         </div>
+
+        {/* Target-BPM pitcher — displays current BPM and allows pitching
+          playback. Sits between transport and waveform. */}
+        <BpmPitcher />
 
         {errorMsg ? (
           <div

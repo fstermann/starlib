@@ -15,9 +15,10 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { Archive, Loader2, MoveRight, Plus, RefreshCw } from "lucide-react";
+import { Archive, MoveRight, Plus, RefreshCw } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -549,7 +550,7 @@ export function RulesetEditor({
           </DropdownMenu>
           {hasPendingEdit && onSave && (
             <Button size="sm" onClick={onSave} disabled={saving}>
-              {saving && <Loader2 className="size-3.5 animate-spin" />}
+              {saving && <Spinner className="size-3.5" />}
               Save changes
             </Button>
           )}
@@ -594,8 +595,8 @@ function RequiredAttributesPicker({
     <div className="flex flex-col gap-1.5">
       <Label className="text-sm">Required attributes</Label>
       <p className="text-muted-foreground text-xs">
-        Tracks missing any of these can&apos;t be finalized with this ruleset.
-        The Apply Rules button will list what&apos;s missing.
+        Tracks missing any of these can&apos;t have this ruleset applied. The
+        Apply Rules button will list what&apos;s missing.
       </p>
       <div className="flex flex-wrap gap-1.5 pt-0.5">
         {REQUIRED_ATTRIBUTES.map((attr) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Waves } from "lucide-react";
+import { Waves } from "lucide-react";
 import React, { useContext, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -8,9 +8,12 @@ import {
   SC_BPM_UPDATED_EVENT,
   type ScBpmUpdatedDetail,
 } from "@/components/soundcloud-batch-analyze-button";
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { analyzeScBpm, isTauri } from "@/lib/tauri";
+import { analyzeSc, TrackUnanalysableError } from "@/lib/sc-bpm";
+import { markScUnplayable, useIsScUnplayable } from "@/lib/sc-unplayable";
+import { isTauri } from "@/lib/tauri";
 
 interface Props {
   trackId: number;
@@ -38,6 +41,12 @@ export const SoundcloudBpmCacheContext = React.createContext<
 export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
   const [analyzedBpm, setAnalyzedBpm] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  // Sticky once SC refuses analysis — prevents the user from spamming the
+  // Detect button on a track SoundCloud will never let us stream.
+  const [unanalysable, setUnanalysable] = useState(false);
+  // Read the global session set so a track flagged unplayable elsewhere
+  // (player, batch, pitcher) immediately reflects in this cell too.
+  const sessionUnplayable = useIsScUnplayable(trackId);
   const bpmCache = useContext(SoundcloudBpmCacheContext);
 
   const cachedBpm = bpmCache.get(trackId);
@@ -59,8 +68,7 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
     if (!isTauri() || !trackId || loading) return;
     setLoading(true);
     try {
-      const { token } = await api.getSoundcloudClientToken();
-      const result = await analyzeScBpm(trackId, token);
+      const result = await analyzeSc(trackId);
       const rounded = Math.round(result.bpm);
       await api.saveSoundcloudBpm(trackId, result.bpm);
       setAnalyzedBpm(rounded);
@@ -68,9 +76,15 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
         `Detected ${rounded} BPM (${result.confidence} confidence)`,
       );
     } catch (err) {
-      toast.error(
-        `BPM detection failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      if (err instanceof TrackUnanalysableError) {
+        setUnanalysable(true);
+        markScUnplayable(trackId);
+        toast.warning(err.message);
+      } else {
+        toast.error(
+          `BPM detection failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -82,6 +96,16 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
   if (!isTauri()) {
     return <>—</>;
   }
+  if (unanalysable || sessionUnplayable) {
+    return (
+      <span
+        className="text-muted-foreground/60 text-xs"
+        title="SoundCloud doesn't allow this track to be streamed for analysis"
+      >
+        —
+      </span>
+    );
+  }
   return (
     <Button
       variant="ghost"
@@ -90,7 +114,7 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
       disabled={loading}
       title="Detect BPM"
     >
-      {loading ? <Loader2 className="animate-spin" /> : <Waves />}
+      {loading ? <Spinner /> : <Waves />}
     </Button>
   );
 }

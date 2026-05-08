@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  Ban,
   ChevronDown,
   ChevronsUpDown,
   ChevronUp,
@@ -41,6 +42,7 @@ import {
 } from "@/components/soundcloud-bpm-cell";
 import { SoundcloudLikeButton } from "@/components/soundcloud-like-button";
 import { SoundcloudRowPlayButton } from "@/components/soundcloud-row-play-button";
+import { SourceProfileAvatar } from "@/components/source-profile-avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
@@ -50,8 +52,10 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import type { ColumnDef } from "@/lib/columns/types";
+import { parseFallbackDownloadUrl } from "@/lib/parse-fallback-download";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
-import type { SCTrack } from "@/lib/soundcloud";
+import type { SourceProfile } from "@/lib/profile-groups";
+import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
 import {
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
@@ -61,7 +65,14 @@ import { cn } from "@/lib/utils";
 const ROW_HEIGHT = 48;
 const DESCRIPTION_HEIGHT = 120;
 
-type SortKey = "title" | "artist" | "genre" | "duration" | "playback_count";
+type SortKey =
+  | "title"
+  | "artist"
+  | "genre"
+  | "duration"
+  | "playback_count"
+  | "uploaded"
+  | "added";
 type SortOrder = "asc" | "desc";
 
 /** A single source of truth for likes-table columns. Drives both the header
@@ -86,7 +97,36 @@ interface LikesCol {
   }) => React.ReactNode;
 }
 
+/** Small ban-circle next to the title when SC's metadata flags a track as
+ * unstreamable (rare; catches outright takedowns). The session-discovered
+ * unplayable case is already conveyed by the row's play-button switching
+ * to a Ban icon, so showing both there would double up. */
+function UnstreamableBadge({ track }: { track: SCTrack }) {
+  if (track.streamable !== false) return null;
+  const reason = "Marked unstreamable by SoundCloud";
+  return (
+    <span
+      className="text-muted-foreground/70 inline-flex shrink-0 items-center"
+      title={reason}
+      aria-label={reason}
+    >
+      <Ban className="size-3" />
+    </span>
+  );
+}
+
 const LIKES_COLUMNS: LikesCol[] = [
+  {
+    id: "source",
+    header: "",
+    defaultWidth: 32,
+    cellClassName: "shrink-0 flex items-center",
+    renderBody: ({ track }) => (
+      <SourceProfileAvatar
+        sources={(track as { __sources?: SourceProfile[] }).__sources}
+      />
+    ),
+  },
   {
     id: "title",
     header: "Title",
@@ -96,16 +136,17 @@ const LIKES_COLUMNS: LikesCol[] = [
     cellClassName: "flex min-w-0 shrink-0 items-center gap-1.5",
     renderBody: ({ track, isExpanded, isNew }) => (
       <>
-        <span
-          className={`truncate text-xs leading-tight font-medium ${isExpanded ? "text-primary" : ""}`}
-        >
-          {track.title || "—"}
-        </span>
+        <UnstreamableBadge track={track} />
         {isNew && (
           <span className="shrink-0 rounded bg-[var(--brand-soft)] px-1 py-0.5 text-xs leading-none font-semibold text-[var(--brand)]">
             NEW
           </span>
         )}
+        <span
+          className={`truncate text-xs leading-tight font-medium ${isExpanded ? "text-primary" : ""}`}
+        >
+          {track.title || "—"}
+        </span>
       </>
     ),
   },
@@ -157,6 +198,24 @@ const LIKES_COLUMNS: LikesCol[] = [
     renderBody: ({ track }) => <>{formatPlays(track.playback_count)}</>,
   },
   {
+    id: "uploaded",
+    header: "Uploaded",
+    sortKey: "uploaded",
+    defaultWidth: 96,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatDate(track.created_at)}</>,
+  },
+  {
+    id: "added",
+    header: "Added",
+    sortKey: "added",
+    defaultWidth: 96,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatDate(track.addedAt)}</>,
+  },
+  {
     id: "links",
     header: "Links",
     defaultWidth: 112,
@@ -183,24 +242,53 @@ const LIKES_COLUMNS: LikesCol[] = [
           ) : (
             <div className="size-5" />
           )}
-          {track.download_url ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <a
-                  href={track.download_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Download className="size-3" />
-                </a>
-              </TooltipTrigger>
-              <TooltipContent>Download</TooltipContent>
-            </Tooltip>
-          ) : (
-            <div className="size-5" />
-          )}
+          {(() => {
+            if (track.download_url) {
+              return (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <a
+                      href={track.download_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                      data-testid="sc-download-link"
+                    >
+                      <Download className="size-3" />
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent>Download</TooltipContent>
+                </Tooltip>
+              );
+            }
+            const fallback = parseFallbackDownloadUrl(track.description);
+            if (!fallback) return <div className="size-5" />;
+            const icon = purchaseIcon(fallback);
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <a
+                    href={fallback}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                    data-testid="sc-download-fallback"
+                  >
+                    {icon ? (
+                      <img src={icon.src} alt={icon.alt} className="size-3.5" />
+                    ) : (
+                      <Download className="size-3" />
+                    )}
+                  </a>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Download via {icon?.alt ?? "external link"}
+                </TooltipContent>
+              </Tooltip>
+            );
+          })()}
           {track.purchase_url ? (
             (() => {
               const icon = purchaseIcon(track.purchase_url);
@@ -276,7 +364,13 @@ const LIKES_COLUMNS: LikesCol[] = [
   },
 ];
 
-export const LIKES_COLUMN_DEFS: ColumnDef[] = LIKES_COLUMNS.map((c) => ({
+// "source" is opt-in (Discover with 2+ group members); excluded from the
+// standard column-prefs vocabulary so it doesn't appear in the visibility
+// menu and doesn't get auto-shown for callers that don't pass an
+// `isColumnVisible` predicate.
+export const LIKES_COLUMN_DEFS: ColumnDef[] = LIKES_COLUMNS.filter(
+  (c) => c.id !== "source",
+).map((c) => ({
   id: c.id,
   header: c.header,
   required: c.required,
@@ -305,6 +399,20 @@ function formatDuration(ms: number | undefined): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** Render an SC timestamp as `DD.MM.YYYY`; em-dash for missing/unparseable. */
+function formatDate(value: string | undefined): string {
+  const t = parseSCTimestamp(value);
+  if (t == null) return "—";
+  const d = new Date(t);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
+
+function dateValue(value: string | undefined): number {
+  return parseSCTimestamp(value) ?? 0;
 }
 
 function formatPlays(count: number | undefined): string {
@@ -416,7 +524,7 @@ function TrackRowInner({
       <div
         role="row"
         tabIndex={0}
-        className={`border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isSelected ? "bg-[var(--brand-soft)]" : isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
+        className={`group border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isSelected ? "bg-[var(--brand-soft)]" : isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
         onClick={onExpand}
         onPointerEnter={onPointerEnter}
         onPointerLeave={onPointerLeave}
@@ -435,8 +543,9 @@ function TrackRowInner({
             {...dragHandle.listeners}
             tabIndex={-1}
             aria-label="Drag to reorder"
+            data-testid="likes-row-drag-handle"
             onClick={(e) => e.stopPropagation()}
-            className="text-muted-foreground/50 hover:text-foreground flex size-4 shrink-0 cursor-grab items-center justify-center active:cursor-grabbing"
+            className="text-muted-foreground/50 hover:text-foreground flex size-4 shrink-0 cursor-grab items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
           >
             <GripVertical className="size-3" />
           </button>
@@ -633,7 +742,13 @@ export function LikesTable({
   }, [tracks]);
 
   const colVisible = React.useCallback(
-    (id: string) => (isColumnVisible ? isColumnVisible(id) : true),
+    (id: string) => {
+      // "source" is opt-in: only renders when the caller explicitly returns
+      // true from isColumnVisible. Without this guard, callers that don't
+      // pass a predicate would see an empty 32px column on every row.
+      if (id === "source") return isColumnVisible?.(id) === true;
+      return isColumnVisible ? isColumnVisible(id) : true;
+    },
     [isColumnVisible],
   );
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
@@ -684,6 +799,12 @@ export function LikesTable({
         case "playback_count":
           cmp = (a.playback_count ?? 0) - (b.playback_count ?? 0);
           break;
+        case "uploaded":
+          cmp = dateValue(a.created_at) - dateValue(b.created_at);
+          break;
+        case "added":
+          cmp = dateValue(a.addedAt) - dateValue(b.addedAt);
+          break;
       }
       return sortOrder === "asc" ? cmp : -cmp;
     });
@@ -713,11 +834,12 @@ export function LikesTable({
           streamRefreshKey: id,
           permalinkUrl: t.permalink_url ?? undefined,
           artworkUrl: artworkUrl(t) ?? undefined,
+          bpm: bpmCache.get(id) ?? t.bpm ?? null,
         };
       });
       playQueue(queue, index);
     },
-    [sortedTracks, playQueue],
+    [sortedTracks, playQueue, bpmCache],
   );
 
   // Report the current visible order (after sort) to callers so they can save
@@ -775,6 +897,14 @@ export function LikesTable({
   const virtualizer = useVirtualizer({
     count: sortedTracks.length,
     getScrollElement: () => scrollParentRef.current,
+    // Key rows by track identity so cell state (analyzed BPM, expanded, etc.)
+    // doesn't leak when the underlying tracks change — sort, reorder, or
+    // playlist switch would otherwise reuse the same cell instance for a
+    // different track and show its prior state on the wrong row.
+    getItemKey: useCallback(
+      (index: number) => sortedTracks[index]?.urn ?? `__idx_${index}`,
+      [sortedTracks],
+    ),
     estimateSize: useCallback(
       (index: number) => {
         const track = sortedTracks[index];
@@ -817,209 +947,213 @@ export function LikesTable({
   return (
     <SoundcloudBpmCacheContext.Provider value={bpmCache}>
       <div className="flex h-full min-h-0 flex-col">
-        {/* Header */}
-        <div
-          role="row"
-          className="border-border text-muted-foreground flex h-9 shrink-0 items-center gap-2 border-b bg-[var(--surface-2)] px-3 text-xs font-medium"
-        >
-          {reorderable && <div className="size-4 shrink-0" aria-hidden />}
-          <div
-            className="flex w-6 shrink-0 items-center justify-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Checkbox
-              checked={
-                allSelected ? true : someSelected ? "indeterminate" : false
-              }
-              onCheckedChange={(checked) =>
-                checked ? onSelectAll() : onDeselectAll()
-              }
-              aria-label="Select all"
-              className={cn(
-                "size-3.5 cursor-pointer",
-                "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
-                allSelected &&
-                  "data-[state=checked]:bg-primary data-[state=checked]:border-primary",
-              )}
-            />
-          </div>
-          <div className="size-7 shrink-0" aria-hidden />
-          <div className="size-6 shrink-0" aria-hidden />
-          <SortableColumnHeader
-            ids={visibleColumns.map((c) => c.id)}
-            onOrderChange={(nextIds) => {
-              if (!onColumnOrderChange) return;
-              const hidden = LIKES_COLUMNS.map((c) => c.id).filter(
-                (id) => !visibleColumns.some((v) => v.id === id),
-              );
-              onColumnOrderChange([...nextIds, ...hidden]);
-            }}
-          >
-            {visibleColumns.map((col) => (
-              <SortableHeaderCell
-                key={col.id}
-                id={col.id}
-                className={col.cellClassName}
-                style={{ width: col.width }}
-                onResize={(w, phase) => {
-                  if (phase === "drag") {
-                    setLiveWidths((p) => ({ ...p, [col.id]: w }));
-                  } else {
-                    onColumnWidthChange?.(col.id, w);
-                    setLiveWidths((p) => {
-                      const { [col.id]: _omit, ...rest } = p;
-                      return rest;
-                    });
-                  }
-                }}
-                onResetWidth={() => onColumnWidthReset?.(col.id)}
-              >
-                {col.renderHeader ? (
-                  col.renderHeader()
-                ) : col.sortKey ? (
-                  <button
-                    className="hover:text-foreground flex w-full cursor-pointer items-center gap-0.5 transition-colors"
-                    onClick={() => col.sortKey && handleSort(col.sortKey)}
-                  >
-                    {col.header}
-                    <SortIcon
-                      col={col.sortKey}
-                      sortBy={sortBy}
-                      sortOrder={sortOrder}
-                    />
-                  </button>
-                ) : (
-                  <span>{col.header}</span>
-                )}
-              </SortableHeaderCell>
-            ))}
-          </SortableColumnHeader>
-        </div>
-
-        {/* Virtual scroll */}
+        {/* Scrollable area — single container owns both axes so header and
+            rows share one horizontal scroll context and stay aligned. */}
         <div
           ref={scrollParentRef}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          className="min-h-0 flex-1 overflow-auto overscroll-contain"
         >
-          {(() => {
-            const body = (
+          <div className="w-max min-w-full">
+            {/* Header */}
+            <div
+              role="row"
+              className="border-border text-muted-foreground sticky top-0 z-20 flex h-9 items-center gap-2 border-b bg-[var(--surface-2)] px-3 text-xs font-medium"
+            >
+              {reorderable && <div className="size-4 shrink-0" aria-hidden />}
               <div
-                style={{
-                  height: `${virtualizer.getTotalSize()}px`,
-                  position: "relative",
+                className="flex w-6 shrink-0 items-center justify-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Checkbox
+                  checked={
+                    allSelected ? true : someSelected ? "indeterminate" : false
+                  }
+                  onCheckedChange={(checked) =>
+                    checked ? onSelectAll() : onDeselectAll()
+                  }
+                  aria-label="Select all"
+                  className={cn(
+                    "size-3.5 cursor-pointer",
+                    "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
+                    allSelected &&
+                      "data-[state=checked]:bg-primary data-[state=checked]:border-primary",
+                  )}
+                />
+              </div>
+              <div className="size-7 shrink-0" aria-hidden />
+              <div className="size-6 shrink-0" aria-hidden />
+              <SortableColumnHeader
+                ids={visibleColumns.map((c) => c.id)}
+                onOrderChange={(nextIds) => {
+                  if (!onColumnOrderChange) return;
+                  const hidden = LIKES_COLUMNS.map((c) => c.id).filter(
+                    (id) => !visibleColumns.some((v) => v.id === id),
+                  );
+                  onColumnOrderChange([...nextIds, ...hidden]);
                 }}
               >
-                {virtualItems.map((virtualRow) => {
-                  const track = sortedTracks[virtualRow.index];
-                  if (!track) return null;
-                  const id = extractId(track);
-                  const sortableId = reorderable
-                    ? (track.urn ?? `__idx_${virtualRow.index}`)
-                    : undefined;
+                {visibleColumns.map((col) => (
+                  <SortableHeaderCell
+                    key={col.id}
+                    id={col.id}
+                    className={col.cellClassName}
+                    style={{ width: col.width }}
+                    onResize={(w, phase) => {
+                      if (phase === "drag") {
+                        setLiveWidths((p) => ({ ...p, [col.id]: w }));
+                      } else {
+                        onColumnWidthChange?.(col.id, w);
+                        setLiveWidths((p) => {
+                          const { [col.id]: _omit, ...rest } = p;
+                          return rest;
+                        });
+                      }
+                    }}
+                    onResetWidth={() => onColumnWidthReset?.(col.id)}
+                  >
+                    {col.renderHeader ? (
+                      col.renderHeader()
+                    ) : col.sortKey ? (
+                      <button
+                        className="hover:text-foreground flex w-full cursor-pointer items-center gap-0.5 transition-colors"
+                        onClick={() => col.sortKey && handleSort(col.sortKey)}
+                      >
+                        {col.header}
+                        <SortIcon
+                          col={col.sortKey}
+                          sortBy={sortBy}
+                          sortOrder={sortOrder}
+                        />
+                      </button>
+                    ) : (
+                      <span>{col.header}</span>
+                    )}
+                  </SortableHeaderCell>
+                ))}
+              </SortableColumnHeader>
+            </div>
 
-                  return (
-                    <div
-                      key={virtualRow.key}
-                      data-index={virtualRow.index}
-                      ref={virtualizer.measureElement}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                    >
-                      <TrackRow
-                        sortableId={sortableId}
-                        track={track}
-                        isSelected={selectedIds.has(id)}
-                        isExpanded={expandedId === id}
-                        inCollection={collectionIds?.has(id) ?? false}
-                        isLiked={
-                          likedIds?.has(id) ?? track.user_favorite === true
-                        }
-                        isNew={
-                          newTrackUrns
-                            ? track.urn
-                              ? newTrackUrns.has(track.urn)
-                              : false
-                            : undefined
-                        }
-                        onToggleSelect={(shiftKey) => {
-                          const currentIndex = virtualRow.index;
-                          if (
-                            shiftKey &&
-                            lastSelectedIndexRef.current !== null
-                          ) {
-                            const start = Math.min(
-                              lastSelectedIndexRef.current,
-                              currentIndex,
-                            );
-                            const end = Math.max(
-                              lastSelectedIndexRef.current,
-                              currentIndex,
-                            );
-                            const rangeIds = sortedTracks
-                              .slice(start, end + 1)
-                              .map(extractId)
-                              .filter(Boolean);
-                            onRangeSelect(rangeIds);
-                          } else {
-                            onToggleSelect(id);
-                            lastSelectedIndexRef.current = currentIndex;
-                          }
-                        }}
-                        onExpand={() => handleExpand(track)}
-                        onStartPlay={() => handleStartPlay(virtualRow.index)}
-                        visibleColumns={visibleColumns}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            );
-            if (!reorderable) return body;
-            return (
-              <DndContext
-                sensors={dndSensors}
-                collisionDetection={closestCenter}
-                onDragStart={handleReorderDragStart}
-                onDragEnd={handleReorderDragEnd}
-                onDragCancel={() => setActiveDragId(null)}
-              >
-                <SortableContext
-                  items={sortableIds}
-                  strategy={verticalListSortingStrategy}
+            {/* Virtual scroll body */}
+            {(() => {
+              const body = (
+                <div
+                  style={{
+                    height: `${virtualizer.getTotalSize()}px`,
+                    position: "relative",
+                  }}
                 >
-                  {body}
-                </SortableContext>
-                <DragOverlay>
-                  {activeDragTrack ? (
-                    <div className="bg-[var(--surface-2)] opacity-95 shadow-lg">
-                      <TrackRowInner
-                        track={activeDragTrack}
-                        isSelected={false}
-                        isExpanded={false}
-                        inCollection={false}
-                        isLiked={false}
-                        isNew={false}
-                        onToggleSelect={() => undefined}
-                        onExpand={() => undefined}
-                        onStartPlay={() => undefined}
-                        visibleColumns={visibleColumns}
-                        dragHandle={{
-                          attributes: {},
-                          listeners: undefined,
-                          isDragging: false,
+                  {virtualItems.map((virtualRow) => {
+                    const track = sortedTracks[virtualRow.index];
+                    if (!track) return null;
+                    const id = extractId(track);
+                    const sortableId = reorderable
+                      ? (track.urn ?? `__idx_${virtualRow.index}`)
+                      : undefined;
+
+                    return (
+                      <div
+                        key={virtualRow.key}
+                        data-index={virtualRow.index}
+                        ref={virtualizer.measureElement}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          transform: `translateY(${virtualRow.start}px)`,
                         }}
-                      />
-                    </div>
-                  ) : null}
-                </DragOverlay>
-              </DndContext>
-            );
-          })()}
+                      >
+                        <TrackRow
+                          sortableId={sortableId}
+                          track={track}
+                          isSelected={selectedIds.has(id)}
+                          isExpanded={expandedId === id}
+                          inCollection={collectionIds?.has(id) ?? false}
+                          isLiked={
+                            likedIds?.has(id) ?? track.user_favorite === true
+                          }
+                          isNew={
+                            newTrackUrns
+                              ? track.urn
+                                ? newTrackUrns.has(track.urn)
+                                : false
+                              : undefined
+                          }
+                          onToggleSelect={(shiftKey) => {
+                            const currentIndex = virtualRow.index;
+                            if (
+                              shiftKey &&
+                              lastSelectedIndexRef.current !== null
+                            ) {
+                              const start = Math.min(
+                                lastSelectedIndexRef.current,
+                                currentIndex,
+                              );
+                              const end = Math.max(
+                                lastSelectedIndexRef.current,
+                                currentIndex,
+                              );
+                              const rangeIds = sortedTracks
+                                .slice(start, end + 1)
+                                .map(extractId)
+                                .filter(Boolean);
+                              onRangeSelect(rangeIds);
+                            } else {
+                              onToggleSelect(id);
+                              lastSelectedIndexRef.current = currentIndex;
+                            }
+                          }}
+                          onExpand={() => handleExpand(track)}
+                          onStartPlay={() => handleStartPlay(virtualRow.index)}
+                          visibleColumns={visibleColumns}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+              if (!reorderable) return body;
+              return (
+                <DndContext
+                  sensors={dndSensors}
+                  collisionDetection={closestCenter}
+                  onDragStart={handleReorderDragStart}
+                  onDragEnd={handleReorderDragEnd}
+                  onDragCancel={() => setActiveDragId(null)}
+                >
+                  <SortableContext
+                    items={sortableIds}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {body}
+                  </SortableContext>
+                  <DragOverlay>
+                    {activeDragTrack ? (
+                      <div className="bg-[var(--surface-2)] opacity-95 shadow-lg">
+                        <TrackRowInner
+                          track={activeDragTrack}
+                          isSelected={false}
+                          isExpanded={false}
+                          inCollection={false}
+                          isLiked={false}
+                          isNew={false}
+                          onToggleSelect={() => undefined}
+                          onExpand={() => undefined}
+                          onStartPlay={() => undefined}
+                          visibleColumns={visibleColumns}
+                          dragHandle={{
+                            attributes: {},
+                            listeners: undefined,
+                            isDragging: false,
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                  </DragOverlay>
+                </DndContext>
+              );
+            })()}
+          </div>
         </div>
       </div>
     </SoundcloudBpmCacheContext.Provider>

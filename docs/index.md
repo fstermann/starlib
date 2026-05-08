@@ -1,4 +1,4 @@
-# Starlib
+# ![Starlib](assets/images/starlib-wordmark.svg){ .wordmark }
 
 Starlib is a DJ library management app. Organise your tracks, edit metadata, and manage artwork, all from a single interface.
 

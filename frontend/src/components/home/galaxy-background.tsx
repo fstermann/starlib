@@ -2,16 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-type Star = {
-  x: number;
-  y: number;
-  r: number;
-  baseAlpha: number;
-  twinkleSpeed: number;
-  twinklePhase: number;
-  depth: number; // 0..1, smaller = farther
-  hue: number; // 0 = white, 1 = brand-tinted
-};
+import { seedStars, type Star } from "./galaxy-stars";
 
 type Shooting = {
   x: number;
@@ -74,23 +65,10 @@ export function GalaxyBackground() {
       canvas.width = Math.floor(width * dpr);
       canvas.height = Math.floor(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      seed();
     };
 
     const seed = () => {
-      stars = new Array(STAR_COUNT).fill(0).map(() => {
-        const depth = Math.pow(Math.random(), 1.6); // bias toward far
-        return {
-          x: Math.random() * width,
-          y: Math.random() * height,
-          r: 0.3 + depth * 1.6,
-          baseAlpha: 0.25 + depth * 0.7,
-          twinkleSpeed: 0.4 + Math.random() * 1.4,
-          twinklePhase: Math.random() * Math.PI * 2,
-          depth,
-          hue: Math.random() < 0.25 ? 1 : 0,
-        };
-      });
+      stars = seedStars(STAR_COUNT);
     };
 
     const spawnShooting = () => {
@@ -159,8 +137,8 @@ export function GalaxyBackground() {
         s.twinklePhase += dt * s.twinkleSpeed;
         const tw = 0.55 + 0.45 * Math.sin(s.twinklePhase);
         const alpha = s.baseAlpha * tw;
-        const px = s.x + mx * s.depth;
-        const py = s.y + my * s.depth;
+        const px = s.x * width + mx * s.depth;
+        const py = s.y * height + my * s.depth;
 
         // Glow for brand-tinted / larger stars
         if (s.hue === 1 || s.r > 1.3) {
@@ -250,6 +228,7 @@ export function GalaxyBackground() {
       mouse.current.ty = (e.clientY - rect.top) / rect.height;
     };
 
+    seed();
     resize();
     window.addEventListener("resize", resize);
     window.addEventListener("mousemove", onMove);

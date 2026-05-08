@@ -1,7 +1,10 @@
 """File and folder operations for the Meta Editor."""
 
+import asyncio
 import base64
 import logging
+import shutil
+import time
 from datetime import date
 from pathlib import Path
 from typing import Annotated
@@ -13,15 +16,19 @@ from backend.api.deps import get_root_folder, validate_file_path, validate_folde
 from backend.api.metadata._helpers import resolve_folder
 from backend.core.services import cache_db, collection, metadata
 from backend.schemas.metadata import (
+    ApplyRulesRequest,
+    ApplyRulesResponse,
     BatchInfoRequest,
     BatchResultItem,
     BatchUpdateRequest,
     BatchUpdateResponse,
+    FetchCandidate,
+    FetchFromDownloadsPreview,
+    FetchFromDownloadsRequest,
+    FetchFromDownloadsResponse,
     FileInfoResponse,
     FileReadinessResponse,
     FilterValuesResponse,
-    FinalizeRequest,
-    FinalizeResponse,
     OperationResponse,
     TrackBrowseResponse,
     TrackInfoResponse,
@@ -29,11 +36,17 @@ from backend.schemas.metadata import (
 )
 from backend.schemas.tree import TreeNode
 from soundcloud_tools.handler.folder import FolderHandler
-from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
+from soundcloud_tools.handler.track import FILETYPE_MAP, SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Bound concurrent Apply Rules jobs so a stack of clicks can't spawn
+# unbounded ffmpeg conversions in parallel.
+_apply_rules_semaphore = asyncio.Semaphore(2)
+
+_SORT_BY_PATTERN = "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$"
 
 
 def _row_value(row, key, default=None):
@@ -96,6 +109,130 @@ def initialize_folders(
     return OperationResponse(success=True, message=f"Folders created under {root_folder}")
 
 
+# Audio file extensions accepted by the Fetch-from-Downloads action.
+# Aligned with FILETYPE_MAP (the formats the indexer/handler can actually
+# read) so we never move a file the library would then fail to surface.
+_FETCH_AUDIO_EXTENSIONS = frozenset(FILETYPE_MAP.keys())
+
+
+def _is_recent_audio(src: Path, cutoff: float) -> bool:
+    """True if *src* is a non-hidden audio file modified at or after *cutoff*."""
+    if not src.is_file() or src.name.startswith("."):
+        return False
+    if src.suffix.lower() not in _FETCH_AUDIO_EXTENSIONS:
+        return False
+    try:
+        return src.stat().st_mtime >= cutoff
+    except OSError:
+        return False
+
+
+def _resolve_fetch_paths(dest_path: str, root_folder: Path) -> tuple[Path, Path, Path]:
+    """Validate Downloads + destination and return (downloads, dest, resolved_root)."""
+    downloads = (Path.home() / "Downloads").resolve()
+    if not downloads.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Downloads folder not found at {downloads}",
+        )
+
+    dest = Path(dest_path).resolve()
+    resolved_root = root_folder.resolve()
+    try:
+        dest.relative_to(resolved_root)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Destination is outside the music library root.",
+        ) from e
+    if not dest.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Destination folder does not exist: {dest}",
+        )
+    return downloads, dest, resolved_root
+
+
+@router.get("/folders/fetch-from-downloads/preview", response_model=FetchFromDownloadsPreview)
+def fetch_from_downloads_preview(
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+    dest_path: str = Query(..., description="Destination folder under the music root"),
+    window_days: int = Query(1, ge=1, le=365),
+) -> FetchFromDownloadsPreview:
+    """List recent audio files in ~/Downloads that would be moved into *dest_path*.
+
+    Files already present in the destination (collisions) are reported under
+    ``skipped`` and are not part of ``candidates``.
+    """
+    downloads, dest, _ = _resolve_fetch_paths(dest_path, root_folder)
+
+    cutoff = time.time() - window_days * 86400
+    candidates: list[FetchCandidate] = []
+    skipped: list[str] = []
+
+    for src in downloads.iterdir():
+        if not _is_recent_audio(src, cutoff):
+            continue
+        if (dest / src.name).exists():
+            skipped.append(src.name)
+            continue
+        try:
+            stat = src.stat()
+        except OSError:
+            continue
+        candidates.append(FetchCandidate(name=src.name, size=stat.st_size, mtime=stat.st_mtime))
+
+    candidates.sort(key=lambda c: c.mtime, reverse=True)
+    return FetchFromDownloadsPreview(candidates=candidates, skipped=sorted(skipped))
+
+
+@router.post("/folders/fetch-from-downloads", response_model=FetchFromDownloadsResponse)
+def fetch_from_downloads(
+    request: FetchFromDownloadsRequest,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> FetchFromDownloadsResponse:
+    """Move recent audio files from ~/Downloads into a library subfolder.
+
+    Files are filtered by extension (audio formats only) and mtime (within
+    ``window_days`` of now). A file is skipped when the destination already
+    contains an entry with the same name — making the operation idempotent.
+    When ``request.file_names`` is set, only those names are eligible to move.
+    """
+    downloads, dest, resolved_root = _resolve_fetch_paths(request.dest_path, root_folder)
+
+    cutoff = time.time() - request.window_days * 86400
+    selection = set(request.file_names) if request.file_names is not None else None
+    moved: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []
+
+    for src in downloads.iterdir():
+        if not _is_recent_audio(src, cutoff):
+            continue
+        if selection is not None and src.name not in selection:
+            continue
+
+        target = dest / src.name
+        if target.exists():
+            skipped.append(src.name)
+            continue
+
+        try:
+            shutil.move(str(src), str(target))
+        except Exception as e:
+            logger.exception("Failed to move %s to %s", src, target)
+            errors.append(f"{src.name}: {e}")
+            continue
+
+        try:
+            collection.reindex_file(resolved_root, target)
+        except Exception:
+            logger.exception("Failed to reindex %s after move", target)
+        moved.append(src.name)
+
+    return FetchFromDownloadsResponse(moved=moved, skipped=skipped, errors=errors)
+
+
 @router.get("/folders/tree", response_model=TreeNode)
 def get_folder_tree(
     root_folder: Annotated[Path, Depends(get_root_folder)],
@@ -148,7 +285,10 @@ def browse_by_path(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     has_soundcloud_id: bool | None = Query(None),
-    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$"),
+    file_formats: list[str] | None = Query(None),
+    size_min: int | None = Query(None, ge=0),
+    size_max: int | None = Query(None, ge=0),
+    sort_by: str = Query("file_name", pattern=_SORT_BY_PATTERN),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
     """Browse tracks by absolute folder path with optional recursion."""
@@ -178,6 +318,9 @@ def browse_by_path(
             start_date=date_from,
             end_date=date_to,
             has_soundcloud_id=has_soundcloud_id,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
             sort_by=sort_by,
             sort_order=sort_order,
             recursive=recursive,
@@ -219,6 +362,9 @@ def browse_path_filter_values(
     keys: list[str] | None = Query(None),
     bpm_min: int | None = Query(None, ge=0),
     bpm_max: int | None = Query(None, ge=0),
+    file_formats: list[str] | None = Query(None),
+    size_min: int | None = Query(None, ge=0),
+    size_max: int | None = Query(None, ge=0),
 ) -> FilterValuesResponse:
     """Get available filter values for a folder path."""
     folder_path = Path(path).resolve()
@@ -242,6 +388,9 @@ def browse_path_filter_values(
         keys=keys,
         bpm_min=bpm_min,
         bpm_max=bpm_max,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
     )
     return FilterValuesResponse(**result)
 
@@ -324,7 +473,10 @@ def browse_folder_files(
     date_from: date | None = Query(None, description="Earliest release date (YYYY-MM-DD)"),
     date_to: date | None = Query(None, description="Latest release date (YYYY-MM-DD)"),
     has_soundcloud_id: bool | None = Query(None, description="Filter by SoundCloud link presence"),
-    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$"),
+    file_formats: list[str] | None = Query(None, description="Filter by file format (e.g. mp3, flac)"),
+    size_min: int | None = Query(None, ge=0, description="Minimum file size in bytes"),
+    size_max: int | None = Query(None, ge=0, description="Maximum file size in bytes"),
+    sort_by: str = Query("file_name", pattern=_SORT_BY_PATTERN),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
     """Browse tracks in a folder with filtering, sorting, and pagination.
@@ -355,6 +507,9 @@ def browse_folder_files(
             start_date=date_from,
             end_date=date_to,
             has_soundcloud_id=has_soundcloud_id,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
             sort_by=sort_by,
             sort_order=sort_order,
         )
@@ -394,6 +549,9 @@ def get_folder_filter_values(
     keys: list[str] | None = Query(None, description="Active key filters"),
     bpm_min: int | None = Query(None, ge=0, description="Active BPM minimum"),
     bpm_max: int | None = Query(None, ge=0, description="Active BPM maximum"),
+    file_formats: list[str] | None = Query(None, description="Active file-format filters"),
+    size_min: int | None = Query(None, ge=0, description="Active file-size minimum (bytes)"),
+    size_max: int | None = Query(None, ge=0, description="Active file-size maximum (bytes)"),
 ) -> FilterValuesResponse:
     """Get available filter values for a folder (genres, artists, keys, BPM range).
 
@@ -419,6 +577,9 @@ def get_folder_filter_values(
             keys=keys,
             bpm_min=bpm_min,
             bpm_max=bpm_max,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
         )
     except Exception as e:
         logger.exception("Failed to get filter values")
@@ -628,7 +789,7 @@ def check_file_readiness(
     file_path: str,
     root_folder: Annotated[Path, Depends(get_root_folder)],
 ) -> FileReadinessResponse:
-    """Check if a file is ready for finalization.
+    """Check if a file is ready for rule application.
 
     Parameters
     ----------
@@ -666,37 +827,44 @@ def check_file_readiness(
     )
 
 
-@router.post("/files/{file_path:path}/finalize", response_model=FinalizeResponse)
-def finalize_file(
+@router.post("/files/{file_path:path}/apply-rules", response_model=ApplyRulesResponse)
+async def apply_rules_to_file(
     file_path: str,
-    request: FinalizeRequest,
+    # `request` is currently empty but kept on the signature so the
+    # OpenAPI shape stays stable when per-call options are added later.
+    request: ApplyRulesRequest,
     root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> FinalizeResponse:
-    """Finalize a track: convert format and move to collection.
+) -> ApplyRulesResponse:
+    """Apply the active ruleset to a track (convert, copy, move).
+
+    Runs ffmpeg conversion + file moves in asyncio's default executor rather
+    than the FastAPI sync-endpoint threadpool, so long jobs do not starve
+    other request handlers.  Concurrent jobs are capped via a semaphore.
 
     Parameters
     ----------
     file_path : str
         Relative or absolute path to audio file
-    request : FinalizeRequest
-        Finalization options (target format, quality, collection folder)
+    request : ApplyRulesRequest
+        Per-call options (currently empty; reserved for future use)
     root_folder : Path
         Root music folder (injected)
 
     Returns
     -------
-    FinalizeResponse
-        Result with new file path
+    ApplyRulesResponse
+        Result with new file path and per-step outcomes
 
     Raises
     ------
     HTTPException
-        If file not ready or finalization fails
+        If file is not ready or rule execution fails
     """
     resolved_path = validate_file_path(file_path, root_folder)
+    loop = asyncio.get_event_loop()
 
     try:
-        readiness = metadata.check_file_readiness(resolved_path, root_folder)
+        readiness = await loop.run_in_executor(None, metadata.check_file_readiness, resolved_path, root_folder)
     except Exception as e:
         logger.exception("Failed to check readiness")
         raise HTTPException(
@@ -712,26 +880,28 @@ def finalize_file(
             missing_str = str(missing_fields)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File not ready for finalization. Missing: {missing_str}",
+            detail=f"File not ready for rule application. Missing: {missing_str}",
         )
 
     try:
-        result = metadata.finalize_track(
-            file_path=resolved_path,
-            root_folder=root_folder,
-            target_format=request.target_format,
-        )
+        async with _apply_rules_semaphore:
+            result = await loop.run_in_executor(
+                None,
+                metadata.apply_rules,
+                resolved_path,
+                root_folder,
+            )
     except Exception as e:
-        logger.exception("Finalization failed")
+        logger.exception("Apply rules failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Finalization failed: {e}",
+            detail=f"Apply rules failed: {e}",
         ) from e
 
     # Remove the old file from cache (it's been moved/converted)
     cache_db.delete_track(resolved_path)
 
-    return FinalizeResponse(
+    return ApplyRulesResponse(
         success=result["success"],
         message=result["message"],
         new_file_path=result["output_path"],

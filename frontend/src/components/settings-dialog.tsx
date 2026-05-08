@@ -6,7 +6,6 @@ import {
   Clapperboard,
   Download,
   FolderOpen,
-  Loader2,
   Monitor,
   Moon,
   Paintbrush,
@@ -24,6 +23,7 @@ import React, { useEffect, useState } from "react";
 
 import { FolderConfigManager } from "@/components/rulesets/folder-config-manager";
 import { RulesetManager } from "@/components/rulesets/ruleset-manager";
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -50,6 +50,7 @@ import {
   type FolderRulesetBinding,
   type Ruleset,
 } from "@/lib/api";
+import { onRulesetsChanged } from "@/lib/rulesets-events";
 import { getSetting, setSetting } from "@/lib/settings";
 import { isTauri } from "@/lib/tauri";
 import { checkForUpdate, type UpdateResult } from "@/lib/updater";
@@ -200,6 +201,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         setLoaded(true);
       },
     );
+  }, [open]);
+
+  // Re-fetch the ruleset list when it changes elsewhere in the dialog
+  // (RulesetManager create/save/delete) so per-folder dropdowns and the
+  // Folders section see the new rulesets without having to reopen the dialog.
+  useEffect(() => {
+    if (!open) return;
+    return onRulesetsChanged(() => {
+      api.getRulesets().then((data) => setAllRulesets(data.rulesets));
+    });
   }, [open]);
 
   async function handleAutoUpdateChange(checked: boolean) {
@@ -544,7 +555,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         onClick={handleSaveRootFolder}
                       >
                         {rootFolderSaving ? (
-                          <Loader2 className="size-3.5 animate-spin" />
+                          <Spinner className="size-3.5" />
                         ) : (
                           "Save"
                         )}
@@ -572,10 +583,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <div className="flex flex-col gap-4">
                   <h2 className="text-base font-semibold">Folder rulesets</h2>
                   <p className="text-muted-foreground text-sm">
-                    Assign rulesets to specific folders. Tracks finalized from a
-                    folder with a bound ruleset will use that ruleset instead of
-                    the global default. You can also assign rulesets via
-                    right-click in the folder tree.
+                    Assign rulesets to specific folders. When you apply rules to
+                    a track in a folder with a bound ruleset, that ruleset is
+                    used instead of the global default. You can also assign
+                    rulesets via right-click in the folder tree.
                   </p>
 
                   <FolderRulesetAdder
@@ -669,9 +680,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <div className="flex flex-col gap-4">
                 <h2 className="text-base font-semibold">Rulesets</h2>
                 <p className="text-muted-foreground text-sm">
-                  A ruleset is a sequence of steps that run automatically when
-                  you finalize a track. Each step can convert, move, or copy the
-                  file — and can reference the output of an earlier step.
+                  A ruleset is a sequence of steps that run when you apply rules
+                  to a track. Each step can convert, move, or copy the file —
+                  and can reference the output of an earlier step.
                 </p>
                 <p className="text-muted-foreground text-xs">
                   Steps under <span className="font-medium">if converted</span>{" "}
@@ -776,7 +787,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               disabled={ollamaStopping}
                             >
                               {ollamaStopping ? (
-                                <Loader2 className="size-3 animate-spin" />
+                                <Spinner className="size-3" />
                               ) : (
                                 <Square className="size-3" />
                               )}
@@ -807,10 +818,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         >
                           {ollamaChecking ? (
                             <>
-                              <Loader2
-                                data-icon="inline-start"
-                                className="animate-spin"
-                              />
+                              <Spinner data-icon="inline-start" />
                               Starting…
                             </>
                           ) : (
@@ -890,7 +898,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           onClick={handleOllamaSaveUrl}
                         >
                           {ollamaSaving ? (
-                            <Loader2 className="size-3.5 animate-spin" />
+                            <Spinner className="size-3.5" />
                           ) : (
                             "Save"
                           )}
@@ -905,7 +913,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                               disabled={ollamaChecking}
                             >
                               {ollamaChecking ? (
-                                <Loader2 className="size-3.5 animate-spin" />
+                                <Spinner className="size-3.5" />
                               ) : (
                                 <Zap className="size-3.5" />
                               )}
@@ -1071,7 +1079,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           onClick={handleSaveApiKey}
                         >
                           {apiKeySaving ? (
-                            <Loader2 className="size-3.5 animate-spin" />
+                            <Spinner className="size-3.5" />
                           ) : (
                             "Save"
                           )}
@@ -1156,10 +1164,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     >
                       {checking ? (
                         <>
-                          <Loader2
-                            data-icon="inline-start"
-                            className="animate-spin"
-                          />
+                          <Spinner data-icon="inline-start" />
                           Checking…
                         </>
                       ) : (
@@ -1194,10 +1199,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         >
                           {installing ? (
                             <>
-                              <Loader2
-                                data-icon="inline-start"
-                                className="animate-spin"
-                              />
+                              <Spinner data-icon="inline-start" />
                               Installing…
                             </>
                           ) : (
@@ -1342,7 +1344,7 @@ function FolderRulesetAdder({
           disabled={!canSubmit}
           onClick={handleAdd}
         >
-          {saving ? <Loader2 className="size-3.5 animate-spin" /> : "Add"}
+          {saving ? <Spinner className="size-3.5" /> : "Add"}
         </Button>
       </div>
       {error && <p className="text-destructive text-xs">{error}</p>}

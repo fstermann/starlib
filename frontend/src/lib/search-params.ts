@@ -12,6 +12,8 @@ export const SORT_FIELDS = [
   "file_name",
   "folder",
   "mtime",
+  "file_format",
+  "file_size",
 ] as const;
 export const SORT_ORDERS = ["asc", "desc"] as const;
 

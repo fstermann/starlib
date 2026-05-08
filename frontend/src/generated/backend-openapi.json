@@ -375,6 +375,105 @@
         }
       }
     },
+    "/api/metadata/folders/fetch-from-downloads/preview": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Fetch From Downloads Preview",
+        "description": "List recent audio files in ~/Downloads that would be moved into *dest_path*.\n\nFiles already present in the destination (collisions) are reported under\n``skipped`` and are not part of ``candidates``.",
+        "operationId": "fetch_from_downloads_preview_api_metadata_folders_fetch_from_downloads_preview_get",
+        "parameters": [
+          {
+            "name": "dest_path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Destination folder under the music root",
+              "title": "Dest Path"
+            },
+            "description": "Destination folder under the music root"
+          },
+          {
+            "name": "window_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 1,
+              "title": "Window Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchFromDownloadsPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/folders/fetch-from-downloads": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Fetch From Downloads",
+        "description": "Move recent audio files from ~/Downloads into a library subfolder.\n\nFiles are filtered by extension (audio formats only) and mtime (within\n``window_days`` of now). A file is skipped when the destination already\ncontains an entry with the same name \u2014 making the operation idempotent.\nWhen ``request.file_names`` is set, only those names are eligible to move.",
+        "operationId": "fetch_from_downloads_api_metadata_folders_fetch_from_downloads_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FetchFromDownloadsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchFromDownloadsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metadata/folders/tree": {
       "get": {
         "tags": [
@@ -587,12 +686,65 @@
             }
           },
           {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Formats"
+            }
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Min"
+            }
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Max"
+            }
+          },
+          {
             "name": "sort_by",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -776,6 +928,59 @@
                 }
               ],
               "title": "Bpm Max"
+            }
+          },
+          {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Formats"
+            }
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Min"
+            }
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Max"
             }
           }
         ],
@@ -1067,12 +1272,71 @@
             "description": "Filter by SoundCloud link presence"
           },
           {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by file format (e.g. mp3, flac)",
+              "title": "File Formats"
+            },
+            "description": "Filter by file format (e.g. mp3, flac)"
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum file size in bytes",
+              "title": "Size Min"
+            },
+            "description": "Minimum file size in bytes"
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum file size in bytes",
+              "title": "Size Max"
+            },
+            "description": "Maximum file size in bytes"
+          },
+          {
             "name": "sort_by",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -1255,6 +1519,65 @@
               "title": "Bpm Max"
             },
             "description": "Active BPM maximum"
+          },
+          {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active file-format filters",
+              "title": "File Formats"
+            },
+            "description": "Active file-format filters"
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active file-size minimum (bytes)",
+              "title": "Size Min"
+            },
+            "description": "Active file-size minimum (bytes)"
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active file-size maximum (bytes)",
+              "title": "Size Max"
+            },
+            "description": "Active file-size maximum (bytes)"
           }
         ],
         "responses": {
@@ -1469,7 +1792,7 @@
           "metadata"
         ],
         "summary": "Check File Readiness",
-        "description": "Check if a file is ready for finalization.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFileReadinessResponse\n    Readiness status\n\nRaises\n------\nHTTPException\n    If file doesn't exist",
+        "description": "Check if a file is ready for rule application.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFileReadinessResponse\n    Readiness status\n\nRaises\n------\nHTTPException\n    If file doesn't exist",
         "operationId": "check_file_readiness_api_metadata_files__file_path__readiness_get",
         "parameters": [
           {
@@ -1506,14 +1829,14 @@
         }
       }
     },
-    "/api/metadata/files/{file_path}/finalize": {
+    "/api/metadata/files/{file_path}/apply-rules": {
       "post": {
         "tags": [
           "metadata"
         ],
-        "summary": "Finalize File",
-        "description": "Finalize a track: convert format and move to collection.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nrequest : FinalizeRequest\n    Finalization options (target format, quality, collection folder)\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFinalizeResponse\n    Result with new file path\n\nRaises\n------\nHTTPException\n    If file not ready or finalization fails",
-        "operationId": "finalize_file_api_metadata_files__file_path__finalize_post",
+        "summary": "Apply Rules To File",
+        "description": "Apply the active ruleset to a track (convert, copy, move).\n\nRuns ffmpeg conversion + file moves in asyncio's default executor rather\nthan the FastAPI sync-endpoint threadpool, so long jobs do not starve\nother request handlers.  Concurrent jobs are capped via a semaphore.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nrequest : ApplyRulesRequest\n    Per-call options (currently empty; reserved for future use)\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nApplyRulesResponse\n    Result with new file path and per-step outcomes\n\nRaises\n------\nHTTPException\n    If file is not ready or rule execution fails",
+        "operationId": "apply_rules_to_file_api_metadata_files__file_path__apply_rules_post",
         "parameters": [
           {
             "name": "file_path",
@@ -1530,7 +1853,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FinalizeRequest"
+                "$ref": "#/components/schemas/ApplyRulesRequest"
               }
             }
           }
@@ -1541,7 +1864,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FinalizeResponse"
+                  "$ref": "#/components/schemas/ApplyRulesResponse"
                 }
               }
             }
@@ -2115,6 +2438,228 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Ruleset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-groups": {
+      "get": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "List Groups",
+        "description": "Return all groups and the active group id.",
+        "operationId": "list_groups_api_profile_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileGroupsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "Create Group",
+        "description": "Create a new ProfileGroup.",
+        "operationId": "create_group_api_profile_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileGroupCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileGroup"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-groups/active": {
+      "get": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "Get Active Group",
+        "description": "Return the currently active group, or null if none is active.",
+        "operationId": "get_active_group_api_profile_groups_active_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProfileGroup"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Active Group Api Profile Groups Active Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-groups/{group_id}": {
+      "put": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "Update Group",
+        "description": "Update a group's name and/or members.\n\nRaises\n------\nHTTPException\n    404 if not found.",
+        "operationId": "update_group_api_profile_groups__group_id__put",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileGroupUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileGroup"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "Delete Group",
+        "description": "Delete a group.\n\nRaises\n------\nHTTPException\n    404 if not found.",
+        "operationId": "delete_group_api_profile_groups__group_id__delete",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-groups/{group_id}/activate": {
+      "put": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "Activate Group",
+        "description": "Set the active group.\n\nRaises\n------\nHTTPException\n    404 if not found.",
+        "operationId": "activate_group_api_profile_groups__group_id__activate_put",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileGroup"
                 }
               }
             }
@@ -3487,6 +4032,73 @@
         "type": "object",
         "title": "AnthropicSettings"
       },
+      "ApplyRulesRequest": {
+        "properties": {},
+        "type": "object",
+        "title": "ApplyRulesRequest",
+        "description": "Request to apply the active ruleset to a track.\n\nNo body fields are currently required \u2014 the ruleset to run is resolved\nserver-side from the file's folder bindings.  The model exists so that\nfuture per-call options (e.g. an explicit ruleset id override) have a\nplace to land without changing the endpoint shape."
+      },
+      "ApplyRulesResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "new_file_path": {
+            "type": "string",
+            "title": "New File Path"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ApplyRulesStep"
+            },
+            "type": "array",
+            "title": "Steps",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message",
+          "new_file_path"
+        ],
+        "title": "ApplyRulesResponse",
+        "description": "Response from applying a ruleset to a track."
+      },
+      "ApplyRulesStep": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "status",
+          "message"
+        ],
+        "title": "ApplyRulesStep",
+        "description": "A single rule execution result."
+      },
       "AuthorizeResponse": {
         "properties": {
           "authorization_url": {
@@ -3843,6 +4455,119 @@
         "title": "CollectionStatsResponse",
         "description": "Response containing collection statistics."
       },
+      "FetchCandidate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "mtime": {
+            "type": "number",
+            "title": "Mtime"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "size",
+          "mtime"
+        ],
+        "title": "FetchCandidate",
+        "description": "One candidate audio file under ~/Downloads for the preview dialog."
+      },
+      "FetchFromDownloadsPreview": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/FetchCandidate"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "default": []
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "FetchFromDownloadsPreview",
+        "description": "Preview of what a Fetch-from-Downloads call would do."
+      },
+      "FetchFromDownloadsRequest": {
+        "properties": {
+          "dest_path": {
+            "type": "string",
+            "title": "Dest Path"
+          },
+          "window_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Window Days",
+            "default": 1
+          },
+          "file_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dest_path"
+        ],
+        "title": "FetchFromDownloadsRequest",
+        "description": "Request to move recent audio files from ~/Downloads into a folder."
+      },
+      "FetchFromDownloadsResponse": {
+        "properties": {
+          "moved": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Moved",
+            "default": []
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped",
+            "default": []
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "FetchFromDownloadsResponse",
+        "description": "Result of a Fetch-from-Downloads operation."
+      },
       "FieldSuggestion": {
         "properties": {
           "value": {
@@ -3956,7 +4681,7 @@
           "issues"
         ],
         "title": "FileReadinessResponse",
-        "description": "Response indicating if file is ready for finalization."
+        "description": "Response indicating if file is ready for rule application."
       },
       "FilterValuesResponse": {
         "properties": {
@@ -4021,107 +4746,49 @@
               }
             ],
             "title": "Bpm Max"
-          }
-        },
-        "type": "object",
-        "title": "FilterValuesResponse",
-        "description": "Available filter values for a folder (for filter dropdowns)."
-      },
-      "FinalizeRequest": {
-        "properties": {
-          "target_format": {
-            "type": "string",
-            "enum": [
-              "mp3",
-              "aiff"
-            ],
-            "title": "Target Format",
-            "description": "Target audio format",
-            "default": "aiff"
           },
-          "quality": {
-            "type": "integer",
-            "title": "Quality",
-            "description": "Quality for MP3 (kbps)",
-            "default": 320
+          "file_formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "File Formats",
+            "default": []
           },
-          "collection_folder": {
+          "file_format_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "File Format Counts",
+            "default": {}
+          },
+          "file_size_min": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Collection Folder",
-            "description": "Target collection folder (optional)"
+            "title": "File Size Min"
+          },
+          "file_size_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Size Max"
           }
         },
         "type": "object",
-        "title": "FinalizeRequest",
-        "description": "Request to finalize a track (convert and move)."
-      },
-      "FinalizeResponse": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "title": "Success"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message"
-          },
-          "new_file_path": {
-            "type": "string",
-            "title": "New File Path"
-          },
-          "steps": {
-            "items": {
-              "$ref": "#/components/schemas/FinalizeStep"
-            },
-            "type": "array",
-            "title": "Steps",
-            "default": []
-          }
-        },
-        "type": "object",
-        "required": [
-          "success",
-          "message",
-          "new_file_path"
-        ],
-        "title": "FinalizeResponse",
-        "description": "Response from finalization operation."
-      },
-      "FinalizeStep": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "type": {
-            "type": "string",
-            "title": "Type"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "type",
-          "status",
-          "message"
-        ],
-        "title": "FinalizeStep",
-        "description": "A single rule execution result."
+        "title": "FilterValuesResponse",
+        "description": "Available filter values for a folder (for filter dropdowns)."
       },
       "FolderConfig": {
         "properties": {
@@ -4520,6 +5187,151 @@
         ],
         "title": "PeaksResponse",
         "description": "Waveform amplitude peak data for visualization."
+      },
+      "ProfileGroup": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileGroupMember"
+            },
+            "type": "array",
+            "title": "Members"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ProfileGroup",
+        "description": "A persisted ProfileGroup."
+      },
+      "ProfileGroupCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileGroupMember"
+            },
+            "type": "array",
+            "title": "Members"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ProfileGroupCreate",
+        "description": "Payload for creating a new group."
+      },
+      "ProfileGroupMember": {
+        "properties": {
+          "user_urn": {
+            "type": "string",
+            "title": "User Urn"
+          },
+          "permalink": {
+            "type": "string",
+            "title": "Permalink"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_urn",
+          "permalink",
+          "username"
+        ],
+        "title": "ProfileGroupMember",
+        "description": "A SoundCloud profile pinned into a group.\n\nCached display fields (`username`, `avatar_url`) snapshot the profile at\nadd-time so the UI can render members without a per-row SoundCloud API\ncall. They drift over time \u2014 we accept that for v1."
+      },
+      "ProfileGroupUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "members": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProfileGroupMember"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Members"
+          }
+        },
+        "type": "object",
+        "title": "ProfileGroupUpdate",
+        "description": "Payload for updating an existing group."
+      },
+      "ProfileGroupsResponse": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "active_group_id": {
+            "type": "string",
+            "title": "Active Group Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "groups",
+          "active_group_id"
+        ],
+        "title": "ProfileGroupsResponse",
+        "description": "Response listing all groups plus the active one."
       },
       "RefreshRequest": {
         "properties": {

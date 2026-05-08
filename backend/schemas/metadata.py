@@ -47,12 +47,14 @@ class TrackInfoUpdateRequest(_TagFieldsMixin):
     artwork_data: str | None = None  # base64-encoded image bytes
 
 
-class FinalizeRequest(BaseModel):
-    """Request to finalize a track (convert and move)."""
+class ApplyRulesRequest(BaseModel):
+    """Request to apply the active ruleset to a track.
 
-    target_format: Literal["mp3", "aiff"] = Field(default="aiff", description="Target audio format")
-    quality: int = Field(default=320, description="Quality for MP3 (kbps)")
-    collection_folder: str | None = Field(None, description="Target collection folder (optional)")
+    No body fields are currently required — the ruleset to run is resolved
+    server-side from the file's folder bindings.  The model exists so that
+    future per-call options (e.g. an explicit ruleset id override) have a
+    place to land without changing the endpoint shape.
+    """
 
 
 class CollectionFilterRequest(BaseModel):
@@ -131,7 +133,7 @@ class FolderListResponse(BaseModel):
 
 
 class FileReadinessResponse(BaseModel):
-    """Response indicating if file is ready for finalization."""
+    """Response indicating if file is ready for rule application."""
 
     file_path: str
     is_ready: bool
@@ -139,7 +141,7 @@ class FileReadinessResponse(BaseModel):
     issues: list[str]
 
 
-class FinalizeStep(BaseModel):
+class ApplyRulesStep(BaseModel):
     """A single rule execution result."""
 
     id: str
@@ -148,13 +150,13 @@ class FinalizeStep(BaseModel):
     message: str
 
 
-class FinalizeResponse(BaseModel):
-    """Response from finalization operation."""
+class ApplyRulesResponse(BaseModel):
+    """Response from applying a ruleset to a track."""
 
     success: bool
     message: str
     new_file_path: str
-    steps: list[FinalizeStep] = []
+    steps: list[ApplyRulesStep] = []
 
 
 class OperationResponse(BaseModel):
@@ -210,6 +212,10 @@ class FilterValuesResponse(BaseModel):
     key_counts: dict[str, int] = {}
     bpm_min: int | None = None
     bpm_max: int | None = None
+    file_formats: list[str] = []
+    file_format_counts: dict[str, int] = {}
+    file_size_min: int | None = None
+    file_size_max: int | None = None
 
 
 class CollectionStatsResponse(BaseModel):
@@ -248,3 +254,36 @@ class RenameResponse(BaseModel):
     old_path: str
     new_path: str
     message: str
+
+
+class FetchFromDownloadsRequest(BaseModel):
+    """Request to move recent audio files from ~/Downloads into a folder."""
+
+    dest_path: str
+    window_days: int = Field(1, ge=1, le=365)
+    # When provided, only files whose names appear here are moved. None = move
+    # every eligible candidate (back-compat with one-shot callers).
+    file_names: list[str] | None = None
+
+
+class FetchCandidate(BaseModel):
+    """One candidate audio file under ~/Downloads for the preview dialog."""
+
+    name: str
+    size: int
+    mtime: float
+
+
+class FetchFromDownloadsPreview(BaseModel):
+    """Preview of what a Fetch-from-Downloads call would do."""
+
+    candidates: list[FetchCandidate] = []
+    skipped: list[str] = []
+
+
+class FetchFromDownloadsResponse(BaseModel):
+    """Result of a Fetch-from-Downloads operation."""
+
+    moved: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []

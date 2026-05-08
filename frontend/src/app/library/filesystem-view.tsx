@@ -17,6 +17,7 @@ import {
   FILESYSTEM_COLUMN_DEFS,
 } from "@/components/collection-table";
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
+import { FetchFromDownloadsButton } from "@/components/fetch-from-downloads-button";
 import { FilesystemBatchAnalyzeButton } from "@/components/filesystem-batch-analyze-button";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { useTopBar } from "@/components/layout/top-bar-context";
@@ -39,6 +40,7 @@ import { useColumnPrefs } from "@/lib/columns/use-column-prefs";
 import { useFilterSchema } from "@/lib/filters/use-filter-schema";
 import { useFilterState } from "@/lib/filters/use-filter-state";
 import { usePlayer } from "@/lib/player-context";
+import { onRulesetsChanged } from "@/lib/rulesets-events";
 import { searchParams } from "@/lib/search-params";
 import { useResizable } from "@/lib/use-resizable";
 import { cn } from "@/lib/utils";
@@ -113,16 +115,21 @@ export function FilesystemView() {
       })
       .catch(() => {});
 
-    api
-      .getRulesets()
-      .then((data) => {
-        if (!cancelled) setAllRulesets(data.rulesets);
-      })
-      .catch(() => {});
+    function loadRulesets() {
+      api
+        .getRulesets()
+        .then((data) => {
+          if (!cancelled) setAllRulesets(data.rulesets);
+        })
+        .catch(() => {});
+    }
+    loadRulesets();
+    const unsubscribeRulesets = onRulesetsChanged(loadRulesets);
 
     return () => {
       cancelled = true;
       window.removeEventListener("folders-config-changed", loadFolders);
+      unsubscribeRulesets();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -271,7 +278,7 @@ export function FilesystemView() {
   // Table refresh signal
   const [refreshToken, setRefreshToken] = useState(0);
 
-  // Reload the folder tree whenever something changes (save, finalize, etc.)
+  // Reload the folder tree whenever something changes (save, apply rules, etc.)
   // so folder track counts stay in sync.
   useEffect(() => {
     if (refreshToken === 0) return; // initial mount already loads the tree
@@ -373,6 +380,7 @@ export function FilesystemView() {
       artist: Array.isArray(it.artist)
         ? it.artist.join(", ")
         : (it.artist ?? undefined),
+      bpm: it.bpm ?? null,
     }));
     player.playQueue(queue, idx);
     setPlayFilePath("");
@@ -618,6 +626,10 @@ export function FilesystemView() {
               cacheLoading={tableCacheLoading}
               actions={
                 <>
+                  <FetchFromDownloadsButton
+                    folderPath={selectedNodeId ?? undefined}
+                    onComplete={() => setRefreshToken((t) => t + 1)}
+                  />
                   <FilesystemBatchAnalyzeButton
                     folderPath={selectedNodeId ?? undefined}
                     onComplete={() => setRefreshToken((t) => t + 1)}
@@ -772,6 +784,25 @@ function FilesystemFiltersToolbar({
           min: 0,
           max: 0,
           step: 1,
+        },
+        {
+          id: "file_format",
+          label: "Format",
+          kind: "enum" as const,
+          options: [],
+        },
+        {
+          id: "file_size",
+          label: "Size",
+          kind: "range" as const,
+          min: 0,
+          max: 0,
+          step: 1,
+        },
+        {
+          id: "soundcloud_linked",
+          label: "SoundCloud",
+          kind: "bool" as const,
         },
       ],
     }),

@@ -1,9 +1,10 @@
 "use client";
 
-import { ChevronDown, Loader2, Waves, X } from "lucide-react";
+import { ChevronDown, Waves, X } from "lucide-react";
 import { useCallback } from "react";
 import { toast } from "sonner";
 
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -104,7 +105,7 @@ export function FilesystemBatchAnalyzeButton({
         onClick={cancel}
         title="Cancel batch analysis"
       >
-        <Loader2 className="size-3.5 animate-spin" />
+        <Spinner className="size-3.5" />
         <span className="tabular-nums">
           {done}/{total}
           {failed > 0 ? ` · ${failed} failed` : ""}
