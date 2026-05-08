@@ -59,11 +59,13 @@ import {
   playlistNodeId,
   PLAYLISTS_GROUP_ID,
   REPOSTS_NODE_ID,
+  TRACKS_NODE_ID,
 } from "./likes-tree-panel";
 import { useCombinedPlaylistsTracks } from "./use-combined-playlists-tracks";
 import { useGroupLikes } from "./use-group-likes";
 import { useGroupPlaylists } from "./use-group-playlists";
 import { useGroupReposts } from "./use-group-reposts";
+import { useGroupTracks } from "./use-group-tracks";
 import { useLikes } from "./use-likes";
 import {
   filterStateToLikesOptions,
@@ -75,6 +77,7 @@ import { useReposts } from "./use-reposts";
 import { useSoundcloudTrackSearch } from "./use-soundcloud-track-search";
 import { useSystemPlaylistTracks } from "./use-system-playlist-tracks";
 import { useSystemPlaylists } from "./use-system-playlists";
+import { useTracks } from "./use-tracks";
 import { useUserPlaylists } from "./use-user-playlists";
 
 /** Hide attributes that don't apply to the current tab/context. */
@@ -174,8 +177,10 @@ export function SoundcloudView() {
 
   const myLikes = useLikes("me");
   const myReposts = useReposts("me");
+  const myTracks = useTracks("me");
   const groupLikes = useGroupLikes(tab === "discover" ? activeGroup : null);
   const groupReposts = useGroupReposts(tab === "discover" ? activeGroup : null);
+  const groupTracks = useGroupTracks(tab === "discover" ? activeGroup : null);
   const trackSearch = useSoundcloudTrackSearch(
     tab === "search" ? searchQuery : "",
   );
@@ -206,10 +211,25 @@ export function SoundcloudView() {
     }),
     [groupReposts.tracks, groupReposts.loading, groupReposts.error],
   );
+  const discoverTracks = useMemo(
+    () => ({
+      tracks: groupTracks.tracks as unknown as SCTrack[],
+      loading: groupTracks.loading,
+      hasMore: false,
+      loaded: groupTracks.tracks.length,
+      error: groupTracks.error,
+      reload: () => {
+        /* per-member cache; reload is a no-op v1. */
+      },
+    }),
+    [groupTracks.tracks, groupTracks.loading, groupTracks.error],
+  );
   const activeLikes =
     tab === "me" ? myLikes : tab === "discover" ? discoverLikes : trackSearch;
   const activeReposts =
     tab === "me" ? myReposts : tab === "discover" ? discoverReposts : null;
+  const activeTracks =
+    tab === "me" ? myTracks : tab === "discover" ? discoverTracks : null;
 
   // Autoplay the requested track once search results arrive.
   useEffect(() => {
@@ -285,6 +305,7 @@ export function SoundcloudView() {
   const isAllPlaylistsView = nodeId === PLAYLISTS_GROUP_ID;
   const isMixesGroupView = nodeId === MIXES_GROUP_ID;
   const isRepostsView = nodeId === REPOSTS_NODE_ID;
+  const isTracksView = nodeId === TRACKS_NODE_ID;
 
   const selectedPlaylist = useMemo(() => {
     if (!isPlaylistView) return null;
@@ -412,6 +433,10 @@ export function SoundcloudView() {
   const repostsCount = useMemo(
     () => (activeReposts?.tracks ?? []).filter(filterPredicate).length,
     [activeReposts, filterPredicate],
+  );
+  const tracksCount = useMemo(
+    () => (activeTracks?.tracks ?? []).filter(filterPredicate).length,
+    [activeTracks, filterPredicate],
   );
   const combinedCount = useMemo(
     () => combinedPlaylistTracks.tracks.filter(filterPredicate).length,
@@ -646,6 +671,7 @@ export function SoundcloudView() {
             storageKey={storageKey}
             likesCount={likesCount}
             repostsCount={repostsCount}
+            tracksCount={tracksCount}
             combinedCount={combinedCount}
             perPlaylistFilteredCount={perPlaylistCount}
             mixes={mixes}
@@ -659,6 +685,7 @@ export function SoundcloudView() {
             tab={tab}
             activeLikes={activeLikes}
             activeReposts={activeReposts}
+            activeTracks={activeTracks}
             playlistTracks={playlistTracks}
             combinedPlaylistTracks={combinedPlaylistTracks}
             mixTracks={mixTracks}
@@ -668,6 +695,7 @@ export function SoundcloudView() {
             isMixView={isMixView}
             isMixesGroupView={isMixesGroupView}
             isRepostsView={isRepostsView}
+            isTracksView={isTracksView}
             mixesAvailable={mixesAvailable}
             myLikedIds={myLikedIds}
             collectionIds={collectionIds}
@@ -692,6 +720,7 @@ interface LikesViewProps {
   tab: string;
   activeLikes: ReturnType<typeof useLikes>;
   activeReposts: ReturnType<typeof useLikes> | null;
+  activeTracks: ReturnType<typeof useLikes> | null;
   playlistTracks: ReturnType<typeof usePlaylistTracks>;
   combinedPlaylistTracks: ReturnType<typeof useCombinedPlaylistsTracks>;
   mixTracks: ReturnType<typeof useSystemPlaylistTracks>;
@@ -701,6 +730,7 @@ interface LikesViewProps {
   isMixView: boolean;
   isMixesGroupView: boolean;
   isRepostsView: boolean;
+  isTracksView: boolean;
   mixesAvailable: boolean;
   myLikedIds: Set<number>;
   collectionIds: Set<number>;
@@ -722,6 +752,7 @@ function LikesView({
   tab,
   activeLikes,
   activeReposts,
+  activeTracks,
   playlistTracks,
   combinedPlaylistTracks,
   mixTracks,
@@ -731,6 +762,7 @@ function LikesView({
   isMixView,
   isMixesGroupView,
   isRepostsView,
+  isTracksView,
   mixesAvailable,
   myLikedIds,
   collectionIds,
@@ -757,7 +789,9 @@ function LikesView({
         ? combinedPlaylistTracks.tracks
         : isRepostsView
           ? (activeReposts?.tracks ?? EMPTY_TRACKS)
-          : activeLikes.tracks;
+          : isTracksView
+            ? (activeTracks?.tracks ?? EMPTY_TRACKS)
+            : activeLikes.tracks;
 
   const { filteredTracks } = useLikesFilter(
     sourceTracks,
@@ -828,7 +862,9 @@ function LikesView({
         ? combinedPlaylistTracks.loading
         : isRepostsView
           ? (activeReposts?.loading ?? false)
-          : activeLikes.loading;
+          : isTracksView
+            ? (activeTracks?.loading ?? false)
+            : activeLikes.loading;
   const error = isMixView
     ? mixTracks.error
     : isPlaylistView
@@ -837,7 +873,9 @@ function LikesView({
         ? combinedPlaylistTracks.error
         : isRepostsView
           ? (activeReposts?.error ?? null)
-          : activeLikes.error;
+          : isTracksView
+            ? (activeTracks?.error ?? null)
+            : activeLikes.error;
   const loadedCount = isMixView
     ? mixTracks.tracks.length
     : isPlaylistView
@@ -846,7 +884,9 @@ function LikesView({
         ? combinedPlaylistTracks.tracks.length
         : isRepostsView
           ? (activeReposts?.loaded ?? 0)
-          : activeLikes.loaded;
+          : isTracksView
+            ? (activeTracks?.loaded ?? 0)
+            : activeLikes.loaded;
 
   // Contextual palette commands — registered only while this view is mounted
   // and a selection/filter context applies.
@@ -867,7 +907,11 @@ function LikesView({
   });
 
   const reloadActiveLikes =
-    isRepostsView && activeReposts ? activeReposts.reload : activeLikes.reload;
+    isRepostsView && activeReposts
+      ? activeReposts.reload
+      : isTracksView && activeTracks
+        ? activeTracks.reload
+        : activeLikes.reload;
   useCommand({
     id: "sc:reload",
     label:
@@ -1009,7 +1053,9 @@ function LikesView({
                       ? "No tracks matched your search"
                       : isRepostsView
                         ? "No reposted tracks found"
-                        : "No liked tracks found"}
+                        : isTracksView
+                          ? "No tracks found"
+                          : "No liked tracks found"}
             </p>
           </div>
         ) : (

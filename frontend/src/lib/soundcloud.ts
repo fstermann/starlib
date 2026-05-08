@@ -262,6 +262,55 @@ export async function fetchRepostsPage(nextHref: string): Promise<SCTracks> {
   return fetchRepostsUrl(nextHref);
 }
 
+export async function getMyTracks(
+  limit = 200,
+  cursor?: string,
+): Promise<SCTracks> {
+  const client = await getClient();
+  const { data, error } = await client.GET("/me/tracks", {
+    params: {
+      query: {
+        limit,
+        linked_partitioning: true,
+        ...(cursor ? { offset: cursor } : {}),
+      } as never,
+    },
+  });
+  if (error)
+    throw new Error(`Failed to fetch my tracks: ${JSON.stringify(error)}`);
+  return data as SCTracks;
+}
+
+export async function getUserTracks(
+  userUrn: string,
+  limit = 200,
+  cursor?: string,
+): Promise<SCTracks> {
+  const client = await getClient();
+  const { data, error } = await client.GET("/users/{user_urn}/tracks", {
+    params: {
+      path: { user_urn: userUrn },
+      query: {
+        limit,
+        linked_partitioning: true,
+        ...(cursor ? { offset: cursor } : {}),
+      } as never,
+    },
+  });
+  if (error)
+    throw new Error(`Failed to fetch user tracks: ${JSON.stringify(error)}`);
+  return data as SCTracks;
+}
+
+export async function fetchTracksPage(nextHref: string): Promise<SCTracks> {
+  const token = await ensureValidToken();
+  const resp = await fetch(nextHref, {
+    headers: { Authorization: `OAuth ${token}` },
+  });
+  if (!resp.ok) throw new Error(`Failed to fetch tracks page: ${resp.status}`);
+  return (await resp.json()) as SCTracks;
+}
+
 export async function getUser(userUrn: string): Promise<SCUser | null> {
   const client = await getClient();
   const { data, error } = await client.GET("/users/{user_urn}", {
