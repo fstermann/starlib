@@ -313,10 +313,19 @@ export function TrackEditor({
     setScQueryPending(false);
     if (!selectedScTrack) return;
     const meta = activeSource.extractMetadata(selectedScTrack);
-    setCommentData((prev) => ({
-      soundcloud_id: prev.soundcloud_id || meta.source_id,
-      soundcloud_permalink: prev.soundcloud_permalink || meta.source_permalink,
-    }));
+    setCommentData((prev) => {
+      // If prev already points at this exact SC track, preserve it so any
+      // permalink formatting saved on the file is kept verbatim. Otherwise
+      // adopt the newly selected track — `prev || meta` would otherwise pin
+      // the link to the first match and silently ignore later selections.
+      if (prev.soundcloud_id && prev.soundcloud_id === meta.source_id) {
+        return prev;
+      }
+      return {
+        soundcloud_id: meta.source_id,
+        soundcloud_permalink: meta.source_permalink,
+      };
+    });
     setScLinkEnabled(true);
   }, [selectedScTrack, activeSource, setScQueryPending]);
 
