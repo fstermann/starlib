@@ -10,6 +10,12 @@ import {
 } from "@/components/soundcloud-batch-analyze-button";
 import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
+import { NumberInput } from "@/components/ui/number-input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { api } from "@/lib/api";
 import { analyzeSc, TrackUnanalysableError } from "@/lib/sc-bpm";
 import { markScUnplayable, useIsScUnplayable } from "@/lib/sc-unplayable";
@@ -29,30 +35,37 @@ export const SoundcloudBpmCacheContext = React.createContext<
   Map<number, number>
 >(new Map());
 
+function dispatchBpmUpdate(trackId: number, bpm: number) {
+  window.dispatchEvent(
+    new CustomEvent<ScBpmUpdatedDetail>(SC_BPM_UPDATED_EVENT, {
+      detail: { trackId, bpm },
+    }),
+  );
+}
+
 /** BPM cell for SoundCloud library rows.
  *
  * Precedence: locally-computed cached BPM (this session) > backend-cached
  * BPM (set by a previous analyze) > metadata-supplied BPM > "Detect" button.
  *
- * On click: fetches a Client-Credentials token from the backend, invokes the
- * Rust BPM command via Tauri, persists the result to the cache DB, and
- * shows the new value. Hidden outside the Tauri WebView.
+ * When a BPM is shown, clicking it opens a popover that supports both
+ * re-analyzing (re-runs the Tauri BPM pipeline) and a manual override
+ * (for cases where detection was wrong). Outside the Tauri WebView the
+ * popover is suppressed because analyze + save round-trip via Tauri/IPC.
  */
 export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
   const [analyzedBpm, setAnalyzedBpm] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  // Sticky once SC refuses analysis — prevents the user from spamming the
-  // Detect button on a track SoundCloud will never let us stream.
   const [unanalysable, setUnanalysable] = useState(false);
-  // Read the global session set so a track flagged unplayable elsewhere
-  // (player, batch, pitcher) immediately reflects in this cell too.
   const sessionUnplayable = useIsScUnplayable(trackId);
   const bpmCache = useContext(SoundcloudBpmCacheContext);
 
   const cachedBpm = bpmCache.get(trackId);
   const displayBpm = analyzedBpm ?? cachedBpm ?? metadataBpm ?? null;
 
-  // Listen for batch-analyze results so visible rows fill in live.
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [draft, setDraft] = useState<string>("");
+
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<ScBpmUpdatedDetail>).detail;
@@ -64,22 +77,37 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
     return () => window.removeEventListener(SC_BPM_UPDATED_EVENT, handler);
   }, [trackId]);
 
-  async function handleAnalyze() {
+  // Seed the draft from the currently shown BPM each time the popover opens
+  // so the user's starting point is what they see in the cell.
+  useEffect(() => {
+    if (popoverOpen) {
+      setDraft(displayBpm != null ? String(displayBpm) : "");
+    }
+  }, [popoverOpen, displayBpm]);
+
+  async function persistBpm(bpm: number) {
+    await api.saveSoundcloudBpm(trackId, bpm);
+    setAnalyzedBpm(bpm);
+    dispatchBpmUpdate(trackId, bpm);
+  }
+
+  async function handleAnalyze(closeOnDone: boolean) {
     if (!isTauri() || !trackId || loading) return;
     setLoading(true);
     try {
       const result = await analyzeSc(trackId);
       const rounded = Math.round(result.bpm);
-      await api.saveSoundcloudBpm(trackId, result.bpm);
-      setAnalyzedBpm(rounded);
+      await persistBpm(rounded);
       toast.success(
         `Detected ${rounded} BPM (${result.confidence} confidence)`,
       );
+      if (closeOnDone) setPopoverOpen(false);
     } catch (err) {
       if (err instanceof TrackUnanalysableError) {
         setUnanalysable(true);
         markScUnplayable(trackId);
         toast.warning(err.message);
+        setPopoverOpen(false);
       } else {
         toast.error(
           `BPM detection failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -90,8 +118,83 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
     }
   }
 
+  async function handleSaveManual() {
+    const n = Number(draft);
+    if (!Number.isFinite(n) || n <= 0) {
+      toast.error("Enter a positive BPM value");
+      return;
+    }
+    const rounded = Math.round(n);
+    setLoading(true);
+    try {
+      await persistBpm(rounded);
+      toast.success(`BPM set to ${rounded}`);
+      setPopoverOpen(false);
+    } catch (err) {
+      toast.error(
+        `Failed to save BPM: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (displayBpm != null) {
-    return <>{displayBpm}</>;
+    return (
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="hover:bg-accent hover:text-foreground -mx-1 cursor-pointer rounded px-1 tabular-nums transition-colors"
+            title="Edit or reanalyze BPM"
+            data-testid="sc-bpm-edit-trigger"
+          >
+            {displayBpm}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-56 p-3">
+          <div className="flex flex-col gap-2">
+            <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
+              BPM
+            </span>
+            <div className="flex items-center gap-2">
+              <NumberInput
+                value={draft}
+                onChange={setDraft}
+                min={1}
+                max={400}
+                ariaLabel="BPM"
+                testId="sc-bpm-edit-input"
+                className="h-8 text-xs"
+                placeholder="—"
+              />
+              <Button
+                size="sm"
+                onClick={handleSaveManual}
+                disabled={
+                  loading || draft === "" || draft === String(displayBpm)
+                }
+                data-testid="sc-bpm-save"
+              >
+                Save
+              </Button>
+            </div>
+            {isTauri() && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleAnalyze(true)}
+                disabled={loading || unanalysable || sessionUnplayable}
+                data-testid="sc-bpm-reanalyze"
+              >
+                {loading ? <Spinner /> : <Waves />}
+                Reanalyze
+              </Button>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
   }
   if (!isTauri()) {
     return <>—</>;
@@ -110,9 +213,10 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
     <Button
       variant="ghost"
       size="icon-xs"
-      onClick={handleAnalyze}
+      onClick={() => handleAnalyze(false)}
       disabled={loading}
       title="Detect BPM"
+      data-testid="sc-bpm-detect"
     >
       {loading ? <Spinner /> : <Waves />}
     </Button>
