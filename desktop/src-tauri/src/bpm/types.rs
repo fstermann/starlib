@@ -50,6 +50,25 @@ pub struct BpmResult {
     pub algorithm_version: u16,
 }
 
+/// Tempo estimator back-end.
+///
+/// `Autocorrelation` is the original: pick the highest peak in the onset
+/// envelope's autocorrelation. Fast, works well on tracks with clear
+/// metronomic pulse.
+///
+/// `DynamicProgramming` runs Ellis 2007's beat-tracking DP on the onset
+/// envelope, using the autocorrelation's peak as the tempo target and
+/// allowing per-beat deviation under a log-Gaussian penalty. The BPM is
+/// then derived from the median inter-beat-interval. More robust on
+/// tracks where the autocorrelation peak is contaminated by an off-beat
+/// subdivision (e.g. dotted/triplet 2:3 ratio errors).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BeatTracker {
+    #[default]
+    Autocorrelation,
+    DynamicProgramming,
+}
+
 /// Analysis strategy — single-shot or multi-window consensus.
 ///
 /// `Consensus` runs the single-shot analyzer on three windows at 25%, 50%
@@ -78,6 +97,8 @@ pub struct BpmOptions {
     pub max_bpm: f32,
     /// Single-shot vs multi-window consensus.
     pub mode: AnalysisMode,
+    /// Tempo estimator: raw autocorrelation peak or DP beat-tracking.
+    pub beat_tracker: BeatTracker,
 }
 
 impl Default for BpmOptions {
@@ -88,6 +109,7 @@ impl Default for BpmOptions {
             min_bpm: 60.0,
             max_bpm: 200.0,
             mode: AnalysisMode::Single,
+            beat_tracker: BeatTracker::Autocorrelation,
         }
     }
 }
