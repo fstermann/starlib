@@ -14,8 +14,6 @@ export interface SourceTrack {
   permalink_url?: string;
   /** Primary artist / uploader name. */
   username?: string;
-  /** All available artist name variants (e.g. metadata artist vs. profile name). */
-  artist_options?: string[];
   genre?: string;
   /** Original source-specific data. Cast to the appropriate type in the source adapter. */
   raw: unknown;

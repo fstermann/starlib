@@ -2,7 +2,6 @@
 
 import {
   ArrowUp,
-  Download,
   Eraser,
   Image as ImageIcon,
   PencilLine,
@@ -21,7 +20,6 @@ import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-men
 import { FetchFromDownloadsButton } from "@/components/fetch-from-downloads-button";
 import { FilesystemBatchAnalyzeButton } from "@/components/filesystem-batch-analyze-button";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
-import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { useTopBar } from "@/components/layout/top-bar-context";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -330,21 +328,17 @@ export function FilesystemView() {
   const [autoActionsMenuOpen, setAutoActionsMenuOpen] = useState(false);
   const [autoActions, setAutoActions] = useState<AutoActions>({
     autoCopyArtwork: true,
-    autoCopyMetadata: true,
     autoClean: true,
     autoTitelize: false,
     autoRemoveOriginalMix: true,
-    autoApplyScResults: true,
   });
   const effectiveAutoActions: AutoActions = autoActionsEnabled
     ? autoActions
     : {
         autoCopyArtwork: false,
-        autoCopyMetadata: false,
         autoClean: false,
         autoTitelize: false,
         autoRemoveOriginalMix: false,
-        autoApplyScResults: false,
       };
 
   const player = usePlayer();
@@ -538,25 +532,6 @@ export function FilesystemView() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Checkbox
-                    id="auto-metadata"
-                    checked={autoActions.autoCopyMetadata}
-                    onCheckedChange={(v) =>
-                      setAutoActions({
-                        ...autoActions,
-                        autoCopyMetadata: v as boolean,
-                      })
-                    }
-                  />
-                  <label
-                    htmlFor="auto-metadata"
-                    className="flex cursor-pointer items-center gap-1.5 text-xs"
-                  >
-                    <Download className="text-muted-foreground size-3" />
-                    Metadata
-                  </label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox
                     id="auto-clean"
                     checked={autoActions.autoClean}
                     onCheckedChange={(v) =>
@@ -610,25 +585,6 @@ export function FilesystemView() {
                   >
                     <XCircle className="text-muted-foreground size-3" />
                     Remove &quot;Original Mix&quot;
-                  </label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="auto-sc-apply"
-                    checked={autoActions.autoApplyScResults}
-                    onCheckedChange={(v) =>
-                      setAutoActions({
-                        ...autoActions,
-                        autoApplyScResults: v as boolean,
-                      })
-                    }
-                  />
-                  <label
-                    htmlFor="auto-sc-apply"
-                    className="flex cursor-pointer items-center gap-1.5 text-xs"
-                  >
-                    <SoundCloudLogo className="text-muted-foreground size-3" />
-                    Auto-apply SC results
                   </label>
                 </div>
               </div>

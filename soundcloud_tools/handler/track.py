@@ -16,12 +16,12 @@ from mutagen.easyid3 import EasyID3
 from mutagen.id3 import APIC, COMM, ID3, TBPM, TCON, TDRC, TDRL, TIT2, TIT3, TKEY, TOPE, TPE1, TPE4, TXXX
 from mutagen.mp3 import MP3
 from mutagen.wave import WAVE
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from soundcloud_tools.models import Track
 from soundcloud_tools.settings import get_settings
 from soundcloud_tools.utils import convert_to_int, load_tracks
-from soundcloud_tools.utils.string import get_first_artist, get_mix_arist, get_mix_name, is_remix, parse_date
+from soundcloud_tools.utils.string import get_first_artist, get_mix_arist, get_mix_name, parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -212,8 +212,6 @@ class TrackInfo(BaseModel):
     artwork_url: str | None = None
     length: float | None = None
 
-    artist_options: set[str] = Field(default_factory=set)
-
     _artist_sep: ClassVar[str] = ", "
 
     @model_validator(mode="after")
@@ -252,35 +250,13 @@ class TrackInfo(BaseModel):
     def remixer_str(self) -> str:
         return self._join_artists(self.remixer)
 
-    @staticmethod
-    def _get_artist_sorter(title: str, type: Literal["artist", "original_artist", "remixer"]) -> Callable[[str], int]:
-        def is_in(artist: str, text: str | None):
-            return int(re.search(re.escape(artist.strip()), text or "", flags=re.IGNORECASE) is not None)
-
-        first_artist = get_first_artist(title)
-        mix_artist = get_mix_arist(title)
-
-        def by_first_sorter(artist: str):
-            return 0 if not artist else is_in(artist, title) + is_in(artist, first_artist)
-
-        def by_mix_sorter(artist: str):
-            return 0 if not artist else is_in(artist, title) + is_in(artist, mix_artist)
-
-        match type:
-            case "artist":
-                return by_mix_sorter if is_remix(title) else by_first_sorter
-            case "original_artist":
-                return by_first_sorter
-            case "remixer":
-                return by_mix_sorter
-            case _:
-                raise ValueError(f"Invalid type {type}")
-
     @classmethod
     def sort_artists(
         cls, artists: set[str], title: str, type: Literal["artist", "original_artist", "remixer"]
     ) -> list[str]:
-        return sorted(artists, key=cls._get_artist_sorter(title, type=type), reverse=True)
+        from soundcloud_tools.handler.artist_ranking import rank_artists
+
+        return rank_artists(artists, title=title, role=type)
 
     @classmethod
     def from_sc_track(cls, track: Track) -> Self:
@@ -309,7 +285,6 @@ class TrackInfo(BaseModel):
             release_date=release_date,
             release_year=release_date.year,
             artwork_url=track.hq_artwork_url or track.user.hq_avatar_url,
-            artist_options=artist_options,
             original_artist=next(iter(most_likely_original_artists), ""),
             remixer=next(iter(most_likely_remixers), ""),
             mix_name=mix_name,
