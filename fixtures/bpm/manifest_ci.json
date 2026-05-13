@@ -1,0 +1,204 @@
+{
+  "version": 2,
+  "source": "beatport-top-100 + soundcloud-audio (CI subset, 3 per genre, lowest-error picks)",
+  "entries": [
+    {
+      "sc_track_id": 2288905493,
+      "truth_bpm": 174,
+      "source_bpm": 87,
+      "halftime_normalized": true,
+      "artist": "Amoss",
+      "title": "Ghost Signals",
+      "genre": "Drum & Bass",
+      "duration_s": 314,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2311406636,
+      "truth_bpm": 174,
+      "source_bpm": 87,
+      "halftime_normalized": true,
+      "artist": "El Pablo",
+      "title": "Like It Like ",
+      "genre": "Drum & Bass",
+      "duration_s": 203,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2315612210,
+      "truth_bpm": 174,
+      "source_bpm": 87,
+      "halftime_normalized": true,
+      "artist": "Particle, Catching Cairo",
+      "title": "18%",
+      "genre": "Drum & Bass",
+      "duration_s": 201,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2115988593,
+      "truth_bpm": 123,
+      "source_bpm": 123,
+      "halftime_normalized": false,
+      "artist": "Jonas Blue, Malive",
+      "title": "Edge of Desire",
+      "genre": "House",
+      "duration_s": 252,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2277427721,
+      "truth_bpm": 126,
+      "source_bpm": 126,
+      "halftime_normalized": false,
+      "artist": "Adam Ten, Asulin",
+      "title": "Warawara",
+      "genre": "House",
+      "duration_s": 318,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2301342416,
+      "truth_bpm": 123,
+      "source_bpm": 123,
+      "halftime_normalized": false,
+      "artist": "PEATY, Jawora",
+      "title": "One Time",
+      "genre": "House",
+      "duration_s": 331,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 1535153422,
+      "truth_bpm": 120,
+      "source_bpm": 120,
+      "halftime_normalized": false,
+      "artist": "&ME, Black Coffee, Keinemusik",
+      "title": "The Rapture Pt.III",
+      "genre": "Melodic House & Techno",
+      "duration_s": 482,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2303650109,
+      "truth_bpm": 123,
+      "source_bpm": 123,
+      "halftime_normalized": false,
+      "artist": "Adam Port, Keinemusik, SG Lewis",
+      "title": "Be The One",
+      "genre": "Melodic House & Techno",
+      "duration_s": 285,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2308690970,
+      "truth_bpm": 123,
+      "source_bpm": 123,
+      "halftime_normalized": false,
+      "artist": "Ajna (BE), Sentin",
+      "title": "Bringing The Noise ",
+      "genre": "Melodic House & Techno",
+      "duration_s": 345,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2282146097,
+      "truth_bpm": 129,
+      "source_bpm": 129,
+      "halftime_normalized": false,
+      "artist": "Ranger Trucco, Nate Katz",
+      "title": "Excuse Me? ",
+      "genre": "Minimal / Deep Tech",
+      "duration_s": 342,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2291788157,
+      "truth_bpm": 130,
+      "source_bpm": 130,
+      "halftime_normalized": false,
+      "artist": "Funk Cartel",
+      "title": "Silver Surfer",
+      "genre": "Minimal / Deep Tech",
+      "duration_s": 386,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2306601410,
+      "truth_bpm": 129,
+      "source_bpm": 129,
+      "halftime_normalized": false,
+      "artist": "Joey London Style",
+      "title": "Speed Train",
+      "genre": "Minimal / Deep Tech",
+      "duration_s": 298,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 56141438,
+      "truth_bpm": 129,
+      "source_bpm": 129,
+      "halftime_normalized": false,
+      "artist": "Oxia",
+      "title": "Domino",
+      "genre": "Techno (Peak Time / Driving)",
+      "duration_s": 433,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2092119057,
+      "truth_bpm": 130,
+      "source_bpm": 130,
+      "halftime_normalized": false,
+      "artist": "Kaufmann (DE)",
+      "title": "Mother",
+      "genre": "Techno (Peak Time / Driving)",
+      "duration_s": 384,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2190159439,
+      "truth_bpm": 130,
+      "source_bpm": 130,
+      "halftime_normalized": false,
+      "artist": "Svonco",
+      "title": "Perception Reset",
+      "genre": "Techno (Peak Time / Driving)",
+      "duration_s": 387,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2289213830,
+      "truth_bpm": 152,
+      "source_bpm": 152,
+      "halftime_normalized": false,
+      "artist": "Ueberrest",
+      "title": "Surrender",
+      "genre": "Trance (Main Floor)",
+      "duration_s": 217,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2289213842,
+      "truth_bpm": 152,
+      "source_bpm": 152,
+      "halftime_normalized": false,
+      "artist": "Ueberrest",
+      "title": "Disturbing Paradise",
+      "genre": "Trance (Main Floor)",
+      "duration_s": 230,
+      "source": "beatport"
+    },
+    {
+      "sc_track_id": 2308422785,
+      "truth_bpm": 148,
+      "source_bpm": 148,
+      "halftime_normalized": false,
+      "artist": "Flour",
+      "title": "Fallen Angel",
+      "genre": "Trance (Main Floor)",
+      "duration_s": 313,
+      "source": "beatport"
+    }
+  ]
+}
