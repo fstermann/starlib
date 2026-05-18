@@ -40,3 +40,10 @@ url = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# BPM accuracy harness — walks a Beatport-derived fixture manifest and
+# measures detector accuracy. Intentionally not a Criterion bench (we want
+# one run per track, not repeated iterations).
+[[bench]]
+name = "bpm_accuracy"
+harness = false
