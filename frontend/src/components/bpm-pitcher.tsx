@@ -1,6 +1,6 @@
 "use client";
 
-import { Gauge, Waves } from "lucide-react";
+import { ChevronDown, Gauge, Waves } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -11,6 +11,12 @@ import {
 } from "@/components/soundcloud-batch-analyze-button";
 import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
@@ -49,11 +55,30 @@ function getScTrackId(track: PlayerTrack): number | null {
 }
 
 /** Run BPM detection for whichever track type is current. Returns rounded BPM
- * or null on failure. Caller handles toasts. */
-async function detectBpmForTrack(track: PlayerTrack): Promise<number | null> {
+ * or null on failure. Caller handles toasts.
+ *
+ * `force=true` skips the cache lookup and re-runs analysis even when a
+ * cached value exists — used by the manual "Re-detect" path. The auto-detect
+ * effect always passes `force=false` so it never silently overwrites a
+ * previously-saved BPM (e.g. one the user just edited in the table). */
+async function detectBpmForTrack(
+  track: PlayerTrack,
+  { strong = false, force = false }: { strong?: boolean; force?: boolean } = {},
+): Promise<number | null> {
   const scId = getScTrackId(track);
   if (scId !== null) {
-    const result = await analyzeSc(scId);
+    if (!force) {
+      try {
+        const cached = await api.getSoundcloudBpmsBulk([scId]);
+        const hit = cached.bpms[String(scId)];
+        if (typeof hit === "number" && hit > 0) {
+          return hit;
+        }
+      } catch {
+        /* Cache lookup is best-effort; fall through to fresh analysis. */
+      }
+    }
+    const result = await analyzeSc(scId, false, strong);
     const rounded = Math.round(result.bpm);
     await api.saveSoundcloudBpm(scId, result.bpm).catch(() => {
       /* Persisting to backend cache is best-effort. */
@@ -68,7 +93,7 @@ async function detectBpmForTrack(track: PlayerTrack): Promise<number | null> {
     return rounded;
   }
   // Local file path.
-  const result = await analyzeLocalBpm(track.filePath);
+  const result = await analyzeLocalBpm(track.filePath, false, strong);
   return Math.round(result.bpm);
 }
 
@@ -132,31 +157,37 @@ export function BpmPitcher() {
       .finally(() => setDetecting(false));
   }, [pitchEnabled, currentTrack, currentBpm, setCurrentBpm, detecting]);
 
-  const handleManualDetect = useCallback(async () => {
-    if (!currentTrack || !isTauri() || detecting) return;
-    setDetecting(true);
-    try {
-      const bpm = await detectBpmForTrack(currentTrack);
-      if (bpm != null) {
-        setCurrentBpm(bpm);
-        toast.success(`Detected ${bpm} BPM`);
+  const handleManualDetect = useCallback(
+    async (strong = false) => {
+      if (!currentTrack || !isTauri() || detecting) return;
+      setDetecting(true);
+      try {
+        const bpm = await detectBpmForTrack(currentTrack, {
+          force: true,
+          strong,
+        });
+        if (bpm != null) {
+          setCurrentBpm(bpm);
+          toast.success(`Detected ${bpm} BPM`);
+        }
+      } catch (err) {
+        // For a manual click the user is owed feedback either way — but soften
+        // the message when SoundCloud just refuses the track.
+        if (err instanceof TrackUnanalysableError) {
+          const scId = currentTrack ? getScTrackId(currentTrack) : null;
+          if (scId !== null) markScUnplayable(scId);
+          toast.warning(err.message);
+        } else {
+          toast.error(
+            `BPM detection failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      } finally {
+        setDetecting(false);
       }
-    } catch (err) {
-      // For a manual click the user is owed feedback either way — but soften
-      // the message when SoundCloud just refuses the track.
-      if (err instanceof TrackUnanalysableError) {
-        const scId = currentTrack ? getScTrackId(currentTrack) : null;
-        if (scId !== null) markScUnplayable(scId);
-        toast.warning(err.message);
-      } else {
-        toast.error(
-          `BPM detection failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    } finally {
-      setDetecting(false);
-    }
-  }, [currentTrack, detecting, setCurrentBpm]);
+    },
+    [currentTrack, detecting, setCurrentBpm],
+  );
 
   const commitTarget = useCallback(() => {
     const parsed = Number(targetInput);
@@ -307,26 +338,59 @@ export function BpmPitcher() {
             </div>
 
             {tauri && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleManualDetect}
-                disabled={detecting}
-                data-testid="bpm-pitcher-detect"
-                className="w-full"
-              >
-                {detecting ? (
-                  <>
-                    <Spinner />
-                    Detecting…
-                  </>
-                ) : (
-                  <>
-                    <Waves />
-                    {currentBpm != null ? "Re-detect BPM" : "Detect BPM"}
-                  </>
-                )}
-              </Button>
+              <div className="flex items-stretch gap-px">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleManualDetect(false)}
+                  disabled={detecting}
+                  data-testid="bpm-pitcher-detect"
+                  className="flex-1 rounded-r-none"
+                >
+                  {detecting ? (
+                    <>
+                      <Spinner />
+                      Detecting…
+                    </>
+                  ) : (
+                    <>
+                      <Waves />
+                      {currentBpm != null ? "Re-detect BPM" : "Detect BPM"}
+                    </>
+                  )}
+                </Button>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={detecting}
+                      aria-label="Detect options"
+                      data-testid="bpm-pitcher-detect-menu"
+                      className="rounded-l-none border-l-0 px-1.5"
+                    >
+                      <ChevronDown className="size-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-60">
+                    <DropdownMenuItem
+                      onClick={() => handleManualDetect(true)}
+                      data-testid="bpm-pitcher-detect-strong"
+                      className="items-start py-2"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium">
+                          {currentBpm != null ? "Re-detect" : "Detect"}{" "}
+                          (stronger)
+                        </span>
+                        <span className="text-muted-foreground text-xs">
+                          DP beat tracker — try this if BPM seems wrong
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
           </div>
         </PopoverContent>

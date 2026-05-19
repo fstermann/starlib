@@ -1,6 +1,6 @@
 [package]
 name = "starlib"
-version = "0.4.4"
+version = "0.5.0"
 description = "Starlib desktop application"
 authors = ["Fabian Stermann <56961284+fstermann@users.noreply.github.com>"]
 license = "MIT"
@@ -32,7 +32,7 @@ serde_json = "1"
 reqwest = { version = "0.13", features = ["json"] }
 tokio = { version = "1", features = ["time", "sync"] }
 thiserror = "2"
-symphonia = { version = "0.5", features = ["aac", "aiff", "alac", "isomp4", "mp3", "flac", "wav", "vorbis"] }
+symphonia = { version = "0.6", features = ["aac", "aiff", "alac", "isomp4", "mp3", "flac", "wav", "vorbis"] }
 rustfft = "6"
 anyhow = "1"
 futures = "0.3"
@@ -40,3 +40,10 @@ url = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# BPM accuracy harness — walks a Beatport-derived fixture manifest and
+# measures detector accuracy. Intentionally not a Criterion bench (we want
+# one run per track, not repeated iterations).
+[[bench]]
+name = "bpm_accuracy"
+harness = false

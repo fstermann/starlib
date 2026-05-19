@@ -9,7 +9,9 @@ use anyhow::{anyhow, Result};
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
 
-use super::types::{BpmError, BpmOptions, BpmResult, Confidence, ALGORITHM_VERSION};
+use super::types::{BeatTracker, BpmError, BpmOptions, BpmResult, Confidence, ALGORITHM_VERSION};
+
+const STFT_HOP: usize = 512;
 
 /// Combine multiple single-shot BPM results into one consensus estimate.
 ///
@@ -72,7 +74,11 @@ pub fn analyze(samples: &[f32], sr: u32, options: &BpmOptions) -> Result<BpmResu
     if onset.iter().all(|&v| v == 0.0) {
         return Err(BpmError::SilentInput.into());
     }
-    let (raw_bpm, peak_ratio) = autocorrelate_bpm(&onset, sr, options)?;
+    let (acorr_bpm, peak_ratio) = autocorrelate_bpm(&onset, sr, options)?;
+    let raw_bpm = match options.beat_tracker {
+        BeatTracker::Autocorrelation => acorr_bpm,
+        BeatTracker::DynamicProgramming => dp_beat_track_bpm(&onset, sr, acorr_bpm)?,
+    };
 
     let confidence = if peak_ratio >= 3.0 {
         Confidence::High
@@ -239,6 +245,160 @@ pub(crate) fn parabolic_offset(y0: f32, y1: f32, y2: f32) -> f32 {
     }
 }
 
+/// Penalty weight on tempo deviation in the DP beat tracker. Ellis 2007
+/// uses ~680 against unit-variance onsets; we z-score the envelope first
+/// so this stays comparable. Larger = sticks closer to the target tempo;
+/// smaller = trusts the onset peaks more.
+const DP_ALPHA: f32 = 100.0;
+
+/// Ellis 2007 dynamic-programming beat tracker, multi-target variant.
+///
+/// The autocorrelation peak is a strong-but-not-perfect tempo guess: on
+/// tracks with a dotted or triplet feel it can lock onto a 2:3 sub-rate
+/// (e.g. 138 BPM tracks misread as 92). To break those ties we run DP at
+/// several candidate tempi — the autocorrelation peak itself plus its
+/// 2:3, 3:2, 0.5× and 2× ratios — and pick the candidate whose beat
+/// sequence captures the most onset energy. The chosen sequence's median
+/// IBI is then parabolic-refined for sub-frame precision.
+fn dp_beat_track_bpm(onset: &[f32], sr: u32, target_bpm: f32) -> Result<f32> {
+    let frame_rate = sr as f32 / STFT_HOP as f32;
+    if target_bpm <= 0.0 {
+        return Err(BpmError::InsufficientData(format!("dp: bad target bpm {target_bpm}")).into());
+    }
+    let n = onset.len();
+
+    // Z-score the envelope so DP_ALPHA is comparable across tracks.
+    let mean = onset.iter().sum::<f32>() / n as f32;
+    let var = onset.iter().map(|&v| (v - mean).powi(2)).sum::<f32>() / n as f32;
+    let std = var.sqrt().max(1e-9);
+    let norm: Vec<f32> = onset.iter().map(|&v| (v - mean) / std).collect();
+
+    let base_lag = frame_rate * 60.0 / target_bpm;
+    // Octave + 2:3 ratio variants. Order doesn't matter; we score them all.
+    let ratios = [1.0, 2.0 / 3.0, 3.0 / 2.0, 0.5, 2.0];
+
+    let mut best_capture = f32::NEG_INFINITY;
+    let mut best_bpm = target_bpm;
+    for &r in &ratios {
+        let cand_lag = base_lag * r;
+        let cand_bpm = frame_rate * 60.0 / cand_lag;
+        // Stay inside the autocorrelation's search range; otherwise the
+        // candidate doesn't correspond to a real tempo hypothesis.
+        if cand_bpm < 50.0 || cand_bpm > 220.0 || cand_lag < 2.0 {
+            continue;
+        }
+        if n < (cand_lag * 4.0) as usize {
+            continue;
+        }
+        let Some((beats, _d_end)) = dp_forward(&norm, cand_lag, n) else {
+            continue;
+        };
+        if beats.len() < 4 {
+            continue;
+        }
+        // Score: raw onset energy at beat positions. Tempo-penalty-free,
+        // so candidates with different targets are comparable.
+        let capture: f32 = beats.iter().map(|&t| onset[t]).sum();
+        if capture > best_capture {
+            best_capture = capture;
+            best_bpm = bpm_from_beats(&beats, onset, frame_rate).unwrap_or(cand_bpm);
+        }
+    }
+
+    Ok(best_bpm)
+}
+
+/// Single DP forward + backtrack pass at a fixed target lag.
+/// Returns `(beats, score_at_end)` or `None` if the envelope is too short.
+fn dp_forward(norm: &[f32], target_lag: f32, n: usize) -> Option<(Vec<usize>, f32)> {
+    let lag_lo = (target_lag * 0.5).max(2.0) as usize;
+    let lag_hi = ((target_lag * 2.0) as usize).min(n.saturating_sub(1));
+    if lag_hi <= lag_lo {
+        return None;
+    }
+    let log_target = target_lag.ln();
+
+    let mut d = vec![f32::NEG_INFINITY; n];
+    let mut p = vec![-1i32; n];
+    for t in 0..lag_lo.min(n) {
+        d[t] = norm[t];
+    }
+    for t in lag_lo..n {
+        let mut best = 0.0_f32;
+        let mut best_prev: i32 = -1;
+        let upper = lag_hi.min(t);
+        for tau in lag_lo..=upper {
+            let prev_score = d[t - tau];
+            if !prev_score.is_finite() {
+                continue;
+            }
+            let log_ratio = (tau as f32).ln() - log_target;
+            let penalty = DP_ALPHA * log_ratio * log_ratio;
+            let score = prev_score - penalty;
+            if score > best {
+                best = score;
+                best_prev = (t - tau) as i32;
+            }
+        }
+        d[t] = norm[t] + best;
+        p[t] = best_prev;
+    }
+
+    // End at the highest-scoring beat in the last quarter — trailing
+    // frames have had the most context to accumulate score.
+    let start = (n * 3) / 4;
+    let mut end = start;
+    let mut max_d = d[start];
+    for t in start..n {
+        if d[t] > max_d {
+            max_d = d[t];
+            end = t;
+        }
+    }
+
+    let mut beats: Vec<usize> = vec![end];
+    let mut cur = p[end];
+    while cur >= 0 {
+        beats.push(cur as usize);
+        cur = p[cur as usize];
+    }
+    beats.reverse();
+    Some((beats, max_d))
+}
+
+/// BPM from a beat sequence, with parabolic refinement on the local
+/// autocorrelation around the median inter-beat-interval. Without the
+/// refinement, integer-frame quantisation caps precision at ±1 BPM
+/// around the chosen lag.
+fn bpm_from_beats(beats: &[usize], onset: &[f32], frame_rate: f32) -> Option<f32> {
+    if beats.len() < 4 {
+        return None;
+    }
+    let mut ibis: Vec<usize> = beats.windows(2).map(|w| w[1] - w[0]).collect();
+    ibis.sort_unstable();
+    let median_ibi = ibis[ibis.len() / 2];
+    if median_ibi == 0 {
+        return None;
+    }
+    let refined_lag = if median_ibi >= 2 && median_ibi + 1 < onset.len() {
+        let acorr_at = |lag: usize| -> f32 {
+            (0..onset.len().saturating_sub(lag))
+                .map(|i| onset[i] * onset[i + lag])
+                .sum()
+        };
+        let y0 = acorr_at(median_ibi - 1);
+        let y1 = acorr_at(median_ibi);
+        let y2 = acorr_at(median_ibi + 1);
+        median_ibi as f32 + parabolic_offset(y0, y1, y2)
+    } else {
+        median_ibi as f32
+    };
+    if refined_lag <= 0.0 {
+        return None;
+    }
+    Some(frame_rate * 60.0 / refined_lag)
+}
+
 /// Fold BPMs outside `[90, 180]` into that range by doubling/halving.
 pub(crate) fn apply_octave_correction(bpm: f32) -> (f32, Option<f32>) {
     if bpm <= 0.0 {
@@ -338,5 +498,58 @@ mod tests {
     #[test]
     fn consensus_empty_errors() {
         assert!(consensus(&[]).is_err());
+    }
+
+    #[test]
+    fn dp_recovers_125_bpm_when_given_2_3_subrate_target() {
+        // Regression for the "always 167 BPM" failure on melodic-house
+        // tracks: the autocorrelation peak lands on a dotted-beat (3:2)
+        // sub-rate at ~83 BPM, which octave-correction then doubles to ~167.
+        // DP at the 2/3× ratio candidate should recover the true 125 BPM
+        // from an envelope where the *physical* beat is the true periodicity.
+        let sr = 22050u32;
+        let frame_rate = sr as f32 / STFT_HOP as f32;
+        let beat_lag = frame_rate * 60.0 / 125.0; // ≈ 20.67
+
+        let n = 1500usize;
+        let mut onset = vec![0.0f32; n];
+        // Kick on every beat. Real spectral flux is kick-dominated; the
+        // pathological behaviour comes from autocorrelation getting fooled
+        // by the *spacing* of accents, not their amplitude.
+        let mut t = 5.0_f32;
+        while (t as usize) < n {
+            onset[t as usize] = 1.0;
+            t += beat_lag;
+        }
+
+        // Hand DP a target at the 3:2 sub-rate (the wrong autocorrelation
+        // lock). Its 2/3× ratio candidate should find the true beat.
+        let target_bpm = 125.0 * 2.0 / 3.0; // ≈ 83.3 → would correct to 167
+        let bpm = dp_beat_track_bpm(&onset, sr, target_bpm).unwrap();
+        let (bpm, _) = apply_octave_correction(bpm);
+        assert!(
+            (bpm - 125.0).abs() < 3.0,
+            "DP failed to recover 125 from a 3:2 target: got {bpm}"
+        );
+    }
+
+    #[test]
+    fn dp_beat_track_recovers_synthetic_tempo() {
+        // Synthetic onset envelope: spikes every `spacing` frames at
+        // sr=22050, hop=512 (frame_rate=43.066 Hz). spacing=20 frames ≈
+        // 129.2 BPM. Targeting 130 should let the DP recover ~129 from
+        // the median IBI even though the target is slightly off.
+        let frame_rate = 22050.0 / STFT_HOP as f32;
+        let spacing = 20usize;
+        let mut onset = vec![0.0f32; 1000];
+        for t in (5..onset.len()).step_by(spacing) {
+            onset[t] = 1.0;
+        }
+        let bpm = dp_beat_track_bpm(&onset, 22050, 130.0).unwrap();
+        let expected = frame_rate * 60.0 / spacing as f32;
+        assert!(
+            (bpm - expected).abs() < 1.0,
+            "dp recovered {bpm}, expected ~{expected}"
+        );
     }
 }

@@ -35,10 +35,11 @@ function isUnanalysable(err: unknown): boolean {
 export async function analyzeSc(
   trackId: number,
   consensus = false,
+  strong = false,
 ): Promise<BpmResult> {
   try {
     const { token } = await api.getSoundcloudClientToken();
-    return await analyzeScBpm(trackId, token, consensus);
+    return await analyzeScBpm(trackId, token, consensus, strong);
   } catch (err) {
     if (isUnanalysable(err)) {
       throw new TrackUnanalysableError();

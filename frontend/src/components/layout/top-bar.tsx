@@ -11,10 +11,21 @@ import { cn } from "@/lib/utils";
 import { useTopBarContent } from "./top-bar-context";
 
 function useIsFullscreen() {
+  // Initial value stays `false` to match SSR (where `isTauri()` is always
+  // false). The client effect then either subscribes to Tauri window state
+  // or — outside Tauri (web preview, doc screenshots) — pins it to `true`
+  // so the topbar doesn't carry an 80 px gutter reserved for macOS
+  // traffic-light buttons that don't exist.
   const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+      // One-shot client upgrade from the SSR-safe `false`. Not a cascading
+      // render — fires once on mount and never again.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFullscreen(true);
+      return;
+    }
     const w = getCurrentWindow();
     let unlisten: (() => void) | undefined;
 
