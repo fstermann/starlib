@@ -501,6 +501,39 @@ mod tests {
     }
 
     #[test]
+    fn dp_recovers_125_bpm_when_given_2_3_subrate_target() {
+        // Regression for the "always 167 BPM" failure on melodic-house
+        // tracks: the autocorrelation peak lands on a dotted-beat (3:2)
+        // sub-rate at ~83 BPM, which octave-correction then doubles to ~167.
+        // DP at the 2/3× ratio candidate should recover the true 125 BPM
+        // from an envelope where the *physical* beat is the true periodicity.
+        let sr = 22050u32;
+        let frame_rate = sr as f32 / STFT_HOP as f32;
+        let beat_lag = frame_rate * 60.0 / 125.0; // ≈ 20.67
+
+        let n = 1500usize;
+        let mut onset = vec![0.0f32; n];
+        // Kick on every beat. Real spectral flux is kick-dominated; the
+        // pathological behaviour comes from autocorrelation getting fooled
+        // by the *spacing* of accents, not their amplitude.
+        let mut t = 5.0_f32;
+        while (t as usize) < n {
+            onset[t as usize] = 1.0;
+            t += beat_lag;
+        }
+
+        // Hand DP a target at the 3:2 sub-rate (the wrong autocorrelation
+        // lock). Its 2/3× ratio candidate should find the true beat.
+        let target_bpm = 125.0 * 2.0 / 3.0; // ≈ 83.3 → would correct to 167
+        let bpm = dp_beat_track_bpm(&onset, sr, target_bpm).unwrap();
+        let (bpm, _) = apply_octave_correction(bpm);
+        assert!(
+            (bpm - 125.0).abs() < 3.0,
+            "DP failed to recover 125 from a 3:2 target: got {bpm}"
+        );
+    }
+
+    #[test]
     fn dp_beat_track_recovers_synthetic_tempo() {
         // Synthetic onset envelope: spikes every `spacing` frames at
         // sr=22050, hop=512 (frame_rate=43.066 Hz). spacing=20 frames ≈

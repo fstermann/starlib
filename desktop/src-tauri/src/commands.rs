@@ -13,7 +13,7 @@ use tauri::webview::{NewWindowResponse, WebviewWindowBuilder};
 use tauri::{AppHandle, Manager, Runtime, Url, WebviewUrl};
 use tokio::sync::{oneshot, Semaphore};
 
-use crate::bpm::types::AnalysisMode;
+use crate::bpm::types::{AnalysisMode, BeatTracker};
 use crate::bpm::{self, BpmOptions, Confidence};
 
 /// Global bound on concurrent blocking BPM analysis tasks.
@@ -73,10 +73,17 @@ fn to_response(r: bpm::BpmResult) -> BpmResponse {
 ///   toggle. Per-window analysis uses the same algorithm either way.
 ///   Costs roughly 3× CPU for the analyze step (decode only runs once).
 ///   Param name is part of the wire contract; see the frontend `invoke` call.
+/// - `strong`: when `true`, swap the autocorrelation peak picker for the
+///   Ellis 2007 dynamic-programming beat tracker. DP scores 2:3 / 3:2 / 0.5×
+///   / 2× tempo candidates explicitly and picks the one whose beat sequence
+///   captures the most onset energy — fixing the systematic "125 BPM track
+///   reads as 167" pattern caused by dotted/triplet sub-rate locks. Composes
+///   with `consensus`.
 #[tauri::command]
 pub async fn analyze_local_bpm(
     path: String,
     consensus: Option<bool>,
+    strong: Option<bool>,
 ) -> Result<BpmResponse, String> {
     let sem = analysis_semaphore().clone();
     let _permit = sem
@@ -88,6 +95,9 @@ pub async fn analyze_local_bpm(
         let mut options = BpmOptions::default();
         if consensus.unwrap_or(false) {
             options.mode = AnalysisMode::Consensus;
+        }
+        if strong.unwrap_or(false) {
+            options.beat_tracker = BeatTracker::DynamicProgramming;
         }
         let result = bpm::local::analyze_local_file(&PathBuf::from(&path), 30.0, 15.0, &options)
             .map_err(|e| e.to_string())?;
@@ -102,15 +112,22 @@ pub async fn analyze_local_bpm(
 /// The OAuth Client-Credentials token is supplied by the caller; this
 /// command doesn't touch credentials. See
 /// ``backend/api/bpm.py::get_soundcloud_client_token``.
+///
+/// `consensus` and `strong` mirror `analyze_local_bpm` — see that command's
+/// docs.
 #[tauri::command]
 pub async fn analyze_sc_bpm(
     track_id: u64,
     token: String,
     consensus: Option<bool>,
+    strong: Option<bool>,
 ) -> Result<BpmResponse, String> {
     let mut options = BpmOptions::default();
     if consensus.unwrap_or(false) {
         options.mode = AnalysisMode::Consensus;
+    }
+    if strong.unwrap_or(false) {
+        options.beat_tracker = BeatTracker::DynamicProgramming;
     }
     let result = bpm::soundcloud::analyze_sc_track(track_id, &token, &options)
         .await

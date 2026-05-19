@@ -195,18 +195,34 @@ export function useBatchBpmRunner(concurrency: number) {
 
 /** localStorage-backed "use consensus (median-of-3-windows) mode" toggle,
  * shared across the SC and filesystem batch buttons. */
-const STORAGE_KEY = "starlib:bpm:batch:consensus";
+const CONSENSUS_KEY = "starlib:bpm:batch:consensus";
+/** localStorage-backed "use stronger (DP beat-tracker) algorithm" toggle.
+ * Composes orthogonally with the consensus toggle: consensus controls
+ * *which windows* we score, strong controls *which tempo estimator*
+ * scores them. */
+const STRONG_KEY = "starlib:bpm:batch:strong";
 
-export function useConsensusPref(): [boolean, (v: boolean) => void] {
+function usePersistedBool(key: string): [boolean, (v: boolean) => void] {
   const [value, setValue] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(STORAGE_KEY) === "1";
+    return window.localStorage.getItem(key) === "1";
   });
-  const set = useCallback((v: boolean) => {
-    setValue(v);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, v ? "1" : "0");
-    }
-  }, []);
+  const set = useCallback(
+    (v: boolean) => {
+      setValue(v);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(key, v ? "1" : "0");
+      }
+    },
+    [key],
+  );
   return [value, set];
+}
+
+export function useConsensusPref(): [boolean, (v: boolean) => void] {
+  return usePersistedBool(CONSENSUS_KEY);
+}
+
+export function useStrongPref(): [boolean, (v: boolean) => void] {
+  return usePersistedBool(STRONG_KEY);
 }
