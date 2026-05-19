@@ -1,6 +1,6 @@
 "use client";
 
-import { Waves } from "lucide-react";
+import { ChevronDown, Waves } from "lucide-react";
 import React, { useContext, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -10,6 +10,12 @@ import {
 } from "@/components/soundcloud-batch-analyze-button";
 import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { NumberInput } from "@/components/ui/number-input";
 import {
   Popover,
@@ -91,15 +97,17 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
     dispatchBpmUpdate(trackId, bpm);
   }
 
-  async function handleAnalyze(closeOnDone: boolean) {
+  async function handleAnalyze(closeOnDone: boolean, strong = false) {
     if (!isTauri() || !trackId || loading) return;
     setLoading(true);
     try {
-      const result = await analyzeSc(trackId);
+      const result = await analyzeSc(trackId, false, strong);
       const rounded = Math.round(result.bpm);
       await persistBpm(rounded);
       toast.success(
-        `Detected ${rounded} BPM (${result.confidence} confidence)`,
+        `Detected ${rounded} BPM (${result.confidence} confidence${
+          strong ? ", DP" : ""
+        })`,
       );
       if (closeOnDone) setPopoverOpen(false);
     } catch (err) {
@@ -180,16 +188,49 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
               </Button>
             </div>
             {isTauri() && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleAnalyze(true)}
-                disabled={loading || unanalysable || sessionUnplayable}
-                data-testid="sc-bpm-reanalyze"
-              >
-                {loading ? <Spinner /> : <Waves />}
-                Reanalyze
-              </Button>
+              <div className="flex items-stretch gap-px">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleAnalyze(true)}
+                  disabled={loading || unanalysable || sessionUnplayable}
+                  data-testid="sc-bpm-reanalyze"
+                  className="flex-1 rounded-r-none"
+                >
+                  {loading ? <Spinner /> : <Waves />}
+                  Reanalyze
+                </Button>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={loading || unanalysable || sessionUnplayable}
+                      aria-label="Reanalyze options"
+                      data-testid="sc-bpm-reanalyze-menu"
+                      className="rounded-l-none border-l-0 px-1.5"
+                    >
+                      <ChevronDown className="size-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-60">
+                    <DropdownMenuItem
+                      onClick={() => handleAnalyze(true, true)}
+                      data-testid="sc-bpm-reanalyze-strong"
+                      className="items-start py-2"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium">
+                          Reanalyze (stronger)
+                        </span>
+                        <span className="text-muted-foreground text-xs">
+                          DP beat tracker — try this if BPM seems wrong
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
           </div>
         </PopoverContent>

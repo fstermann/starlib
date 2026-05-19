@@ -19,6 +19,7 @@ import { isTauri } from "@/lib/tauri";
 import {
   useBatchBpmRunner,
   useConsensusPref,
+  useStrongPref,
 } from "@/lib/use-batch-bpm-runner";
 
 interface Props {
@@ -65,6 +66,7 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
   const { running, total, done, failed, cancel, start } =
     useBatchBpmRunner(CONCURRENCY);
   const [consensus, setConsensus] = useConsensusPref();
+  const [strong, setStrong] = useStrongPref();
 
   const run = useCallback(async () => {
     if (!isTauri()) return;
@@ -103,7 +105,7 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
       queue,
       async (trackId) => {
         try {
-          const result = await analyzeSc(trackId, consensus);
+          const result = await analyzeSc(trackId, consensus, strong);
           await api.saveSoundcloudBpm(trackId, result.bpm);
           dispatchBpmUpdate(trackId, Math.round(result.bpm));
         } catch (err) {
@@ -130,7 +132,11 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
     } else {
       toast.success(`Analyzed ${completed} track${completed === 1 ? "" : "s"}`);
     }
-  }, [tracks, consensus, start]);
+  }, [tracks, consensus, strong, start]);
+
+  const modeSuffix = [consensus ? "consensus" : null, strong ? "strong" : null]
+    .filter(Boolean)
+    .join(" · ");
 
   if (!isTauri()) return null;
 
@@ -161,13 +167,13 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
         className={className}
         onClick={run}
         title={
-          consensus
-            ? "Analyze visible tracks in consensus mode (~3× slower per track)"
+          modeSuffix
+            ? `Analyze visible tracks (${modeSuffix})`
             : "Analyze BPM for all visible tracks that don't have one"
         }
       >
         <Waves className="size-3.5" />
-        Analyze BPMs{consensus ? " · consensus" : ""}
+        Analyze BPMs{modeSuffix ? ` · ${modeSuffix}` : ""}
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -180,13 +186,32 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
             <ChevronDown className="size-3.5" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-72">
           <DropdownMenuCheckboxItem
             checked={consensus}
             onCheckedChange={setConsensus}
+            data-testid="batch-analyze-consensus"
+            className="items-start py-2"
           >
-            Consensus mode (median of 3 windows — more robust on tracks with
-            intros/breakdowns)
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Consensus mode</span>
+              <span className="text-muted-foreground text-xs">
+                Median of 3 windows — robust to intros &amp; breakdowns
+              </span>
+            </div>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={strong}
+            onCheckedChange={setStrong}
+            data-testid="batch-analyze-strong"
+            className="items-start py-2"
+          >
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Stronger algorithm</span>
+              <span className="text-muted-foreground text-xs">
+                DP beat tracker — fixes dotted/triplet sub-rate locks
+              </span>
+            </div>
           </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>

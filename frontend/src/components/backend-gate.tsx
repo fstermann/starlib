@@ -89,6 +89,7 @@ export function BackendGate({ children }: { children: React.ReactNode }) {
         {phase !== "done" && (
           <motion.div
             key="hyperspace"
+            data-testid="backend-gate-loader"
             className={`bg-background fixed inset-0 z-100 overflow-hidden ${
               phase === "exit" ? "pointer-events-none" : ""
             }`}

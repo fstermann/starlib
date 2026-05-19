@@ -10,6 +10,10 @@ import {
   useState,
 } from "react";
 
+import {
+  SC_BPM_UPDATED_EVENT,
+  type ScBpmUpdatedDetail,
+} from "@/components/soundcloud-batch-analyze-button";
 import { useIsScUnplayable } from "@/lib/sc-unplayable";
 
 export interface PlayerTrack {
@@ -156,6 +160,31 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackKey]);
 
+  // Stable numeric SC track id for the currently loaded track, or null when
+  // it isn't a SoundCloud track. Reused by the BPM-sync and unplayable-skip
+  // effects below.
+  const currentScId = (() => {
+    const k = currentTrack?.streamRefreshKey;
+    if (k == null) return null;
+    const n = typeof k === "number" ? k : Number(k);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  })();
+
+  // Keep `currentBpm` in sync with manual edits/reanalysis from the SC table
+  // cells. Without this the pitcher keeps using the stale value and the
+  // playback rate doesn't track the user's correction.
+  useEffect(() => {
+    if (currentScId == null) return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<ScBpmUpdatedDetail>).detail;
+      if (detail?.trackId === currentScId) {
+        setCurrentBpmState(detail.bpm);
+      }
+    };
+    window.addEventListener(SC_BPM_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(SC_BPM_UPDATED_EVENT, handler);
+  }, [currentScId]);
+
   const setQueueState = useCallback((tracks: PlayerTrack[], index: number) => {
     queueRef.current = tracks;
     queueIndexRef.current = index;
@@ -275,12 +304,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   // after a 403). The unplayable store dedupes repeated `markScUnplayable`
   // calls for the same id, and the effect only re-runs on (track, flag)
   // transitions — so concurrent writers can't trigger a double-skip.
-  const currentScId = (() => {
-    const k = currentTrack?.streamRefreshKey;
-    if (k == null) return null;
-    const n = typeof k === "number" ? k : Number(k);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  })();
   const currentUnplayable = useIsScUnplayable(currentScId);
   useEffect(() => {
     if (!currentUnplayable || !currentTrack) return;
