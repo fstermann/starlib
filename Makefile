@@ -1,6 +1,6 @@
 .PHONY: help dev tauri-dev backend frontend docs icons screenshot build run \
 	lint lint-fe lint-be format format-check typecheck \
-	test test-fe test-be test-e2e check generate
+	test test-fe test-be test-e2e check generate install-js
 
 ROOT := $(CURDIR)
 FRONTEND_DIR := $(ROOT)/frontend
@@ -10,6 +10,8 @@ ASSETS_DIR := $(ROOT)/assets
 TRACKS_CACHE := $(ROOT)/.cache/screenshot-tracks.json
 ICON_SOURCE ?= $(ASSETS_DIR)/starlib-dark-grad.png
 APP_PATH := $(DESKTOP_DIR)/src-tauri/target/release/bundle/macos/Starlib.app
+FRONTEND_STAMP := $(FRONTEND_DIR)/node_modules/.install-stamp
+DESKTOP_STAMP := $(DESKTOP_DIR)/node_modules/.install-stamp
 
 help:
 	@echo "Starlib Makefile targets:"
@@ -46,9 +48,21 @@ dev:
 		(cd $(FRONTEND_DIR) && npm run dev) & \
 		wait
 
-tauri-dev:
+tauri-dev: install-js
 	@echo "==> Starting Tauri dev window (builds the sidecar first time)..."
 	cd $(DESKTOP_DIR) && npm run desktop:dev
+
+install-js: $(FRONTEND_STAMP) $(DESKTOP_STAMP)
+
+$(FRONTEND_STAMP): $(FRONTEND_DIR)/package-lock.json $(FRONTEND_DIR)/package.json
+	@echo "==> Installing frontend dependencies..."
+	cd $(FRONTEND_DIR) && npm ci
+	@touch $@
+
+$(DESKTOP_STAMP): $(DESKTOP_DIR)/package-lock.json $(DESKTOP_DIR)/package.json
+	@echo "==> Installing desktop dependencies..."
+	cd $(DESKTOP_DIR) && npm ci
+	@touch $@
 
 backend:
 	uv run python -m backend.main
