@@ -122,9 +122,7 @@ test.describe("Track editor — suggestions", () => {
   }) => {
     await setupEditor(page);
     // The suggestion button shows up next to the input.
-    await expect(
-      page.locator('[data-suggestion-field="title"]'),
-    ).toBeVisible();
+    await expect(page.locator('[data-suggestion-field="title"]')).toBeVisible();
     await expect(
       page.locator('[data-suggestion-field="artist"]'),
     ).toBeVisible();
@@ -138,9 +136,7 @@ test.describe("Track editor — suggestions", () => {
     // auto-copy removal: SC suggestions never silently flow into fields.
     await setupEditor(page);
     const titleInput = page.locator('input[placeholder="Title"]');
-    await expect(
-      page.locator('[data-suggestion-field="title"]'),
-    ).toBeVisible();
+    await expect(page.locator('[data-suggestion-field="title"]')).toBeVisible();
     await expect(titleInput).not.toHaveValue("Suggested Title");
   });
 
@@ -247,9 +243,9 @@ test.describe("Track editor — suggestions", () => {
       "Some Title",
     );
     // Title input has no suggestion button rendered.
-    await expect(
-      page.locator('[data-suggestion-field="title"]'),
-    ).toHaveCount(0);
+    await expect(page.locator('[data-suggestion-field="title"]')).toHaveCount(
+      0,
+    );
     // Artist still has one.
     await expect(
       page.locator('[data-suggestion-field="artist"]'),

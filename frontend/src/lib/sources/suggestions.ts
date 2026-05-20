@@ -130,7 +130,9 @@ export function useTrackSuggestions({
         // strict comparator does not.
         const filtered: SuggestionMap = {};
         const parsed = JSON.parse(currentKey) as Record<string, unknown>;
-        for (const [field, candidates] of Object.entries(response.fields ?? {})) {
+        for (const [field, candidates] of Object.entries(
+          response.fields ?? {},
+        )) {
           const cur = _NORMALIZE(parsed[field]);
           const kept = candidates.filter(
             (c: FieldSuggestion) => _NORMALIZE(c.value) !== cur,
@@ -140,7 +142,9 @@ export function useTrackSuggestions({
         setSuggestions(filtered);
       } catch (err) {
         if ((err as DOMException)?.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "Failed to load suggestions");
+        setError(
+          err instanceof Error ? err.message : "Failed to load suggestions",
+        );
         setSuggestions({});
       } finally {
         setLoading(false);
