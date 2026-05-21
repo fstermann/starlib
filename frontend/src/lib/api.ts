@@ -90,7 +90,8 @@ export interface BrowseParams {
     | "folder"
     | "mtime"
     | "file_format"
-    | "file_size";
+    | "file_size"
+    | "duration";
   sort_order?: "asc" | "desc";
 }
 

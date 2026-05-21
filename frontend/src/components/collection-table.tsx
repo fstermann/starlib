@@ -20,7 +20,11 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { formatFileSize, serializeComment } from "@/app/library/utils";
+import {
+  formatDuration,
+  formatFileSize,
+  serializeComment,
+} from "@/app/library/utils";
 import {
   SortableColumnHeader,
   SortableHeaderCell,
@@ -98,7 +102,8 @@ type FieldKey =
   | "folder"
   | "soundcloud_linked"
   | "file_format"
-  | "file_size";
+  | "file_size"
+  | "duration";
 
 /** Fields shown in the table — editable or read-only. Order here is the
  * default render order; user reorders persist via the column-prefs store.
@@ -133,6 +138,7 @@ const COLUMN_FIELDS: {
   { key: "release_date", label: "Release", defaultWidth: 96, editable: true },
   { key: "file_format", label: "Format", defaultWidth: 64, editable: false },
   { key: "file_size", label: "Size", defaultWidth: 72, editable: false },
+  { key: "duration", label: "Duration", defaultWidth: 72, editable: false },
 ];
 
 type ResolvedField = (typeof COLUMN_FIELDS)[number] & { width: number };
@@ -152,6 +158,7 @@ export const FILESYSTEM_COLUMN_DEFS: import("@/lib/columns/types").ColumnDef[] =
     { id: "release_date", header: "Release" },
     { id: "file_format", header: "Format" },
     { id: "file_size", header: "Size" },
+    { id: "duration", header: "Duration" },
   ];
 
 /** Fields not stored in the API — remix composition helpers (not remixer itself, which is a real field) */
@@ -206,6 +213,7 @@ const SORTABLE_FIELDS: Partial<Record<FieldKey, SortBy>> = {
   release_date: "release_date",
   file_format: "file_format",
   file_size: "file_size",
+  duration: "duration",
 };
 
 function getMissingAttributes(
@@ -529,6 +537,19 @@ function EditRow({
               title={bytes ? `${bytes.toLocaleString()} bytes` : ""}
             >
               {bytes ? formatFileSize(bytes) : "—"}
+            </span>
+          );
+        }
+        if (f.key === "duration") {
+          const secs = item.duration ?? null;
+          return (
+            <span
+              key={f.key}
+              data-duration-cell
+              className="text-muted-foreground min-w-0 shrink-0 truncate text-right text-xs tabular-nums"
+              style={{ width: f.width }}
+            >
+              {secs != null ? formatDuration(secs) : "—"}
             </span>
           );
         }

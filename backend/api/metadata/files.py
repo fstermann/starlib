@@ -46,7 +46,7 @@ router = APIRouter()
 # unbounded ffmpeg conversions in parallel.
 _apply_rules_semaphore = asyncio.Semaphore(2)
 
-_SORT_BY_PATTERN = "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$"
+_SORT_BY_PATTERN = "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size|duration)$"
 
 
 def _row_value(row, key, default=None):
