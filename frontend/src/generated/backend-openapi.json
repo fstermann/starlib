@@ -686,12 +686,65 @@
             }
           },
           {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Formats"
+            }
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Min"
+            }
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Max"
+            }
+          },
+          {
             "name": "sort_by",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -875,6 +928,59 @@
                 }
               ],
               "title": "Bpm Max"
+            }
+          },
+          {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Formats"
+            }
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Min"
+            }
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Max"
             }
           }
         ],
@@ -1166,12 +1272,71 @@
             "description": "Filter by SoundCloud link presence"
           },
           {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by file format (e.g. mp3, flac)",
+              "title": "File Formats"
+            },
+            "description": "Filter by file format (e.g. mp3, flac)"
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum file size in bytes",
+              "title": "Size Min"
+            },
+            "description": "Minimum file size in bytes"
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum file size in bytes",
+              "title": "Size Max"
+            },
+            "description": "Maximum file size in bytes"
+          },
+          {
             "name": "sort_by",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -1354,6 +1519,65 @@
               "title": "Bpm Max"
             },
             "description": "Active BPM maximum"
+          },
+          {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active file-format filters",
+              "title": "File Formats"
+            },
+            "description": "Active file-format filters"
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active file-size minimum (bytes)",
+              "title": "Size Min"
+            },
+            "description": "Active file-size minimum (bytes)"
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active file-size maximum (bytes)",
+              "title": "Size Max"
+            },
+            "description": "Active file-size maximum (bytes)"
           }
         ],
         "responses": {
@@ -3537,6 +3761,48 @@
           }
         }
       }
+    },
+    "/api/suggestions/track": {
+      "post": {
+        "tags": [
+          "suggestions"
+        ],
+        "summary": "Suggest Track Metadata",
+        "description": "Compute ranked metadata suggestions for a single local track.",
+        "operationId": "suggest_track_metadata_api_suggestions_track_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4302,6 +4568,52 @@
         "title": "FetchFromDownloadsResponse",
         "description": "Result of a Fetch-from-Downloads operation."
       },
+      "FieldSuggestion": {
+        "properties": {
+          "value": {
+            "title": "Value"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "sc_title",
+              "sc_metadata_artist",
+              "sc_uploader",
+              "sc_genre",
+              "sc_release_date",
+              "sc_artwork_url",
+              "sc_bpm",
+              "sc_key",
+              "sc_tag",
+              "filename_parse",
+              "tag_existing",
+              "derived",
+              "list_normalized",
+              "list_aggregated"
+            ],
+            "title": "Source"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "source",
+          "confidence",
+          "label"
+        ],
+        "title": "FieldSuggestion",
+        "description": "A single ranked candidate value for one editor field."
+      },
       "FileInfoResponse": {
         "properties": {
           "file_path": {
@@ -4434,6 +4746,44 @@
               }
             ],
             "title": "Bpm Max"
+          },
+          "file_formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "File Formats",
+            "default": []
+          },
+          "file_format_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "File Format Counts",
+            "default": {}
+          },
+          "file_size_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Size Min"
+          },
+          "file_size_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Size Max"
           }
         },
         "type": "object",
@@ -5266,6 +5616,206 @@
         "title": "RulesetsResponse",
         "description": "Response listing all rulesets."
       },
+      "SCTrackPayload": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "metadata_artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Artist"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "key_signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Signature"
+          },
+          "tag_list": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag List"
+          },
+          "label_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "artwork_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Url"
+          },
+          "permalink_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permalink Url"
+          },
+          "urn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urn"
+          },
+          "release_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Year"
+          },
+          "release_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Month"
+          },
+          "release_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Day"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SCUserPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "SCTrackPayload",
+        "description": "Loose subset of the SoundCloud OpenAPI track shape used by the engine.\n\nThe frontend sends the raw `SCTrack` (the OpenAPI generated type); we only\npull the fields suggesters need and ignore the rest. Adding a new\nsuggestion source means: add the field here + add a suggester."
+      },
+      "SCUserPayload": {
+        "properties": {
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "type": "object",
+        "title": "SCUserPayload",
+        "description": "Loose subset of the SC user object used during suggestion."
+      },
       "SessionCookieRequest": {
         "properties": {
           "oauth_token": {
@@ -5408,6 +5958,50 @@
         ],
         "title": "StreamUrlResponse",
         "description": "Signed HLS stream URL for a SoundCloud track."
+      },
+      "SuggestionRequest": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "sc_track": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SCTrackPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current": {
+            "$ref": "#/components/schemas/TrackInfoUpdateRequest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path"
+        ],
+        "title": "SuggestionRequest",
+        "description": "Request body for the suggestion endpoint.\n\nParameters\n----------\nfile_path:\n    Absolute or root-relative path of the local track being edited. The\n    server uses it for filename parsing and (in the future) reading\n    existing on-disk tags as a suggestion source.\nsc_track:\n    Optional SoundCloud track payload. When ``None``, only filename- and\n    tag-based suggestions are produced.\ncurrent:\n    In-flight editor state. Suggestions equal to a current value are\n    suppressed so the UI never proposes a no-op."
+      },
+      "SuggestionResponse": {
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/FieldSuggestion"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Fields"
+          }
+        },
+        "type": "object",
+        "title": "SuggestionResponse",
+        "description": "Map of field name \u2192 ranked candidates (top first)."
       },
       "SystemPlaylistSummary": {
         "properties": {

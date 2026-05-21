@@ -2,32 +2,36 @@
 
 import { format, isValid, parse } from "date-fns";
 import {
-  Brackets,
   CalendarIcon,
-  CaseSensitive,
   Check,
   ChevronDown,
+  Combine,
+  Eraser,
   Image as ImageIcon,
   Link2,
   MoveRight,
+  Parentheses,
   RotateCcw,
+  Scissors,
   Search,
-  Sparkles,
   Trash2,
-  Users,
-  Wand2,
+  Type,
+  Undo2,
   Waves,
   Workflow,
   X,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { LogoSpinner } from "@/components/logo-spinner";
 import { RULE_ICON_COLORS, RULE_ICONS } from "@/components/rulesets/rule-card";
 import { RulesetPreview } from "@/components/rulesets/ruleset-preview";
 import { Spinner } from "@/components/spinner";
+import { AcceptAllSuggestionsButton } from "@/components/track-editor/accept-all-button";
+import { FieldActionsMenu } from "@/components/track-editor/field-actions-menu";
+import { SuggestionButton } from "@/components/track-editor/suggestion-button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,6 +70,10 @@ import {
 import { applyRulesGate } from "@/lib/apply-rules-gate";
 import { onRulesetsChanged } from "@/lib/rulesets-events";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
+import {
+  useTrackSuggestions,
+  type SuggestionField,
+} from "@/lib/sources/suggestions";
 import type { SourceTrack } from "@/lib/sources/types";
 import {
   cleanArtist,
@@ -83,11 +91,9 @@ import { parseComment, serializeComment } from "./utils";
 
 export interface AutoActions {
   autoCopyArtwork: boolean;
-  autoCopyMetadata: boolean;
   autoClean: boolean;
   autoTitelize: boolean;
   autoRemoveOriginalMix: boolean;
-  autoApplyScResults: boolean;
 }
 
 export interface TrackEditorProps {
@@ -299,48 +305,29 @@ export function TrackEditor({
     };
   }, [selectedFile.file_path]);
 
-  // Apply source metadata to the form when a source track is selected.
-  // autoApplyScResults overrides existing values; autoCopyMetadata only fills
-  // empty fields; when both are off this effect is a no-op (user must click
-  // "Apply SC Metadata" manually).
+  // Selecting an SC track only sets the link + clears the pending flag.
+  // Field values are never written without the user clicking a suggestion
+  // (see ``useTrackSuggestions`` and ``SuggestionButton`` below) — copying
+  // verbatim is still available via the per-field "copy from SC" buttons.
   useLayoutEffect(() => {
     setScQueryPending(false);
-
     if (!selectedScTrack) return;
-    if (!autoActions.autoApplyScResults && !autoActions.autoCopyMetadata)
-      return;
-
     const meta = activeSource.extractMetadata(selectedScTrack);
-    const hardOverride = autoActions.autoApplyScResults;
-
-    setFormData((prev) => {
-      const pick = (existing: string, incoming: string | undefined) =>
-        hardOverride ? incoming || existing : existing || incoming || "";
+    setCommentData((prev) => {
+      // If prev already points at this exact SC track, preserve it so any
+      // permalink formatting saved on the file is kept verbatim. Otherwise
+      // adopt the newly selected track — `prev || meta` would otherwise pin
+      // the link to the first match and silently ignore later selections.
+      if (prev.soundcloud_id && prev.soundcloud_id === meta.source_id) {
+        return prev;
+      }
       return {
-        ...prev,
-        title: pick(prev.title, meta.title || selectedScTrack.title),
-        artist: pick(prev.artist, meta.artist || selectedScTrack.username),
-        genre: pick(prev.genre, meta.genre || selectedScTrack.genre),
-        release_date: pick(prev.release_date, meta.release_date),
+        soundcloud_id: meta.source_id,
+        soundcloud_permalink: meta.source_permalink,
       };
     });
-
-    setCommentData((prev) => ({
-      soundcloud_id: hardOverride
-        ? meta.source_id
-        : prev.soundcloud_id || meta.source_id,
-      soundcloud_permalink: hardOverride
-        ? meta.source_permalink
-        : prev.soundcloud_permalink || meta.source_permalink,
-    }));
     setScLinkEnabled(true);
-  }, [
-    selectedScTrack,
-    autoActions.autoCopyMetadata,
-    autoActions.autoApplyScResults,
-    activeSource,
-    setScQueryPending,
-  ]);
+  }, [selectedScTrack, activeSource, setScQueryPending]);
 
   // Show source artwork in preview when no existing artwork
   useEffect(() => {
@@ -549,8 +536,6 @@ export function TrackEditor({
     }
   };
 
-  const scArtistOptions = selectedScTrack?.artist_options ?? [];
-
   const handleBuildTitleFromRemix = () => {
     if (!formData.original_artist || !formData.remixer) return;
     const rawTitle = formData.title.replace(/\(.*?\)/g, "").trim();
@@ -570,8 +555,11 @@ export function TrackEditor({
     }
   };
 
+  // ``displayedFormData`` is the same as ``formData`` outside of preview mode,
+  // so this stays right both during normal editing and while hovering the
+  // bulk-accept button.
   const isChanged = (field: FormFieldKey) =>
-    formData[field] !== originalFormData[field];
+    displayedFormData[field] !== originalFormData[field];
 
   const scBusy =
     (scSearching || scQueryPending) &&
@@ -617,6 +605,95 @@ export function TrackEditor({
     });
     if (field === "release_year") setReleaseYearTouched(true);
   };
+
+  // Snapshot of the editor state we send to the suggestion engine. Wrapped in
+  // useMemo with a primitive-stable dependency list so we don't trigger a
+  // new fetch on every render — the hook itself debounces between fetches.
+  const suggestionsCurrent = useMemo(
+    () => ({
+      title: formData.title || null,
+      artist: formData.artist || null,
+      genre: formData.genre || null,
+      bpm: formData.bpm ? parseInt(formData.bpm, 10) || null : null,
+      key: formData.key || null,
+      original_artist: formData.original_artist || null,
+      remixer: formData.remixer || null,
+      mix_name: formData.mix_name || null,
+      release_date: formData.release_date || null,
+      release_year: formData.release_year
+        ? parseInt(formData.release_year, 10) || null
+        : null,
+      user_comment: formData.user_comment || null,
+    }),
+    [formData],
+  );
+
+  const handleAcceptSuggestion = (field: SuggestionField, value: unknown) => {
+    if (field === "artwork_url") {
+      // Artwork lands in pendingArtworkData (base64) via the existing proxy
+      // pipeline so save-time semantics are unchanged.
+      if (typeof value !== "string" || !value) return;
+      setArtworkUrl(value);
+      api
+        .proxyImage(value)
+        .then((blob) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const b64 = (reader.result as string).split(",")[1];
+            setPendingArtworkData(b64);
+          };
+          reader.readAsDataURL(blob);
+        })
+        .catch(() => {
+          toast.error("Failed to fetch artwork");
+        });
+      return;
+    }
+    // Numeric fields go in as strings to match the existing form-state shape.
+    handleFormChange(field as FormFieldKey, value == null ? "" : String(value));
+  };
+
+  const {
+    suggestions: trackSuggestions,
+    accept: acceptSuggestion,
+    acceptAll: acceptAllSuggestions,
+    pendingCount: suggestionsPendingCount,
+  } = useTrackSuggestions({
+    filePath: trackInfo?.file_path ?? null,
+    scTrack: (selectedScTrack?.raw as never) ?? null,
+    current: suggestionsCurrent,
+    onAccept: handleAcceptSuggestion,
+    enabled: !!trackInfo,
+  });
+
+  // Hover-preview state: while the user hovers Accept All, the form inputs
+  // *display* the suggested values without actually touching ``formData``.
+  // Leaving the button instantly restores the live state.
+  const [previewActive, setPreviewActive] = useState(false);
+
+  const previewMap = useMemo<Record<string, string> | null>(() => {
+    if (!previewActive) return null;
+    const out: Record<string, string> = {};
+    for (const field of Object.keys(trackSuggestions)) {
+      if (!(field in emptyFormData)) continue; // artwork_url etc. handled separately
+      const top = trackSuggestions[field]?.[0];
+      if (!top) continue;
+      out[field] = top.value == null ? "" : String(top.value);
+    }
+    return out;
+    // emptyFormData is a literal shape, safe to omit from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewActive, trackSuggestions]);
+
+  const displayedFormData = previewMap
+    ? ({ ...formData, ...previewMap } as typeof formData)
+    : formData;
+
+  const displayedArtworkUrl = (() => {
+    if (!previewActive) return artworkUrl;
+    const top = trackSuggestions.artwork_url?.[0];
+    return typeof top?.value === "string" ? top.value : artworkUrl;
+  })();
 
   // Mirror every formData diff vs originalFormData into the shared
   // pendingFieldEdits map so the batch table reflects editor changes —
@@ -896,18 +973,28 @@ export function TrackEditor({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Panel header: filename + close */}
-      <div className="border-border flex h-10 shrink-0 items-center justify-between border-b px-3">
+      {/* Panel header: filename + accept-all + close */}
+      <div className="border-border flex h-10 shrink-0 items-center justify-between gap-2 border-b px-3">
         <span className="text-muted-foreground mr-2 min-w-0 truncate text-xs">
           {trackInfo?.file_name ?? selectedFile.file_name}
         </span>
-        <button
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground hover:bg-accent flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
-          title="Close editor"
-        >
-          <X className="size-3" />
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {trackInfo && suggestionsPendingCount > 0 && (
+            <AcceptAllSuggestionsButton
+              pendingCount={suggestionsPendingCount}
+              onAcceptAll={acceptAllSuggestions}
+              onPreviewStart={() => setPreviewActive(true)}
+              onPreviewEnd={() => setPreviewActive(false)}
+            />
+          )}
+          <button
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground hover:bg-accent flex size-5 cursor-pointer items-center justify-center rounded-md transition-colors"
+            title="Close editor"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
       </div>
 
       {/* Error */}
@@ -1009,7 +1096,7 @@ export function TrackEditor({
                   </div>
                 </div>
                 <div
-                  className={`relative size-21.5 overflow-hidden rounded-lg border ${pendingArtworkData ? "border-warning/70" : "border-border"} ${artworkUrl ? "cursor-zoom-in" : "cursor-pointer"}`}
+                  className={`relative size-21.5 overflow-hidden rounded-lg border ${pendingArtworkData || (previewActive && displayedArtworkUrl !== artworkUrl) ? "border-warning/70" : "border-border"} ${artworkUrl ? "cursor-zoom-in" : "cursor-pointer"}`}
                   onClick={() => {
                     if (artworkUrl) {
                       setArtworkPreviewOpen(true);
@@ -1025,9 +1112,9 @@ export function TrackEditor({
                     }
                   }}
                 >
-                  {artworkUrl ? (
+                  {displayedArtworkUrl ? (
                     <img
-                      src={artworkUrl}
+                      src={displayedArtworkUrl}
                       alt="Artwork"
                       className="size-full object-cover"
                     />
@@ -1048,78 +1135,79 @@ export function TrackEditor({
                     <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
                       Title
                     </span>
-                    <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+                    <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100">
+                      <SuggestionButton
+                        field="title"
+                        suggestions={trackSuggestions.title}
+                        currentValue={formData.title}
+                        onAccept={(s) => acceptSuggestion("title", s)}
+                      />
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         onClick={() => handleCopyFromSc("title")}
                         disabled={!selectedScTrack}
                         title="Copy from SoundCloud"
                       >
-                        <activeSource.Icon className="size-3" />
+                        <activeSource.Icon className="size-3.5" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={handleCleanTitle}
-                        title="Clean"
-                      >
-                        <Sparkles />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => {
-                          if (!formData.title) return;
-                          const t = titelize(formData.title);
-                          if (t !== formData.title)
-                            setFormData({ ...formData, title: t });
-                        }}
-                        title="Titelize"
-                      >
-                        <CaseSensitive />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={handleBuildTitleFromRemix}
-                        disabled={!canBuildTitleFromRemix}
-                        title="Build from remix"
-                      >
-                        <Wand2 />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={handleRemoveParenthesis}
-                        title="Remove brackets"
-                      >
-                        <Brackets />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={handleIsolateTitle}
-                        title="Isolate"
-                      >
-                        <Trash2 />
-                      </Button>
+                      <FieldActionsMenu
+                        field="title"
+                        actions={[
+                          {
+                            id: "title-clean",
+                            label: "Clean",
+                            icon: Eraser,
+                            onSelect: handleCleanTitle,
+                          },
+                          {
+                            id: "title-titelize",
+                            label: "Titelize",
+                            icon: Type,
+                            onSelect: () => {
+                              if (!formData.title) return;
+                              const t = titelize(formData.title);
+                              if (t !== formData.title)
+                                setFormData({ ...formData, title: t });
+                            },
+                          },
+                          {
+                            id: "title-remove-brackets",
+                            label: "Remove brackets",
+                            icon: Parentheses,
+                            onSelect: handleRemoveParenthesis,
+                          },
+                          {
+                            id: "title-isolate",
+                            label: "Isolate",
+                            icon: Scissors,
+                            onSelect: handleIsolateTitle,
+                          },
+                          {
+                            id: "title-build-from-remix",
+                            label: "Build from remix",
+                            icon: Combine,
+                            onSelect: handleBuildTitleFromRemix,
+                            disabled: !canBuildTitleFromRemix,
+                          },
+                        ]}
+                      />
                       {isChanged("title") && (
                         <Button
                           variant="ghost"
-                          size="icon-xs"
+                          size="icon-sm"
                           onClick={() =>
                             handleFormChange("title", originalFormData.title)
                           }
                           title="Reset"
                         >
-                          <RotateCcw />
+                          <Undo2 />
                         </Button>
                       )}
                     </div>
                   </div>
                   <Input
-                    value={formData.title}
+                    value={displayedFormData.title}
                     onChange={(e) => handleFormChange("title", e.target.value)}
                     className={`h-8 text-xs ${isChanged("title") ? "border-warning/70" : ""}`}
                     placeholder="Title"
@@ -1132,84 +1220,60 @@ export function TrackEditor({
                     <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
                       Artist
                     </span>
-                    <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+                    <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100">
+                      <SuggestionButton
+                        field="artist"
+                        suggestions={trackSuggestions.artist}
+                        currentValue={formData.artist}
+                        onAccept={(s) => acceptSuggestion("artist", s)}
+                      />
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         onClick={() => handleCopyFromSc("artist")}
                         disabled={!selectedScTrack}
                         title="Copy from SoundCloud"
                       >
-                        <activeSource.Icon className="size-3" />
+                        <activeSource.Icon className="size-3.5" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={handleCleanArtist}
-                        title="Clean"
-                      >
-                        <Sparkles />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => {
-                          if (!formData.artist) return;
-                          const t = titelize(formData.artist);
-                          if (t !== formData.artist)
-                            setFormData({ ...formData, artist: t });
-                        }}
-                        title="Titelize"
-                      >
-                        <CaseSensitive />
-                      </Button>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            disabled={
-                              !selectedScTrack || !scArtistOptions.length
-                            }
-                            title="Artist options"
-                          >
-                            <Users />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-48 p-2">
-                          <div className="space-y-1">
-                            {scArtistOptions.map((artist) => (
-                              <Button
-                                key={artist}
-                                variant="ghost"
-                                size="sm"
-                                className="w-full justify-start text-xs"
-                                onClick={() =>
-                                  setFormData({ ...formData, artist })
-                                }
-                              >
-                                {artist}
-                              </Button>
-                            ))}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
+                      <FieldActionsMenu
+                        field="artist"
+                        actions={[
+                          {
+                            id: "artist-clean",
+                            label: "Clean",
+                            icon: Eraser,
+                            onSelect: handleCleanArtist,
+                          },
+                          {
+                            id: "artist-titelize",
+                            label: "Titelize",
+                            icon: Type,
+                            onSelect: () => {
+                              if (!formData.artist) return;
+                              const t = titelize(formData.artist);
+                              if (t !== formData.artist)
+                                setFormData({ ...formData, artist: t });
+                            },
+                          },
+                        ]}
+                      />
                       {isChanged("artist") && (
                         <Button
                           variant="ghost"
-                          size="icon-xs"
+                          size="icon-sm"
                           onClick={() =>
                             handleFormChange("artist", originalFormData.artist)
                           }
                           title="Reset"
                         >
-                          <RotateCcw />
+                          <Undo2 />
                         </Button>
                       )}
                     </div>
                   </div>
                   <Input
-                    value={formData.artist}
+                    value={displayedFormData.artist}
                     onChange={(e) => handleFormChange("artist", e.target.value)}
                     className={`h-8 text-xs ${isChanged("artist") ? "border-warning/70" : ""}`}
                     placeholder="Artist"
@@ -1226,45 +1290,54 @@ export function TrackEditor({
                   <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
                     Genre
                   </span>
-                  <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+                  <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100">
+                    <SuggestionButton
+                      field="genre"
+                      suggestions={trackSuggestions.genre}
+                      currentValue={formData.genre}
+                      onAccept={(s) => acceptSuggestion("genre", s)}
+                    />
                     <Button
                       variant="ghost"
-                      size="icon-xs"
+                      size="icon-sm"
                       onClick={() => handleCopyFromSc("genre")}
                       disabled={!selectedScTrack}
-                      title="Copy from SC"
+                      title="Copy from SoundCloud"
                     >
-                      <activeSource.Icon className="size-3" />
+                      <activeSource.Icon className="size-3.5" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => {
-                        if (!formData.genre) return;
-                        const t = titelize(formData.genre);
-                        if (t !== formData.genre)
-                          setFormData({ ...formData, genre: t });
-                      }}
-                      title="Titelize"
-                    >
-                      <CaseSensitive />
-                    </Button>
+                    <FieldActionsMenu
+                      field="genre"
+                      actions={[
+                        {
+                          id: "genre-titelize",
+                          label: "Titelize",
+                          icon: Type,
+                          onSelect: () => {
+                            if (!formData.genre) return;
+                            const t = titelize(formData.genre);
+                            if (t !== formData.genre)
+                              setFormData({ ...formData, genre: t });
+                          },
+                        },
+                      ]}
+                    />
                     {isChanged("genre") && (
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         onClick={() =>
                           handleFormChange("genre", originalFormData.genre)
                         }
                         title="Reset"
                       >
-                        <RotateCcw />
+                        <Undo2 />
                       </Button>
                     )}
                   </div>
                 </div>
                 <Input
-                  value={formData.genre}
+                  value={displayedFormData.genre}
                   onChange={(e) => handleFormChange("genre", e.target.value)}
                   className={`h-8 text-xs ${isChanged("genre") ? "border-warning/70" : ""}`}
                   placeholder="—"
@@ -1277,11 +1350,17 @@ export function TrackEditor({
                   <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
                     BPM
                   </span>
-                  <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+                  <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100">
+                    <SuggestionButton
+                      field="bpm"
+                      suggestions={trackSuggestions.bpm}
+                      currentValue={formData.bpm}
+                      onAccept={(s) => acceptSuggestion("bpm", s)}
+                    />
                     {isTauri() && trackInfo && (
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         onClick={async () => {
                           setBpmAnalyzing(true);
                           try {
@@ -1312,19 +1391,19 @@ export function TrackEditor({
                     {isChanged("bpm") && (
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         onClick={() =>
                           handleFormChange("bpm", originalFormData.bpm)
                         }
                         title="Reset"
                       >
-                        <RotateCcw />
+                        <Undo2 />
                       </Button>
                     )}
                   </div>
                 </div>
                 <NumberInput
-                  value={formData.bpm}
+                  value={displayedFormData.bpm}
                   onChange={(v) => handleFormChange("bpm", v)}
                   min={0}
                   max={400}
@@ -1347,20 +1426,26 @@ export function TrackEditor({
                   <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
                     Release Date
                   </span>
-                  <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+                  <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100">
+                    <SuggestionButton
+                      field="release_date"
+                      suggestions={trackSuggestions.release_date}
+                      currentValue={formData.release_date}
+                      onAccept={(s) => acceptSuggestion("release_date", s)}
+                    />
                     <Button
                       variant="ghost"
-                      size="icon-xs"
+                      size="icon-sm"
                       onClick={() => handleCopyFromSc("release_date")}
                       disabled={!selectedScTrack}
-                      title="Copy from SC"
+                      title="Copy from SoundCloud"
                     >
-                      <activeSource.Icon className="size-3" />
+                      <activeSource.Icon className="size-3.5" />
                     </Button>
                     {isChanged("release_date") && (
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         onClick={() =>
                           handleFormChange(
                             "release_date",
@@ -1369,7 +1454,7 @@ export function TrackEditor({
                         }
                         title="Reset"
                       >
-                        <RotateCcw />
+                        <Undo2 />
                       </Button>
                     )}
                   </div>
@@ -1379,13 +1464,13 @@ export function TrackEditor({
                     <Button
                       variant="outline"
                       size="sm"
-                      className={`bg-card dark:bg-muted h-8 w-full justify-start px-2.5 text-left text-xs font-normal ${isChanged("release_date") ? "border-warning/70 dark:border-warning/70" : "dark:border-input"} ${!formData.release_date ? "text-muted-foreground" : "text-foreground"}`}
+                      className={`bg-card dark:bg-muted h-8 w-full justify-start px-2.5 text-left text-xs font-normal ${isChanged("release_date") ? "border-warning/70 dark:border-warning/70" : "dark:border-input"} ${!displayedFormData.release_date ? "text-muted-foreground" : "text-foreground"}`}
                     >
                       <CalendarIcon className="mr-1 shrink-0" />
-                      {formData.release_date ? (
+                      {displayedFormData.release_date ? (
                         format(
                           parse(
-                            formData.release_date,
+                            displayedFormData.release_date,
                             "yyyy-MM-dd",
                             new Date(),
                           ),
@@ -1400,16 +1485,16 @@ export function TrackEditor({
                     <Calendar
                       mode="single"
                       selected={
-                        formData.release_date &&
+                        displayedFormData.release_date &&
                         isValid(
                           parse(
-                            formData.release_date,
+                            displayedFormData.release_date,
                             "yyyy-MM-dd",
                             new Date(),
                           ),
                         )
                           ? parse(
-                              formData.release_date,
+                              displayedFormData.release_date,
                               "yyyy-MM-dd",
                               new Date(),
                             )
@@ -1443,11 +1528,17 @@ export function TrackEditor({
                       <span className="text-warning/90 ml-0.5">*</span>
                     )}
                   </span>
-                  <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+                  <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100">
+                    <SuggestionButton
+                      field="release_year"
+                      suggestions={trackSuggestions.release_year}
+                      currentValue={formData.release_year}
+                      onAccept={(s) => acceptSuggestion("release_year", s)}
+                    />
                     {isChanged("release_year") && (
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         onClick={() => {
                           setReleaseYearTouched(false);
                           handleFormChange(
@@ -1457,14 +1548,14 @@ export function TrackEditor({
                         }}
                         title="Reset"
                       >
-                        <RotateCcw />
+                        <Undo2 />
                       </Button>
                     )}
                   </div>
                 </div>
                 <Input
                   type="number"
-                  value={formData.release_year}
+                  value={displayedFormData.release_year}
                   onChange={(e) =>
                     handleFormChange("release_year", e.target.value)
                   }
@@ -1479,23 +1570,29 @@ export function TrackEditor({
                   <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
                     Key
                   </span>
-                  <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+                  <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100">
+                    <SuggestionButton
+                      field="key"
+                      suggestions={trackSuggestions.key}
+                      currentValue={formData.key}
+                      onAccept={(s) => acceptSuggestion("key", s)}
+                    />
                     {isChanged("key") && (
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         onClick={() =>
                           handleFormChange("key", originalFormData.key)
                         }
                         title="Reset"
                       >
-                        <RotateCcw />
+                        <Undo2 />
                       </Button>
                     )}
                   </div>
                 </div>
                 <Input
-                  value={formData.key}
+                  value={displayedFormData.key}
                   onChange={(e) => handleFormChange("key", e.target.value)}
                   className={`h-8 text-xs ${isChanged("key") ? "border-warning/70" : ""}`}
                   placeholder="—"
@@ -1511,66 +1608,44 @@ export function TrackEditor({
                   <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
                     Original Artist
                   </span>
-                  <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => {
-                        if (!formData.original_artist) return;
-                        const t = cleanArtist(formData.original_artist);
-                        if (t !== formData.original_artist)
-                          handleFormChange("original_artist", t);
-                      }}
-                      title="Clean"
-                    >
-                      <Sparkles />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => {
-                        if (!formData.original_artist) return;
-                        const t = titelize(formData.original_artist);
-                        if (t !== formData.original_artist)
-                          handleFormChange("original_artist", t);
-                      }}
-                      title="Titelize"
-                    >
-                      <CaseSensitive />
-                    </Button>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          disabled={!selectedScTrack || !scArtistOptions.length}
-                          title="Artist options"
-                        >
-                          <Users />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-48 p-2">
-                        <div className="space-y-1">
-                          {scArtistOptions.map((artist) => (
-                            <Button
-                              key={artist}
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start text-xs"
-                              onClick={() =>
-                                handleFormChange("original_artist", artist)
-                              }
-                            >
-                              {artist}
-                            </Button>
-                          ))}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                  <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100">
+                    <SuggestionButton
+                      field="original_artist"
+                      suggestions={trackSuggestions.original_artist}
+                      currentValue={formData.original_artist}
+                      onAccept={(s) => acceptSuggestion("original_artist", s)}
+                    />
+                    <FieldActionsMenu
+                      field="original_artist"
+                      actions={[
+                        {
+                          id: "original_artist-clean",
+                          label: "Clean",
+                          icon: Eraser,
+                          onSelect: () => {
+                            if (!formData.original_artist) return;
+                            const t = cleanArtist(formData.original_artist);
+                            if (t !== formData.original_artist)
+                              handleFormChange("original_artist", t);
+                          },
+                        },
+                        {
+                          id: "original_artist-titelize",
+                          label: "Titelize",
+                          icon: Type,
+                          onSelect: () => {
+                            if (!formData.original_artist) return;
+                            const t = titelize(formData.original_artist);
+                            if (t !== formData.original_artist)
+                              handleFormChange("original_artist", t);
+                          },
+                        },
+                      ]}
+                    />
                     {isChanged("original_artist") && (
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         onClick={() =>
                           handleFormChange(
                             "original_artist",
@@ -1579,13 +1654,13 @@ export function TrackEditor({
                         }
                         title="Reset"
                       >
-                        <RotateCcw />
+                        <Undo2 />
                       </Button>
                     )}
                   </div>
                 </div>
                 <Input
-                  value={formData.original_artist}
+                  value={displayedFormData.original_artist}
                   onChange={(e) =>
                     handleFormChange("original_artist", e.target.value)
                   }
@@ -1600,78 +1675,56 @@ export function TrackEditor({
                   <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
                     Remixer
                   </span>
-                  <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => {
-                        if (!formData.remixer) return;
-                        const t = cleanArtist(formData.remixer);
-                        if (t !== formData.remixer)
-                          handleFormChange("remixer", t);
-                      }}
-                      title="Clean"
-                    >
-                      <Sparkles />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => {
-                        if (!formData.remixer) return;
-                        const t = titelize(formData.remixer);
-                        if (t !== formData.remixer)
-                          handleFormChange("remixer", t);
-                      }}
-                      title="Titelize"
-                    >
-                      <CaseSensitive />
-                    </Button>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          disabled={!selectedScTrack || !scArtistOptions.length}
-                          title="Artist options"
-                        >
-                          <Users />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-48 p-2">
-                        <div className="space-y-1">
-                          {scArtistOptions.map((artist) => (
-                            <Button
-                              key={artist}
-                              variant="ghost"
-                              size="sm"
-                              className="w-full justify-start text-xs"
-                              onClick={() =>
-                                handleFormChange("remixer", artist)
-                              }
-                            >
-                              {artist}
-                            </Button>
-                          ))}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                  <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100">
+                    <SuggestionButton
+                      field="remixer"
+                      suggestions={trackSuggestions.remixer}
+                      currentValue={formData.remixer}
+                      onAccept={(s) => acceptSuggestion("remixer", s)}
+                    />
+                    <FieldActionsMenu
+                      field="remixer"
+                      actions={[
+                        {
+                          id: "remixer-clean",
+                          label: "Clean",
+                          icon: Eraser,
+                          onSelect: () => {
+                            if (!formData.remixer) return;
+                            const t = cleanArtist(formData.remixer);
+                            if (t !== formData.remixer)
+                              handleFormChange("remixer", t);
+                          },
+                        },
+                        {
+                          id: "remixer-titelize",
+                          label: "Titelize",
+                          icon: Type,
+                          onSelect: () => {
+                            if (!formData.remixer) return;
+                            const t = titelize(formData.remixer);
+                            if (t !== formData.remixer)
+                              handleFormChange("remixer", t);
+                          },
+                        },
+                      ]}
+                    />
                     {isChanged("remixer") && (
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         onClick={() =>
                           handleFormChange("remixer", originalFormData.remixer)
                         }
                         title="Reset"
                       >
-                        <RotateCcw />
+                        <Undo2 />
                       </Button>
                     )}
                   </div>
                 </div>
                 <Input
-                  value={formData.remixer}
+                  value={displayedFormData.remixer}
                   onChange={(e) => handleFormChange("remixer", e.target.value)}
                   className={`h-8 text-xs ${isChanged("remixer") ? "border-warning/70" : ""}`}
                   placeholder="—"
@@ -1685,12 +1738,18 @@ export function TrackEditor({
                 <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
                   Mix
                 </span>
-                <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-hover:scale-100 group-hover:opacity-100">
+                <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100">
+                  <SuggestionButton
+                    field="mix_name"
+                    suggestions={trackSuggestions.mix_name}
+                    currentValue={formData.mix_name}
+                    onAccept={(s) => acceptSuggestion("mix_name", s)}
+                  />
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
                         variant="ghost"
-                        size="icon-xs"
+                        size="icon-sm"
                         title="Predefined mix types"
                       >
                         <ChevronDown />
@@ -1722,19 +1781,19 @@ export function TrackEditor({
                   {isChanged("mix_name") && (
                     <Button
                       variant="ghost"
-                      size="icon-xs"
+                      size="icon-sm"
                       onClick={() =>
                         handleFormChange("mix_name", originalFormData.mix_name)
                       }
                       title="Reset"
                     >
-                      <RotateCcw />
+                      <Undo2 />
                     </Button>
                   )}
                 </div>
               </div>
               <Input
-                value={formData.mix_name}
+                value={displayedFormData.mix_name}
                 onChange={(e) => handleFormChange("mix_name", e.target.value)}
                 className={`h-8 text-xs ${isChanged("mix_name") ? "border-warning/70" : ""}`}
                 placeholder="—"
@@ -1747,11 +1806,11 @@ export function TrackEditor({
                 <span className="text-2xs text-muted-foreground font-medium tracking-wider uppercase">
                   Comment
                 </span>
-                <div className="flex scale-75 gap-0.5 opacity-0 transition-all duration-150 ease-out group-focus-within:scale-100 group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+                <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100">
                   {isChanged("user_comment") && (
                     <Button
                       variant="ghost"
-                      size="icon-xs"
+                      size="icon-sm"
                       onClick={() =>
                         handleFormChange(
                           "user_comment",
@@ -1760,13 +1819,13 @@ export function TrackEditor({
                       }
                       title="Reset"
                     >
-                      <RotateCcw />
+                      <Undo2 />
                     </Button>
                   )}
                 </div>
               </div>
               <textarea
-                value={formData.user_comment}
+                value={displayedFormData.user_comment}
                 onChange={(e) =>
                   handleFormChange("user_comment", e.target.value)
                 }

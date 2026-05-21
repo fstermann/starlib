@@ -1667,6 +1667,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/suggestions/track": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Track Metadata
+         * @description Compute ranked metadata suggestions for a single local track.
+         */
+        post: operations["suggest_track_metadata_api_suggestions_track_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2035,6 +2055,23 @@ export interface components {
              * @default []
              */
             errors: string[];
+        };
+        /**
+         * FieldSuggestion
+         * @description A single ranked candidate value for one editor field.
+         */
+        FieldSuggestion: {
+            /** Value */
+            value: unknown;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "sc_title" | "sc_metadata_artist" | "sc_uploader" | "sc_genre" | "sc_release_date" | "sc_artwork_url" | "sc_bpm" | "sc_key" | "sc_tag" | "filename_parse" | "tag_existing" | "derived" | "list_normalized" | "list_aggregated";
+            /** Confidence */
+            confidence: number;
+            /** Label */
+            label: string;
         };
         /**
          * FileInfoResponse
@@ -2492,6 +2529,55 @@ export interface components {
             active_ruleset_id: string;
         };
         /**
+         * SCTrackPayload
+         * @description Loose subset of the SoundCloud OpenAPI track shape used by the engine.
+         *
+         *     The frontend sends the raw `SCTrack` (the OpenAPI generated type); we only
+         *     pull the fields suggesters need and ignore the rest. Adding a new
+         *     suggestion source means: add the field here + add a suggester.
+         */
+        SCTrackPayload: {
+            /** Title */
+            title?: string | null;
+            /** Metadata Artist */
+            metadata_artist?: string | null;
+            /** Genre */
+            genre?: string | null;
+            /** Bpm */
+            bpm?: number | null;
+            /** Key Signature */
+            key_signature?: string | null;
+            /** Tag List */
+            tag_list?: string | null;
+            /** Label Name */
+            label_name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Artwork Url */
+            artwork_url?: string | null;
+            /** Permalink Url */
+            permalink_url?: string | null;
+            /** Urn */
+            urn?: string | null;
+            /** Release Year */
+            release_year?: number | null;
+            /** Release Month */
+            release_month?: number | null;
+            /** Release Day */
+            release_day?: number | null;
+            /** Created At */
+            created_at?: string | null;
+            user?: components["schemas"]["SCUserPayload"] | null;
+        };
+        /**
+         * SCUserPayload
+         * @description Loose subset of the SC user object used during suggestion.
+         */
+        SCUserPayload: {
+            /** Username */
+            username?: string | null;
+        };
+        /**
          * SessionCookieRequest
          * @description Web-session ``oauth_token`` captured from the SoundCloud cookie jar.
          *
@@ -2569,6 +2655,39 @@ export interface components {
             url: string;
             /** Expires At */
             expires_at: string;
+        };
+        /**
+         * SuggestionRequest
+         * @description Request body for the suggestion endpoint.
+         *
+         *     Parameters
+         *     ----------
+         *     file_path:
+         *         Absolute or root-relative path of the local track being edited. The
+         *         server uses it for filename parsing and (in the future) reading
+         *         existing on-disk tags as a suggestion source.
+         *     sc_track:
+         *         Optional SoundCloud track payload. When ``None``, only filename- and
+         *         tag-based suggestions are produced.
+         *     current:
+         *         In-flight editor state. Suggestions equal to a current value are
+         *         suppressed so the UI never proposes a no-op.
+         */
+        SuggestionRequest: {
+            /** File Path */
+            file_path: string;
+            sc_track?: components["schemas"]["SCTrackPayload"] | null;
+            current?: components["schemas"]["TrackInfoUpdateRequest"];
+        };
+        /**
+         * SuggestionResponse
+         * @description Map of field name → ranked candidates (top first).
+         */
+        SuggestionResponse: {
+            /** Fields */
+            fields?: {
+                [key: string]: components["schemas"]["FieldSuggestion"][];
+            };
         };
         /**
          * SystemPlaylistSummary
@@ -3181,6 +3300,9 @@ export interface operations {
                 date_from?: string | null;
                 date_to?: string | null;
                 has_soundcloud_id?: boolean | null;
+                file_formats?: string[] | null;
+                size_min?: number | null;
+                size_max?: number | null;
                 sort_by?: string;
                 sort_order?: string;
                 /** @description Page number */
@@ -3225,6 +3347,9 @@ export interface operations {
                 keys?: string[] | null;
                 bpm_min?: number | null;
                 bpm_max?: number | null;
+                file_formats?: string[] | null;
+                size_min?: number | null;
+                size_max?: number | null;
             };
             header?: never;
             path?: never;
@@ -3309,6 +3434,12 @@ export interface operations {
                 date_to?: string | null;
                 /** @description Filter by SoundCloud link presence */
                 has_soundcloud_id?: boolean | null;
+                /** @description Filter by file format (e.g. mp3, flac) */
+                file_formats?: string[] | null;
+                /** @description Minimum file size in bytes */
+                size_min?: number | null;
+                /** @description Maximum file size in bytes */
+                size_max?: number | null;
                 sort_by?: string;
                 sort_order?: string;
                 /** @description Page number */
@@ -3357,6 +3488,12 @@ export interface operations {
                 bpm_min?: number | null;
                 /** @description Active BPM maximum */
                 bpm_max?: number | null;
+                /** @description Active file-format filters */
+                file_formats?: string[] | null;
+                /** @description Active file-size minimum (bytes) */
+                size_min?: number | null;
+                /** @description Active file-size maximum (bytes) */
+                size_max?: number | null;
             };
             header?: never;
             path: {
@@ -5015,6 +5152,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClientTokenResponse"];
+                };
+            };
+        };
+    };
+    suggest_track_metadata_api_suggestions_track_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
