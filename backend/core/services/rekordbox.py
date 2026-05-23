@@ -1,0 +1,198 @@
+"""Rekordbox master DB access.
+
+Lazy, cached wrapper around :mod:`pyrekordbox`. The Rekordbox 6 ``master.db`` is
+encrypted; :class:`pyrekordbox.Rekordbox6Database` resolves the key from a
+local Rekordbox installation. If no installation is present (or the library is
+missing) the helpers in this module raise :class:`RekordboxUnavailable` so the
+API layer can return a clean 503.
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+from dataclasses import dataclass
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+class RekordboxUnavailable(RuntimeError):
+    """Raised when the master DB cannot be opened on this machine."""
+
+
+@dataclass(frozen=True)
+class RekordboxPlaylist:
+    id: str
+    name: str
+    parent_id: str | None
+    is_folder: bool
+    is_smart: bool
+    track_count: int
+
+
+@dataclass(frozen=True)
+class RekordboxTrack:
+    id: str
+    title: str
+    artist: str | None
+    album: str | None
+    genre: str | None
+    bpm: float | None
+    key: str | None
+    duration_seconds: int | None
+    file_path: str | None
+    comment: str | None
+    soundcloud_id: int | None
+
+
+_db_lock = threading.Lock()
+_db: Any | None = None
+_failed_reason: str | None = None
+
+
+def _open_db() -> Any:
+    """Return a cached :class:`pyrekordbox.Rekordbox6Database` instance."""
+    global _db, _failed_reason
+    if _db is not None:
+        return _db
+    with _db_lock:
+        if _db is not None:
+            return _db
+        if _failed_reason is not None:
+            raise RekordboxUnavailable(_failed_reason)
+        try:
+            from pyrekordbox import Rekordbox6Database
+        except Exception as exc:  # pragma: no cover - import-time failure
+            _failed_reason = f"pyrekordbox import failed: {exc}"
+            raise RekordboxUnavailable(_failed_reason) from exc
+        try:
+            _db = Rekordbox6Database()
+        except Exception as exc:
+            _failed_reason = f"Could not open Rekordbox master.db: {exc}"
+            logger.warning(_failed_reason)
+            raise RekordboxUnavailable(_failed_reason) from exc
+        return _db
+
+
+def is_available() -> bool:
+    """Return ``True`` if the master DB can be opened on this machine."""
+    try:
+        _open_db()
+    except RekordboxUnavailable:
+        return False
+    return True
+
+
+def _extract_soundcloud_id(comment: str | None) -> int | None:
+    """Extract a SoundCloud track id stored in the track comment.
+
+    Convention used by the export-to-SoundCloud flow: the SoundCloud track id
+    is written into the Rekordbox ``Commnt`` field. Accepts plain numerics or
+    ``sc:<id>`` / ``soundcloud:<id>`` style prefixes.
+    """
+    if not comment:
+        return None
+    text = comment.strip()
+    for prefix in ("soundcloud:", "sc:"):
+        if text.lower().startswith(prefix):
+            text = text[len(prefix) :].strip()
+            break
+    if text.isdigit():
+        return int(text)
+    return None
+
+
+def list_playlists() -> list[RekordboxPlaylist]:
+    """Return all playlists (folders + leaves) as a flat list.
+
+    Rekordbox encodes playlist kind in ``DjmdPlaylist.Attribute``: ``1`` = folder,
+    ``4`` = smart playlist; everything else is a regular static playlist. For
+    smart playlists the ``Songs`` relationship is empty (the contents are
+    resolved by the saved query), so the track count comes from a counting
+    query instead.
+    """
+    db = _open_db()
+    out: list[RekordboxPlaylist] = []
+    for pl in db.get_playlist():
+        parent = getattr(pl, "ParentID", None)
+        parent_id = str(parent) if parent and str(parent) != "root" else None
+        attribute = int(getattr(pl, "Attribute", 0) or 0)
+        is_folder = attribute == 1
+        is_smart = attribute == 4 or bool(getattr(pl, "is_smart_playlist", False))
+
+        if is_folder:
+            track_count = 0
+        elif is_smart:
+            try:
+                track_count = db.get_playlist_contents(pl).count()
+            except Exception:  # pragma: no cover - defensive against schema drift
+                logger.exception("Could not count smart playlist %s", pl.ID)
+                track_count = 0
+        else:
+            track_count = len(getattr(pl, "Songs", None) or [])
+
+        out.append(
+            RekordboxPlaylist(
+                id=str(pl.ID),
+                name=str(pl.Name),
+                parent_id=parent_id,
+                is_folder=is_folder,
+                is_smart=is_smart,
+                track_count=track_count,
+            )
+        )
+    return out
+
+
+def _row_to_track(row: Any) -> RekordboxTrack:
+    artist = getattr(row, "Artist", None)
+    album = getattr(row, "Album", None)
+    genre = getattr(row, "Genre", None)
+    key = getattr(row, "Key", None)
+    comment = getattr(row, "Commnt", None)
+    bpm_raw = getattr(row, "BPM", None)
+    # Rekordbox stores BPM scaled by 100 as an integer.
+    bpm = float(bpm_raw) / 100.0 if bpm_raw else None
+    return RekordboxTrack(
+        id=str(row.ID),
+        title=str(getattr(row, "Title", "") or ""),
+        artist=getattr(artist, "Name", None) if artist else None,
+        album=getattr(album, "Name", None) if album else None,
+        genre=getattr(genre, "Name", None) if genre else None,
+        bpm=bpm,
+        key=getattr(key, "ScaleName", None) if key else None,
+        duration_seconds=getattr(row, "Length", None),
+        file_path=getattr(row, "FolderPath", None),
+        comment=str(comment) if comment else None,
+        soundcloud_id=_extract_soundcloud_id(str(comment) if comment else None),
+    )
+
+
+def list_playlist_tracks(playlist_id: str) -> list[RekordboxTrack]:
+    """Return tracks contained in a single playlist.
+
+    Static playlists are walked in Rekordbox track order. Smart playlists
+    delegate to :meth:`Rekordbox6Database.get_playlist_contents`, which
+    evaluates the saved query for us.
+    """
+    db = _open_db()
+    pl = db.get_playlist(ID=playlist_id)
+    if pl is None:
+        return []
+    attribute = int(getattr(pl, "Attribute", 0) or 0)
+    is_smart = attribute == 4 or bool(getattr(pl, "is_smart_playlist", False))
+    if is_smart:
+        rows = db.get_playlist_contents(pl).all()
+        return [_row_to_track(r) for r in rows]
+    songs = sorted(getattr(pl, "Songs", []) or [], key=lambda s: getattr(s, "TrackNo", 0))
+    return [_row_to_track(s.Content) for s in songs if getattr(s, "Content", None)]
+
+
+def list_all_tracks(limit: int | None = None) -> list[RekordboxTrack]:
+    """Return all tracks in the collection."""
+    db = _open_db()
+    rows = db.get_content()
+    if limit is not None:
+        rows = rows.limit(limit)
+    return [_row_to_track(r) for r in rows]
