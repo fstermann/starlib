@@ -1,4 +1,11 @@
-import { CalendarDays, Compass, FolderOpen, Heart, Search } from "lucide-react";
+import {
+  CalendarDays,
+  Compass,
+  Disc3,
+  FolderOpen,
+  Heart,
+  Search,
+} from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
 import { LibraryIcon } from "@/components/icons/library-icon";
@@ -21,7 +28,7 @@ export const NAV_LINKS: NavLink[] = [
     href: "/library",
     label: "Library",
     icon: LibraryIcon,
-    keywords: ["tracks", "filesystem", "soundcloud", "likes"],
+    keywords: ["tracks", "filesystem", "soundcloud", "likes", "rekordbox"],
   },
   {
     href: "/weekly",
@@ -56,6 +63,12 @@ export const QUICK_JUMPS: NavLink[] = [
     label: "Library: SoundCloud — Search",
     icon: Search,
     keywords: ["find", "tracks"],
+  },
+  {
+    href: "/library?source=rekordbox",
+    label: "Library: Rekordbox",
+    icon: Disc3,
+    keywords: ["rekordbox", "playlists", "pioneer", "dj"],
   },
   {
     href: "/weekly",

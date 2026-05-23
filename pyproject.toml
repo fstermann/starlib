@@ -24,6 +24,7 @@ dependencies = [
     "alembic>=1.13",
     "anthropic>=0.102.0",
     "keyring>=25.0.0",
+    "pyrekordbox>=0.4.0",
 ]
 
 [dependency-groups]
