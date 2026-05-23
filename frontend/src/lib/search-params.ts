@@ -14,6 +14,7 @@ export const SORT_FIELDS = [
   "mtime",
   "file_format",
   "file_size",
+  "duration",
 ] as const;
 export const SORT_ORDERS = ["asc", "desc"] as const;
 
