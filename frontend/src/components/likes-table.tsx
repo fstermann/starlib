@@ -17,12 +17,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Ban,
-  ChevronDown,
-  ChevronsUpDown,
-  ChevronUp,
   Download,
   FolderCheck,
   GripVertical,
@@ -33,16 +29,16 @@ import * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  SortableColumnHeader,
-  SortableHeaderCell,
-} from "@/components/columns/sortable-columns";
-import {
   SoundcloudBpmCacheContext,
   SoundcloudBpmCell,
 } from "@/components/soundcloud-bpm-cell";
 import { SoundcloudLikeButton } from "@/components/soundcloud-like-button";
 import { SoundcloudRowPlayButton } from "@/components/soundcloud-row-play-button";
 import { SourceProfileAvatar } from "@/components/source-profile-avatar";
+import {
+  TrackTable,
+  type TrackTableColumn,
+} from "@/components/track-table/track-table";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
@@ -376,22 +372,20 @@ export const LIKES_COLUMN_DEFS: ColumnDef[] = LIKES_COLUMNS.filter(
   required: c.required,
 }));
 
-function SortIcon({
-  col,
-  sortBy,
-  sortOrder,
-}: {
-  col: SortKey;
-  sortBy: SortKey | null;
-  sortOrder: SortOrder;
-}) {
-  if (col !== sortBy) return <ChevronsUpDown className="size-3 opacity-30" />;
-  return sortOrder === "asc" ? (
-    <ChevronUp className="text-primary size-3" />
-  ) : (
-    <ChevronDown className="text-primary size-3" />
-  );
-}
+const LIKES_COLUMNS_BY_ID = new Map(LIKES_COLUMNS.map((c) => [c.id, c]));
+
+/** Projection of LIKES_COLUMNS into TrackTable's column shape. TrackTable owns
+ *  identity, ordering, widths, and the sortable header chrome; the renderRow
+ *  body looks each column back up via LIKES_COLUMNS_BY_ID for its renderBody. */
+const TRACK_TABLE_COLUMNS: TrackTableColumn[] = LIKES_COLUMNS.map((c) => ({
+  id: c.id,
+  header: c.header,
+  defaultWidth: c.defaultWidth,
+  sortKey: c.sortKey,
+  required: c.required,
+  className: c.cellClassName,
+  renderHeader: c.renderHeader,
+}));
 
 function formatDuration(ms: number | undefined): string {
   if (ms == null) return "—";
@@ -751,7 +745,12 @@ export function LikesTable({
     },
     [isColumnVisible],
   );
-  const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
+  // Reference column list used by the DragOverlay (which lives outside
+  // TrackTable). TrackTable's renderRow body uses its own resolved
+  // visibleColumns (which can pick up an in-progress resize via live widths);
+  // a drag overlay rendered during a *resize* is not possible in practice
+  // (row DnD and column resize use different sensors), so a single stable
+  // projection here is fine.
   const visibleColumns = React.useMemo<ResolvedLikesCol[]>(() => {
     const byId = new Map(LIKES_COLUMNS.map((c) => [c.id, c]));
     const seen = new Set<string>();
@@ -770,13 +769,12 @@ export function LikesTable({
       .filter((c) => colVisible(c.id))
       .map((c) => ({
         ...c,
-        width: liveWidths[c.id] ?? columnWidths?.[c.id] ?? c.defaultWidth,
+        width: columnWidths?.[c.id] ?? c.defaultWidth,
       }));
-  }, [columnOrder, colVisible, columnWidths, liveWidths]);
+  }, [columnOrder, colVisible, columnWidths]);
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const scrollParentRef = useRef<HTMLDivElement>(null);
   const lastSelectedIndexRef = useRef<number | null>(null);
 
   const sortedTracks = useMemo(() => {
@@ -892,33 +890,23 @@ export function LikesTable({
     onReorderTracks(nextIds);
   }
 
-  // React Compiler can't memoize TanStack Virtual's returned functions safely; skip.
+  // Variable row height: expanded rows render an inline description, so the
+  // estimator returns a taller value for the currently-expanded row.
+  const estimateRowSize = useCallback(
+    (index: number) => {
+      const track = sortedTracks[index];
+      const id = track ? extractId(track) : 0;
+      if (id !== expandedId) return ROW_HEIGHT;
+      if (!track?.description) return ROW_HEIGHT;
+      return ROW_HEIGHT + 16 + DESCRIPTION_HEIGHT;
+    },
+    [sortedTracks, expandedId],
+  );
 
-  const virtualizer = useVirtualizer({
-    count: sortedTracks.length,
-    getScrollElement: () => scrollParentRef.current,
-    // Key rows by track identity so cell state (analyzed BPM, expanded, etc.)
-    // doesn't leak when the underlying tracks change — sort, reorder, or
-    // playlist switch would otherwise reuse the same cell instance for a
-    // different track and show its prior state on the wrong row.
-    getItemKey: useCallback(
-      (index: number) => sortedTracks[index]?.urn ?? `__idx_${index}`,
-      [sortedTracks],
-    ),
-    estimateSize: useCallback(
-      (index: number) => {
-        const track = sortedTracks[index];
-        const id = track ? extractId(track) : 0;
-        if (id !== expandedId) return ROW_HEIGHT;
-        if (!track?.description) return ROW_HEIGHT;
-        return ROW_HEIGHT + 16 + DESCRIPTION_HEIGHT;
-      },
-      [sortedTracks, expandedId],
-    ),
-    overscan: 12,
-  });
-
-  function handleSort(col: SortKey) {
+  // TrackTable's onSort fires with a string (the column's sortKey). LikesCol's
+  // sortKey is the typed SortKey, so the cast is safe here.
+  function handleSort(key: string) {
+    const col = key as SortKey;
     if (col !== sortBy) {
       setSortBy(col);
       setSortOrder("asc");
@@ -935,7 +923,6 @@ export function LikesTable({
     setExpandedId((prev) => (prev === id ? null : id));
   }
 
-  const virtualItems = virtualizer.getVirtualItems();
   const someSelected = selectedIds.size > 0;
   const allSelected =
     sortedTracks.length > 0 &&
@@ -944,218 +931,146 @@ export function LikesTable({
       return id != null && selectedIds.has(id);
     });
 
+  const table = (
+    <TrackTable<SCTrack>
+      items={sortedTracks}
+      columns={TRACK_TABLE_COLUMNS}
+      estimateRowSize={estimateRowSize}
+      getItemKey={(index, item) => item?.urn ?? `__idx_${index}`}
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      onSort={handleSort}
+      columnOrder={columnOrder}
+      onColumnOrderChange={onColumnOrderChange}
+      columnWidths={columnWidths}
+      onColumnWidthChange={onColumnWidthChange}
+      onColumnWidthReset={onColumnWidthReset}
+      isColumnVisible={colVisible}
+      headerClassName="gap-2 px-3"
+      renderHeaderLead={() => (
+        <>
+          {reorderable && <div className="size-4 shrink-0" aria-hidden />}
+          <div
+            className="flex w-6 shrink-0 items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Checkbox
+              checked={
+                allSelected ? true : someSelected ? "indeterminate" : false
+              }
+              onCheckedChange={(checked) =>
+                checked ? onSelectAll() : onDeselectAll()
+              }
+              aria-label="Select all"
+              className={cn(
+                "size-3.5 cursor-pointer",
+                "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
+                allSelected &&
+                  "data-[state=checked]:bg-primary data-[state=checked]:border-primary",
+              )}
+            />
+          </div>
+          <div className="size-7 shrink-0" aria-hidden />
+          <div className="size-6 shrink-0" aria-hidden />
+        </>
+      )}
+      renderRow={({ item, index, visibleColumns: tableCols }) => {
+        if (!item) return null;
+        const track = item;
+        const id = extractId(track);
+        const sortableId = reorderable
+          ? (track.urn ?? `__idx_${index}`)
+          : undefined;
+        // Project TrackTable's resolved columns back into LikesCol shape so
+        // the row keeps its existing renderBody-per-column logic.
+        const rowCols: ResolvedLikesCol[] = tableCols
+          .map((col) => {
+            const lc = LIKES_COLUMNS_BY_ID.get(col.id);
+            if (!lc) return null;
+            return { ...lc, width: col.width };
+          })
+          .filter((v): v is ResolvedLikesCol => v !== null);
+        return (
+          <TrackRow
+            sortableId={sortableId}
+            track={track}
+            isSelected={selectedIds.has(id)}
+            isExpanded={expandedId === id}
+            inCollection={collectionIds?.has(id) ?? false}
+            isLiked={likedIds?.has(id) ?? track.user_favorite === true}
+            isNew={
+              newTrackUrns
+                ? track.urn
+                  ? newTrackUrns.has(track.urn)
+                  : false
+                : undefined
+            }
+            onToggleSelect={(shiftKey) => {
+              if (shiftKey && lastSelectedIndexRef.current !== null) {
+                const start = Math.min(lastSelectedIndexRef.current, index);
+                const end = Math.max(lastSelectedIndexRef.current, index);
+                const rangeIds = sortedTracks
+                  .slice(start, end + 1)
+                  .map(extractId)
+                  .filter(Boolean);
+                onRangeSelect(rangeIds);
+              } else {
+                onToggleSelect(id);
+                lastSelectedIndexRef.current = index;
+              }
+            }}
+            onExpand={() => handleExpand(track)}
+            onStartPlay={() => handleStartPlay(index)}
+            visibleColumns={rowCols}
+          />
+        );
+      }}
+    />
+  );
+
   return (
     <SoundcloudBpmCacheContext.Provider value={bpmCache}>
-      <div className="flex h-full min-h-0 flex-col">
-        {/* Scrollable area — single container owns both axes so header and
-            rows share one horizontal scroll context and stay aligned. */}
-        <div
-          ref={scrollParentRef}
-          className="min-h-0 flex-1 overflow-auto overscroll-contain"
+      {reorderable ? (
+        <DndContext
+          sensors={dndSensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleReorderDragStart}
+          onDragEnd={handleReorderDragEnd}
+          onDragCancel={() => setActiveDragId(null)}
         >
-          <div className="w-max min-w-full">
-            {/* Header */}
-            <div
-              role="row"
-              className="border-border text-muted-foreground sticky top-0 z-20 flex h-9 items-center gap-2 border-b bg-[var(--surface-2)] px-3 text-xs font-medium"
-            >
-              {reorderable && <div className="size-4 shrink-0" aria-hidden />}
-              <div
-                className="flex w-6 shrink-0 items-center justify-center"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Checkbox
-                  checked={
-                    allSelected ? true : someSelected ? "indeterminate" : false
-                  }
-                  onCheckedChange={(checked) =>
-                    checked ? onSelectAll() : onDeselectAll()
-                  }
-                  aria-label="Select all"
-                  className={cn(
-                    "size-3.5 cursor-pointer",
-                    "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
-                    allSelected &&
-                      "data-[state=checked]:bg-primary data-[state=checked]:border-primary",
-                  )}
+          <SortableContext
+            items={sortableIds}
+            strategy={verticalListSortingStrategy}
+          >
+            {table}
+          </SortableContext>
+          <DragOverlay>
+            {activeDragTrack ? (
+              <div className="bg-[var(--surface-2)] opacity-95 shadow-lg">
+                <TrackRowInner
+                  track={activeDragTrack}
+                  isSelected={false}
+                  isExpanded={false}
+                  inCollection={false}
+                  isLiked={false}
+                  isNew={false}
+                  onToggleSelect={() => undefined}
+                  onExpand={() => undefined}
+                  onStartPlay={() => undefined}
+                  visibleColumns={visibleColumns}
+                  dragHandle={{
+                    attributes: {},
+                    listeners: undefined,
+                    isDragging: false,
+                  }}
                 />
               </div>
-              <div className="size-7 shrink-0" aria-hidden />
-              <div className="size-6 shrink-0" aria-hidden />
-              <SortableColumnHeader
-                ids={visibleColumns.map((c) => c.id)}
-                onOrderChange={(nextIds) => {
-                  if (!onColumnOrderChange) return;
-                  const hidden = LIKES_COLUMNS.map((c) => c.id).filter(
-                    (id) => !visibleColumns.some((v) => v.id === id),
-                  );
-                  onColumnOrderChange([...nextIds, ...hidden]);
-                }}
-              >
-                {visibleColumns.map((col) => (
-                  <SortableHeaderCell
-                    key={col.id}
-                    id={col.id}
-                    className={col.cellClassName}
-                    style={{ width: col.width }}
-                    onResize={(w, phase) => {
-                      if (phase === "drag") {
-                        setLiveWidths((p) => ({ ...p, [col.id]: w }));
-                      } else {
-                        onColumnWidthChange?.(col.id, w);
-                        setLiveWidths((p) => {
-                          const { [col.id]: _omit, ...rest } = p;
-                          return rest;
-                        });
-                      }
-                    }}
-                    onResetWidth={() => onColumnWidthReset?.(col.id)}
-                  >
-                    {col.renderHeader ? (
-                      col.renderHeader()
-                    ) : col.sortKey ? (
-                      <button
-                        className="hover:text-foreground flex w-full cursor-pointer items-center gap-0.5 transition-colors"
-                        onClick={() => col.sortKey && handleSort(col.sortKey)}
-                      >
-                        {col.header}
-                        <SortIcon
-                          col={col.sortKey}
-                          sortBy={sortBy}
-                          sortOrder={sortOrder}
-                        />
-                      </button>
-                    ) : (
-                      <span>{col.header}</span>
-                    )}
-                  </SortableHeaderCell>
-                ))}
-              </SortableColumnHeader>
-            </div>
-
-            {/* Virtual scroll body */}
-            {(() => {
-              const body = (
-                <div
-                  style={{
-                    height: `${virtualizer.getTotalSize()}px`,
-                    position: "relative",
-                  }}
-                >
-                  {virtualItems.map((virtualRow) => {
-                    const track = sortedTracks[virtualRow.index];
-                    if (!track) return null;
-                    const id = extractId(track);
-                    const sortableId = reorderable
-                      ? (track.urn ?? `__idx_${virtualRow.index}`)
-                      : undefined;
-
-                    return (
-                      <div
-                        key={virtualRow.key}
-                        data-index={virtualRow.index}
-                        ref={virtualizer.measureElement}
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          transform: `translateY(${virtualRow.start}px)`,
-                        }}
-                      >
-                        <TrackRow
-                          sortableId={sortableId}
-                          track={track}
-                          isSelected={selectedIds.has(id)}
-                          isExpanded={expandedId === id}
-                          inCollection={collectionIds?.has(id) ?? false}
-                          isLiked={
-                            likedIds?.has(id) ?? track.user_favorite === true
-                          }
-                          isNew={
-                            newTrackUrns
-                              ? track.urn
-                                ? newTrackUrns.has(track.urn)
-                                : false
-                              : undefined
-                          }
-                          onToggleSelect={(shiftKey) => {
-                            const currentIndex = virtualRow.index;
-                            if (
-                              shiftKey &&
-                              lastSelectedIndexRef.current !== null
-                            ) {
-                              const start = Math.min(
-                                lastSelectedIndexRef.current,
-                                currentIndex,
-                              );
-                              const end = Math.max(
-                                lastSelectedIndexRef.current,
-                                currentIndex,
-                              );
-                              const rangeIds = sortedTracks
-                                .slice(start, end + 1)
-                                .map(extractId)
-                                .filter(Boolean);
-                              onRangeSelect(rangeIds);
-                            } else {
-                              onToggleSelect(id);
-                              lastSelectedIndexRef.current = currentIndex;
-                            }
-                          }}
-                          onExpand={() => handleExpand(track)}
-                          onStartPlay={() => handleStartPlay(virtualRow.index)}
-                          visibleColumns={visibleColumns}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-              if (!reorderable) return body;
-              return (
-                <DndContext
-                  sensors={dndSensors}
-                  collisionDetection={closestCenter}
-                  onDragStart={handleReorderDragStart}
-                  onDragEnd={handleReorderDragEnd}
-                  onDragCancel={() => setActiveDragId(null)}
-                >
-                  <SortableContext
-                    items={sortableIds}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {body}
-                  </SortableContext>
-                  <DragOverlay>
-                    {activeDragTrack ? (
-                      <div className="bg-[var(--surface-2)] opacity-95 shadow-lg">
-                        <TrackRowInner
-                          track={activeDragTrack}
-                          isSelected={false}
-                          isExpanded={false}
-                          inCollection={false}
-                          isLiked={false}
-                          isNew={false}
-                          onToggleSelect={() => undefined}
-                          onExpand={() => undefined}
-                          onStartPlay={() => undefined}
-                          visibleColumns={visibleColumns}
-                          dragHandle={{
-                            attributes: {},
-                            listeners: undefined,
-                            isDragging: false,
-                          }}
-                        />
-                      </div>
-                    ) : null}
-                  </DragOverlay>
-                </DndContext>
-              );
-            })()}
-          </div>
-        </div>
-      </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      ) : (
+        table
+      )}
     </SoundcloudBpmCacheContext.Provider>
   );
 }
