@@ -1,14 +1,29 @@
 "use client";
 
-import { Disc3, Folder, Sparkles } from "lucide-react";
+import { Folder, Music, Sparkles } from "lucide-react";
 import { useQueryState } from "nuqs";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
+import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
+import { FiltersToolbar } from "@/components/filters/filters-toolbar";
+import { RekordboxLogo } from "@/components/icons/rekordbox-logo";
 import { useTopBar } from "@/components/layout/top-bar-context";
 import { LogoSpinner } from "@/components/logo-spinner";
+import {
+  TrackTable,
+  type ResolvedColumn,
+  type TrackTableColumn,
+} from "@/components/track-table/track-table";
 import { TreeView } from "@/components/tree/tree-view";
 import type { TreeNodeShape } from "@/components/tree/types";
 import { semitonesFromBpmRatio, transposeCamelot } from "@/lib/camelot";
+import type { ColumnDef } from "@/lib/columns/types";
+import { useColumnPrefs } from "@/lib/columns/use-column-prefs";
+import {
+  applyRekordboxFilters,
+  buildRekordboxSchema,
+} from "@/lib/filters/rekordbox-adapter";
+import { useFilterState } from "@/lib/filters/use-filter-state";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import { cn } from "@/lib/utils";
 
@@ -115,9 +130,34 @@ function toPlayerTrack(t: RekordboxTrack): PlayerTrack | null {
   };
 }
 
-// Grid: title | artist | genre | bpm | key | length | sc
-const COLS =
-  "minmax(0,2.2fr) minmax(0,1.6fr) minmax(0,1fr) 64px 56px 72px 80px";
+// Columns shared by the TrackTable header + body. Intentionally unsortable —
+// Rekordbox playlist order is meaningful (especially for smart playlists +
+// hand-curated sets), so we leave the order untouched and only allow filters.
+const REKORDBOX_COLUMNS: TrackTableColumn[] = [
+  { id: "title", header: "Title", required: true, defaultWidth: 256 },
+  { id: "artist", header: "Artist", defaultWidth: 192 },
+  { id: "genre", header: "Genre", defaultWidth: 112 },
+  {
+    id: "bpm",
+    header: "BPM",
+    defaultWidth: 56,
+    className: "text-right tabular-nums",
+  },
+  { id: "key", header: "Key", defaultWidth: 56 },
+  {
+    id: "duration",
+    header: "Length",
+    defaultWidth: 72,
+    className: "text-right tabular-nums",
+  },
+  { id: "soundcloud_id", header: "SoundCloud", defaultWidth: 96 },
+];
+
+const REKORDBOX_COLUMN_DEFS: ColumnDef[] = REKORDBOX_COLUMNS.map((c) => ({
+  id: c.id,
+  header: c.header,
+  required: c.required,
+}));
 
 // ─── View ───────────────────────────────────────────────────────────────────
 
@@ -131,7 +171,7 @@ export function RekordboxView() {
   const [selectedId, setSelectedId] = useQueryState("playlist", {
     defaultValue: "",
   });
-  const tracks = useRekordboxPlaylistTracks(selectedId || null);
+  const tracksResp = useRekordboxPlaylistTracks(selectedId || null);
   const player = usePlayer();
   const { pitchEnabled, targetBpm } = player;
 
@@ -139,6 +179,97 @@ export function RekordboxView() {
   const selectedPl = useMemo(
     () => data.playlists.find((p) => p.id === selectedId) ?? null,
     [data.playlists, selectedId],
+  );
+
+  // Filter schema is rebuilt whenever the loaded track set changes. URL-backed
+  // filter state via useFilterState — same as filesystem/SC views.
+  const schema = useMemo(
+    () => buildRekordboxSchema({ tracks: tracksResp.data.tracks }),
+    [tracksResp.data.tracks],
+  );
+  const {
+    state: filterState,
+    set: setFilter,
+    clearAll,
+  } = useFilterState(schema);
+
+  const filteredTracks = useMemo(
+    () => applyRekordboxFilters(tracksResp.data.tracks, filterState),
+    [tracksResp.data.tracks, filterState],
+  );
+
+  const columnPrefs = useColumnPrefs(
+    "library.rekordbox",
+    REKORDBOX_COLUMN_DEFS,
+  );
+
+  const handleStartPlay = useCallback(
+    (index: number) => {
+      const queue = filteredTracks
+        .map(toPlayerTrack)
+        .filter((t): t is PlayerTrack => t !== null);
+      if (queue.length === 0) return;
+      // Map the table index back to the queue (skips entries without a file).
+      const playableIdx =
+        filteredTracks.slice(0, index + 1).filter((t) => t.file_path).length -
+        1;
+      if (playableIdx < 0) return;
+      player.playQueue(queue, playableIdx);
+    },
+    [filteredTracks, player],
+  );
+
+  // Cell contents only — wrapping div owns width + truncation so a resize
+  // immediately reflows the text. Inner styling stays minimal (color/weight).
+  const renderCell = useCallback(
+    (col: ResolvedColumn, t: RekordboxTrack, isCurrent: boolean) => {
+      switch (col.id) {
+        case "title":
+          return (
+            <span className={cn("font-medium", isCurrent && "text-primary")}>
+              {t.title || "—"}
+            </span>
+          );
+        case "artist":
+          return (
+            <span className="text-muted-foreground">{t.artist ?? "—"}</span>
+          );
+        case "genre":
+          return (
+            <span className="text-muted-foreground">{t.genre ?? "—"}</span>
+          );
+        case "bpm":
+          return (
+            <span className="text-muted-foreground">
+              {t.bpm?.toFixed(1) ?? "—"}
+            </span>
+          );
+        case "key":
+          return (
+            <KeyCell
+              keyValue={t.key}
+              bpm={t.bpm}
+              pitchEnabled={pitchEnabled}
+              targetBpm={targetBpm}
+            />
+          );
+        case "duration":
+          return (
+            <span className="text-muted-foreground">
+              {formatDuration(t.duration_seconds)}
+            </span>
+          );
+        case "soundcloud_id":
+          return (
+            <span className="text-muted-foreground">
+              {t.soundcloud_id ?? "—"}
+            </span>
+          );
+        default:
+          return null;
+      }
+    },
+    [pitchEnabled, targetBpm],
   );
 
   if (status.loading) {
@@ -152,7 +283,7 @@ export function RekordboxView() {
   if (!status.data.available) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-        <Disc3 className="text-muted-foreground size-8" />
+        <RekordboxLogo className="text-muted-foreground size-8" />
         <p className="text-foreground text-sm font-medium">
           Rekordbox isn&apos;t available
         </p>
@@ -171,19 +302,6 @@ export function RekordboxView() {
     setSelectedId(nodeId);
   }
 
-  function handlePlayRow(index: number) {
-    const queue = tracks.data.tracks
-      .map(toPlayerTrack)
-      .filter((t): t is PlayerTrack => t !== null);
-    if (queue.length === 0) return;
-    // Map the table index back to the queue (skips entries without a file).
-    const playableIdx =
-      tracks.data.tracks.slice(0, index + 1).filter((t) => t.file_path).length -
-      1;
-    if (playableIdx < 0) return;
-    player.playQueue(queue, playableIdx);
-  }
-
   return (
     <div className="flex min-h-0 flex-1">
       <TreeView<RbTreeNode>
@@ -198,7 +316,7 @@ export function RekordboxView() {
             return <Folder className="size-3.5 shrink-0" />;
           if (node.pl?.is_smart)
             return <Sparkles className="text-primary size-3.5 shrink-0" />;
-          return <Disc3 className="size-3.5 shrink-0" />;
+          return <RekordboxLogo className="size-3.5 shrink-0" />;
         }}
         renderBadge={(node) =>
           node.pl && !node.pl.is_folder ? (
@@ -225,7 +343,7 @@ export function RekordboxView() {
           <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
             Pick a playlist to view its tracks
           </div>
-        ) : tracks.loading && tracks.data.tracks.length === 0 ? (
+        ) : tracksResp.loading && tracksResp.data.tracks.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3">
             <LogoSpinner className="size-10" />
             {selectedPl.is_smart && (
@@ -234,9 +352,9 @@ export function RekordboxView() {
               </p>
             )}
           </div>
-        ) : tracks.error ? (
-          <p className="text-destructive p-4 text-sm">{tracks.error}</p>
-        ) : tracks.data.tracks.length === 0 ? (
+        ) : tracksResp.error ? (
+          <p className="text-destructive p-4 text-sm">{tracksResp.error}</p>
+        ) : tracksResp.data.tracks.length === 0 ? (
           <p className="text-muted-foreground p-4 text-sm">
             This playlist is empty
           </p>
@@ -245,37 +363,64 @@ export function RekordboxView() {
             className="flex min-h-0 flex-1 flex-col"
             data-testid="rekordbox-tracks"
           >
-            {/* Header */}
-            <div
-              className="border-border text-muted-foreground sticky top-0 z-10 grid items-center gap-2 border-b px-3 py-1.5 text-[11px] font-medium tracking-wider uppercase"
-              style={{ gridTemplateColumns: COLS }}
-            >
-              <span>Title</span>
-              <span>Artist</span>
-              <span>Genre</span>
-              <span className="text-right">BPM</span>
-              <span>Key</span>
-              <span className="text-right">Length</span>
-              <span>SoundCloud</span>
-            </div>
+            <FiltersToolbar
+              schema={schema}
+              state={filterState}
+              onChange={setFilter}
+              onClearAll={clearAll}
+              filtered={filteredTracks.length}
+              total={tracksResp.data.tracks.length}
+              actions={
+                <ColumnVisibilityMenu
+                  columns={REKORDBOX_COLUMN_DEFS}
+                  isVisible={columnPrefs.isVisible}
+                  setHidden={columnPrefs.setHidden}
+                  onResetVisibility={columnPrefs.resetVisibility}
+                  onResetOrder={columnPrefs.resetOrder}
+                  onResetWidths={columnPrefs.resetWidths}
+                  className="text-muted-foreground h-7 gap-1.5 text-xs"
+                />
+              }
+            />
 
-            {/* Rows */}
-            <div className="flex-1 overflow-y-auto">
-              {tracks.data.tracks.map((t, idx) => {
+            <TrackTable<RekordboxTrack>
+              items={filteredTracks}
+              columns={REKORDBOX_COLUMNS}
+              estimateRowSize={40}
+              // Rekordbox playlists can intentionally contain the same track
+              // at multiple positions, so include the index in the key to keep
+              // it unique. Index alone is stable here because filters preserve
+              // order and switching playlists remounts the table.
+              getItemKey={(index, item) => `${index}-${item?.id ?? ""}`}
+              sortBy={null}
+              sortOrder="asc"
+              columnOrder={columnPrefs.prefs.order}
+              onColumnOrderChange={columnPrefs.setOrder}
+              columnWidths={columnPrefs.prefs.widths}
+              onColumnWidthChange={columnPrefs.setWidth}
+              onColumnWidthReset={columnPrefs.resetWidth}
+              isColumnVisible={columnPrefs.isVisible}
+              renderHeaderLead={() => (
+                <>
+                  <div className="size-7 shrink-0" aria-hidden />
+                </>
+              )}
+              renderRow={({ item, index, visibleColumns }) => {
+                if (!item) return null;
+                const t = item;
                 const playable = !!t.file_path;
                 const isCurrent =
                   player.currentTrack?.filePath === t.file_path && playable;
                 return (
                   <div
-                    key={`${idx}-${t.id}`}
                     role="button"
                     tabIndex={playable ? 0 : -1}
-                    onClick={() => playable && handlePlayRow(idx)}
+                    onClick={() => playable && handleStartPlay(index)}
                     onKeyDown={(e) => {
                       if (!playable) return;
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        handlePlayRow(idx);
+                        handleStartPlay(index);
                       }
                     }}
                     aria-label={`Play ${t.title}`}
@@ -285,47 +430,37 @@ export function RekordboxView() {
                         : "Missing local file — not playable from Rekordbox"
                     }
                     className={cn(
-                      "group border-border grid h-10 items-center gap-2 border-b px-3 text-xs transition-colors select-none",
+                      "group border-border flex h-10 items-center gap-1.5 border-b pr-0 pl-3 text-xs transition-colors select-none",
                       playable
                         ? "cursor-pointer hover:bg-[var(--surface-3)]"
                         : "text-muted-foreground/60 cursor-default",
                       isCurrent && "bg-[var(--brand-soft)]",
                     )}
-                    style={{ gridTemplateColumns: COLS }}
                   >
-                    <span
-                      className={cn(
-                        "truncate font-medium",
-                        isCurrent && "text-primary",
-                      )}
-                    >
-                      {t.title || "—"}
-                    </span>
-                    <span className="text-muted-foreground truncate">
-                      {t.artist ?? "—"}
-                    </span>
-                    <span className="text-muted-foreground truncate">
-                      {t.genre ?? "—"}
-                    </span>
-                    <span className="text-muted-foreground text-right tabular-nums">
-                      {t.bpm?.toFixed(1) ?? "—"}
-                    </span>
-                    <KeyCell
-                      keyValue={t.key}
-                      bpm={t.bpm}
-                      pitchEnabled={pitchEnabled}
-                      targetBpm={targetBpm}
-                    />
-                    <span className="text-muted-foreground text-right tabular-nums">
-                      {formatDuration(t.duration_seconds)}
-                    </span>
-                    <span className="text-muted-foreground truncate tabular-nums">
-                      {t.soundcloud_id ?? "—"}
-                    </span>
+                    <div className="bg-muted flex size-7 shrink-0 items-center justify-center overflow-hidden rounded">
+                      <Music className="text-muted-foreground size-3.5" />
+                    </div>
+                    {visibleColumns.map((col) => (
+                      <div
+                        key={col.id}
+                        // truncate lives on the same element as the explicit
+                        // width so resizes reflow the ellipsis immediately —
+                        // an inner span with `truncate` doesn't always pick
+                        // up the new available width on a numeric style
+                        // change.
+                        className={cn(
+                          "min-w-0 shrink-0 truncate",
+                          col.className,
+                        )}
+                        style={{ width: col.width }}
+                      >
+                        {renderCell(col, t, isCurrent)}
+                      </div>
+                    ))}
                   </div>
                 );
-              })}
-            </div>
+              }}
+            />
           </div>
         )}
       </div>

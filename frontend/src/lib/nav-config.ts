@@ -1,14 +1,8 @@
-import {
-  CalendarDays,
-  Compass,
-  Disc3,
-  FolderOpen,
-  Heart,
-  Search,
-} from "lucide-react";
+import { CalendarDays, Compass, FolderOpen, Heart, Search } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
 import { LibraryIcon } from "@/components/icons/library-icon";
+import { RekordboxLogo } from "@/components/icons/rekordbox-logo";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 
 export type NavIcon = ComponentType<
@@ -67,7 +61,7 @@ export const QUICK_JUMPS: NavLink[] = [
   {
     href: "/library?source=rekordbox",
     label: "Library: Rekordbox",
-    icon: Disc3,
+    icon: RekordboxLogo,
     keywords: ["rekordbox", "playlists", "pioneer", "dj"],
   },
   {

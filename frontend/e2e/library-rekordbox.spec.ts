@@ -95,14 +95,17 @@ test.describe("Library: Rekordbox source", () => {
     await sundayMix.click();
 
     const tracks = page.getByTestId("rekordbox-tracks");
-    await expect(tracks.getByText("Foo")).toBeVisible();
-    await expect(tracks.getByText("Bar")).toBeVisible();
-    await expect(tracks.getByText("Baz")).toBeVisible();
+    // Use exact matches — the table mounts a dnd-kit accessibility announcer
+    // ("press the space bar to lift...") inside the same testid container, so
+    // loose substring matches would also pick up the announcer's text.
+    await expect(tracks.getByText("Foo", { exact: true })).toBeVisible();
+    await expect(tracks.getByText("Bar", { exact: true })).toBeVisible();
+    await expect(tracks.getByText("Baz", { exact: true })).toBeVisible();
     // SoundCloud id from the comment field is surfaced.
-    await expect(tracks.getByText("12345")).toBeVisible();
+    await expect(tracks.getByText("12345", { exact: true })).toBeVisible();
     // Duration formatted as m:ss
-    await expect(tracks.getByText("5:50")).toBeVisible();
-    await expect(tracks.getByText("6:50")).toBeVisible();
+    await expect(tracks.getByText("5:50", { exact: true })).toBeVisible();
+    await expect(tracks.getByText("6:50", { exact: true })).toBeVisible();
 
     await expect(page).toHaveURL(/playlist=pl-1/);
   });

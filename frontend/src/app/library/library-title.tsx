@@ -1,11 +1,12 @@
 "use client";
 
-import { Disc3, FolderTree } from "lucide-react";
+import { FolderTree } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { ComponentType, SVGProps } from "react";
 
 import { AutoHideTabLabel } from "@/components/auto-hide-tab-label";
+import { RekordboxLogo } from "@/components/icons/rekordbox-logo";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +17,7 @@ type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 const SOURCE_META: Record<SourceId, { label: string; icon: IconComponent }> = {
   filesystem: { label: "Filesystem", icon: FolderTree },
   soundcloud: { label: "SoundCloud", icon: SoundCloudLogo },
-  rekordbox: { label: "Rekordbox", icon: Disc3 },
+  rekordbox: { label: "Rekordbox", icon: RekordboxLogo },
 };
 
 /**
