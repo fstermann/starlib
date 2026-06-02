@@ -9,29 +9,29 @@ dependencies = [
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
     "httpx>=0.27.2",
-    "starlette>=1.1.0",
+    "starlette>=1.2.1",
     "devtools>=0.12.2",
     "fake-useragent>=1.5.1",
     "requests>=2.34.2",
     "mutagen>=1.47.0",
     "fastapi>=0.136.3",
     "uvicorn[standard]>=0.48.0",
-    "python-multipart>=0.0.29",
-    "fastapi-pagination>=0.15.13",
+    "python-multipart>=0.0.30",
+    "fastapi-pagination>=0.15.14",
     "watchdog>=4.0.0",
-    "platformdirs>=4.9.6",
+    "platformdirs>=4.10.0",
     "sqlmodel>=0.0.22",
     "alembic>=1.13",
-    "anthropic>=0.104.1",
+    "anthropic>=0.105.2",
     "keyring>=25.0.0",
 ]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.14",
+    "ruff>=0.15.15",
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
-    "pytest-asyncio>=0.25.0",
+    "pytest-asyncio>=1.4.0",
     "zensical>=0.0.43",
     # pygments 2.20 added `filename` as a recognized HtmlFormatter option; pymdownx 10.21
     # passes filename=None when no code block title is given, which causes html.escape(None)
