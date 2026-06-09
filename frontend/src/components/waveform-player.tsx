@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import type WaveSurferType from "wavesurfer.js";
 
 import { BpmPitcher, computePlaybackRate } from "@/components/bpm-pitcher";
+import { loadWaveform, pwv4ToPeaks } from "@/components/rekordbox-waveform";
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
 import { markScUnplayable } from "@/lib/sc-unplayable";
@@ -247,7 +248,15 @@ export function WaveformPlayer() {
               (p) => p ?? new Array<number>(numPeaks).fill(0.5),
             )
           : Promise.resolve(new Array<number>(numPeaks).fill(0.5))
-        : api.getFilePeaks(currentTrack!.filePath, numPeaks);
+        : currentTrack!.rekordboxId
+          ? // Rekordbox already analyzed this track — its PWV4 preview is a
+            // ~2ms fetch vs an ~1s ffmpeg decode for backend peaks.
+            loadWaveform(currentTrack!.rekordboxId).then((data) =>
+              data
+                ? pwv4ToPeaks(data)
+                : api.getFilePeaks(currentTrack!.filePath, numPeaks),
+            )
+          : api.getFilePeaks(currentTrack!.filePath, numPeaks);
       const streamUrlPromise: Promise<string | undefined> = currentTrack!
         .streamUrl
         ? Promise.resolve(currentTrack!.streamUrl)
@@ -371,6 +380,17 @@ export function WaveformPlayer() {
 
       hls = attachAudioSource(audio, sourceUrl, { onExpired: onStreamExpired });
 
+      // Seeks only need the media element + a finite duration — register as
+      // soon as metadata lands instead of waiting for `ws.ready` (which
+      // blocks on the peaks fetch). Pending seeks (play-from-position via a
+      // row waveform click) apply the moment this registers.
+      const registerAudioSeek = () => {
+        if (cancelled) return;
+        registerSeek((ratio) => {
+          audio.currentTime = Math.max(0, Math.min(1, ratio)) * audio.duration;
+        });
+      };
+
       // Now await the remaining work in parallel: peaks, waveform module
       // imports, and a finite audio.duration. Audio playback has already
       // been kicked off via the `canplay` listener, so this path only
@@ -382,6 +402,7 @@ export function WaveformPlayer() {
           hoverImportPromise,
           new Promise<void>((resolve) => {
             if (isFinite(audio.duration) && audio.duration > 0) {
+              registerAudioSeek();
               resolve();
               return;
             }
@@ -392,6 +413,7 @@ export function WaveformPlayer() {
             };
             const check = () => {
               if (isFinite(audio.duration) && audio.duration > 0) {
+                registerAudioSeek();
                 // Kick off playback as soon as duration is known — earlier
                 // than `canplay`, which waits for more buffered data.
                 if (!cancelled && isPlayingRef.current) {
@@ -588,6 +610,16 @@ export function WaveformPlayer() {
     }
     if (nextTrack.waveformUrl) {
       getCachedSoundcloudPeaks(nextTrack.waveformUrl, numPeaks).catch(() => {
+        /* Prefetch is best-effort. */
+      });
+    } else if (nextTrack.rekordboxId) {
+      loadWaveform(nextTrack.rekordboxId).catch(() => {
+        /* Prefetch is best-effort. */
+      });
+    } else if (nextTrack.streamRefreshKey == null) {
+      // Local file — warm the backend's peaks cache so the next track's
+      // ffmpeg decode (~1s) happens now instead of on skip.
+      api.getFilePeaks(nextTrack.filePath, numPeaks).catch(() => {
         /* Prefetch is best-effort. */
       });
     }
