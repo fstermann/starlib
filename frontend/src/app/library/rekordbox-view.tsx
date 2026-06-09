@@ -1,10 +1,11 @@
 "use client";
 
-import { Folder, Music, Sparkles } from "lucide-react";
+import { Folder, Sparkles } from "lucide-react";
 import { useQueryState } from "nuqs";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
+import { CoverPlayButton } from "@/components/cover-play-button";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { RekordboxLogo } from "@/components/icons/rekordbox-logo";
 import {
@@ -20,6 +21,7 @@ import {
 } from "@/components/track-table/track-table";
 import { TreeView } from "@/components/tree/tree-view";
 import type { TreeNodeShape } from "@/components/tree/types";
+import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/api";
 import { semitonesFromBpmRatio, transposeCamelot } from "@/lib/camelot";
 import type { ColumnDef } from "@/lib/columns/types";
@@ -145,6 +147,7 @@ function toPlayerTrack(t: RekordboxTrack): PlayerTrack | null {
     title: t.title,
     artist: t.artist ?? undefined,
     bpm: t.bpm ?? null,
+    rekordboxId: t.has_waveform ? t.id : undefined,
   };
 }
 
@@ -241,6 +244,47 @@ export function RekordboxView() {
   const columnPrefs = useColumnPrefs(
     "library.rekordbox",
     REKORDBOX_COLUMN_DEFS,
+  );
+
+  // Row selection (no batch actions yet — kept for parity with the other
+  // library views). Keyed by track id; duplicate playlist entries of the
+  // same track select together.
+  const [selection, setSelection] = useState<{
+    ids: Set<string>;
+    /** Last-clicked row index — the shift-select range anchor. */
+    anchor: number | null;
+  }>({ ids: new Set(), anchor: null });
+  const selectedIds = selection.ids;
+  // Reset selection when switching playlists — adjust-during-render instead
+  // of an effect so the cleared state never paints.
+  const [prevPlaylistId, setPrevPlaylistId] = useState(selectedId);
+  if (prevPlaylistId !== selectedId) {
+    setPrevPlaylistId(selectedId);
+    setSelection({ ids: new Set(), anchor: null });
+  }
+
+  const toggleSelect = useCallback(
+    (index: number, shiftKey: boolean) => {
+      setSelection((prev) => {
+        const ids = new Set(prev.ids);
+        if (shiftKey && prev.anchor != null) {
+          const [a, b] =
+            prev.anchor < index ? [prev.anchor, index] : [index, prev.anchor];
+          for (let i = a; i <= b; i++) {
+            const id = filteredTracks[i]?.id;
+            if (id) ids.add(id);
+          }
+        } else {
+          const id = filteredTracks[index]?.id;
+          if (id) {
+            if (ids.has(id)) ids.delete(id);
+            else ids.add(id);
+          }
+        }
+        return { ids, anchor: index };
+      });
+    },
+    [filteredTracks],
   );
 
   const handleStartPlay = useCallback(
@@ -454,6 +498,28 @@ export function RekordboxView() {
               isColumnVisible={columnPrefs.isVisible}
               renderHeaderLead={() => (
                 <>
+                  <div className="flex w-6 shrink-0 items-center justify-center">
+                    <Checkbox
+                      checked={
+                        filteredTracks.length > 0 &&
+                        filteredTracks.every((t) => selectedIds.has(t.id))
+                          ? true
+                          : filteredTracks.some((t) => selectedIds.has(t.id))
+                            ? "indeterminate"
+                            : false
+                      }
+                      onCheckedChange={(checked) =>
+                        setSelection({
+                          ids: checked
+                            ? new Set(filteredTracks.map((t) => t.id))
+                            : new Set(),
+                          anchor: null,
+                        })
+                      }
+                      aria-label="Select all"
+                      className="size-3.5 cursor-pointer"
+                    />
+                  </div>
                   <div className="size-7 shrink-0" aria-hidden />
                   <div className="h-8 w-24 shrink-0" aria-hidden />
                 </>
@@ -464,19 +530,13 @@ export function RekordboxView() {
                 const playable = !!t.file_path;
                 const isCurrent =
                   player.currentTrack?.filePath === t.file_path && playable;
+                const isSelected = selectedIds.has(t.id);
                 return (
+                  // Clicking anywhere on the row starts playback; the cover's
+                  // play button is the keyboard/AT-accessible control, so the
+                  // row stays a plain div (no nested-button ARIA).
                   <div
-                    role="button"
-                    tabIndex={playable ? 0 : -1}
                     onClick={() => playable && handleStartPlay(index)}
-                    onKeyDown={(e) => {
-                      if (!playable) return;
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        handleStartPlay(index);
-                      }
-                    }}
-                    aria-label={`Play ${t.title}`}
                     title={
                       playable
                         ? undefined
@@ -488,21 +548,33 @@ export function RekordboxView() {
                         ? "cursor-pointer hover:bg-[var(--surface-3)]"
                         : "text-muted-foreground/60 cursor-default",
                       isCurrent && "bg-[var(--brand-soft)]",
+                      isSelected && !isCurrent && "bg-[var(--surface-3)]",
                     )}
                   >
-                    <div className="bg-muted flex size-7 shrink-0 items-center justify-center overflow-hidden rounded">
-                      {t.has_artwork ? (
-                        <img
-                          src={api.getRekordboxArtworkUrl(t.id)}
-                          alt=""
-                          className="size-7 object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <Music className="text-muted-foreground size-3.5" />
-                      )}
+                    <div
+                      className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(index, e.shiftKey);
+                      }}
+                    >
+                      <Checkbox
+                        checked={isSelected}
+                        tabIndex={-1}
+                        className="pointer-events-none size-3.5"
+                      />
                     </div>
-                    <div className="h-8 w-24 shrink-0">
+                    <CoverPlayButton
+                      artworkUrl={
+                        t.has_artwork ? api.getRekordboxArtworkUrl(t.id) : null
+                      }
+                      isCurrent={isCurrent}
+                      onStartPlay={
+                        playable ? () => handleStartPlay(index) : undefined
+                      }
+                      label={t.title}
+                    />
+                    <div className="flex h-10 w-24 shrink-0 items-center">
                       {t.has_waveform ? (
                         <RekordboxWaveform
                           trackId={t.id}
@@ -514,7 +586,7 @@ export function RekordboxView() {
                               : undefined
                           }
                           width={96}
-                          height={32}
+                          height={20}
                         />
                       ) : null}
                     </div>
