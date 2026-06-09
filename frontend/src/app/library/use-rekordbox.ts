@@ -23,6 +23,10 @@ export interface RekordboxTrack {
   file_path: string | null;
   comment: string | null;
   soundcloud_id: number | null;
+  date_added: string | null;
+  release_date: string | null;
+  has_artwork: boolean;
+  has_waveform: boolean;
 }
 
 export interface RekordboxStatus {
@@ -34,12 +38,14 @@ interface AsyncState<T> {
   data: T;
   loading: boolean;
   error: string | null;
+  refetch: () => void;
 }
 
 function useRekordboxFetch<T>(path: string | null, initial: T): AsyncState<T> {
   const [data, setData] = useState<T>(initial);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (path === null) {
@@ -66,9 +72,10 @@ function useRekordboxFetch<T>(path: string | null, initial: T): AsyncState<T> {
     };
     // initial is intentionally stable per call site.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path]);
+  }, [path, tick]);
 
-  return { data, loading, error };
+  const refetch = () => setTick((t) => t + 1);
+  return { data, loading, error, refetch };
 }
 
 export function useRekordboxStatus(): AsyncState<RekordboxStatus> {

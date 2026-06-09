@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,10 @@ class RekordboxTrack:
     file_path: str | None
     comment: str | None
     soundcloud_id: int | None
+    date_added: str | None
+    release_date: str | None
+    has_artwork: bool
+    has_waveform: bool
 
 
 _db_lock = threading.Lock()
@@ -154,6 +159,10 @@ def _row_to_track(row: Any) -> RekordboxTrack:
     bpm_raw = getattr(row, "BPM", None)
     # Rekordbox stores BPM scaled by 100 as an integer.
     bpm = float(bpm_raw) / 100.0 if bpm_raw else None
+    image_path = getattr(row, "ImagePath", None) or None
+    analysis_path = getattr(row, "AnalysisDataPath", None) or None
+    release_raw = getattr(row, "ReleaseDate", None)
+    stock_raw = getattr(row, "StockDate", None)
     return RekordboxTrack(
         id=str(row.ID),
         title=str(getattr(row, "Title", "") or ""),
@@ -166,6 +175,10 @@ def _row_to_track(row: Any) -> RekordboxTrack:
         file_path=getattr(row, "FolderPath", None),
         comment=str(comment) if comment else None,
         soundcloud_id=_extract_soundcloud_id(str(comment) if comment else None),
+        date_added=str(stock_raw) if stock_raw else None,
+        release_date=str(release_raw) if release_raw else None,
+        has_artwork=bool(image_path),
+        has_waveform=bool(analysis_path),
     )
 
 
@@ -187,6 +200,84 @@ def list_playlist_tracks(playlist_id: str) -> list[RekordboxTrack]:
         return [_row_to_track(r) for r in rows]
     songs = sorted(getattr(pl, "Songs", []) or [], key=lambda s: getattr(s, "TrackNo", 0))
     return [_row_to_track(s.Content) for s in songs if getattr(s, "Content", None)]
+
+
+def _share_dir() -> Path:
+    """Return the Rekordbox ``share`` directory.
+
+    Artwork JPEGs and ANLZ analysis files referenced by relative paths in the
+    DB (e.g. ``/PIONEER/Artwork/.../artwork.jpg``) all live under this root.
+    """
+    db = _open_db()
+    db_dir = getattr(db, "db_directory", None)
+    if not db_dir:
+        raise RekordboxUnavailable("Rekordbox db_directory not exposed by pyrekordbox")
+    return Path(db_dir) / "share"
+
+
+def _resolve_relative(rel: str) -> Path:
+    """Resolve a Rekordbox-relative path (always leading slash) to the share dir."""
+    return _share_dir() / rel.lstrip("/")
+
+
+def get_track_artwork(track_id: str, *, small: bool = True) -> bytes | None:
+    """Read the cached artwork bytes for a track, or ``None`` if absent.
+
+    Rekordbox stores three variants alongside each artwork: ``artwork.jpg``
+    (full), ``artwork_m.jpg`` (medium), ``artwork_s.jpg`` (small thumbnail).
+    For inline-table use we default to the small variant.
+    """
+    db = _open_db()
+    row = db.get_content(ID=track_id)
+    if row is None:
+        return None
+    rel = getattr(row, "ImagePath", None)
+    if not rel:
+        return None
+    p = _resolve_relative(str(rel))
+    if small:
+        small_p = p.with_name(p.stem + "_s" + p.suffix)
+        if small_p.exists():
+            p = small_p
+    try:
+        return p.read_bytes()
+    except OSError:
+        return None
+
+
+def get_track_waveform_preview(track_id: str) -> bytes | None:
+    """Return the raw PWV4 color preview entry bytes (1200 x 6 bytes).
+
+    The PWV4 tag lives in the ``.EXT`` ANLZ sidecar. Each column is 6 bytes:
+    ``d0`` (unknown), ``d1`` (luminance boost), ``d2`` (blue inv. intensity),
+    ``d3`` (red, 7-bit), ``d4`` (green, 7-bit), ``d5`` (blue + front height,
+    7-bit). The frontend parses these directly onto a canvas.
+    """
+    db = _open_db()
+    row = db.get_content(ID=track_id)
+    if row is None:
+        return None
+    rel = getattr(row, "AnalysisDataPath", None)
+    if not rel:
+        return None
+    # PWV4 (color preview) lives in the .EXT file, not the .DAT.
+    dat = _resolve_relative(str(rel))
+    ext = dat.with_suffix(".EXT")
+    if not ext.exists():
+        return None
+    try:
+        from pyrekordbox.anlz import AnlzFile
+    except Exception:  # pragma: no cover
+        return None
+    try:
+        anlz = AnlzFile.parse_file(str(ext))
+    except Exception:
+        logger.exception("Failed to parse ANLZ file %s", ext)
+        return None
+    tags = anlz.getall_tags("PWV4")
+    if not tags:
+        return None
+    return bytes(tags[0].content.entries)
 
 
 def list_all_tracks(limit: int | None = None) -> list[RekordboxTrack]:
