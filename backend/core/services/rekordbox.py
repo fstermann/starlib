@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -245,6 +246,64 @@ def get_track_artwork(track_id: str, *, small: bool = True) -> bytes | None:
         return None
 
 
+def _extract_pwv4(data: bytes) -> bytes | None:
+    """Extract the PWV4 entry bytes from raw ANLZ file contents.
+
+    Walks the ANLZ section list directly instead of construct-parsing the
+    whole file via ``pyrekordbox.anlz.AnlzFile`` — that parses every tag
+    (including the multi-hundred-KB PWV5 detail waveform) and takes ~200ms
+    per file, vs ~microseconds for this scan. Layout (all big-endian u32):
+    file header ``PMAI`` + len_header + len_file…; then per section:
+    fourcc + len_header + len_tag. PWV4 content is len_entry_bytes (always
+    6) + len_entries + unknown + entries.
+
+    Args:
+        data: Full contents of an ANLZ ``.EXT`` file.
+
+    Returns:
+        The raw entry bytes (1200 x 6), or ``None`` if no PWV4 section
+        exists or the file is malformed.
+    """
+    if len(data) < 8 or data[:4] != b"PMAI":
+        return None
+    pos = int.from_bytes(data[4:8], "big")
+    while pos + 12 <= len(data):
+        fourcc = data[pos : pos + 4]
+        len_tag = int.from_bytes(data[pos + 8 : pos + 12], "big")
+        if len_tag <= 0:
+            return None
+        if fourcc == b"PWV4":
+            if pos + 24 > len(data):
+                return None
+            entry_bytes = int.from_bytes(data[pos + 12 : pos + 16], "big")
+            n_entries = int.from_bytes(data[pos + 16 : pos + 20], "big")
+            start = pos + 24
+            end = start + entry_bytes * n_entries
+            if entry_bytes != 6 or end > len(data):
+                return None
+            return data[start:end]
+        pos += len_tag
+    return None
+
+
+@lru_cache(maxsize=1024)
+def _read_pwv4(path: str, mtime_ns: int) -> bytes | None:
+    """Read and extract PWV4 bytes, cached per (path, mtime).
+
+    Args:
+        path: Absolute path to the ``.EXT`` ANLZ file.
+        mtime_ns: File modification time; part of the key so re-analysis in
+            Rekordbox invalidates the cached entry.
+
+    Returns:
+        The raw PWV4 entry bytes, or ``None`` if absent/unreadable.
+    """
+    try:
+        return _extract_pwv4(Path(path).read_bytes())
+    except OSError:
+        return None
+
+
 def get_track_waveform_preview(track_id: str) -> bytes | None:
     """Return the raw PWV4 color preview entry bytes (1200 x 6 bytes).
 
@@ -261,23 +320,12 @@ def get_track_waveform_preview(track_id: str) -> bytes | None:
     if not rel:
         return None
     # PWV4 (color preview) lives in the .EXT file, not the .DAT.
-    dat = _resolve_relative(str(rel))
-    ext = dat.with_suffix(".EXT")
-    if not ext.exists():
-        return None
+    ext = _resolve_relative(str(rel)).with_suffix(".EXT")
     try:
-        from pyrekordbox.anlz import AnlzFile
-    except Exception:  # pragma: no cover
+        mtime_ns = ext.stat().st_mtime_ns
+    except OSError:
         return None
-    try:
-        anlz = AnlzFile.parse_file(str(ext))
-    except Exception:
-        logger.exception("Failed to parse ANLZ file %s", ext)
-        return None
-    tags = anlz.getall_tags("PWV4")
-    if not tags:
-        return None
-    return bytes(tags[0].content.entries)
+    return _read_pwv4(str(ext), mtime_ns)
 
 
 def list_all_tracks(limit: int | None = None) -> list[RekordboxTrack]:
