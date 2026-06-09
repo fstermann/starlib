@@ -6,6 +6,7 @@ import logging
 import subprocess
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
@@ -19,6 +20,20 @@ from backend.schemas.metadata import PeaksResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _content_disposition(filename: str) -> str:
+    """Build an RFC 6266 Content-Disposition value safe for non-ASCII filenames.
+
+    HTTP headers are latin-1 only, so any character outside that range (e.g. a
+    typographic apostrophe, U+2019) blows up Starlette's response encoding. We
+    emit both the legacy ASCII-fallback ``filename=...`` and the RFC 5987
+    ``filename*=UTF-8''...`` form so modern clients get the original name.
+    """
+    ascii_fallback = filename.encode("ascii", "replace").decode("ascii").replace('"', "")
+    encoded = quote(filename, safe="")
+    return f"inline; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
+
 
 AUDIO_MIME_TYPES = {
     ".mp3": "audio/mpeg",
@@ -145,7 +160,7 @@ async def stream_audio(
         return FileResponse(
             wav_path,
             media_type="audio/wav",
-            headers={"Content-Disposition": f'inline; filename="{resolved_path.stem}.wav"'},
+            headers={"Content-Disposition": _content_disposition(f"{resolved_path.stem}.wav")},
         )
 
     mime_type = AUDIO_MIME_TYPES.get(resolved_path.suffix.lower(), "application/octet-stream")
@@ -153,7 +168,7 @@ async def stream_audio(
     return FileResponse(
         resolved_path,
         media_type=mime_type,
-        headers={"Content-Disposition": f'inline; filename="{resolved_path.name}"'},
+        headers={"Content-Disposition": _content_disposition(resolved_path.name)},
     )
 
 

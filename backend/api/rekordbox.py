@@ -11,6 +11,7 @@ import logging
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from backend.core.services import rekordbox as rb_service
@@ -46,6 +47,10 @@ class RekordboxTrack(BaseModel):
     file_path: str | None = None
     comment: str | None = None
     soundcloud_id: int | None = None
+    date_added: str | None = None
+    release_date: str | None = None
+    has_artwork: bool = False
+    has_waveform: bool = False
 
 
 class PlaylistsResponse(BaseModel):
@@ -89,6 +94,42 @@ def get_playlist_tracks(playlist_id: str) -> TracksResponse:
     except rb_service.RekordboxUnavailable as exc:
         raise _unavailable(str(exc)) from exc
     return TracksResponse(tracks=[RekordboxTrack(**asdict(t)) for t in items])
+
+
+@router.get("/tracks/{track_id}/artwork")
+def get_track_artwork(track_id: str, small: bool = True) -> Response:
+    """Serve the cached artwork JPEG for a track from the Rekordbox share dir."""
+    try:
+        data = rb_service.get_track_artwork(track_id, small=small)
+    except rb_service.RekordboxUnavailable as exc:
+        raise _unavailable(str(exc)) from exc
+    if data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No artwork")
+    return Response(
+        content=data,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
+@router.get("/tracks/{track_id}/waveform")
+def get_track_waveform(track_id: str) -> Response:
+    """Serve the raw PWV4 color preview entries (7200 bytes: 1200 x 6).
+
+    The frontend decodes the byte stream onto a small canvas to render an inline
+    RGB waveform matching what Rekordbox shows in its track list.
+    """
+    try:
+        data = rb_service.get_track_waveform_preview(track_id)
+    except rb_service.RekordboxUnavailable as exc:
+        raise _unavailable(str(exc)) from exc
+    if data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No waveform")
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @router.get("/tracks", response_model=TracksResponse)
