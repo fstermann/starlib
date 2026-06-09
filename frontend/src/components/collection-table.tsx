@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Eraser, Music, PencilLine, Workflow } from "lucide-react";
+import { Check, Eraser, PencilLine, Workflow } from "lucide-react";
 import {
   parseAsArrayOf,
   parseAsInteger,
@@ -15,6 +15,7 @@ import {
   formatFileSize,
   serializeComment,
 } from "@/app/library/utils";
+import { CoverPlayButton } from "@/components/cover-play-button";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { MiniWaveform } from "@/components/mini-waveform";
@@ -463,21 +464,14 @@ function EditRow({
         />
       </div>
 
-      {/* Artwork thumbnail */}
-      <div
-        className={`bg-muted flex size-7 shrink-0 items-center justify-center overflow-hidden rounded ring-1 ${pendingArtworkB64 ? "ring-primary/40" : "ring-transparent"}`}
-      >
-        {artworkUrl ? (
-          <img
-            src={artworkUrl}
-            alt=""
-            className="size-7 object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <Music className="text-muted-foreground size-3" />
-        )}
-      </div>
+      {/* Artwork thumbnail with hover play/pause overlay */}
+      <CoverPlayButton
+        artworkUrl={artworkUrl}
+        isCurrent={isCurrent}
+        onStartPlay={onStartPlay}
+        label={item.title ?? item.file_name}
+        className={`ring-1 ${pendingArtworkB64 ? "ring-primary/40" : "ring-transparent"}`}
+      />
 
       {/* Mini waveform (top-half) */}
       <div className="h-6 w-20 shrink-0">

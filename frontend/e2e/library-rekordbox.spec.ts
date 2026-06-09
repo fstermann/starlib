@@ -76,6 +76,27 @@ const TINY_JPEG = Buffer.from(
 // just paints nothing and the test only needs the fetch to resolve cleanly.
 const WAVEFORM_BYTES = Buffer.alloc(7200);
 
+/** Minimal 100ms silent WAV (8kHz mono 8-bit PCM) for mocking audio responses. */
+function makeSilentWav(): Buffer {
+  const numSamples = 800; // 100ms at 8kHz
+  const buf = Buffer.alloc(44 + numSamples);
+  buf.write("RIFF", 0);
+  buf.writeUInt32LE(36 + numSamples, 4);
+  buf.write("WAVE", 8);
+  buf.write("fmt ", 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(8000, 24); // sample rate
+  buf.writeUInt32LE(8000, 28); // byte rate
+  buf.writeUInt16LE(1, 32); // block align
+  buf.writeUInt16LE(8, 34); // bits per sample
+  buf.write("data", 36);
+  buf.writeUInt32LE(numSamples, 40);
+  buf.fill(0x80, 44); // silence (mid-point for unsigned 8-bit PCM)
+  return buf;
+}
+
 function jsonRoute(body: unknown) {
   return (route: Route) =>
     route.fulfill({
@@ -151,6 +172,38 @@ test.describe("Library: Rekordbox source", () => {
     await expect(cover).toBeVisible();
 
     await expect(page).toHaveURL(/playlist=pl-1/);
+  });
+
+  test("cover play button starts playback and rows are selectable", async ({
+    page,
+  }) => {
+    // Local-file player mocks — rekordbox playback streams the local file.
+    await page.route(
+      "**/api/metadata/files/*/peaks*",
+      jsonRoute({ peaks: Array(200).fill(0.3) }),
+    );
+    await page.route("**/api/metadata/files/*/audio", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "audio/wav",
+        body: makeSilentWav(),
+      }),
+    );
+
+    await page.goto("/library?source=rekordbox");
+    await page.getByText("Sunday Mix").click();
+    const tracks = page.getByTestId("rekordbox-tracks");
+
+    // The cover's hover overlay is the accessible play control.
+    await tracks.getByRole("button", { name: "Play Foo" }).click();
+    await expect(page.getByTestId("waveform-player")).toBeVisible();
+
+    // Select all via the header checkbox — header + both rows check.
+    const checked = tracks.locator('[role="checkbox"][data-state="checked"]');
+    await tracks.getByRole("checkbox", { name: "Select all" }).click();
+    await expect(checked).toHaveCount(3);
+    await tracks.getByRole("checkbox", { name: "Select all" }).click();
+    await expect(checked).toHaveCount(0);
   });
 
   test("renders unavailable state when the master db is missing", async ({

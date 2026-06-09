@@ -22,18 +22,17 @@ import {
   Download,
   FolderCheck,
   GripVertical,
-  Music,
   ShoppingCart,
 } from "lucide-react";
 import * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { CoverPlayButton } from "@/components/cover-play-button";
 import {
   SoundcloudBpmCacheContext,
   SoundcloudBpmCell,
 } from "@/components/soundcloud-bpm-cell";
 import { SoundcloudLikeButton } from "@/components/soundcloud-like-button";
-import { SoundcloudRowPlayButton } from "@/components/soundcloud-row-play-button";
 import { SourceProfileAvatar } from "@/components/source-profile-avatar";
 import {
   TrackTable,
@@ -51,6 +50,7 @@ import type { ColumnDef } from "@/lib/columns/types";
 import { parseFallbackDownloadUrl } from "@/lib/parse-fallback-download";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import type { SourceProfile } from "@/lib/profile-groups";
+import { useIsScUnplayable } from "@/lib/sc-unplayable";
 import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
 import {
   getCachedSoundcloudPeaks,
@@ -488,6 +488,9 @@ function TrackRowInner({
 }: TrackRowProps) {
   const imgUrl = artworkUrl(track);
   const scTrackId = extractId(track);
+  const { currentTrack } = usePlayer();
+  const isCurrent = currentTrack?.filePath === `soundcloud:${scTrackId}`;
+  const unplayable = useIsScUnplayable(scTrackId || null);
 
   // Hover prefetch: warm the stream URL + peaks cache after a short dwell.
   // Eliminates the 500–700ms cold SC resolve for rows the user is about
@@ -559,34 +562,15 @@ function TrackRowInner({
           />
         </div>
 
-        {/* Artwork */}
-        <div className="bg-muted flex size-7 shrink-0 items-center justify-center overflow-hidden rounded">
-          {imgUrl ? (
-            <img
-              src={imgUrl}
-              alt=""
-              className="size-7 object-cover"
-              loading="lazy"
-            />
-          ) : (
-            <Music className="text-muted-foreground size-3.5" />
-          )}
-        </div>
-
-        {/* Play button — streams via the backend HLS endpoint. */}
-        {scTrackId ? (
-          <SoundcloudRowPlayButton
-            trackId={scTrackId}
-            title={track.title ?? undefined}
-            artist={track.user?.username ?? undefined}
-            waveformUrl={track.waveform_url ?? undefined}
-            permalinkUrl={track.permalink_url ?? undefined}
-            artworkUrl={imgUrl ?? undefined}
-            onStartPlay={onStartPlay}
-          />
-        ) : (
-          <div className="size-6 shrink-0" />
-        )}
+        {/* Artwork with hover play/pause overlay — streams via the backend
+            HLS endpoint when playback starts. */}
+        <CoverPlayButton
+          artworkUrl={imgUrl}
+          isCurrent={isCurrent}
+          onStartPlay={scTrackId ? onStartPlay : undefined}
+          unplayable={unplayable}
+          label={track.title ?? undefined}
+        />
 
         {/* Reorderable column cells */}
         {visibleColumns.map((col) => (
@@ -971,7 +955,6 @@ export function LikesTable({
             />
           </div>
           <div className="size-7 shrink-0" aria-hidden />
-          <div className="size-6 shrink-0" aria-hidden />
         </>
       )}
       renderRow={({ item, index, visibleColumns: tableCols }) => {
