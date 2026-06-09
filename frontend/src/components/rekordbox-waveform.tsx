@@ -32,7 +32,9 @@ const SOURCE_COLS = 1200;
 const cache = new Map<string, Uint8Array | null>();
 const inflight = new Map<string, Promise<Uint8Array | null>>();
 
-async function loadWaveform(trackId: string): Promise<Uint8Array | null> {
+export async function loadWaveform(
+  trackId: string,
+): Promise<Uint8Array | null> {
   if (cache.has(trackId)) return cache.get(trackId) ?? null;
   let p = inflight.get(trackId);
   if (!p) {
@@ -53,6 +55,26 @@ async function loadWaveform(trackId: string): Promise<Uint8Array | null> {
     inflight.set(trackId, p);
   }
   return p;
+}
+
+/**
+ * Derive normalized amplitude peaks (0–1, one per PWV4 column) from raw
+ * entry bytes. Lets the main player reuse Rekordbox's own analysis instead
+ * of decoding the audio file via ffmpeg for peaks.
+ */
+export function pwv4ToPeaks(data: Uint8Array): number[] {
+  const cols = Math.min(SOURCE_COLS, Math.floor(data.length / 6));
+  const peaks = new Array<number>(cols);
+  for (let i = 0; i < cols; i++) {
+    const o = i * 6;
+    const h = Math.max(
+      data[o + 3] & 0x7f,
+      data[o + 4] & 0x7f,
+      data[o + 5] & 0x7f,
+    );
+    peaks[i] = h / 127;
+  }
+  return peaks;
 }
 
 /**

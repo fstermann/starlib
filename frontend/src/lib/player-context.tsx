@@ -41,6 +41,10 @@ export interface PlayerTrack {
    * SoundCloud tracks, the CDN `artwork_url`. Surfaced to the OS media
    * widget via the Media Session API. */
   artworkUrl?: string;
+  /** Rekordbox track id with an analyzed waveform. When set, the player
+   * derives its peaks from the Rekordbox PWV4 preview (a ~2ms fetch)
+   * instead of decoding the audio file via ffmpeg. */
+  rekordboxId?: string;
 }
 
 interface PlayerContextValue {
