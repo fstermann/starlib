@@ -1,6 +1,7 @@
 "use client";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -8,7 +9,7 @@ import { CommandPaletteTrigger } from "@/components/command-palette";
 import { isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
-import { useTopBarContent } from "./top-bar-context";
+import { useReloadTrigger, useTopBarContent } from "./top-bar-context";
 
 function useIsFullscreen() {
   // Initial value stays `false` to match SSR (where `isTauri()` is always
@@ -47,7 +48,18 @@ function useIsFullscreen() {
 
 export function TopBar() {
   const { title, actions } = useTopBarContent();
+  const { trigger: reload, hasHandler: canReload } = useReloadTrigger();
+  const [spinning, setSpinning] = useState(false);
   const fullscreen = useIsFullscreen();
+
+  const handleReload = () => {
+    if (!canReload) return;
+    reload();
+    // Brief visual confirmation. Decoupled from any actual async work so the
+    // spin doesn't get stuck if the handler resolves synchronously.
+    setSpinning(true);
+    window.setTimeout(() => setSpinning(false), 600);
+  };
 
   return (
     <header
@@ -80,6 +92,22 @@ export function TopBar() {
       </div>
       <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
         {actions}
+        <button
+          type="button"
+          onClick={handleReload}
+          disabled={!canReload}
+          aria-label="Reload current view"
+          title="Reload current view"
+          className={cn(
+            "hover:bg-accent text-muted-foreground hover:text-foreground flex size-6 items-center justify-center rounded-md transition-colors",
+            canReload ? "cursor-pointer" : "cursor-not-allowed opacity-40",
+          )}
+        >
+          <RefreshCw
+            className={cn("size-3.5", spinning && "animate-spin")}
+            aria-hidden
+          />
+        </button>
       </div>
     </header>
   );

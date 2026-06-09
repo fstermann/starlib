@@ -7,8 +7,12 @@ import { useCallback, useMemo } from "react";
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { RekordboxLogo } from "@/components/icons/rekordbox-logo";
-import { useTopBar } from "@/components/layout/top-bar-context";
+import {
+  useReloadHandler,
+  useTopBar,
+} from "@/components/layout/top-bar-context";
 import { LogoSpinner } from "@/components/logo-spinner";
+import { RekordboxWaveform } from "@/components/rekordbox-waveform";
 import {
   TrackTable,
   type ResolvedColumn,
@@ -16,6 +20,7 @@ import {
 } from "@/components/track-table/track-table";
 import { TreeView } from "@/components/tree/tree-view";
 import type { TreeNodeShape } from "@/components/tree/types";
+import { api } from "@/lib/api";
 import { semitonesFromBpmRatio, transposeCamelot } from "@/lib/camelot";
 import type { ColumnDef } from "@/lib/columns/types";
 import { useColumnPrefs } from "@/lib/columns/use-column-prefs";
@@ -85,6 +90,19 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** Format an ISO date string (YYYY-MM-DD) as the user's locale short date. */
+function formatDate(value: string | null): string {
+  if (!value) return "—";
+  // Rekordbox stores YYYY-MM-DD strings. Parse defensively so we don't crash
+  // on the occasional year-only ("2018") or empty ("") field.
+  const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(value);
+  if (!m) return value;
+  const [, y, mo, d] = m;
+  if (!mo) return y;
+  if (!d) return `${y}-${mo}`;
+  return `${y}-${mo}-${d}`;
+}
+
 /**
  * Key column cell. When the pitcher is active and the track's BPM is known,
  * shows the transposed Camelot key in brand-green next to (or in place of)
@@ -150,6 +168,18 @@ const REKORDBOX_COLUMNS: TrackTableColumn[] = [
     defaultWidth: 72,
     className: "text-right tabular-nums",
   },
+  {
+    id: "date_added",
+    header: "Added",
+    defaultWidth: 96,
+    className: "tabular-nums",
+  },
+  {
+    id: "release_date",
+    header: "Released",
+    defaultWidth: 96,
+    className: "tabular-nums",
+  },
   { id: "soundcloud_id", header: "SoundCloud", defaultWidth: 96 },
 ];
 
@@ -167,11 +197,21 @@ export function RekordboxView() {
   const status = useRekordboxStatus();
   const enabled = status.data.available;
 
-  const { data, loading, error } = useRekordboxPlaylists(enabled);
+  const {
+    data,
+    loading,
+    error,
+    refetch: refetchPlaylists,
+  } = useRekordboxPlaylists(enabled);
   const [selectedId, setSelectedId] = useQueryState("playlist", {
     defaultValue: "",
   });
   const tracksResp = useRekordboxPlaylistTracks(selectedId || null);
+
+  useReloadHandler(() => {
+    refetchPlaylists();
+    tracksResp.refetch();
+  });
   const player = usePlayer();
   const { pitchEnabled, targetBpm } = player;
 
@@ -204,7 +244,7 @@ export function RekordboxView() {
   );
 
   const handleStartPlay = useCallback(
-    (index: number) => {
+    (index: number, startRatio?: number) => {
       const queue = filteredTracks
         .map(toPlayerTrack)
         .filter((t): t is PlayerTrack => t !== null);
@@ -214,7 +254,7 @@ export function RekordboxView() {
         filteredTracks.slice(0, index + 1).filter((t) => t.file_path).length -
         1;
       if (playableIdx < 0) return;
-      player.playQueue(queue, playableIdx);
+      player.playQueue(queue, playableIdx, startRatio);
     },
     [filteredTracks, player],
   );
@@ -257,6 +297,18 @@ export function RekordboxView() {
           return (
             <span className="text-muted-foreground">
               {formatDuration(t.duration_seconds)}
+            </span>
+          );
+        case "date_added":
+          return (
+            <span className="text-muted-foreground">
+              {formatDate(t.date_added)}
+            </span>
+          );
+        case "release_date":
+          return (
+            <span className="text-muted-foreground">
+              {formatDate(t.release_date)}
             </span>
           );
         case "soundcloud_id":
@@ -403,6 +455,7 @@ export function RekordboxView() {
               renderHeaderLead={() => (
                 <>
                   <div className="size-7 shrink-0" aria-hidden />
+                  <div className="h-8 w-24 shrink-0" aria-hidden />
                 </>
               )}
               renderRow={({ item, index, visibleColumns }) => {
@@ -438,7 +491,32 @@ export function RekordboxView() {
                     )}
                   >
                     <div className="bg-muted flex size-7 shrink-0 items-center justify-center overflow-hidden rounded">
-                      <Music className="text-muted-foreground size-3.5" />
+                      {t.has_artwork ? (
+                        <img
+                          src={api.getRekordboxArtworkUrl(t.id)}
+                          alt=""
+                          className="size-7 object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Music className="text-muted-foreground size-3.5" />
+                      )}
+                    </div>
+                    <div className="h-8 w-24 shrink-0">
+                      {t.has_waveform ? (
+                        <RekordboxWaveform
+                          trackId={t.id}
+                          track={playable ? toPlayerTrack(t) : null}
+                          onStartPlay={
+                            playable
+                              ? (startRatio) =>
+                                  handleStartPlay(index, startRatio)
+                              : undefined
+                          }
+                          width={96}
+                          height={32}
+                        />
+                      ) : null}
                     </div>
                     {visibleColumns.map((col) => (
                       <div

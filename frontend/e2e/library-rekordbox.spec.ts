@@ -42,6 +42,10 @@ const TRACKS = [
     file_path: "/music/foo.flac",
     comment: "sc:12345",
     soundcloud_id: 12345,
+    date_added: "2024-01-15",
+    release_date: "2023-11-03",
+    has_artwork: true,
+    has_waveform: true,
   },
   {
     id: "t-2",
@@ -55,8 +59,22 @@ const TRACKS = [
     file_path: "/music/baz.flac",
     comment: null,
     soundcloud_id: null,
+    date_added: "2024-02-20",
+    release_date: null,
+    has_artwork: false,
+    has_waveform: false,
   },
 ];
+
+// Minimal 1×1 transparent JPEG (just enough for the <img> tag to load without
+// erroring during the test — we don't decode the image).
+const TINY_JPEG = Buffer.from(
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+  "base64",
+);
+// 7200-byte PWV4 payload (1200 cols × 6 bytes). Zeros are fine — the canvas
+// just paints nothing and the test only needs the fetch to resolve cleanly.
+const WAVEFORM_BYTES = Buffer.alloc(7200);
 
 function jsonRoute(body: unknown) {
   return (route: Route) =>
@@ -80,6 +98,20 @@ test.describe("Library: Rekordbox source", () => {
     await page.route(
       "**/api/rekordbox/playlists/pl-1/tracks",
       jsonRoute({ tracks: TRACKS }),
+    );
+    await page.route("**/api/rekordbox/tracks/*/artwork*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "image/jpeg",
+        body: TINY_JPEG,
+      }),
+    );
+    await page.route("**/api/rekordbox/tracks/*/waveform", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/octet-stream",
+        body: WAVEFORM_BYTES,
+      }),
     );
   });
 
@@ -106,6 +138,17 @@ test.describe("Library: Rekordbox source", () => {
     // Duration formatted as m:ss
     await expect(tracks.getByText("5:50", { exact: true })).toBeVisible();
     await expect(tracks.getByText("6:50", { exact: true })).toBeVisible();
+
+    // Added / Released columns surface the parsed dates.
+    await expect(tracks.getByText("2024-01-15", { exact: true })).toBeVisible();
+    await expect(tracks.getByText("2023-11-03", { exact: true })).toBeVisible();
+
+    // Cover for the track that has artwork is fetched from the rekordbox
+    // artwork endpoint and rendered inline.
+    const cover = tracks.locator(
+      `img[src*="/api/rekordbox/tracks/t-1/artwork"]`,
+    );
+    await expect(cover).toBeVisible();
 
     await expect(page).toHaveURL(/playlist=pl-1/);
   });

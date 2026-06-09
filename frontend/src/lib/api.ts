@@ -425,6 +425,16 @@ export const api = {
     return `${API_BASE_URL}/api/metadata/files/${encoded}/artwork`;
   },
 
+  // Rekordbox artwork (cached JPEG from the Rekordbox share dir)
+  getRekordboxArtworkUrl(trackId: string, small = true): string {
+    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/artwork${small ? "?small=true" : "?small=false"}`;
+  },
+
+  // Rekordbox PWV4 color preview entries (raw 1200 × 6 bytes)
+  getRekordboxWaveformUrl(trackId: string): string {
+    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/waveform`;
+  },
+
   // Audio streaming
   getAudioUrl(filePath: string): string {
     const encoded = encodeURIComponent(filePath);
