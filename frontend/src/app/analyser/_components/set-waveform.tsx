@@ -4,6 +4,7 @@ import { Loader2, Pause, Play, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { formatTimecode, jobAudioUrl } from "@/lib/analyser";
+import { claimPlayback, releasePlayback } from "@/lib/exclusive-audio";
 
 interface WaveSurferLike {
   play(): Promise<void>;
@@ -95,9 +96,20 @@ export function useSetAudio(
           setReady(true);
           setDuration(ws.getDuration());
         });
-        ws.on("play", () => setIsPlaying(true));
-        ws.on("pause", () => setIsPlaying(false));
-        ws.on("finish", () => setIsPlaying(false));
+        ws.on("play", () => {
+          setIsPlaying(true);
+          // Only one audio surface at a time — starting the set pauses
+          // a running Shazam preview / global player and vice versa.
+          claimPlayback("analyser-set", () => ws.pause());
+        });
+        ws.on("pause", () => {
+          setIsPlaying(false);
+          releasePlayback("analyser-set");
+        });
+        ws.on("finish", () => {
+          setIsPlaying(false);
+          releasePlayback("analyser-set");
+        });
         ws.on("timeupdate", () => setProgressS(ws.getCurrentTime()));
         ws.on("error", ((err: unknown) => {
           if (cancelled) return;

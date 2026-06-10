@@ -123,6 +123,9 @@ export interface TrackTimelineEntry {
   soundcloud_id?: number | null;
   soundcloud_permalink_url?: string | null;
   artwork_url?: string | null;
+  /** Shazam 30s preview clip. Persisted on the track row so it survives
+   *  scan-cache overwrites by finer-tier re-probes. */
+  preview_url?: string | null;
   duration_s?: number | null;
   confirmed?: boolean;
   user_edited?: boolean;
@@ -237,6 +240,7 @@ export type AnalyserEvent =
       soundcloud_id?: number | null;
       soundcloud_permalink_url?: string | null;
       artwork_url?: string | null;
+      preview_url?: string | null;
       duration_s?: number | null;
       set_bpm?: number | null;
       pitch_offset?: number | null;
@@ -256,6 +260,9 @@ export type AnalyserEvent =
       tier: ShazamTier;
       region: [number, number] | null;
       total_points: number;
+      /** Points the run already finished — non-zero only on replay so a
+       *  mid-run reload resumes the progress display. */
+      completed_points?: number;
     };
 
 // ---------------------------------------------------------------------------
@@ -295,6 +302,19 @@ export async function reanalyse(
   return fetchApi(`/api/analyser/sets/${encodeURIComponent(jobId)}/reanalyse`, {
     method: "POST",
     body: JSON.stringify({ ranges, overrides }),
+  });
+}
+
+/** Overwrite window BPMs in a range — manual fix for spans where the
+ *  detector locked onto a metrically related tempo (2:3, 1:2, …). */
+export async function updateWindowsBpm(
+  jobId: string,
+  range: { start_s: number; end_s: number },
+  bpm: number,
+): Promise<{ job_id: string; updated: number }> {
+  return fetchApi(`/api/analyser/sets/${encodeURIComponent(jobId)}/windows`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...range, bpm }),
   });
 }
 

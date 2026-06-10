@@ -156,6 +156,10 @@ class _JobState:
     # region, total_points) — without it the frontend falls back to an
     # indeterminate bar with no "X / Y points" count.
     active_shazam_scan: Any | None = None
+    # The ``ReanalyseStartedEvent`` for the currently running BPM
+    # re-analyse, if any. Replayed so a reload mid-pass still knows which
+    # ranges are being analysed (header progress + range chips).
+    active_reanalyse: Any | None = None
 
 
 _jobs: dict[str, _JobState] = {}
@@ -303,13 +307,12 @@ async def reanalyse_job(
 
     state.finished = False
     db.update_job_status(job_id, status="running")
-    await _broadcast(
-        state,
-        ReanalyseStartedEvent(
-            job_id=job_id,
-            ranges=[{"start_s": s, "end_s": e} for s, e in ranges],
-        ),
+    reanalyse_started = ReanalyseStartedEvent(
+        job_id=job_id,
+        ranges=[{"start_s": s, "end_s": e} for s, e in ranges],
     )
+    state.active_reanalyse = reanalyse_started
+    await _broadcast(state, reanalyse_started)
 
     client = shazam_client or _build_default_shazam()
     failed = False
@@ -326,6 +329,7 @@ async def reanalyse_job(
             failed = True
             break
 
+    state.active_reanalyse = None
     if not failed:
         db.update_job_status(job_id, status="complete")
         await _broadcast(state, JobCompleteEvent(job_id=job_id))
@@ -880,6 +884,11 @@ async def _run_shazam_scan(
             break
         finally:
             state.current_scan_task = None
+        # Record per-run progress on the stored start event so a replay
+        # after a reload reports how far THIS run got — the replayed scan
+        # rows themselves are cache history and must not be counted.
+        if state.active_shazam_scan is not None:
+            state.active_shazam_scan.completed_points = idx
         # Materialise + broadcast newly-recognised tracks live, so the
         # tracklist fills as the scan walks instead of waiting for the
         # full pass to finish (a 20-min refine over a 76-min set takes
@@ -1204,6 +1213,9 @@ class _TimelineRun:
     # falling back to the first scan with a non-null value preserves
     # covers across mixed-result runs.
     artwork_url: str | None = None
+    # Best Shazam preview clip URL seen across the run's scans — same
+    # lazy-fallback semantics as ``artwork_url``.
+    preview_url: str | None = None
 
 
 def _best_per_scan_point(scans: list[db.ShazamScanRow]) -> list[db.ShazamScanRow]:
@@ -1232,14 +1244,7 @@ def _aggregate_timeline(scans: list[db.ShazamScanRow]) -> list[_TimelineRun]:
     walking the grid — runs are defined on the dominant track per point,
     not on every alternate pitch hit.
     """
-    # Side-table of any artwork we saw for each shazam_id across pitch
-    # alternates. Used as a fallback when the highest-confidence row
-    # didn't carry artwork but a lower-confidence alternate did.
-    artwork_by_id: dict[str, str] = {}
-    for row in scans:
-        if row.shazam_id is None or row.artwork_url is None:
-            continue
-        artwork_by_id.setdefault(row.shazam_id, row.artwork_url)
+    artwork_by_id, preview_by_id = _media_by_shazam_id(scans)
 
     runs: list[_TimelineRun] = []
     open_run: _TimelineRun | None = None
@@ -1264,6 +1269,8 @@ def _aggregate_timeline(scans: list[db.ShazamScanRow]) -> list[_TimelineRun]:
             # on some matches even when others in the run carried it.
             if open_run.artwork_url is None:
                 open_run.artwork_url = row.artwork_url
+            if open_run.preview_url is None:
+                open_run.preview_url = row.preview_url
         else:
             if open_run is not None:
                 runs.append(open_run)
@@ -1276,15 +1283,46 @@ def _aggregate_timeline(scans: list[db.ShazamScanRow]) -> list[_TimelineRun]:
                 confidence=row.confidence,
                 pitch_offset=row.pitch_offset,
                 artwork_url=row.artwork_url,
+                preview_url=row.preview_url,
             )
     if open_run is not None:
         runs.append(open_run)
-    # Backfill artwork for any run whose representative scan was a
-    # null-artwork match but a sibling pitch attempt carried one.
-    for r in runs:
-        if r.artwork_url is None and r.shazam_id is not None:
-            r.artwork_url = artwork_by_id.get(r.shazam_id)
+    _backfill_run_media(runs, artwork_by_id, preview_by_id)
     return runs
+
+
+def _media_by_shazam_id(
+    scans: list[db.ShazamScanRow],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Side-tables of any artwork / preview seen per shazam_id across pitch
+    alternates. Used as a fallback when the highest-confidence row didn't
+    carry the field but a lower-confidence alternate did."""
+    artwork: dict[str, str] = {}
+    preview: dict[str, str] = {}
+    for row in scans:
+        if row.shazam_id is None:
+            continue
+        if row.artwork_url is not None:
+            artwork.setdefault(row.shazam_id, row.artwork_url)
+        if row.preview_url is not None:
+            preview.setdefault(row.shazam_id, row.preview_url)
+    return artwork, preview
+
+
+def _backfill_run_media(
+    runs: list[_TimelineRun],
+    artwork_by_id: dict[str, str],
+    preview_by_id: dict[str, str],
+) -> None:
+    """Backfill artwork/preview for runs whose representative scan was a
+    null-media match but a sibling pitch attempt carried the field."""
+    for r in runs:
+        if r.shazam_id is None:
+            continue
+        if r.artwork_url is None:
+            r.artwork_url = artwork_by_id.get(r.shazam_id)
+        if r.preview_url is None:
+            r.preview_url = preview_by_id.get(r.shazam_id)
 
 
 def sync_shazam_runs_to_tracks(job_id: str) -> int:
@@ -1320,6 +1358,7 @@ def sync_shazam_runs_to_tracks(job_id: str) -> int:
                 artist=run.artist,
                 shazam_id=run.shazam_id,
                 artwork_url=run.artwork_url,
+                preview_url=run.preview_url,
                 set_bpm=set_bpm,
                 pitch_offset=run.pitch_offset,
             )
@@ -1337,6 +1376,7 @@ def sync_shazam_runs_to_tracks(job_id: str) -> int:
             set_bpm=set_bpm,
             pitch_offset=run.pitch_offset,
             artwork_url=run.artwork_url if existing.artwork_url is None else None,
+            preview_url=run.preview_url if existing.preview_url is None else None,
         )
     return inserted
 
@@ -1370,6 +1410,7 @@ def _track_to_event(job_id: str, t: db.TrackRow) -> TrackTimelineEvent:
         soundcloud_id=t.soundcloud_id,
         soundcloud_permalink_url=t.soundcloud_permalink_url,
         artwork_url=t.artwork_url,
+        preview_url=t.preview_url,
         duration_s=t.duration_s,
         set_bpm=t.set_bpm,
         pitch_offset=t.pitch_offset,
@@ -1394,6 +1435,7 @@ def _track_to_dict(t: db.TrackRow) -> dict:
         "soundcloud_id": t.soundcloud_id,
         "soundcloud_permalink_url": t.soundcloud_permalink_url,
         "artwork_url": t.artwork_url,
+        "preview_url": t.preview_url,
         "duration_s": t.duration_s,
         "confirmed": t.confirmed,
         "user_edited": t.user_edited,
@@ -1420,6 +1462,12 @@ def _replay_in_progress_state(state: _JobState) -> list[AnalyserEvent]:
                 artist=_job_artist(state.job_id),
             )
         )
+    # Before the windows replay: the reducer reacts to this marker by
+    # dropping in-range windows/scans, which must happen while the lists
+    # are still empty — otherwise rows the current pass already
+    # recomputed would be dropped and not re-added.
+    if state.active_reanalyse is not None:
+        events.append(state.active_reanalyse)
     for w in db.list_windows(state.job_id):
         events.append(
             WindowBpmEvent(
@@ -1440,8 +1488,6 @@ def _replay_in_progress_state(state: _JobState) -> list[AnalyserEvent]:
                 confidence=s.confidence,
             )
         )
-    if state.active_shazam_scan is not None:
-        events.append(state.active_shazam_scan)
     for scan in db.list_shazam_scans(state.job_id):
         events.append(
             ShazamScanEvent(
@@ -1453,8 +1499,15 @@ def _replay_in_progress_state(state: _JobState) -> list[AnalyserEvent]:
                 confidence=scan.confidence,
                 pitch_offset=scan.pitch_offset,
                 tier=scan.tier,
+                preview_url=scan.preview_url,
+                artwork_url=scan.artwork_url,
             )
         )
+    # Emitted AFTER the scan replay: the reducer counts same-tier scan
+    # events that arrive after this marker as live progress, so cached
+    # rows from earlier runs must already be behind it.
+    if state.active_shazam_scan is not None:
+        events.append(state.active_shazam_scan)
     for t in _materialised_tracks(state.job_id):
         events.append(_track_to_event(state.job_id, t))
     return events
@@ -1498,6 +1551,8 @@ async def _replay_finished_job(job_id: str) -> AsyncIterator[AnalyserEvent]:
             confidence=scan.confidence,
             pitch_offset=scan.pitch_offset,
             tier=scan.tier,
+            preview_url=scan.preview_url,
+            artwork_url=scan.artwork_url,
         )
     for t in _materialised_tracks(job_id):
         yield _track_to_event(job_id, t)

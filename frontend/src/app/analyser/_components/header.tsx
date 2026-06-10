@@ -71,9 +71,10 @@ interface Progress {
  *  ratio to those ranges; during a fresh full pass it falls back to
  *  ``[0, duration]``. Returns ``null`` when no bounds are available
  *  (duration unknown). */
-function activeBounds(
-  state: AnalyserUiState,
-): { totalSpan: number; ranges: Array<{ start_s: number; end_s: number }> } | null {
+function activeBounds(state: AnalyserUiState): {
+  totalSpan: number;
+  ranges: Array<{ start_s: number; end_s: number }>;
+} | null {
   const dur = state.meta.durationS;
   if (state.activeRanges.length > 0) {
     const totalSpan = state.activeRanges.reduce(
@@ -89,7 +90,10 @@ function activeBounds(
 
 function ratioWithinRanges(
   t: number,
-  bounds: { totalSpan: number; ranges: Array<{ start_s: number; end_s: number }> },
+  bounds: {
+    totalSpan: number;
+    ranges: Array<{ start_s: number; end_s: number }>;
+  },
 ): number {
   let progressed = 0;
   for (const r of bounds.ranges) {
@@ -117,11 +121,10 @@ function computeProgress(
   // end.
   if (!isBpmReanalyse && state.activeShazamScan != null) {
     const run = state.activeShazamScan;
-    const done = run.arrivedScanS.length;
+    const done = run.completedPoints + run.arrivedScanS.length;
     const total = Math.max(run.totalPoints, done);
     const ratio = total > 0 ? Math.min(1, done / total) : null;
-    const tierLabel =
-      run.tier.charAt(0).toUpperCase() + run.tier.slice(1);
+    const tierLabel = run.tier.charAt(0).toUpperCase() + run.tier.slice(1);
     const regionLabel = run.region
       ? ` · ${formatTimecode(run.region.start_s)}–${formatTimecode(run.region.end_s)}`
       : "";

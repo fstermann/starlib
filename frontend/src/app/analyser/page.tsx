@@ -12,6 +12,7 @@ import {
   startAnalyserJob,
   startShazamScan,
   updateTrack,
+  updateWindowsBpm,
   type AnalyserJobOptions,
   type JobSnapshot,
   type ShazamTier,
@@ -121,6 +122,19 @@ function AnalyserPageInner() {
     }
   }, [jobId, options, refresh, state.selection]);
 
+  const handleSetBpm = useCallback(
+    async (range: { start_s: number; end_s: number }, bpm: number) => {
+      if (!jobId) return;
+      try {
+        await updateWindowsBpm(jobId, range, bpm);
+        refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [jobId, refresh],
+  );
+
   const handleReanalyseAll = useCallback(async () => {
     if (!jobId || !state.meta.durationS) return;
     try {
@@ -172,10 +186,7 @@ function AnalyserPageInner() {
   );
 
   const handleScanRange = useCallback(
-    async (
-      range: { start_s: number; end_s: number },
-      tier: ShazamTier,
-    ) => {
+    async (range: { start_s: number; end_s: number }, tier: ShazamTier) => {
       if (!jobId) return;
       try {
         await startShazamScan(jobId, {
@@ -424,6 +435,7 @@ function AnalyserPageInner() {
                 dispatch({ type: "select.range", ...range });
                 void handleReanalyseSelection();
               }}
+              onSetBpm={(range, bpm) => void handleSetBpm(range, bpm)}
               onScanRange={(range, tier) => void handleScanRange(range, tier)}
               confirmedRanges={confirmedRanges}
               shazamDisabled={

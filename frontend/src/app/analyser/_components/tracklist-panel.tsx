@@ -23,6 +23,7 @@ import {
   originalBpmFromSet,
   type TrackTimelineEntry,
 } from "@/lib/analyser";
+import { claimPlayback, releasePlayback } from "@/lib/exclusive-audio";
 import { usePlayer } from "@/lib/player-context";
 import { searchTracks, type SCTrack } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,7 @@ import { cn } from "@/lib/utils";
 import type { AnalyserUiState } from "../_state";
 import { AddTrackDialog } from "./add-track-dialog";
 import { AlignmentDialog } from "./alignment-dialog";
+import { computeNextStarts, rowKeyOf } from "./row-keys";
 import type { SetAudio } from "./set-waveform";
 
 interface TracklistPanelProps {
@@ -221,7 +223,7 @@ export function TracklistPanel({
   // Per-row "find on SoundCloud" cache so re-clicking on an already-resolved
   // row plays instantly without a fresh /tracks search.
   const player = usePlayer();
-  const preview = useShazamPreview(audio);
+  const preview = useShazamPreview();
   const [findState, setFindState] = useState<Record<string, FindState>>({});
   const setFindFor = (key: string, value: FindState) =>
     setFindState((prev) => ({ ...prev, [key]: value }));
@@ -304,16 +306,10 @@ export function TracklistPanel({
   // row's start and the next row's start. Using the per-row
   // ``[start_s, end_s]`` span instead would flip back to Play almost
   // immediately for single-scan-point runs (where ``end_s == start_s``).
-  const nextStarts = useMemo(() => {
-    const sorted = [...tracks].sort((a, b) => a.start_s - b.start_s);
-    const m = new Map<string, number>();
-    for (let i = 0; i < sorted.length; i++) {
-      const t = sorted[i];
-      const key = `${t.start_s}-${t.shazam_id ?? t.title}`;
-      m.set(key, sorted[i + 1]?.start_s ?? Number.POSITIVE_INFINITY);
-    }
-    return m;
-  }, [tracks]);
+  // Keyed by ``rowKeyOf`` — the SAME key the render loop uses. A
+  // mismatch here makes every lookup miss, the fallback span becomes
+  // infinite, and pressing set-play marks every row as active.
+  const nextStarts = useMemo(() => computeNextStarts(tracks), [tracks]);
 
   const isRowActive = (rowKey: string, start: number) => {
     const next = nextStarts.get(rowKey) ?? Number.POSITIVE_INFINITY;
@@ -407,8 +403,7 @@ export function TracklistPanel({
             // ``analyser_tracks`` row exists) fall back to the
             // start+title key — there's nothing to confirm/remove on
             // those yet anyway.
-            const rowKey =
-              "id" in t ? String(t.id) : `${t.start_s}-${t.title}`;
+            const rowKey = rowKeyOf(t);
             const reactKey = rowKey;
             const isPlaying = isRowActive(rowKey, t.start_s);
             const find = findState[rowKey] ?? { kind: "idle" };
@@ -464,7 +459,10 @@ export function TracklistPanel({
                     .artwork_url ?? null)
                 : null;
             const artworkUrl =
-              previewByKey.get(displayKey)?.artwork_url ?? scArtwork;
+              (override
+                ? previewByKey.get(displayKey)?.artwork_url
+                : (("artwork_url" in t ? t.artwork_url : null) ??
+                  previewByKey.get(displayKey)?.artwork_url)) ?? scArtwork;
             return (
               <li
                 key={reactKey}
@@ -753,7 +751,14 @@ export function TracklistPanel({
                       display.shazam_id ??
                       `${display.title}|${display.artist ?? ""}`;
                     const previewMeta = previewByKey.get(previewKey);
-                    const previewUrl = previewMeta?.preview_url ?? null;
+                    const previewUrl =
+                      (override
+                        ? null
+                        : "preview_url" in t
+                          ? t.preview_url
+                          : null) ??
+                      previewMeta?.preview_url ??
+                      null;
                     const previewing = preview.isPlaying(previewKey);
                     if (!previewUrl) return null;
                     return (
@@ -1124,11 +1129,11 @@ interface ShazamPreviewState {
   isPlaying: (key: string) => boolean;
 }
 
-/** Plays a Shazam preview clip in a single shared `<Audio>`. Pauses the
- *  set audio while a preview plays so the two sources don't talk over
- *  each other; resumes nothing on stop (the user can hit the set's play
- *  button again if they want). */
-function useShazamPreview(setAudio: SetAudio): ShazamPreviewState {
+/** Plays a Shazam preview clip in a single shared `<Audio>`. Claims
+ *  the exclusive-playback slot while playing so the set audio and the
+ *  global player pause automatically (and pause the preview back);
+ *  resumes nothing on stop. */
+function useShazamPreview(): ShazamPreviewState {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playingKey, setPlayingKey] = useState<string | null>(null);
 
@@ -1137,7 +1142,10 @@ function useShazamPreview(setAudio: SetAudio): ShazamPreviewState {
     const a = new Audio();
     a.preload = "none";
     audioRef.current = a;
-    const onEnded = () => setPlayingKey(null);
+    const onEnded = () => {
+      releasePlayback("shazam-preview");
+      setPlayingKey(null);
+    };
     a.addEventListener("ended", onEnded);
     return () => {
       a.removeEventListener("ended", onEnded);
@@ -1152,11 +1160,14 @@ function useShazamPreview(setAudio: SetAudio): ShazamPreviewState {
     if (!a) return;
     if (playingKey === key) {
       a.pause();
+      releasePlayback("shazam-preview");
       setPlayingKey(null);
       return;
     }
-    // Pause the set audio so the preview is audible on its own.
-    if (setAudio.isPlaying) setAudio.togglePlay();
+    claimPlayback("shazam-preview", () => {
+      a.pause();
+      setPlayingKey(null);
+    });
     if (a.src !== url) a.src = url;
     a.currentTime = 0;
     // Optimistically flip the button to Pause as soon as the user
@@ -1165,14 +1176,16 @@ function useShazamPreview(setAudio: SetAudio): ShazamPreviewState {
     // until then, making the press feel unresponsive. If play
     // actually fails (e.g. autoplay blocked), we revert below.
     setPlayingKey(key);
-    void a.play().catch(() => setPlayingKey(null));
+    void a.play().catch(() => {
+      releasePlayback("shazam-preview");
+      setPlayingKey(null);
+    });
   };
 
   const isPlaying = (key: string) => playingKey === key;
 
   return { playingKey, toggle, isPlaying };
 }
-
 
 /** ``128 → 124 BPM`` chip. Hidden for derived/manual rows that don't
  *  carry the persisted scan stats; hidden when no pitch shift was

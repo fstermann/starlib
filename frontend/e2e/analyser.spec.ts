@@ -664,6 +664,95 @@ test.describe("Set Analyser", () => {
     void handle;
   });
 
+  test("track band fills with a blurred artwork echo", async ({ page }) => {
+    await mockAnalyserApi(page);
+    // Seed a non-expired access token so `ensureValidToken` returns
+    // synchronously without hitting the refresh endpoint.
+    await page.addInitScript(() => {
+      const future = Date.now() + 60 * 60 * 1000;
+      localStorage.setItem("access_token", "fake-token");
+      localStorage.setItem("token_expires_at", String(future));
+    });
+    // Artwork lookup runs through SC track search; answer with a
+    // data-URI cover so the echo <img> actually loads offline (a dead
+    // URL would fire onError and hide the element).
+    const pixelPng =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    await page.route(/api\.soundcloud\.com\/tracks/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            id: 999111,
+            urn: "soundcloud:tracks:999111",
+            title: "Mock Track A — Official",
+            permalink_url: "https://soundcloud.com/dj/mock-track-a",
+            waveform_url: null,
+            artwork_url: pixelPng,
+            user: { username: "Mock Artist A", urn: "soundcloud:users:1" },
+          },
+        ]),
+      }),
+    );
+
+    await page.goto(`/analyser?job=${FAKE_JOB_ID}`);
+    await expect(page.getByTestId("track-band")).toHaveCount(1);
+    await expect(page.getByTestId("track-band-echo")).toBeVisible();
+  });
+
+  test("set search lists long tracks and starts analysis from a result", async ({
+    page,
+  }) => {
+    await mockAnalyserApi(page);
+    // Seed a non-expired access token so `ensureValidToken` returns
+    // synchronously without hitting the refresh endpoint.
+    await page.addInitScript(() => {
+      const future = Date.now() + 60 * 60 * 1000;
+      localStorage.setItem("access_token", "fake-token");
+      localStorage.setItem("token_expires_at", String(future));
+    });
+    let searchUrl = "";
+    await page.route(/api\.soundcloud\.com\/tracks/, (route) => {
+      searchUrl = route.request().url();
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            id: 555,
+            urn: "soundcloud:tracks:555",
+            title: "Marathon Techno Mix",
+            permalink_url: "https://soundcloud.com/dj/marathon-mix",
+            duration: 4581065,
+            waveform_url: null,
+            artwork_url: null,
+            user: { username: "DJ Marathon", urn: "soundcloud:users:9" },
+          },
+        ]),
+      });
+    });
+
+    await page.goto("/analyser");
+    await page.getByTestId("analyser-url-input").fill("marathon techno");
+    // A search query is not a URL — direct Analyse stays disabled.
+    await expect(page.getByTestId("analyser-start-button")).toBeDisabled();
+
+    const result = page.getByTestId("set-search-result");
+    await expect(result).toContainText("Marathon Techno Mix");
+    await expect(result).toContainText("DJ Marathon");
+    await expect(result).toContainText("1:16:21");
+    // The search request must carry the min-duration filter (20 min).
+    expect(new URL(searchUrl).searchParams.get("duration[from]")).toBe(
+      String(20 * 60 * 1000),
+    );
+
+    // Clicking a result starts the analysis with the result's permalink.
+    await result.click();
+    await expect(page).toHaveURL(/\/analyser\?job=test-job-1/);
+    await expect(page.getByTestId("analyser-main")).toBeVisible();
+  });
+
   test("find on SoundCloud resolves a hit and starts the global player", async ({
     page,
   }) => {
@@ -1161,9 +1250,10 @@ test.describe("Set Analyser", () => {
     // Pinpoint is gated until Refine produces scans — it shows up in the
     // dropdown menu as locked.
     await page.getByTestId("run-shazam-menu").click();
-    await expect(
-      page.getByTestId("run-shazam-item-pinpoint"),
-    ).toHaveAttribute("data-disabled", "");
+    await expect(page.getByTestId("run-shazam-item-pinpoint")).toHaveAttribute(
+      "data-disabled",
+      "",
+    );
   });
 
   test("trash button DELETEs the track and refreshes", async ({ page }) => {
@@ -1389,8 +1479,7 @@ test.describe("Set Analyser", () => {
             artist: "ManualA",
             shazam_id: null,
             soundcloud_id: 999111,
-            soundcloud_permalink_url:
-              "https://soundcloud.com/dj/hand-picked",
+            soundcloud_permalink_url: "https://soundcloud.com/dj/hand-picked",
             artwork_url: null,
             created_at: 0,
           }),
@@ -1663,6 +1752,305 @@ test.describe("Set Analyser", () => {
     await expect.poll(handle.reanalyseCallCount).toBeGreaterThan(0);
   });
 
+  test("BPM fix snaps a misdetected span to the neighbour tempo", async ({
+    page,
+  }) => {
+    const BPM_JOB = "test-bpm-job";
+    const patches: Array<Record<string, unknown>> = [];
+
+    // 143.8 BPM at the edges, a misdetected 95.9 dip in the middle.
+    // Gaps around the dip keep the imprecise mouse-drag selection from
+    // catching any 143.8 windows.
+    const windows: Array<Record<string, unknown>> = [];
+    for (let s = 0; s < 1000; s += 30) {
+      if ((s > 200 && s < 310) || (s > 430 && s < 600)) continue;
+      windows.push({
+        start_s: s,
+        end_s: s + 30,
+        bpm: s >= 310 && s <= 430 ? 95.9 : 143.8,
+        confidence: "medium",
+      });
+    }
+
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${BPM_JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: BPM_JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "BPM Fix Set",
+          artist: "Tester",
+          duration_s: 1000,
+          status: "complete",
+          options: {
+            pitch_strategy: "none",
+            window_s: 30,
+            hop_s: 30,
+            min_section_gap_s: 30,
+            sections_enabled: true,
+            scan_cadence_s: 60,
+            scan_window_s: 12,
+          },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows,
+          sections: [],
+          scans: [],
+          timeline: [],
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${BPM_JOB}/events$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: "",
+        }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${BPM_JOB}/windows$`),
+      (route) => {
+        patches.push(route.request().postDataJSON() as Record<string, unknown>);
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ job_id: BPM_JOB, updated: 5 }),
+        });
+      },
+    );
+
+    await page.goto(`/analyser?job=${BPM_JOB}`);
+    await expect(page.getByTestId("analyser-main")).toBeVisible();
+
+    // Drag a selection over the dip (roughly 30%–50% of the timeline).
+    const timeline = page.getByTestId("analyser-timeline");
+    const box = await timeline.boundingBox();
+    if (!box) throw new Error("timeline has no bounding box");
+    await page.mouse.move(box.x + box.width * 0.3, box.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.5, box.y + 20);
+    await page.mouse.up();
+
+    await expect(page.getByTestId("detail-pane")).toBeVisible();
+    // The dip is metrically related to its neighbours (95.9 × 3/2 ≈
+    // 143.8) so the snap suggestion appears with the neighbour tempo.
+    const snap = page.getByTestId("detail-bpm-snap");
+    await expect(snap).toContainText("143.8");
+    await snap.click();
+
+    await expect.poll(() => patches.length).toBe(1);
+    expect(patches[0].bpm).toBe(143.8);
+    expect(patches[0].start_s as number).toBeGreaterThan(200);
+    expect(patches[0].end_s as number).toBeLessThan(600);
+
+    // Manual path: type an explicit BPM and apply.
+    await page.getByTestId("detail-bpm-input").fill("150");
+    await page.getByTestId("detail-bpm-apply").click();
+    await expect.poll(() => patches.length).toBe(2);
+    expect(patches[1].bpm).toBe(150);
+  });
+
+  test("scan progress counts only the active run, not cached history", async ({
+    page,
+  }) => {
+    const RUN_JOB = "test-progress-job";
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${RUN_JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: RUN_JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "Progress Set",
+          artist: "Tester",
+          duration_s: 600,
+          status: "running",
+          options: {
+            pitch_strategy: "none",
+            window_s: 30,
+            hop_s: 25,
+            min_section_gap_s: 30,
+            sections_enabled: true,
+            scan_cadence_s: 60,
+            scan_window_s: 12,
+          },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          scans: [],
+          timeline: [],
+        }),
+      }),
+    );
+    const mkScan = (scan_s: number) => ({
+      event: "shazam.scan",
+      data: {
+        type: "shazam.scan",
+        job_id: RUN_JOB,
+        scan_s,
+        title: "Cached Hit",
+        artist: "A",
+        shazam_id: "shz-1",
+        confidence: 0.9,
+        pitch_offset: 0,
+        tier: "sweep",
+      },
+    });
+    await page.route(
+      new RegExp(`/api/analyser/sets/${RUN_JOB}/events$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          // Replay shape after the backend fix: cached scan rows FIRST,
+          // then the run marker carrying completed_points, then live
+          // scans. The two cached rows must not inflate the counter.
+          body: sseBody([
+            {
+              event: "meta",
+              data: {
+                type: "meta",
+                job_id: RUN_JOB,
+                duration_s: 600,
+                sample_rate: 22050,
+                title: "Progress Set",
+                artist: "Tester",
+              },
+            },
+            mkScan(0),
+            mkScan(60),
+            {
+              event: "shazam.scan_started",
+              data: {
+                type: "shazam.scan_started",
+                job_id: RUN_JOB,
+                tier: "sweep",
+                region: null,
+                total_points: 10,
+                completed_points: 2,
+              },
+            },
+            mkScan(120),
+          ]),
+        }),
+    );
+
+    await page.goto(`/analyser?job=${RUN_JOB}`);
+    const progress = page.getByTestId("analyser-progress");
+    await expect(progress).toBeVisible();
+    await expect(progress).toContainText("3/10 points");
+    await expect(page.getByTestId("analyser-progress-percent")).toHaveText(
+      "30%",
+    );
+  });
+
+  test("preview button survives scan-cache loss via track-level preview_url", async ({
+    page,
+  }) => {
+    const PREVIEW_JOB = "test-preview-job";
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${PREVIEW_JOB}$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: PREVIEW_JOB,
+            soundcloud_id: 1,
+            source_url: null,
+            title: "Preview Set",
+            artist: "Tester",
+            duration_s: 600,
+            status: "complete",
+            options: {
+              pitch_strategy: "none",
+              window_s: 30,
+              hop_s: 25,
+              min_section_gap_s: 30,
+              sections_enabled: true,
+              scan_cadence_s: 60,
+              scan_window_s: 12,
+            },
+            error: null,
+            created_at: 0,
+            updated_at: 0,
+            windows: [],
+            sections: [],
+            // Scans are EMPTY — the cached rows that used to carry the
+            // preview were overwritten by a re-probe. The track row's
+            // persisted preview_url must keep the button alive.
+            scans: [],
+            timeline: [
+              {
+                id: 1,
+                start_s: 0,
+                end_s: 120,
+                title: "Kept Preview",
+                artist: "DJ",
+                shazam_id: "shz-keep",
+                confidence: 0.9,
+                source: "shazam",
+                soundcloud_id: null,
+                soundcloud_permalink_url: null,
+                artwork_url: null,
+                preview_url: "https://cdn.example/preview.m4a",
+                duration_s: null,
+                confirmed: false,
+                user_edited: false,
+                set_bpm: null,
+                pitch_offset: null,
+              },
+            ],
+          }),
+        }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${PREVIEW_JOB}/events$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: "",
+        }),
+    );
+
+    await page.goto(`/analyser?job=${PREVIEW_JOB}`);
+    await expect(page.getByTestId("tracklist-row")).toHaveCount(1);
+    await expect(page.getByTestId("shazam-preview")).toBeVisible();
+  });
+
   test("alignment dialog saves a nudged start_s", async ({ page }) => {
     const ALIGN_JOB = "test-align-job";
     const patches: Array<Record<string, unknown>> = [];
@@ -1735,17 +2123,15 @@ test.describe("Set Analyser", () => {
           body: "",
         }),
     );
-    await page.route(
-      /\/api\/soundcloud\/tracks\/9001\/stream/,
-      (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            url: "https://example.invalid/stream.m3u8",
-            expires_at: new Date(Date.now() + 600_000).toISOString(),
-          }),
+    await page.route(/\/api\/soundcloud\/tracks\/9001\/stream/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          url: "https://example.invalid/stream.m3u8",
+          expires_at: new Date(Date.now() + 600_000).toISOString(),
         }),
+      }),
     );
     await page.route(
       new RegExp(`/api/analyser/sets/${ALIGN_JOB}/tracks/42$`),
@@ -1776,7 +2162,9 @@ test.describe("Set Analyser", () => {
     await page.getByTestId("tracklist-row").hover();
     await page.getByTestId("align-track").click();
     await expect(page.getByTestId("alignment-dialog")).toBeVisible();
-    await expect(page.getByTestId("alignment-new-start")).toContainText("01:00");
+    await expect(page.getByTestId("alignment-new-start")).toContainText(
+      "01:00",
+    );
 
     // Save is disabled at zero offset; nudge via keyboard arrows on the
     // slider so we don't depend on pixel-precise drag coordinates.

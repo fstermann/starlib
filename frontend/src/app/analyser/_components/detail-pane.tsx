@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Tooltip,
   TooltipContent,
@@ -20,6 +23,9 @@ interface DetailPaneProps {
    *  range scans will run with — they share the page-level config. */
   options: AnalyserJobOptions;
   onReanalyse: (range: { start_s: number; end_s: number }) => void;
+  /** Overwrite the BPM of every window in the range — manual correction
+   *  for spans the detector got wrong. */
+  onSetBpm: (range: { start_s: number; end_s: number }, bpm: number) => void;
   onScanRange: (
     range: { start_s: number; end_s: number },
     tier: ShazamTier,
@@ -64,10 +70,21 @@ function describePitchStrategy(options: AnalyserJobOptions): string {
   }
 }
 
+/** Common metre-confusion ratios the detector falls into: half/double
+ *  time and the 3-against-4 family. */
+const METRE_RATIOS = [2, 3 / 2, 4 / 3, 3 / 4, 2 / 3, 1 / 2];
+
+function medianOf(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
 export function AnalyserDetailPane({
   state,
   options,
   onReanalyse,
+  onSetBpm,
   onScanRange,
   confirmedRanges,
   shazamDisabled,
@@ -90,9 +107,30 @@ export function AnalyserDetailPane({
     (w) => w.start_s >= start_s - 0.5 && w.end_s <= end_s + 0.5,
   );
   const bpms = inRange.map((w) => w.bpm).filter((b) => b > 0);
-  const median = bpms.length
-    ? bpms.sort((a, b) => a - b)[Math.floor(bpms.length / 2)]
-    : null;
+  const median = medianOf(bpms);
+
+  // Neighbour consensus: the nearest windows on each side of the
+  // selection. Used to spot metre-confusion spans (the selection sits
+  // at e.g. 2/3 of the surrounding tempo) and offer a one-click snap.
+  const neighbourBpms = [
+    ...state.windows.filter((w) => w.end_s <= start_s + 0.5).slice(-8),
+    ...state.windows.filter((w) => w.start_s >= end_s - 0.5).slice(0, 8),
+  ]
+    .map((w) => w.bpm)
+    .filter((b) => b > 0);
+  const neighbour = medianOf(neighbourBpms);
+  let snapTarget: number | null = null;
+  if (median != null && neighbour != null) {
+    const off = Math.abs(median - neighbour) / neighbour;
+    if (
+      off > 0.04 &&
+      METRE_RATIOS.some(
+        (r) => Math.abs(median * r - neighbour) / neighbour < 0.03,
+      )
+    ) {
+      snapTarget = neighbour;
+    }
+  }
   const sectionsInRange = state.sections.filter(
     (s) => s.start_s < end_s && s.end_s > start_s,
   );
@@ -126,11 +164,23 @@ export function AnalyserDetailPane({
       </header>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <Stat label="Median BPM" value={median != null ? median.toFixed(1) : "—"} />
+        <Stat
+          label="Median BPM"
+          value={median != null ? median.toFixed(1) : "—"}
+        />
         <Stat label="Windows" value={String(inRange.length)} />
         <Stat label="Sections" value={String(sectionsInRange.length)} />
         <Stat label="Tracks" value={String(matchedTracks.length)} />
       </div>
+
+      {inRange.length > 0 && (
+        <BpmFix
+          key={`${start_s}-${end_s}`}
+          range={{ start_s, end_s }}
+          snapTarget={snapTarget}
+          onSetBpm={onSetBpm}
+        />
+      )}
 
       {matchedTracks.length > 0 && (
         <ul className="border-border/60 flex flex-col gap-1 border-t pt-2">
@@ -165,8 +215,8 @@ export function AnalyserDetailPane({
             className="text-text-subtle text-xs"
             data-testid="detail-excluded-confirmed"
           >
-            {overlapping} confirmed track{overlapping === 1 ? "" : "s"}{" "}
-            in this range will be skipped — unconfirm to re-scan.
+            {overlapping} confirmed track{overlapping === 1 ? "" : "s"} in this
+            range will be skipped — unconfirm to re-scan.
           </div>
         );
       })()}
@@ -183,8 +233,8 @@ export function AnalyserDetailPane({
             </span>
           </TooltipTrigger>
           <TooltipContent className="max-w-xs text-xs">
-            Range scans use the same pitch strategy configured for the
-            whole-mix scan — change it in the controls panel.
+            Range scans use the same pitch strategy configured for the whole-mix
+            scan — change it in the controls panel.
           </TooltipContent>
         </Tooltip>
         <div className="flex flex-wrap items-center gap-2">
@@ -220,6 +270,64 @@ export function AnalyserDetailPane({
         </div>
       </div>
     </aside>
+  );
+}
+
+/** Manual BPM correction for the selected windows. Offers a one-click
+ *  snap when the selection's tempo is metrically related to its
+ *  neighbours (the classic 2:3 / 1:2 detector mistake), plus a free
+ *  input for everything else. Keyed by the selection so the input
+ *  resets when the range changes. */
+function BpmFix({
+  range,
+  snapTarget,
+  onSetBpm,
+}: {
+  range: { start_s: number; end_s: number };
+  snapTarget: number | null;
+  onSetBpm: (range: { start_s: number; end_s: number }, bpm: number) => void;
+}) {
+  const [input, setInput] = useState("");
+  const parsed = Number(input.replace(",", "."));
+  const valid = input.trim() !== "" && Number.isFinite(parsed) && parsed > 0;
+
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2"
+      data-testid="detail-bpm-fix"
+    >
+      <span className={FIELD_LABEL}>Fix BPM</span>
+      {snapTarget != null && (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => onSetBpm(range, snapTarget)}
+          data-testid="detail-bpm-snap"
+        >
+          Snap to {snapTarget.toFixed(1)}
+        </Button>
+      )}
+      <Input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && valid) onSetBpm(range, parsed);
+        }}
+        inputMode="decimal"
+        placeholder="BPM"
+        className="h-8 w-20 font-mono text-sm tabular-nums"
+        data-testid="detail-bpm-input"
+      />
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={!valid}
+        onClick={() => onSetBpm(range, parsed)}
+        data-testid="detail-bpm-apply"
+      >
+        Apply
+      </Button>
+    </div>
   );
 }
 

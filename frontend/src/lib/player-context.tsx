@@ -14,6 +14,7 @@ import {
   SC_BPM_UPDATED_EVENT,
   type ScBpmUpdatedDetail,
 } from "@/components/soundcloud-batch-analyze-button";
+import { claimPlayback, releasePlayback } from "@/lib/exclusive-audio";
 import { useIsScUnplayable } from "@/lib/sc-unplayable";
 
 export interface PlayerTrack {
@@ -289,6 +290,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const reportDuration = useCallback((d: number) => {
     setDuration(d);
   }, []);
+
+  // Exclusive-playback handshake: when the global player starts it
+  // pauses the analyser set / Shazam preview, and they pause it back.
+  useEffect(() => {
+    if (isPlaying) claimPlayback("global-player", () => setIsPlaying(false));
+    else releasePlayback("global-player");
+  }, [isPlaying]);
 
   const hasNext = queueIndex >= 0 && queueIndex < queue.length - 1;
   const hasPrevious = queueIndex > 0;

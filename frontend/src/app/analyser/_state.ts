@@ -56,6 +56,10 @@ export interface AnalyserUiState {
     tier: string;
     region: { start_s: number; end_s: number } | null;
     totalPoints: number;
+    /** Points the run had already finished when the marker arrived —
+     *  non-zero after a mid-run replay. Total done is this plus
+     *  ``arrivedScanS.length``. */
+    completedPoints: number;
     /** scan_s values seen since this run started (set semantics — re-emits
      *  for the same point don't double-count). */
     arrivedScanS: number[];
@@ -211,6 +215,7 @@ function applySse(
               ? { start_s: event.region[0], end_s: event.region[1] }
               : null,
           totalPoints: event.total_points,
+          completedPoints: event.completed_points ?? 0,
           arrivedScanS: [],
         },
       };
@@ -231,6 +236,7 @@ function applySse(
         soundcloud_id: event.soundcloud_id ?? null,
         soundcloud_permalink_url: event.soundcloud_permalink_url ?? null,
         artwork_url: event.artwork_url ?? null,
+        preview_url: event.preview_url ?? null,
         duration_s: event.duration_s ?? null,
         // Carry user-curation flags so SSE replays after a snapshot
         // refresh don't silently revert a confirm-toggle.
@@ -272,9 +278,7 @@ function applySse(
           start_s: r.start_s,
           end_s: r.end_s,
         })),
-        windows: state.windows.filter(
-          (w) => !inAnyRange(w.start_s, w.end_s),
-        ),
+        windows: state.windows.filter((w) => !inAnyRange(w.start_s, w.end_s)),
         scans: state.scans.filter((s) => !inAnyRange(s.scan_s, s.scan_s)),
       };
     }

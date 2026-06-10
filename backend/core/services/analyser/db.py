@@ -12,7 +12,7 @@ import logging
 import time
 from dataclasses import asdict, dataclass
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from backend.core.db.engine import get_engine
@@ -283,6 +283,25 @@ def delete_windows_in_range(job_id: str, start_s: float, end_s: float) -> None:
         )
 
 
+def update_windows_bpm_in_range(job_id: str, start_s: float, end_s: float, bpm: float) -> int:
+    """Overwrite the BPM of window rows whose ``start_s`` falls inside ``[start_s, end_s]``.
+
+    Manual correction for spans where the detector locked onto a
+    metrically related tempo (2:3, 1:2, …). Confidence flips to ``high``
+    since the value is user-asserted. Returns the number of updated rows.
+    """
+    table = AnalyserWindowBpm.__table__
+    with get_engine().begin() as conn:
+        result = conn.execute(
+            update(table)
+            .where(table.c.job_id == job_id)
+            .where(table.c.start_s >= start_s)
+            .where(table.c.start_s <= end_s)
+            .values(bpm=bpm, confidence="high")
+        )
+    return int(result.rowcount or 0)
+
+
 # ---------------------------------------------------------------------------
 # Section CRUD
 # ---------------------------------------------------------------------------
@@ -505,6 +524,7 @@ class TrackRow:
     soundcloud_id: int | None
     soundcloud_permalink_url: str | None
     artwork_url: str | None
+    preview_url: str | None
     duration_s: float | None
     confirmed: bool
     dismissed: bool
@@ -527,6 +547,7 @@ _TRACK_COLS = (
     AnalyserTrack.__table__.c.soundcloud_id,
     AnalyserTrack.__table__.c.soundcloud_permalink_url,
     AnalyserTrack.__table__.c.artwork_url,
+    AnalyserTrack.__table__.c.preview_url,
     AnalyserTrack.__table__.c.duration_s,
     AnalyserTrack.__table__.c.confirmed,
     AnalyserTrack.__table__.c.dismissed,
@@ -551,6 +572,7 @@ def _row_to_track(row) -> TrackRow:
         soundcloud_id=row.soundcloud_id,
         soundcloud_permalink_url=row.soundcloud_permalink_url,
         artwork_url=row.artwork_url,
+        preview_url=row.preview_url,
         duration_s=None if row.duration_s is None else float(row.duration_s),
         confirmed=bool(row.confirmed),
         dismissed=bool(row.dismissed),
@@ -574,6 +596,7 @@ def insert_track(
     soundcloud_id: int | None = None,
     soundcloud_permalink_url: str | None = None,
     artwork_url: str | None = None,
+    preview_url: str | None = None,
     duration_s: float | None = None,
     user_edited: bool = False,
     set_bpm: float | None = None,
@@ -592,6 +615,7 @@ def insert_track(
         "soundcloud_id": soundcloud_id,
         "soundcloud_permalink_url": soundcloud_permalink_url,
         "artwork_url": artwork_url,
+        "preview_url": preview_url,
         "duration_s": duration_s,
         "confirmed": False,
         "dismissed": False,
@@ -672,6 +696,7 @@ def update_track(
     soundcloud_id: int | None = None,
     soundcloud_permalink_url: str | None = None,
     artwork_url: str | None = None,
+    preview_url: str | None = None,
     duration_s: float | None = None,
     confirmed: bool | None = None,
     dismissed: bool | None = None,
@@ -700,6 +725,8 @@ def update_track(
         values["soundcloud_permalink_url"] = soundcloud_permalink_url
     if artwork_url is not None:
         values["artwork_url"] = artwork_url
+    if preview_url is not None:
+        values["preview_url"] = preview_url
     if duration_s is not None:
         values["duration_s"] = duration_s
     if confirmed is not None:

@@ -79,6 +79,7 @@ class TrackTimelineEvent(BaseModel):
     soundcloud_id: int | None = None
     soundcloud_permalink_url: str | None = None
     artwork_url: str | None = None
+    preview_url: str | None = None
     # Original track length (seconds) — present for manual entries that
     # carry a SoundCloud-sourced duration; ``None`` for Shazam runs.
     duration_s: float | None = None
@@ -124,6 +125,10 @@ class ShazamScanStartedEvent(BaseModel):
     # Count of scan points the scheduler will walk after subtracting
     # confirmed-track ranges. ``0`` means everything was excluded.
     total_points: int
+    # Points this run has already finished. ``0`` on the live event; set
+    # on replay so a mid-run reload resumes the progress display instead
+    # of restarting at zero (or counting cached rows from prior runs).
+    completed_points: int = 0
 
 
 AnalyserEvent = (

@@ -121,6 +121,24 @@ class ShazamScanRequest(BaseModel):
         return self
 
 
+class UpdateWindowsBpmRequest(BaseModel):
+    """Body for ``PATCH /sets/{id}/windows``: overwrite window BPMs in a range.
+
+    Manual correction for spans where the detector locked onto a
+    metrically related tempo — no re-analysis, just rewrite the rows.
+    """
+
+    start_s: float = Field(ge=0)
+    end_s: float = Field(gt=0)
+    bpm: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> UpdateWindowsBpmRequest:
+        if self.end_s <= self.start_s:
+            raise ValueError("end_s must be greater than start_s")
+        return self
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -260,6 +278,18 @@ async def reanalyse(job_id: str, payload: ReanalyseRequest) -> dict:
     _BACKGROUND_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_TASKS.discard)
     return {"job_id": job_id, "scheduled_ranges": payload.ranges}
+
+
+@router.patch("/sets/{job_id}/windows")
+def update_windows_bpm(job_id: str, payload: UpdateWindowsBpmRequest) -> dict:
+    """Overwrite window BPMs in a range — manual fix for misdetected spans."""
+    snap = get_job_snapshot(job_id)
+    if snap is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    from backend.core.services.analyser import db as analyser_db
+
+    updated = analyser_db.update_windows_bpm_in_range(job_id, payload.start_s, payload.end_s, payload.bpm)
+    return {"job_id": job_id, "updated": updated}
 
 
 @router.post("/sets/{job_id}/shazam-scan")
@@ -418,6 +448,7 @@ def _track_dict(row) -> dict:  # type: ignore[no-untyped-def]
         "soundcloud_id": row.soundcloud_id,
         "soundcloud_permalink_url": row.soundcloud_permalink_url,
         "artwork_url": row.artwork_url,
+        "preview_url": row.preview_url,
         "duration_s": row.duration_s,
         "confirmed": row.confirmed,
         "dismissed": row.dismissed,

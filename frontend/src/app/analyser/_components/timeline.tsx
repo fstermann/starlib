@@ -196,9 +196,7 @@ export function AnalyserTimeline({
   // to the timeline's percentage axis so it lines up with section/track
   // bands automatically.
   const playheadLeft =
-    audio.duration > 0
-      ? (audio.progressS / audio.duration) * 100
-      : null;
+    audio.duration > 0 ? (audio.progressS / audio.duration) * 100 : null;
 
   // Hover-derived values: the time and nearest-BPM at the hovered X. We
   // compute these in the parent so a single tooltip + guide line can
@@ -223,7 +221,7 @@ export function AnalyserTimeline({
       // creates a new stacking context so backdrop-blur chips inside
       // (BPM run labels, hover tooltip) don't bleed through to
       // siblings scrolling underneath.
-      className="border-border bg-surface-2 sticky top-0 z-20 isolate w-full shrink-0 overflow-hidden rounded-xl border"
+      className="border-border bg-surface-2 sticky top-0 isolate z-20 w-full shrink-0 overflow-hidden rounded-xl border"
       style={{ height: TOTAL_HEIGHT }}
       data-testid="analyser-timeline"
     >
@@ -404,7 +402,11 @@ export function AnalyserTimeline({
 /** Y-axis BPM labels for the BPM lane, rendered in the left rail
  *  outside the chart area. Five evenly-spaced ticks (incl. min/max) so
  *  the user can read the absolute BPM at any height of the curve. */
-function BpmAxisLabels({ bpmExtent }: { bpmExtent: readonly [number, number] }) {
+function BpmAxisLabels({
+  bpmExtent,
+}: {
+  bpmExtent: readonly [number, number];
+}) {
   const [lo, hi] = bpmExtent;
   const range = Math.max(1, hi - lo);
   const H = 100; // matches the BpmLane SVG viewBox height
@@ -597,8 +599,16 @@ function BpmLane({
       >
         <defs>
           <linearGradient id="bpm-area-fade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-brand)" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="var(--color-brand)" stopOpacity="0.02" />
+            <stop
+              offset="0%"
+              stopColor="var(--color-brand)"
+              stopOpacity="0.18"
+            />
+            <stop
+              offset="100%"
+              stopColor="var(--color-brand)"
+              stopOpacity="0.02"
+            />
           </linearGradient>
         </defs>
         {gridLines.map((g) => (
@@ -962,9 +972,7 @@ function TracksLane({
         // Every persisted track has a real id; the live ``DerivedRun``
         // fallback path falls back to start+title.
         const groupKey = `group-${groupStart}-${group
-          .map((t) =>
-            "id" in t ? `t${t.id}` : `${t.shazam_id ?? t.title}`,
-          )
+          .map((t) => ("id" in t ? `t${t.id}` : `${t.shazam_id ?? t.title}`))
           .join("|")}`;
         return (
           <TrackBand
@@ -1005,10 +1013,11 @@ const HOVER_EXPAND_PX = 20;
  *
  *  Renders one entry per track in the group as a small left-aligned
  *  cover thumbnail (no auto-cycling — flicker is annoying and made
- *  bands hard to read). The band's tint comes from the *primary*
- *  (earliest) track in the group; confirmed bands paint solid, the
- *  rest get a diagonal-stripe overlay so unidentified spans are
- *  visually distinct. */
+ *  bands hard to read). The band's fill is the primary track's cover
+ *  art stretched across the band, blurred and dimmed ("artwork echo")
+ *  — unconfirmed bands additionally desaturate so identified-but-
+ *  unchecked spans still read as work in progress. Tracks without
+ *  artwork fall back to a muted solid of the track's hashed hue. */
 function TrackBand({
   tracks,
   artworks,
@@ -1064,10 +1073,16 @@ function TrackBand({
     )
     .join("\n");
 
-  // Stripes mix the tint with the lane background instead of going
-  // transparent — produces a chunkier, more legible pattern at small
-  // sizes than the previous alpha-stripe approach.
-  const stripeBg = `repeating-linear-gradient(135deg, ${tint} 0 7px, color-mix(in oklch, ${tint} 30%, oklch(0.18 0.01 260)) 7px 14px)`;
+  // Artwork echo: the first available cover in the group fills the
+  // whole band (blurred + dimmed below). Bands without any artwork
+  // fall back to a flat muted wash of the track hue — solid, no
+  // pattern, so the lane stays calm.
+  const echoArt =
+    tracks.map((t) => artworks.get(trackKey(t)) ?? null).find(Boolean) ?? null;
+  const laneBg = "oklch(0.18 0.01 260)";
+  const fallbackBg = isConfirmed
+    ? tint
+    : `color-mix(in oklch, ${tint} 30%, ${laneBg})`;
 
   // ---- Drag-to-edit start/end ---------------------------------------------
   // ``dragDelta`` (seconds) is applied locally during a drag so the band
@@ -1134,10 +1149,7 @@ function TrackBand({
     const visibleStartS = (left / 100) * duration;
     const visibleEndS = ((left + width) / 100) * duration;
     if (info.side === "start") {
-      const newStart = Math.max(
-        0,
-        Math.min(duration, visibleStartS + deltaS),
-      );
+      const newStart = Math.max(0, Math.min(duration, visibleStartS + deltaS));
       onEditBounds?.(info.track, { start_s: newStart, end_s: null });
     } else {
       const newEnd = Math.max(
@@ -1153,8 +1165,7 @@ function TrackBand({
   // whole timeline.
   const liveLeftDelta =
     dragSide === "start" && duration > 0 ? (dragDelta / duration) * 100 : 0;
-  const liveWidthDelta =
-    duration > 0 ? (dragDelta / duration) * 100 : 0;
+  const liveWidthDelta = duration > 0 ? (dragDelta / duration) * 100 : 0;
   const visualLeft = left + liveLeftDelta;
   const visualWidth =
     dragSide === "start"
@@ -1179,7 +1190,7 @@ function TrackBand({
         left: `${visualLeft}%`,
         width: `${Math.max(0.05, visualWidth)}%`,
         minWidth: hovered ? `${HOVER_EXPAND_PX}px` : "4px",
-        background: isConfirmed ? tint : stripeBg,
+        background: echoArt ? laneBg : fallbackBg,
       }}
       data-confirmed={isConfirmed ? "true" : "false"}
       data-dragging={dragSide ?? "none"}
@@ -1200,10 +1211,32 @@ function TrackBand({
       }}
       onPointerDown={(e) => e.stopPropagation()}
     >
+      {/* Artwork echo — the cover stretched across the band, blurred
+          and dimmed. ``scale-110`` hides the blur's transparent edge
+          bleed inside the band's overflow clip. Unconfirmed bands
+          desaturate so they still read as unchecked. */}
+      {echoArt && (
+        <img
+          src={echoArt}
+          alt=""
+          aria-hidden="true"
+          data-testid="track-band-echo"
+          className={cn(
+            "pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover blur-[6px]",
+            isConfirmed
+              ? "brightness-[0.55]"
+              : "brightness-[0.4] grayscale-[0.6]",
+          )}
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.display = "none";
+          }}
+        />
+      )}
       {/* Cover strip — left-aligned, one square per track, no cycling.
           Each cover is a square the height of the band so the band
-          reads as a row of mini album tiles. */}
-      <div className="pointer-events-none flex h-full shrink-0 items-stretch">
+          reads as a row of mini album tiles. ``relative`` lifts the
+          sharp tiles above the absolutely-positioned echo image. */}
+      <div className="pointer-events-none relative flex h-full shrink-0 items-stretch">
         {tracks.map((t, i) => {
           const k = trackKey(t);
           const art = artworks.get(k) ?? null;
@@ -1247,7 +1280,7 @@ function TrackBand({
       )}
       {tracks.length > 1 && !isConfirmed && (
         <span
-          className="bg-black/55 text-text pointer-events-none absolute right-0.5 bottom-0.5 rounded px-1 text-[9px] font-semibold tabular-nums backdrop-blur-sm"
+          className="text-text pointer-events-none absolute right-0.5 bottom-0.5 rounded bg-black/55 px-1 text-[9px] font-semibold tabular-nums backdrop-blur-sm"
           aria-hidden="true"
         >
           ×{tracks.length}

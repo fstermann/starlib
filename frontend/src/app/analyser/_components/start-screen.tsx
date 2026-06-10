@@ -23,6 +23,11 @@ import {
   listRecentJobs,
   type JobSummary,
 } from "@/lib/analyser";
+import { searchSets, type SCTrack } from "@/lib/soundcloud";
+
+/** Tracks shorter than this are filtered out of the set search — a DJ
+ *  set is rarely under 20 minutes, single tracks rarely over. */
+const MIN_SET_DURATION_MS = 20 * 60 * 1000;
 
 interface StartScreenProps {
   onStart: (input: { url: string }) => Promise<void>;
@@ -55,6 +60,47 @@ export function AnalyserStartScreen({
   const [url, setUrl] = useState(initialUrl);
   const [busy, setBusy] = useState(false);
   const [recent, setRecent] = useState<JobSummary[]>([]);
+  const [results, setResults] = useState<SCTrack[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  const isUrl = /^https?:\/\//i.test(url.trim());
+
+  // Non-URL input doubles as a set search: debounce, then query
+  // SoundCloud with a minimum-duration filter so only sets show up.
+  useEffect(() => {
+    const q = url.trim();
+    if (isUrl || q.length < 2) {
+      setResults([]);
+      setSearching(false);
+      setSearchError(null);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const t = setTimeout(() => {
+      searchSets(q, MIN_SET_DURATION_MS)
+        .then((hits) => {
+          if (cancelled) return;
+          setResults(hits);
+          setSearchError(null);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setResults([]);
+          setSearchError(
+            "Search failed — make sure you are signed in to SoundCloud.",
+          );
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [url, isUrl]);
 
   const loadRecent = () =>
     listRecentJobs()
@@ -66,10 +112,20 @@ export function AnalyserStartScreen({
   }, []);
 
   const submit = async () => {
-    if (!url.trim() || busy) return;
+    if (!isUrl || busy) return;
     setBusy(true);
     try {
       await onStart({ url: url.trim() });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startFromResult = async (t: SCTrack) => {
+    if (!t.permalink_url || busy) return;
+    setBusy(true);
+    try {
+      await onStart({ url: t.permalink_url });
     } finally {
       setBusy(false);
     }
@@ -97,17 +153,18 @@ export function AnalyserStartScreen({
       <section className="border-border bg-surface-2 flex flex-col gap-3 rounded-lg border p-6">
         <h1 className="text-text text-xl font-semibold">Set Analyser</h1>
         <p className="text-text-muted text-sm">
-          Paste a SoundCloud URL — Starlib downloads the set, streams BPM
-          windows, detects section boundaries, and identifies tracks via Shazam.
+          Paste a SoundCloud URL or search for a set — Starlib downloads it,
+          streams BPM windows, detects section boundaries, and identifies tracks
+          via Shazam.
         </p>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="analyser-url">SoundCloud URL</Label>
+          <Label htmlFor="analyser-url">SoundCloud URL or search</Label>
           <div className="flex gap-2">
             <Input
               id="analyser-url"
               data-testid="analyser-url-input"
               autoComplete="off"
-              placeholder="https://soundcloud.com/dj/example-set"
+              placeholder="https://soundcloud.com/dj/example-set — or search…"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => {
@@ -116,7 +173,7 @@ export function AnalyserStartScreen({
             />
             <Button
               onClick={submit}
-              disabled={!url.trim() || busy}
+              disabled={!isUrl || busy}
               data-testid="analyser-start-button"
             >
               {busy ? "Starting…" : "Analyse"}
@@ -124,6 +181,63 @@ export function AnalyserStartScreen({
           </div>
           {errorMessage && (
             <p className="text-destructive text-xs">{errorMessage}</p>
+          )}
+          {searchError && (
+            <p
+              className="text-destructive text-xs"
+              data-testid="set-search-error"
+            >
+              {searchError}
+            </p>
+          )}
+          {!isUrl && url.trim().length >= 2 && !searchError && (
+            <div data-testid="set-search-results">
+              <p className="text-text-subtle text-xs">
+                {searching && results.length === 0
+                  ? "Searching…"
+                  : `Sets longer than ${MIN_SET_DURATION_MS / 60000} min`}
+              </p>
+              <ul className="divide-border divide-y">
+                {results.map((t) => (
+                  <li key={t.urn ?? t.permalink_url}>
+                    <button
+                      type="button"
+                      className="hover:bg-surface-3 flex w-full items-center gap-3 rounded-md px-1 py-2 text-left"
+                      onClick={() => void startFromResult(t)}
+                      disabled={busy}
+                      data-testid="set-search-result"
+                    >
+                      {t.artwork_url ? (
+                        <img
+                          src={t.artwork_url}
+                          alt=""
+                          aria-hidden="true"
+                          className="size-9 shrink-0 rounded object-cover"
+                        />
+                      ) : (
+                        <div className="bg-surface-3 size-9 shrink-0 rounded" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="text-text block truncate text-sm font-medium">
+                          {t.title}
+                        </span>
+                        <span className="text-text-muted block truncate text-xs">
+                          {t.user?.username ?? "—"}
+                        </span>
+                      </span>
+                      <span className="text-text-subtle shrink-0 text-xs tabular-nums">
+                        {t.duration ? formatTimecode(t.duration / 1000) : "—"}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+                {!searching && results.length === 0 && (
+                  <li className="text-text-muted py-2 text-xs">
+                    No sets found.
+                  </li>
+                )}
+              </ul>
+            </div>
           )}
         </div>
       </section>

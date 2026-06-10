@@ -178,6 +178,11 @@ class AnalyserTrack(SQLModel, table=True):
     soundcloud_id: int | None = None
     soundcloud_permalink_url: str | None = None
     artwork_url: str | None = None
+    # Shazam 30s preview clip URL, copied from the matched scan row at
+    # materialise time. Persisted here because scan rows are a cache
+    # that finer-tier re-probes overwrite — a re-probe miss would
+    # otherwise silently drop the preview from the tracklist.
+    preview_url: str | None = None
     duration_s: float | None = None
     confirmed: bool = Field(default=False)
     dismissed: bool = Field(default=False)
