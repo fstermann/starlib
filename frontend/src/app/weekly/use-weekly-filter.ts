@@ -9,6 +9,7 @@ export interface WeeklyFilterOptions {
   minDuration: number | null;
   maxDuration: number | null;
   trackType: "track" | "set" | null;
+  releaseType: "release" | "repost" | null;
   excludeSeen: boolean;
   inCollection: boolean | null;
   excludeOwnLikes: boolean;
@@ -28,12 +29,19 @@ export function filterStateToWeeklyOptions(
     (trackTypes[0] === "track" || trackTypes[0] === "set")
       ? (trackTypes[0] as "track" | "set")
       : null;
+  const releaseTypes = (state.release_type as string[] | undefined) ?? [];
+  const releaseType =
+    releaseTypes.length === 1 &&
+    (releaseTypes[0] === "release" || releaseTypes[0] === "repost")
+      ? (releaseTypes[0] as "release" | "repost")
+      : null;
   return {
     search: (state.search as string | undefined) ?? "",
     genres: (state.genre as string[] | undefined) ?? [],
     minDuration: duration[0],
     maxDuration: duration[1],
     trackType,
+    releaseType,
     // Default is EXCLUDE; user opts into including previously-added tracks.
     excludeSeen: state.include_seen !== true,
     inCollection:
@@ -89,6 +97,8 @@ export function makeWeeklyFilterPredicate(
       if (options.trackType === "track" && durationSec >= 720) return false;
       if (options.trackType === "set" && durationSec < 720) return false;
     }
+    if (options.releaseType === "release" && track.isRepost) return false;
+    if (options.releaseType === "repost" && !track.isRepost) return false;
     if (options.excludeSeen && seenTrackIds) {
       const id = extractId(track);
       if (id && seenTrackIds.has(id)) return false;

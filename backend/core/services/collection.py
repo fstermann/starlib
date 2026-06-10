@@ -481,6 +481,9 @@ def list_and_filter_tracks(
     sort_order: str = "asc",
     recursive: bool = False,
     has_soundcloud_id: bool | None = None,
+    file_formats: list[str] | None = None,
+    size_min: int | None = None,
+    size_max: int | None = None,
 ) -> list:
     """
     List, filter, and sort tracks via SQL. Returns sqlite3.Row items.
@@ -530,6 +533,9 @@ def list_and_filter_tracks(
         start_date=start_date,
         end_date=end_date,
         has_soundcloud_id=has_soundcloud_id,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
         sort_by=sort_by,
         sort_order=sort_order,
     )
@@ -544,6 +550,9 @@ def get_folder_filter_values(
     keys: list[str] | None = None,
     bpm_min: int | None = None,
     bpm_max: int | None = None,
+    file_formats: list[str] | None = None,
+    size_min: int | None = None,
+    size_max: int | None = None,
 ) -> dict:
     """
     Get available filter values for a folder (for filter dropdowns).
@@ -579,4 +588,7 @@ def get_folder_filter_values(
         keys=keys,
         bpm_min=bpm_min,
         bpm_max=bpm_max,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
     )

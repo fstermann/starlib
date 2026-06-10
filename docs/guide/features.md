@@ -68,6 +68,19 @@ The table supports bulk operations across many tracks:
 
 Per-row **Save** (:material-check:) and **Apply rules** (:material-sitemap:) buttons live in a pinned action column that floats over the right edge of the table with a frosted-glass background.
 
+#### Smart suggestions
+
+When you open the editor on a track (with or without a SoundCloud track linked), Starlib computes ranked **suggestions** for every metadata field. Suggestions are *proposals* — nothing is written to a field without an explicit click.
+
+Two distinct controls live in the per-field toolbar:
+
+- **Accept suggestion** (:material-auto-fix: wand icon, brand accent) — applies the engine's top-ranked candidate. Hover for the value and source. When several candidates exist (e.g. metadata artist vs. uploader vs. filename), a chevron expands a popover listing every alternative, each annotated with its source label and confidence bar.
+- **Copy from SoundCloud** (SoundCloud logo) — copies the SC field *verbatim* into the local field. Different from Accept: a suggestion may be derived (e.g. the SC title with `(Extended Mix)` stripped); this button always pastes the raw value.
+
+A header-row **Accept N suggestions** button applies every top-ranked suggestion in one click. It only appears when there's something to apply, and its tooltip lists the affected fields.
+
+Sources the engine pulls from today: the SC track's `metadata_artist`, uploader name, dash-prefix and parens-content of the title, genre or first tag, release date, BPM and key signature when SC exposes them, plus the local filename's parsed artist/title/remixer/mix. Multiple distinct artists across sources surface as a comma-joined "combined" candidate (e.g. `Foo, Bar`); multi-artist strings like `A & B feat. C` are also offered in normalised `A, B, C` form. Suggestions equal to the current field value are hidden.
+
 #### Apply Rules
 
 Once a track has all required metadata, the **Apply Rules** button appears. Clicking it runs the active ruleset — a sequence of steps that convert, move, or copy the file automatically.

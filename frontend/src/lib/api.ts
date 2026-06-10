@@ -76,6 +76,9 @@ export interface BrowseParams {
   date_from?: string;
   date_to?: string;
   has_soundcloud_id?: boolean;
+  file_formats?: string[];
+  size_min?: number;
+  size_max?: number;
   sort_by?:
     | "title"
     | "artist"
@@ -85,7 +88,10 @@ export interface BrowseParams {
     | "release_date"
     | "file_name"
     | "folder"
-    | "mtime";
+    | "mtime"
+    | "file_format"
+    | "file_size"
+    | "duration";
   sort_order?: "asc" | "desc";
 }
 
@@ -99,6 +105,14 @@ export type TrackInfoUpdateRequest =
   components["schemas"]["TrackInfoUpdateRequest"];
 
 export type OperationResponse = components["schemas"]["OperationResponse"];
+
+export type FetchFromDownloadsResponse =
+  components["schemas"]["FetchFromDownloadsResponse"];
+
+export type FetchFromDownloadsPreview =
+  components["schemas"]["FetchFromDownloadsPreview"];
+
+export type FetchCandidate = components["schemas"]["FetchCandidate"];
 
 export type ApplyRulesResponse = components["schemas"]["ApplyRulesResponse"] & {
   steps?: {
@@ -455,6 +469,35 @@ export const api = {
   async initializeFolders(): Promise<OperationResponse> {
     return fetchApi("/api/metadata/folders/initialize", { method: "POST" });
   },
+  async fetchFromDownloads(
+    destPath: string,
+    windowDays: number,
+    fileNames?: string[],
+  ): Promise<FetchFromDownloadsResponse> {
+    return fetchApi("/api/metadata/folders/fetch-from-downloads", {
+      method: "POST",
+      body: JSON.stringify({
+        dest_path: destPath,
+        window_days: windowDays,
+        ...(fileNames !== undefined ? { file_names: fileNames } : {}),
+      }),
+    });
+  },
+
+  async fetchFromDownloadsPreview(
+    destPath: string,
+    windowDays: number,
+    signal?: AbortSignal,
+  ): Promise<FetchFromDownloadsPreview> {
+    const qs = new URLSearchParams({
+      dest_path: destPath,
+      window_days: String(windowDays),
+    });
+    return fetchApi(
+      `/api/metadata/folders/fetch-from-downloads/preview?${qs.toString()}`,
+      { signal },
+    );
+  },
   // Browse (view mode) — full metadata with filtering, sorting, pagination
   async browseFiles(
     mode: string,
@@ -474,6 +517,11 @@ export const api = {
     if (params.date_to) qs.set("date_to", params.date_to);
     if (params.has_soundcloud_id !== undefined)
       qs.set("has_soundcloud_id", String(params.has_soundcloud_id));
+    params.file_formats?.forEach((f) => qs.append("file_formats", f));
+    if (params.size_min !== undefined)
+      qs.set("size_min", String(params.size_min));
+    if (params.size_max !== undefined)
+      qs.set("size_max", String(params.size_max));
     if (params.sort_by) qs.set("sort_by", params.sort_by);
     if (params.sort_order) qs.set("sort_order", params.sort_order);
     const url = `${API_BASE_URL}/api/metadata/folders/${mode}/browse?${qs.toString()}`;
@@ -495,6 +543,9 @@ export const api = {
       keys?: string[];
       bpmMin?: number;
       bpmMax?: number;
+      fileFormats?: string[];
+      sizeMin?: number;
+      sizeMax?: number;
     },
   ): Promise<FilterValues> {
     const qs = new URLSearchParams();
@@ -503,6 +554,11 @@ export const api = {
     params?.keys?.forEach((k) => qs.append("keys", k));
     if (params?.bpmMin !== undefined) qs.set("bpm_min", String(params.bpmMin));
     if (params?.bpmMax !== undefined) qs.set("bpm_max", String(params.bpmMax));
+    params?.fileFormats?.forEach((f) => qs.append("file_formats", f));
+    if (params?.sizeMin !== undefined)
+      qs.set("size_min", String(params.sizeMin));
+    if (params?.sizeMax !== undefined)
+      qs.set("size_max", String(params.sizeMax));
     const query = qs.toString();
     return fetchApi(
       `/api/metadata/folders/${mode}/filter-values${query ? `?${query}` : ""}`,
@@ -603,6 +659,11 @@ export const api = {
     if (params.date_to) qs.set("date_to", params.date_to);
     if (params.has_soundcloud_id !== undefined)
       qs.set("has_soundcloud_id", String(params.has_soundcloud_id));
+    params.file_formats?.forEach((f) => qs.append("file_formats", f));
+    if (params.size_min !== undefined)
+      qs.set("size_min", String(params.size_min));
+    if (params.size_max !== undefined)
+      qs.set("size_max", String(params.size_max));
     if (params.sort_by) qs.set("sort_by", params.sort_by);
     if (params.sort_order) qs.set("sort_order", params.sort_order);
     const url = `${API_BASE_URL}/api/metadata/folders/browse-path?${qs.toString()}`;
@@ -624,6 +685,9 @@ export const api = {
       keys?: string[];
       bpmMin?: number;
       bpmMax?: number;
+      fileFormats?: string[];
+      sizeMin?: number;
+      sizeMax?: number;
     },
   ): Promise<FilterValues> {
     const qs = new URLSearchParams();
@@ -635,6 +699,11 @@ export const api = {
     params?.keys?.forEach((k) => qs.append("keys", k));
     if (params?.bpmMin !== undefined) qs.set("bpm_min", String(params.bpmMin));
     if (params?.bpmMax !== undefined) qs.set("bpm_max", String(params.bpmMax));
+    params?.fileFormats?.forEach((f) => qs.append("file_formats", f));
+    if (params?.sizeMin !== undefined)
+      qs.set("size_min", String(params.sizeMin));
+    if (params?.sizeMax !== undefined)
+      qs.set("size_max", String(params.sizeMax));
     return fetchApi(
       `/api/metadata/folders/browse-path/filter-values?${qs.toString()}`,
     );

@@ -212,6 +212,10 @@ class FilterValuesResponse(BaseModel):
     key_counts: dict[str, int] = {}
     bpm_min: int | None = None
     bpm_max: int | None = None
+    file_formats: list[str] = []
+    file_format_counts: dict[str, int] = {}
+    file_size_min: int | None = None
+    file_size_max: int | None = None
 
 
 class CollectionStatsResponse(BaseModel):
@@ -250,3 +254,36 @@ class RenameResponse(BaseModel):
     old_path: str
     new_path: str
     message: str
+
+
+class FetchFromDownloadsRequest(BaseModel):
+    """Request to move recent audio files from ~/Downloads into a folder."""
+
+    dest_path: str
+    window_days: int = Field(1, ge=1, le=365)
+    # When provided, only files whose names appear here are moved. None = move
+    # every eligible candidate (back-compat with one-shot callers).
+    file_names: list[str] | None = None
+
+
+class FetchCandidate(BaseModel):
+    """One candidate audio file under ~/Downloads for the preview dialog."""
+
+    name: str
+    size: int
+    mtime: float
+
+
+class FetchFromDownloadsPreview(BaseModel):
+    """Preview of what a Fetch-from-Downloads call would do."""
+
+    candidates: list[FetchCandidate] = []
+    skipped: list[str] = []
+
+
+class FetchFromDownloadsResponse(BaseModel):
+    """Result of a Fetch-from-Downloads operation."""
+
+    moved: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []

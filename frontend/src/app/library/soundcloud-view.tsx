@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useQueryState } from "nuqs";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { AutoHideTabLabel } from "@/components/auto-hide-tab-label";
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
 import { useCommand } from "@/components/command-palette";
 import {
@@ -19,9 +20,11 @@ import {
   MAX_TRACKS,
 } from "@/components/create-playlist-dialog";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
+import { GroupBar } from "@/components/group-bar";
 import { useTopBar } from "@/components/layout/top-bar-context";
 import { LIKES_COLUMN_DEFS, LikesTable } from "@/components/likes-table";
 import { LogoSpinner } from "@/components/logo-spinner";
+import { ProfileGroupDialog } from "@/components/profile-group-dialog";
 import { SoundcloudBatchAnalyzeButton } from "@/components/soundcloud-batch-analyze-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +34,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { UserCard } from "@/components/user-card";
 import { UserSearch } from "@/components/user-search";
 import { api } from "@/lib/api";
 import { useColumnPrefs } from "@/lib/columns/use-column-prefs";
@@ -39,8 +41,13 @@ import type { FilterSchemaResponse } from "@/lib/filters/schema";
 import { useFilterSchema } from "@/lib/filters/use-filter-schema";
 import { useFilterState } from "@/lib/filters/use-filter-state";
 import { usePlayer } from "@/lib/player-context";
-import * as soundcloud from "@/lib/soundcloud";
-import type { SCTrack, SCUser } from "@/lib/soundcloud";
+import {
+  profileGroupsApi,
+  TRANSIENT_GROUP_ID,
+  type ProfileGroup,
+  type ProfileGroupMember,
+} from "@/lib/profile-groups";
+import type { SCTrack } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
 import { LibraryTitle } from "./library-title";
@@ -51,8 +58,14 @@ import {
   mixNodeId,
   playlistNodeId,
   PLAYLISTS_GROUP_ID,
+  REPOSTS_NODE_ID,
+  TRACKS_NODE_ID,
 } from "./likes-tree-panel";
 import { useCombinedPlaylistsTracks } from "./use-combined-playlists-tracks";
+import { useGroupLikes } from "./use-group-likes";
+import { useGroupPlaylists } from "./use-group-playlists";
+import { useGroupReposts } from "./use-group-reposts";
+import { useGroupTracks } from "./use-group-tracks";
 import { useLikes } from "./use-likes";
 import {
   filterStateToLikesOptions,
@@ -60,9 +73,11 @@ import {
   useLikesFilter,
 } from "./use-likes-filter";
 import { usePlaylistTracks } from "./use-playlist-tracks";
+import { useReposts } from "./use-reposts";
 import { useSoundcloudTrackSearch } from "./use-soundcloud-track-search";
 import { useSystemPlaylistTracks } from "./use-system-playlist-tracks";
 import { useSystemPlaylists } from "./use-system-playlists";
+import { useTracks } from "./use-tracks";
 import { useUserPlaylists } from "./use-user-playlists";
 
 /** Hide attributes that don't apply to the current tab/context. */
@@ -86,6 +101,8 @@ function filterSchemaForTab(
   };
 }
 
+const EMPTY_TRACKS: SCTrack[] = [];
+
 function extractId(track: SCTrack): number | undefined {
   if (!track.urn) return undefined;
   const parts = track.urn.split(":");
@@ -98,11 +115,22 @@ export function SoundcloudView() {
     defaultValue: LIKES_NODE_ID,
   });
 
-  // User search state (Discover tab)
-  const [selectedUser, setSelectedUser] = useState<SCUser | null>(null);
-  const [userPermalink, setUserPermalink] = useQueryState("u", {
+  // ProfileGroup state (Discover tab). The active group can be a saved
+  // group (looked up by `?group=<id>`) or a transient single-member group
+  // built when the user picks a profile via UserSearch but hasn't saved.
+  const [activeGroupId, setActiveGroupId] = useQueryState("group", {
     defaultValue: "",
   });
+  const [savedGroups, setSavedGroups] = useState<ProfileGroup[]>([]);
+  const [transientGroup, setTransientGroup] = useState<{
+    id: string;
+    name: string;
+    members: ProfileGroupMember[];
+  } | null>(null);
+  const [groupDialogState, setGroupDialogState] = useState<{
+    open: boolean;
+    initial: { id: string; name: string; members: ProfileGroupMember[] };
+  }>({ open: false, initial: { id: "", name: "", members: [] } });
 
   // Track search state (Search tab)
   const [searchQuery, setSearchQuery] = useQueryState("q", {
@@ -113,40 +141,95 @@ export function SoundcloudView() {
   const [playUrn, setPlayUrn] = useQueryState("play", { defaultValue: "" });
   const player = usePlayer();
 
-  // Hydrate selectedUser from ?u=permalink on mount or external nav.
+  // Load saved groups on mount.
   useEffect(() => {
-    if (!userPermalink) return;
-    if (selectedUser?.permalink === userPermalink) return;
-    let cancelled = false;
-    (async () => {
-      const resolved = await soundcloud.resolveUrl(
-        `https://soundcloud.com/${userPermalink}`,
-      );
-      if (cancelled) return;
-      if (resolved && "username" in resolved && resolved.kind === "user") {
-        setSelectedUser(resolved as SCUser);
-      }
-    })().catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [userPermalink, selectedUser?.permalink]);
+    profileGroupsApi
+      .list()
+      .then((resp) => setSavedGroups(resp.groups))
+      .catch(() => {});
+  }, []);
 
-  // Which SoundCloud user we're currently viewing
-  const activeUrn: string | "me" | null =
+  const activeGroup = useMemo<{
+    id: string;
+    name: string;
+    members: ProfileGroupMember[];
+  } | null>(() => {
+    if (transientGroup) return transientGroup;
+    if (!activeGroupId) return null;
+    const found = savedGroups.find((g) => g.id === activeGroupId);
+    if (!found) return null;
+    return {
+      id: found.id ?? "",
+      name: found.name,
+      members: found.members ?? [],
+    };
+  }, [transientGroup, activeGroupId, savedGroups]);
+
+  // Scope identifier for selection-reset effects: changes when the user
+  // switches tab or swaps the active Discover group, but is stable while
+  // browsing within the same scope.
+  const scopeKey: string =
     tab === "me"
       ? "me"
       : tab === "discover"
-        ? (selectedUser?.urn ?? null)
-        : null;
+        ? `discover:${activeGroup?.id ?? ""}`
+        : "search";
 
   const myLikes = useLikes("me");
-  const discoverLikes = useLikes(tab === "discover" ? activeUrn : null);
+  const myReposts = useReposts("me");
+  const myTracks = useTracks("me");
+  const groupLikes = useGroupLikes(tab === "discover" ? activeGroup : null);
+  const groupReposts = useGroupReposts(tab === "discover" ? activeGroup : null);
+  const groupTracks = useGroupTracks(tab === "discover" ? activeGroup : null);
   const trackSearch = useSoundcloudTrackSearch(
     tab === "search" ? searchQuery : "",
   );
+  // Adapt useGroupLikes shape to the activeLikes contract used downstream.
+  const discoverLikes = useMemo(
+    () => ({
+      tracks: groupLikes.tracks as unknown as SCTrack[],
+      loading: groupLikes.loading,
+      hasMore: false,
+      loaded: groupLikes.tracks.length,
+      error: groupLikes.error,
+      reload: () => {
+        /* per-member cache lives in soundcloud lib; reload is a no-op v1. */
+      },
+    }),
+    [groupLikes.tracks, groupLikes.loading, groupLikes.error],
+  );
+  const discoverReposts = useMemo(
+    () => ({
+      tracks: groupReposts.tracks as unknown as SCTrack[],
+      loading: groupReposts.loading,
+      hasMore: false,
+      loaded: groupReposts.tracks.length,
+      error: groupReposts.error,
+      reload: () => {
+        /* per-member cache; reload is a no-op v1. */
+      },
+    }),
+    [groupReposts.tracks, groupReposts.loading, groupReposts.error],
+  );
+  const discoverTracks = useMemo(
+    () => ({
+      tracks: groupTracks.tracks as unknown as SCTrack[],
+      loading: groupTracks.loading,
+      hasMore: false,
+      loaded: groupTracks.tracks.length,
+      error: groupTracks.error,
+      reload: () => {
+        /* per-member cache; reload is a no-op v1. */
+      },
+    }),
+    [groupTracks.tracks, groupTracks.loading, groupTracks.error],
+  );
   const activeLikes =
     tab === "me" ? myLikes : tab === "discover" ? discoverLikes : trackSearch;
+  const activeReposts =
+    tab === "me" ? myReposts : tab === "discover" ? discoverReposts : null;
+  const activeTracks =
+    tab === "me" ? myTracks : tab === "discover" ? discoverTracks : null;
 
   // Autoplay the requested track once search results arrive.
   useEffect(() => {
@@ -197,7 +280,20 @@ export function SoundcloudView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playUrn, tab, trackSearch.tracks, setPlayUrn]);
 
-  const { playlists } = useUserPlaylists(activeUrn);
+  // Tab=me uses the personal playlists endpoint; tab=discover uses the
+  // group hook so multi-profile groups get a per-member breakdown. Both
+  // paths feed the same flat `playlists` list to downstream selection /
+  // combined-tracks code.
+  const myPlaylists = useUserPlaylists(tab === "me" ? "me" : null);
+  const groupPlaylists = useGroupPlaylists(
+    tab === "discover" ? activeGroup : null,
+  );
+  const playlists =
+    tab === "discover" ? groupPlaylists.allPlaylists : myPlaylists.playlists;
+  const playlistsByMember =
+    tab === "discover" && (activeGroup?.members.length ?? 0) >= 2
+      ? groupPlaylists.byMember
+      : undefined;
   // Mixes (system playlists) are only personal — tab "me" only.
   const { playlists: mixes, available: mixesAvailable } = useSystemPlaylists(
     tab === "me",
@@ -208,6 +304,8 @@ export function SoundcloudView() {
   const isMixView = nodeId?.startsWith("mix:") ?? false;
   const isAllPlaylistsView = nodeId === PLAYLISTS_GROUP_ID;
   const isMixesGroupView = nodeId === MIXES_GROUP_ID;
+  const isRepostsView = nodeId === REPOSTS_NODE_ID;
+  const isTracksView = nodeId === TRACKS_NODE_ID;
 
   const selectedPlaylist = useMemo(() => {
     if (!isPlaylistView) return null;
@@ -258,11 +356,16 @@ export function SoundcloudView() {
       .catch(() => {});
   }, []);
 
-  // Reset selection to Likes when the active user changes
+  // Reset selection to Likes when the user switches tab or active group.
+  // Skip the initial mount so a `?node=` URL param survives — otherwise
+  // this effect would clobber it back to Likes before the page rendered.
+  const prevScopeKeyRef = useRef(scopeKey);
   useEffect(() => {
+    if (prevScopeKeyRef.current === scopeKey) return;
+    prevScopeKeyRef.current = scopeKey;
     setNodeId(LIKES_NODE_ID);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeUrn]);
+  }, [scopeKey]);
 
   // ----- Filter state (lifted so the tree can show filtered counts) -----
   // Seed schema fixes the attribute set so URL parsers stay bound even when
@@ -327,6 +430,14 @@ export function SoundcloudView() {
     () => activeLikes.tracks.filter(filterPredicate).length,
     [activeLikes.tracks, filterPredicate],
   );
+  const repostsCount = useMemo(
+    () => (activeReposts?.tracks ?? []).filter(filterPredicate).length,
+    [activeReposts, filterPredicate],
+  );
+  const tracksCount = useMemo(
+    () => (activeTracks?.tracks ?? []).filter(filterPredicate).length,
+    [activeTracks, filterPredicate],
+  );
   const combinedCount = useMemo(
     () => combinedPlaylistTracks.tracks.filter(filterPredicate).length,
     [combinedPlaylistTracks.tracks, filterPredicate],
@@ -368,24 +479,36 @@ export function SoundcloudView() {
         >
           <ToggleGroupItem
             value="me"
-            className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
+            aria-label="My Library"
+            className="group h-7 cursor-pointer gap-0 px-2 text-xs"
           >
-            <Heart className="size-3.5" />
-            My Library
+            <AutoHideTabLabel
+              icon={Heart}
+              label="My Library"
+              active={tab === "me"}
+            />
           </ToggleGroupItem>
           <ToggleGroupItem
             value="discover"
-            className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
+            aria-label="Discover"
+            className="group h-7 cursor-pointer gap-0 px-2 text-xs"
           >
-            <Compass className="size-3.5" />
-            Discover
+            <AutoHideTabLabel
+              icon={Compass}
+              label="Discover"
+              active={tab === "discover"}
+            />
           </ToggleGroupItem>
           <ToggleGroupItem
             value="search"
-            className="h-7 cursor-pointer gap-1.5 px-2 text-xs"
+            aria-label="Search"
+            className="group h-7 cursor-pointer gap-0 px-2 text-xs"
           >
-            <Search className="size-3.5" />
-            Search
+            <AutoHideTabLabel
+              icon={Search}
+              label="Search"
+              active={tab === "search"}
+            />
           </ToggleGroupItem>
         </ToggleGroup>
       </LibraryTitle>
@@ -399,33 +522,128 @@ export function SoundcloudView() {
         ? "library:soundcloud:discover"
         : "library:soundcloud:search";
 
-  const viewingUser = tab === "discover" && !selectedUser;
+  const viewingUser = tab === "discover" && !activeGroup;
   const hideTreePanel = viewingUser || tab === "search";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Discover tab: user search / selected user */}
+      {/* Discover tab: profile-group bar / user search */}
       {tab === "discover" && (
-        <div className="border-border border-b px-4 py-2">
-          {selectedUser ? (
-            <UserCard
-              user={selectedUser}
+        <div className="border-border space-y-2 border-b px-4 py-2">
+          {activeGroup && (
+            <GroupBar
+              group={activeGroup}
+              savedGroups={savedGroups}
+              onPick={(id) => {
+                setTransientGroup(null);
+                setActiveGroupId(id);
+              }}
+              onNew={() => {
+                setGroupDialogState({
+                  open: true,
+                  initial: { id: "", name: "", members: [] },
+                });
+              }}
+              onManage={() => {
+                setGroupDialogState({
+                  open: true,
+                  initial: {
+                    id:
+                      activeGroup.id === TRANSIENT_GROUP_ID
+                        ? ""
+                        : activeGroup.id,
+                    name: activeGroup.name,
+                    members: activeGroup.members,
+                  },
+                });
+              }}
               onClear={() => {
-                setSelectedUser(null);
-                setUserPermalink("");
+                setTransientGroup(null);
+                setActiveGroupId("");
               }}
             />
-          ) : (
+          )}
+          {/* Saved-group picker on the empty Discover state — without it
+              there's no way to re-open a previously saved group when none
+              is active. Hidden once a group is loaded since the GroupBar's
+              own dropdown handles switching from there. */}
+          {!activeGroup && savedGroups.length > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-2"
+              data-testid="saved-groups-picker"
+            >
+              <span className="text-muted-foreground text-xs">Your groups</span>
+              {savedGroups.map((g) => (
+                <Button
+                  key={g.id ?? g.name}
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setActiveGroupId(g.id ?? "")}
+                  data-testid={`saved-groups-pick-${g.id ?? ""}`}
+                >
+                  {g.name}
+                  <span className="text-muted-foreground ml-1.5 tabular-nums">
+                    {g.members?.length ?? 0}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          )}
+          {/* No group → search is the primary entry point. Transient group →
+              search stays inline so the user can add more members without
+              opening the manage dialog. Saved groups are edited via Manage. */}
+          {(!activeGroup || activeGroup.id === TRANSIENT_GROUP_ID) && (
             <UserSearch
               onSelect={(u) => {
                 if (!u) return;
-                setSelectedUser(u);
-                setUserPermalink(u.permalink ?? "");
+                const member: ProfileGroupMember = {
+                  user_urn: u.urn ?? "",
+                  permalink: u.permalink ?? "",
+                  username: u.username ?? "",
+                  avatar_url: u.avatar_url ?? null,
+                };
+                if (!member.user_urn) return;
+                setTransientGroup((prev) => {
+                  if (!prev) {
+                    return {
+                      id: TRANSIENT_GROUP_ID,
+                      name: "",
+                      members: [member],
+                    };
+                  }
+                  if (
+                    prev.members.some((m) => m.user_urn === member.user_urn)
+                  ) {
+                    return prev;
+                  }
+                  return { ...prev, members: [...prev.members, member] };
+                });
+                setActiveGroupId("");
               }}
             />
           )}
         </div>
       )}
+
+      <ProfileGroupDialog
+        group={groupDialogState.initial}
+        open={groupDialogState.open}
+        onOpenChange={(open) => setGroupDialogState((s) => ({ ...s, open }))}
+        onSaved={(saved) => {
+          setSavedGroups((prev) => {
+            const without = prev.filter((g) => g.id !== saved.id);
+            return [...without, saved];
+          });
+          setTransientGroup(null);
+          setActiveGroupId(saved.id ?? "");
+        }}
+        onDeleted={() => {
+          const removedId = groupDialogState.initial.id;
+          setSavedGroups((prev) => prev.filter((g) => g.id !== removedId));
+          if (activeGroupId === removedId) setActiveGroupId("");
+        }}
+      />
 
       {/* Search tab: free-text SoundCloud track search */}
       {tab === "search" && (
@@ -447,10 +665,13 @@ export function SoundcloudView() {
         {!hideTreePanel && (
           <LikesTreePanel
             playlists={playlists}
+            playlistsByMember={playlistsByMember}
             selectedId={nodeId ?? LIKES_NODE_ID}
             onSelect={setNodeId}
             storageKey={storageKey}
             likesCount={likesCount}
+            repostsCount={repostsCount}
+            tracksCount={tracksCount}
             combinedCount={combinedCount}
             perPlaylistFilteredCount={perPlaylistCount}
             mixes={mixes}
@@ -463,6 +684,8 @@ export function SoundcloudView() {
           <LikesView
             tab={tab}
             activeLikes={activeLikes}
+            activeReposts={activeReposts}
+            activeTracks={activeTracks}
             playlistTracks={playlistTracks}
             combinedPlaylistTracks={combinedPlaylistTracks}
             mixTracks={mixTracks}
@@ -471,10 +694,15 @@ export function SoundcloudView() {
             isAllPlaylistsView={isAllPlaylistsView}
             isMixView={isMixView}
             isMixesGroupView={isMixesGroupView}
+            isRepostsView={isRepostsView}
+            isTracksView={isTracksView}
             mixesAvailable={mixesAvailable}
             myLikedIds={myLikedIds}
             collectionIds={collectionIds}
-            hasSelectedUser={selectedUser != null}
+            hasSelectedUser={activeGroup != null}
+            showSourceColumn={
+              tab === "discover" && (activeGroup?.members.length ?? 0) >= 2
+            }
             searchQuery={searchQuery}
             seedSchema={seedSchema}
             filterState={filterState}
@@ -491,6 +719,8 @@ export function SoundcloudView() {
 interface LikesViewProps {
   tab: string;
   activeLikes: ReturnType<typeof useLikes>;
+  activeReposts: ReturnType<typeof useLikes> | null;
+  activeTracks: ReturnType<typeof useLikes> | null;
   playlistTracks: ReturnType<typeof usePlaylistTracks>;
   combinedPlaylistTracks: ReturnType<typeof useCombinedPlaylistsTracks>;
   mixTracks: ReturnType<typeof useSystemPlaylistTracks>;
@@ -499,10 +729,13 @@ interface LikesViewProps {
   isAllPlaylistsView: boolean;
   isMixView: boolean;
   isMixesGroupView: boolean;
+  isRepostsView: boolean;
+  isTracksView: boolean;
   mixesAvailable: boolean;
   myLikedIds: Set<number>;
   collectionIds: Set<number>;
   hasSelectedUser: boolean;
+  showSourceColumn: boolean;
   searchQuery: string;
 
   seedSchema: FilterSchemaResponse;
@@ -518,6 +751,8 @@ interface LikesViewProps {
 function LikesView({
   tab,
   activeLikes,
+  activeReposts,
+  activeTracks,
   playlistTracks,
   combinedPlaylistTracks,
   mixTracks,
@@ -526,10 +761,13 @@ function LikesView({
   isAllPlaylistsView,
   isMixView,
   isMixesGroupView,
+  isRepostsView,
+  isTracksView,
   mixesAvailable,
   myLikedIds,
   collectionIds,
   hasSelectedUser,
+  showSourceColumn,
   searchQuery,
   seedSchema,
   filterState,
@@ -549,7 +787,11 @@ function LikesView({
       ? playlistTracks.tracks
       : isAllPlaylistsView
         ? combinedPlaylistTracks.tracks
-        : activeLikes.tracks;
+        : isRepostsView
+          ? (activeReposts?.tracks ?? EMPTY_TRACKS)
+          : isTracksView
+            ? (activeTracks?.tracks ?? EMPTY_TRACKS)
+            : activeLikes.tracks;
 
   const { filteredTracks } = useLikesFilter(
     sourceTracks,
@@ -618,21 +860,33 @@ function LikesView({
       ? playlistTracks.loading
       : isAllPlaylistsView
         ? combinedPlaylistTracks.loading
-        : activeLikes.loading;
+        : isRepostsView
+          ? (activeReposts?.loading ?? false)
+          : isTracksView
+            ? (activeTracks?.loading ?? false)
+            : activeLikes.loading;
   const error = isMixView
     ? mixTracks.error
     : isPlaylistView
       ? playlistTracks.error
       : isAllPlaylistsView
         ? combinedPlaylistTracks.error
-        : activeLikes.error;
+        : isRepostsView
+          ? (activeReposts?.error ?? null)
+          : isTracksView
+            ? (activeTracks?.error ?? null)
+            : activeLikes.error;
   const loadedCount = isMixView
     ? mixTracks.tracks.length
     : isPlaylistView
       ? playlistTracks.tracks.length
       : isAllPlaylistsView
         ? combinedPlaylistTracks.tracks.length
-        : activeLikes.loaded;
+        : isRepostsView
+          ? (activeReposts?.loaded ?? 0)
+          : isTracksView
+            ? (activeTracks?.loaded ?? 0)
+            : activeLikes.loaded;
 
   // Contextual palette commands — registered only while this view is mounted
   // and a selection/filter context applies.
@@ -652,7 +906,12 @@ function LikesView({
     ),
   });
 
-  const reloadActiveLikes = activeLikes.reload;
+  const reloadActiveLikes =
+    isRepostsView && activeReposts
+      ? activeReposts.reload
+      : isTracksView && activeTracks
+        ? activeTracks.reload
+        : activeLikes.reload;
   useCommand({
     id: "sc:reload",
     label:
@@ -764,7 +1023,7 @@ function LikesView({
             <p className="text-destructive text-sm">{error}</p>
             <button
               className="text-primary cursor-pointer text-xs underline"
-              onClick={activeLikes.reload}
+              onClick={reloadActiveLikes}
             >
               Retry
             </button>
@@ -792,7 +1051,11 @@ function LikesView({
                     ? "No playlists"
                     : tab === "search"
                       ? "No tracks matched your search"
-                      : "No liked tracks found"}
+                      : isRepostsView
+                        ? "No reposted tracks found"
+                        : isTracksView
+                          ? "No tracks found"
+                          : "No liked tracks found"}
             </p>
           </div>
         ) : (
@@ -805,7 +1068,9 @@ function LikesView({
             onDeselectAll={deselectAll}
             collectionIds={collectionIds}
             likedIds={myLikedIds}
-            isColumnVisible={columnPrefs.isVisible}
+            isColumnVisible={(id) =>
+              id === "source" ? showSourceColumn : columnPrefs.isVisible(id)
+            }
             columnOrder={columnPrefs.prefs.order}
             onColumnOrderChange={columnPrefs.setOrder}
             columnWidths={columnPrefs.prefs.widths}

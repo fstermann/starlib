@@ -375,6 +375,105 @@
         }
       }
     },
+    "/api/metadata/folders/fetch-from-downloads/preview": {
+      "get": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Fetch From Downloads Preview",
+        "description": "List recent audio files in ~/Downloads that would be moved into *dest_path*.\n\nFiles already present in the destination (collisions) are reported under\n``skipped`` and are not part of ``candidates``.",
+        "operationId": "fetch_from_downloads_preview_api_metadata_folders_fetch_from_downloads_preview_get",
+        "parameters": [
+          {
+            "name": "dest_path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Destination folder under the music root",
+              "title": "Dest Path"
+            },
+            "description": "Destination folder under the music root"
+          },
+          {
+            "name": "window_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 1,
+              "title": "Window Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchFromDownloadsPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metadata/folders/fetch-from-downloads": {
+      "post": {
+        "tags": [
+          "metadata"
+        ],
+        "summary": "Fetch From Downloads",
+        "description": "Move recent audio files from ~/Downloads into a library subfolder.\n\nFiles are filtered by extension (audio formats only) and mtime (within\n``window_days`` of now). A file is skipped when the destination already\ncontains an entry with the same name \u2014 making the operation idempotent.\nWhen ``request.file_names`` is set, only those names are eligible to move.",
+        "operationId": "fetch_from_downloads_api_metadata_folders_fetch_from_downloads_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FetchFromDownloadsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchFromDownloadsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metadata/folders/tree": {
       "get": {
         "tags": [
@@ -587,12 +686,65 @@
             }
           },
           {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Formats"
+            }
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Min"
+            }
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Max"
+            }
+          },
+          {
             "name": "sort_by",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -776,6 +928,59 @@
                 }
               ],
               "title": "Bpm Max"
+            }
+          },
+          {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Formats"
+            }
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Min"
+            }
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Max"
             }
           }
         ],
@@ -1067,12 +1272,71 @@
             "description": "Filter by SoundCloud link presence"
           },
           {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by file format (e.g. mp3, flac)",
+              "title": "File Formats"
+            },
+            "description": "Filter by file format (e.g. mp3, flac)"
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum file size in bytes",
+              "title": "Size Min"
+            },
+            "description": "Minimum file size in bytes"
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum file size in bytes",
+              "title": "Size Max"
+            },
+            "description": "Maximum file size in bytes"
+          },
+          {
             "name": "sort_by",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -1255,6 +1519,65 @@
               "title": "Bpm Max"
             },
             "description": "Active BPM maximum"
+          },
+          {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active file-format filters",
+              "title": "File Formats"
+            },
+            "description": "Active file-format filters"
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active file-size minimum (bytes)",
+              "title": "Size Min"
+            },
+            "description": "Active file-size minimum (bytes)"
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Active file-size maximum (bytes)",
+              "title": "Size Max"
+            },
+            "description": "Active file-size maximum (bytes)"
           }
         ],
         "responses": {
@@ -2115,6 +2438,228 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Ruleset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-groups": {
+      "get": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "List Groups",
+        "description": "Return all groups and the active group id.",
+        "operationId": "list_groups_api_profile_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileGroupsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "Create Group",
+        "description": "Create a new ProfileGroup.",
+        "operationId": "create_group_api_profile_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileGroupCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileGroup"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-groups/active": {
+      "get": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "Get Active Group",
+        "description": "Return the currently active group, or null if none is active.",
+        "operationId": "get_active_group_api_profile_groups_active_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProfileGroup"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Active Group Api Profile Groups Active Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-groups/{group_id}": {
+      "put": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "Update Group",
+        "description": "Update a group's name and/or members.\n\nRaises\n------\nHTTPException\n    404 if not found.",
+        "operationId": "update_group_api_profile_groups__group_id__put",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileGroupUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileGroup"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "Delete Group",
+        "description": "Delete a group.\n\nRaises\n------\nHTTPException\n    404 if not found.",
+        "operationId": "delete_group_api_profile_groups__group_id__delete",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile-groups/{group_id}/activate": {
+      "put": {
+        "tags": [
+          "profile-groups"
+        ],
+        "summary": "Activate Group",
+        "description": "Set the active group.\n\nRaises\n------\nHTTPException\n    404 if not found.",
+        "operationId": "activate_group_api_profile_groups__group_id__activate_put",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileGroup"
                 }
               }
             }
@@ -3216,6 +3761,48 @@
           }
         }
       }
+    },
+    "/api/suggestions/track": {
+      "post": {
+        "tags": [
+          "suggestions"
+        ],
+        "summary": "Suggest Track Metadata",
+        "description": "Compute ranked metadata suggestions for a single local track.",
+        "operationId": "suggest_track_metadata_api_suggestions_track_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3868,6 +4455,165 @@
         "title": "CollectionStatsResponse",
         "description": "Response containing collection statistics."
       },
+      "FetchCandidate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "mtime": {
+            "type": "number",
+            "title": "Mtime"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "size",
+          "mtime"
+        ],
+        "title": "FetchCandidate",
+        "description": "One candidate audio file under ~/Downloads for the preview dialog."
+      },
+      "FetchFromDownloadsPreview": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/FetchCandidate"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "default": []
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "FetchFromDownloadsPreview",
+        "description": "Preview of what a Fetch-from-Downloads call would do."
+      },
+      "FetchFromDownloadsRequest": {
+        "properties": {
+          "dest_path": {
+            "type": "string",
+            "title": "Dest Path"
+          },
+          "window_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Window Days",
+            "default": 1
+          },
+          "file_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dest_path"
+        ],
+        "title": "FetchFromDownloadsRequest",
+        "description": "Request to move recent audio files from ~/Downloads into a folder."
+      },
+      "FetchFromDownloadsResponse": {
+        "properties": {
+          "moved": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Moved",
+            "default": []
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped",
+            "default": []
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "FetchFromDownloadsResponse",
+        "description": "Result of a Fetch-from-Downloads operation."
+      },
+      "FieldSuggestion": {
+        "properties": {
+          "value": {
+            "title": "Value"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "sc_title",
+              "sc_metadata_artist",
+              "sc_uploader",
+              "sc_genre",
+              "sc_release_date",
+              "sc_artwork_url",
+              "sc_bpm",
+              "sc_key",
+              "sc_tag",
+              "filename_parse",
+              "tag_existing",
+              "derived",
+              "list_normalized",
+              "list_aggregated"
+            ],
+            "title": "Source"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "source",
+          "confidence",
+          "label"
+        ],
+        "title": "FieldSuggestion",
+        "description": "A single ranked candidate value for one editor field."
+      },
       "FileInfoResponse": {
         "properties": {
           "file_path": {
@@ -4000,6 +4746,44 @@
               }
             ],
             "title": "Bpm Max"
+          },
+          "file_formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "File Formats",
+            "default": []
+          },
+          "file_format_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "File Format Counts",
+            "default": {}
+          },
+          "file_size_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Size Min"
+          },
+          "file_size_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Size Max"
           }
         },
         "type": "object",
@@ -4404,6 +5188,151 @@
         "title": "PeaksResponse",
         "description": "Waveform amplitude peak data for visualization."
       },
+      "ProfileGroup": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileGroupMember"
+            },
+            "type": "array",
+            "title": "Members"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ProfileGroup",
+        "description": "A persisted ProfileGroup."
+      },
+      "ProfileGroupCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileGroupMember"
+            },
+            "type": "array",
+            "title": "Members"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ProfileGroupCreate",
+        "description": "Payload for creating a new group."
+      },
+      "ProfileGroupMember": {
+        "properties": {
+          "user_urn": {
+            "type": "string",
+            "title": "User Urn"
+          },
+          "permalink": {
+            "type": "string",
+            "title": "Permalink"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_urn",
+          "permalink",
+          "username"
+        ],
+        "title": "ProfileGroupMember",
+        "description": "A SoundCloud profile pinned into a group.\n\nCached display fields (`username`, `avatar_url`) snapshot the profile at\nadd-time so the UI can render members without a per-row SoundCloud API\ncall. They drift over time \u2014 we accept that for v1."
+      },
+      "ProfileGroupUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "members": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProfileGroupMember"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Members"
+          }
+        },
+        "type": "object",
+        "title": "ProfileGroupUpdate",
+        "description": "Payload for updating an existing group."
+      },
+      "ProfileGroupsResponse": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "active_group_id": {
+            "type": "string",
+            "title": "Active Group Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "groups",
+          "active_group_id"
+        ],
+        "title": "ProfileGroupsResponse",
+        "description": "Response listing all groups plus the active one."
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -4687,6 +5616,206 @@
         "title": "RulesetsResponse",
         "description": "Response listing all rulesets."
       },
+      "SCTrackPayload": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "metadata_artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Artist"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "key_signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Signature"
+          },
+          "tag_list": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag List"
+          },
+          "label_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "artwork_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Url"
+          },
+          "permalink_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permalink Url"
+          },
+          "urn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urn"
+          },
+          "release_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Year"
+          },
+          "release_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Month"
+          },
+          "release_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Day"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SCUserPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "SCTrackPayload",
+        "description": "Loose subset of the SoundCloud OpenAPI track shape used by the engine.\n\nThe frontend sends the raw `SCTrack` (the OpenAPI generated type); we only\npull the fields suggesters need and ignore the rest. Adding a new\nsuggestion source means: add the field here + add a suggester."
+      },
+      "SCUserPayload": {
+        "properties": {
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "type": "object",
+        "title": "SCUserPayload",
+        "description": "Loose subset of the SC user object used during suggestion."
+      },
       "SessionCookieRequest": {
         "properties": {
           "oauth_token": {
@@ -4829,6 +5958,50 @@
         ],
         "title": "StreamUrlResponse",
         "description": "Signed HLS stream URL for a SoundCloud track."
+      },
+      "SuggestionRequest": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "sc_track": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SCTrackPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current": {
+            "$ref": "#/components/schemas/TrackInfoUpdateRequest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path"
+        ],
+        "title": "SuggestionRequest",
+        "description": "Request body for the suggestion endpoint.\n\nParameters\n----------\nfile_path:\n    Absolute or root-relative path of the local track being edited. The\n    server uses it for filename parsing and (in the future) reading\n    existing on-disk tags as a suggestion source.\nsc_track:\n    Optional SoundCloud track payload. When ``None``, only filename- and\n    tag-based suggestions are produced.\ncurrent:\n    In-flight editor state. Suggestions equal to a current value are\n    suppressed so the UI never proposes a no-op."
+      },
+      "SuggestionResponse": {
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/FieldSuggestion"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Fields"
+          }
+        },
+        "type": "object",
+        "title": "SuggestionResponse",
+        "description": "Map of field name \u2192 ranked candidates (top first)."
       },
       "SystemPlaylistSummary": {
         "properties": {

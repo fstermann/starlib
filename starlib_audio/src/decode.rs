@@ -9,13 +9,12 @@ use std::io::Cursor;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::DecoderOptions;
+use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::errors::Error as SymphError;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 use crate::types::{BpmError, BpmOptions};
 
@@ -46,48 +45,49 @@ fn decode_from_source(
     if let Some(h) = hint {
         probe_hint.with_extension(h);
     }
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &probe_hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .context("probe failed")?;
-    let mut format = probed.format;
     let track = format
-        .default_track()
+        .default_track(TrackType::Audio)
         .ok_or_else(|| anyhow!("no default audio track"))?;
     let track_id = track.id;
+    let audio_params = track
+        .codec_params
+        .as_ref()
+        .and_then(|p| p.audio())
+        .ok_or_else(|| anyhow!("default track has no audio codec params"))?;
     // Refuse to guess: a missing sample rate would silently corrupt tempo
     // detection (lag-to-BPM mapping is sample-rate dependent).
-    let src_sr = track
-        .codec_params
-        .sample_rate
-        .ok_or(BpmError::MissingSampleRate)?;
+    let src_sr = audio_params.sample_rate.ok_or(BpmError::MissingSampleRate)?;
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(audio_params, &AudioDecoderOptions::default())
         .context("decoder init failed")?;
 
     let mut pcm: Vec<f32> = Vec::new();
+    let mut interleaved: Vec<f32> = Vec::new();
     loop {
         let packet = match format.next_packet() {
-            Ok(p) => p,
-            Err(SymphError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Ok(Some(p)) => p,
+            Ok(None) => break,
             Err(SymphError::ResetRequired) => break,
             Err(e) => return Err(e.into()),
         };
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
         match decoder.decode(&packet) {
             Ok(decoded) => {
-                let spec = *decoded.spec();
-                let mut buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
-                buf.copy_interleaved_ref(decoded);
-                let samples = buf.samples();
-                let ch = spec.channels.count().max(1);
-                for frame in samples.chunks(ch) {
+                let ch = decoded.spec().channels().count().max(1);
+                let frames = decoded.frames();
+                interleaved.resize(frames * ch, 0.0);
+                decoded.copy_to_slice_interleaved::<f32, _>(&mut interleaved[..]);
+                for frame in interleaved.chunks(ch) {
                     let s = frame.iter().sum::<f32>() / ch as f32;
                     pcm.push(s);
                 }

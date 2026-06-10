@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getFeedTracksPage, type SCTrack } from "@/lib/soundcloud";
+import {
+  getFeedTracksPage,
+  parseSCTimestamp,
+  type SCTrack,
+} from "@/lib/soundcloud";
 
 interface UseFollowingsTracksResult {
   tracks: SCTrack[];
@@ -35,9 +39,14 @@ async function fetchRecentPages(
   signal: AbortSignal,
   onProgress: (tracks: SCTrack[]) => void,
 ): Promise<SCTrack[]> {
-  const cutoff = new Date(Date.now() - TWO_WEEKS_MS);
+  const cutoff = Date.now() - TWO_WEEKS_MS;
 
-  let allTracks: SCTrack[] = [];
+  // The feed can surface the same track more than once (e.g. an original post
+  // and reposts from multiple followed users). Dedupe by urn so downstream
+  // consumers — most importantly the virtualizer keying rows by track.urn —
+  // never see duplicate identities.
+  const seen = new Set<string>();
+  const allTracks: SCTrack[] = [];
   let nextHref: string | undefined;
 
   do {
@@ -49,18 +58,26 @@ async function fetchRecentPages(
 
     if (signal.aborted) return [];
 
-    allTracks = [...allTracks, ...tracks];
+    for (const t of tracks) {
+      const key = t.urn;
+      if (key) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      allTracks.push(t);
+    }
     onProgress([...allTracks]);
 
     // Feed is newest-first. Once the oldest item on this page is before the
     // cutoff we know the rest will be too – stop paging.
     const oldest = tracks[tracks.length - 1];
-    if (oldest?.created_at && new Date(oldest.created_at) < cutoff) break;
+    const oldestTs = parseSCTimestamp(oldest?.addedAt ?? oldest?.created_at);
+    if (oldestTs != null && oldestTs < cutoff) break;
   } while (nextHref);
 
   return allTracks.filter((t) => {
-    if (!t.created_at) return true;
-    return new Date(t.created_at) >= cutoff;
+    const ts = parseSCTimestamp(t.addedAt ?? t.created_at);
+    return ts == null || ts >= cutoff;
   });
 }
 

@@ -37,12 +37,19 @@ function paramsFromState(state: FilterState) {
     null,
     null,
   ];
+  const fileFormats = (state.file_format as string[] | undefined) ?? [];
+  const size = (state.file_size as
+    | [number | null, number | null]
+    | undefined) ?? [null, null];
   return {
     search: search || undefined,
     genres: genres.length ? genres : undefined,
     keys: keys.length ? keys : undefined,
     bpmMin: bpm[0] ?? undefined,
     bpmMax: bpm[1] ?? undefined,
+    fileFormats: fileFormats.length ? fileFormats : undefined,
+    sizeMin: size[0] ?? undefined,
+    sizeMax: size[1] ?? undefined,
   };
 }
 
@@ -50,6 +57,9 @@ function adapt(values: FilterValues): FilterSchemaResponse {
   const bpmMin = values.bpm_min ?? null;
   const bpmMax = values.bpm_max ?? null;
   const hasBpm = bpmMin !== null && bpmMax !== null && bpmMax > bpmMin;
+  const sizeMin = values.file_size_min ?? null;
+  const sizeMax = values.file_size_max ?? null;
+  const hasSize = sizeMin !== null && sizeMax !== null && sizeMax > sizeMin;
   return {
     source: "filesystem",
     attributes: [
@@ -81,7 +91,36 @@ function adapt(values: FilterValues): FilterSchemaResponse {
             },
           ]
         : []),
+      {
+        id: "file_format",
+        label: "Format",
+        kind: "enum",
+        options: values.file_formats ?? [],
+        counts: values.file_format_counts,
+      },
+      ...(hasSize
+        ? [
+            {
+              id: "file_size",
+              label: "Size",
+              kind: "range" as const,
+              min: sizeMin!,
+              max: sizeMax!,
+              // Bucket the slider so the UX doesn't try to scrub byte-by-byte.
+              // Pick ~100 steps across the range, rounded to a friendly unit.
+              step: stepFor(sizeMin!, sizeMax!),
+              formatHint: "size" as const,
+            },
+          ]
+        : []),
       { id: "soundcloud_linked", label: "SoundCloud", kind: "bool" as const },
     ],
   };
+}
+
+function stepFor(min: number, max: number): number {
+  const span = max - min;
+  if (span <= 1024 * 1024) return 1024; // KB-scale
+  if (span <= 100 * 1024 * 1024) return 100 * 1024; // 100 KB
+  return 1024 * 1024; // 1 MB
 }

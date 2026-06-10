@@ -15,6 +15,7 @@ import { useFilterState } from "@/lib/filters/use-filter-state";
 import {
   fetchLikesPage,
   getMyLikedTracks,
+  parseSCTimestamp,
   type SCPlaylist,
   type SCTrack,
 } from "@/lib/soundcloud";
@@ -312,7 +313,7 @@ export default function WeeklyPage() {
         const end = anchor + 86400000;
         for (const t of allFilteredTracks) {
           if (!t.urn || existingUrns.has(t.urn)) continue;
-          const ts = t.created_at ? Date.parse(t.created_at) : 0;
+          const ts = parseSCTimestamp(t.addedAt ?? t.created_at) ?? 0;
           if (ts >= start && ts <= end) newCount++;
         }
       }

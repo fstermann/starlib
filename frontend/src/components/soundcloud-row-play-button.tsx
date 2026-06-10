@@ -1,11 +1,13 @@
 "use client";
 
-import { Loader2, Pause, Play } from "lucide-react";
+import { Ban, Pause, Play } from "lucide-react";
 import { useState } from "react";
 
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
+import { useIsScUnplayable } from "@/lib/sc-unplayable";
 import { cn } from "@/lib/utils";
 
 interface SoundcloudRowPlayButtonProps {
@@ -18,6 +20,8 @@ interface SoundcloudRowPlayButtonProps {
   permalinkUrl?: string;
   /** Track artwork URL. */
   artworkUrl?: string;
+  /** Known BPM for the track (cached or metadata) — seeds the pitcher. */
+  bpm?: number | null;
   className?: string;
   /** When provided, called instead of the button's default single-track
    * playback. Lets the parent install queue context before playback begins.
@@ -34,11 +38,16 @@ export function SoundcloudRowPlayButton({
   waveformUrl,
   permalinkUrl,
   artworkUrl,
+  bpm,
   className,
   onStartPlay,
 }: SoundcloudRowPlayButtonProps) {
   const { currentTrack, isPlaying, play, toggle } = usePlayer();
   const [loading, setLoading] = useState(false);
+  const numericId = typeof trackId === "number" ? trackId : Number(trackId);
+  const unplayable = useIsScUnplayable(
+    Number.isFinite(numericId) ? numericId : null,
+  );
 
   const trackKey = `soundcloud:${trackId}`;
   const isCurrent = currentTrack?.filePath === trackKey;
@@ -66,6 +75,7 @@ export function SoundcloudRowPlayButton({
           streamRefreshKey: trackId,
           permalinkUrl,
           artworkUrl,
+          bpm: bpm ?? null,
         });
       }
     } catch (err) {
@@ -73,6 +83,22 @@ export function SoundcloudRowPlayButton({
     } finally {
       setLoading(false);
     }
+  }
+
+  if (unplayable) {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        disabled
+        title="SoundCloud refused to stream this track"
+        aria-label="Track unavailable for playback"
+        className={cn("opacity-50", className)}
+      >
+        <Ban />
+      </Button>
+    );
   }
 
   return (
@@ -86,13 +112,7 @@ export function SoundcloudRowPlayButton({
       onClick={handleClick}
       className={cn(isActive && "text-primary", className)}
     >
-      {loading ? (
-        <Loader2 className="animate-spin" />
-      ) : isActive ? (
-        <Pause />
-      ) : (
-        <Play />
-      )}
+      {loading ? <Spinner /> : isActive ? <Pause /> : <Play />}
     </Button>
   );
 }

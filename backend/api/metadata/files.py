@@ -3,6 +3,8 @@
 import asyncio
 import base64
 import logging
+import shutil
+import time
 from datetime import date
 from pathlib import Path
 from typing import Annotated
@@ -20,6 +22,10 @@ from backend.schemas.metadata import (
     BatchResultItem,
     BatchUpdateRequest,
     BatchUpdateResponse,
+    FetchCandidate,
+    FetchFromDownloadsPreview,
+    FetchFromDownloadsRequest,
+    FetchFromDownloadsResponse,
     FileInfoResponse,
     FileReadinessResponse,
     FilterValuesResponse,
@@ -30,7 +36,7 @@ from backend.schemas.metadata import (
 )
 from backend.schemas.tree import TreeNode
 from soundcloud_tools.handler.folder import FolderHandler
-from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
+from soundcloud_tools.handler.track import FILETYPE_MAP, SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +45,8 @@ router = APIRouter()
 # Bound concurrent Apply Rules jobs so a stack of clicks can't spawn
 # unbounded ffmpeg conversions in parallel.
 _apply_rules_semaphore = asyncio.Semaphore(2)
+
+_SORT_BY_PATTERN = "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size|duration)$"
 
 
 def _row_value(row, key, default=None):
@@ -101,6 +109,130 @@ def initialize_folders(
     return OperationResponse(success=True, message=f"Folders created under {root_folder}")
 
 
+# Audio file extensions accepted by the Fetch-from-Downloads action.
+# Aligned with FILETYPE_MAP (the formats the indexer/handler can actually
+# read) so we never move a file the library would then fail to surface.
+_FETCH_AUDIO_EXTENSIONS = frozenset(FILETYPE_MAP.keys())
+
+
+def _is_recent_audio(src: Path, cutoff: float) -> bool:
+    """True if *src* is a non-hidden audio file modified at or after *cutoff*."""
+    if not src.is_file() or src.name.startswith("."):
+        return False
+    if src.suffix.lower() not in _FETCH_AUDIO_EXTENSIONS:
+        return False
+    try:
+        return src.stat().st_mtime >= cutoff
+    except OSError:
+        return False
+
+
+def _resolve_fetch_paths(dest_path: str, root_folder: Path) -> tuple[Path, Path, Path]:
+    """Validate Downloads + destination and return (downloads, dest, resolved_root)."""
+    downloads = (Path.home() / "Downloads").resolve()
+    if not downloads.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Downloads folder not found at {downloads}",
+        )
+
+    dest = Path(dest_path).resolve()
+    resolved_root = root_folder.resolve()
+    try:
+        dest.relative_to(resolved_root)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Destination is outside the music library root.",
+        ) from e
+    if not dest.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Destination folder does not exist: {dest}",
+        )
+    return downloads, dest, resolved_root
+
+
+@router.get("/folders/fetch-from-downloads/preview", response_model=FetchFromDownloadsPreview)
+def fetch_from_downloads_preview(
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+    dest_path: str = Query(..., description="Destination folder under the music root"),
+    window_days: int = Query(1, ge=1, le=365),
+) -> FetchFromDownloadsPreview:
+    """List recent audio files in ~/Downloads that would be moved into *dest_path*.
+
+    Files already present in the destination (collisions) are reported under
+    ``skipped`` and are not part of ``candidates``.
+    """
+    downloads, dest, _ = _resolve_fetch_paths(dest_path, root_folder)
+
+    cutoff = time.time() - window_days * 86400
+    candidates: list[FetchCandidate] = []
+    skipped: list[str] = []
+
+    for src in downloads.iterdir():
+        if not _is_recent_audio(src, cutoff):
+            continue
+        if (dest / src.name).exists():
+            skipped.append(src.name)
+            continue
+        try:
+            stat = src.stat()
+        except OSError:
+            continue
+        candidates.append(FetchCandidate(name=src.name, size=stat.st_size, mtime=stat.st_mtime))
+
+    candidates.sort(key=lambda c: c.mtime, reverse=True)
+    return FetchFromDownloadsPreview(candidates=candidates, skipped=sorted(skipped))
+
+
+@router.post("/folders/fetch-from-downloads", response_model=FetchFromDownloadsResponse)
+def fetch_from_downloads(
+    request: FetchFromDownloadsRequest,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> FetchFromDownloadsResponse:
+    """Move recent audio files from ~/Downloads into a library subfolder.
+
+    Files are filtered by extension (audio formats only) and mtime (within
+    ``window_days`` of now). A file is skipped when the destination already
+    contains an entry with the same name — making the operation idempotent.
+    When ``request.file_names`` is set, only those names are eligible to move.
+    """
+    downloads, dest, resolved_root = _resolve_fetch_paths(request.dest_path, root_folder)
+
+    cutoff = time.time() - request.window_days * 86400
+    selection = set(request.file_names) if request.file_names is not None else None
+    moved: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []
+
+    for src in downloads.iterdir():
+        if not _is_recent_audio(src, cutoff):
+            continue
+        if selection is not None and src.name not in selection:
+            continue
+
+        target = dest / src.name
+        if target.exists():
+            skipped.append(src.name)
+            continue
+
+        try:
+            shutil.move(str(src), str(target))
+        except Exception as e:
+            logger.exception("Failed to move %s to %s", src, target)
+            errors.append(f"{src.name}: {e}")
+            continue
+
+        try:
+            collection.reindex_file(resolved_root, target)
+        except Exception:
+            logger.exception("Failed to reindex %s after move", target)
+        moved.append(src.name)
+
+    return FetchFromDownloadsResponse(moved=moved, skipped=skipped, errors=errors)
+
+
 @router.get("/folders/tree", response_model=TreeNode)
 def get_folder_tree(
     root_folder: Annotated[Path, Depends(get_root_folder)],
@@ -153,7 +285,10 @@ def browse_by_path(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     has_soundcloud_id: bool | None = Query(None),
-    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$"),
+    file_formats: list[str] | None = Query(None),
+    size_min: int | None = Query(None, ge=0),
+    size_max: int | None = Query(None, ge=0),
+    sort_by: str = Query("file_name", pattern=_SORT_BY_PATTERN),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
     """Browse tracks by absolute folder path with optional recursion."""
@@ -183,6 +318,9 @@ def browse_by_path(
             start_date=date_from,
             end_date=date_to,
             has_soundcloud_id=has_soundcloud_id,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
             sort_by=sort_by,
             sort_order=sort_order,
             recursive=recursive,
@@ -224,6 +362,9 @@ def browse_path_filter_values(
     keys: list[str] | None = Query(None),
     bpm_min: int | None = Query(None, ge=0),
     bpm_max: int | None = Query(None, ge=0),
+    file_formats: list[str] | None = Query(None),
+    size_min: int | None = Query(None, ge=0),
+    size_max: int | None = Query(None, ge=0),
 ) -> FilterValuesResponse:
     """Get available filter values for a folder path."""
     folder_path = Path(path).resolve()
@@ -247,6 +388,9 @@ def browse_path_filter_values(
         keys=keys,
         bpm_min=bpm_min,
         bpm_max=bpm_max,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
     )
     return FilterValuesResponse(**result)
 
@@ -329,7 +473,10 @@ def browse_folder_files(
     date_from: date | None = Query(None, description="Earliest release date (YYYY-MM-DD)"),
     date_to: date | None = Query(None, description="Latest release date (YYYY-MM-DD)"),
     has_soundcloud_id: bool | None = Query(None, description="Filter by SoundCloud link presence"),
-    sort_by: str = Query("file_name", pattern="^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime)$"),
+    file_formats: list[str] | None = Query(None, description="Filter by file format (e.g. mp3, flac)"),
+    size_min: int | None = Query(None, ge=0, description="Minimum file size in bytes"),
+    size_max: int | None = Query(None, ge=0, description="Maximum file size in bytes"),
+    sort_by: str = Query("file_name", pattern=_SORT_BY_PATTERN),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ) -> Page[TrackBrowseResponse]:
     """Browse tracks in a folder with filtering, sorting, and pagination.
@@ -360,6 +507,9 @@ def browse_folder_files(
             start_date=date_from,
             end_date=date_to,
             has_soundcloud_id=has_soundcloud_id,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
             sort_by=sort_by,
             sort_order=sort_order,
         )
@@ -399,6 +549,9 @@ def get_folder_filter_values(
     keys: list[str] | None = Query(None, description="Active key filters"),
     bpm_min: int | None = Query(None, ge=0, description="Active BPM minimum"),
     bpm_max: int | None = Query(None, ge=0, description="Active BPM maximum"),
+    file_formats: list[str] | None = Query(None, description="Active file-format filters"),
+    size_min: int | None = Query(None, ge=0, description="Active file-size minimum (bytes)"),
+    size_max: int | None = Query(None, ge=0, description="Active file-size maximum (bytes)"),
 ) -> FilterValuesResponse:
     """Get available filter values for a folder (genres, artists, keys, BPM range).
 
@@ -424,6 +577,9 @@ def get_folder_filter_values(
             keys=keys,
             bpm_min=bpm_min,
             bpm_max=bpm_max,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
         )
     except Exception as e:
         logger.exception("Failed to get filter values")

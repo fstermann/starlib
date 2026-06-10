@@ -1,7 +1,9 @@
+"use client";
+
+import { motion } from "framer-motion";
 import { CalendarDays } from "lucide-react";
 
 import { ConstellationCard } from "@/components/home/constellation-card";
-import { FloatingStars } from "@/components/home/floating-stars";
 import { GalaxyBackground } from "@/components/home/galaxy-background";
 import { LibraryIcon } from "@/components/icons/library-icon";
 
@@ -63,10 +65,19 @@ export default function Home() {
   return (
     <div className="relative flex h-full min-h-full w-full flex-col overflow-hidden">
       <GalaxyBackground />
-      <FloatingStars />
 
-      <div className="relative z-10 mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center px-6 py-16">
-        <div className="mb-16 flex flex-col items-center text-center">
+      <motion.div
+        className="relative z-10 mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center px-6 py-16"
+        initial={{ opacity: 0, scale: 1.06 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.7, ease: [0.2, 0, 0, 1] }}
+      >
+        <motion.div
+          className="mb-16 flex flex-col items-center text-center"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.2, 0, 0, 1], delay: 0.1 }}
+        >
           <div className="relative">
             {/* Twinkling ornaments around the title */}
             <span
@@ -181,9 +192,14 @@ export default function Home() {
           <p className="text-muted-foreground max-w-sm text-lg">
             Music management for DJs and producers.
           </p>
-        </div>
+        </motion.div>
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <motion.div
+          className="grid grid-cols-1 gap-5 sm:grid-cols-2"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.2, 0, 0, 1], delay: 0.22 }}
+        >
           {tools.map((tool) => (
             <ConstellationCard
               key={tool.href}
@@ -195,8 +211,8 @@ export default function Home() {
               edges={tool.edges}
             />
           ))}
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </div>
   );
 }

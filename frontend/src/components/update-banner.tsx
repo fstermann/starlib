@@ -1,8 +1,9 @@
 "use client";
 
-import { Download, Loader2, X } from "lucide-react";
+import { Download, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import { getSetting } from "@/lib/settings";
 import { isTauri } from "@/lib/tauri";
@@ -62,7 +63,7 @@ export function UpdateBanner() {
       >
         {installing ? (
           <>
-            <Loader2 className="mr-1 size-3 animate-spin" />
+            <Spinner className="mr-1 size-3" />
             Installing…
           </>
         ) : (

@@ -17,6 +17,19 @@ import { test, type Page } from "@playwright/test";
 
 import type { RealTrack } from "./screenshots-setup";
 
+/** Wait for the hyperspace BackendGate overlay to fully unmount.
+ *
+ * The gate renders for ~1.2 s on first navigation (MIN_TRAVEL_MS + EXIT_MS).
+ * If we screenshot before it detaches we capture the loader, not the page. */
+async function waitForBackendGate(page: Page) {
+  await page
+    .locator('[data-testid="backend-gate-loader"]')
+    .waitFor({ state: "detached", timeout: 5000 })
+    .catch(() => {
+      /* Already detached (reload navigation) or never mounted. */
+    });
+}
+
 const SCREENSHOT_DIR = path.join(
   __dirname,
   "../../docs/assets/images/screenshots",
@@ -760,6 +773,7 @@ test.describe("Documentation screenshots", () => {
   test("home page", async ({ page }) => {
     await page.goto("/");
     await page.waitForLoadState("networkidle");
+    await waitForBackendGate(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "home.png"),
       fullPage: false,
@@ -769,6 +783,7 @@ test.describe("Documentation screenshots", () => {
   test("library — filesystem table view", async ({ page }) => {
     await page.goto("/library");
     await page.waitForLoadState("networkidle");
+    await waitForBackendGate(page);
     // Wait for table rows to render
     const firstRow = page.locator('[role="row"][class*="border-b"]').first();
     await firstRow.waitFor({ state: "visible" });
@@ -782,6 +797,7 @@ test.describe("Documentation screenshots", () => {
   test("library — single file editor", async ({ page }) => {
     await page.goto("/library");
     await page.waitForLoadState("networkidle");
+    await waitForBackendGate(page);
     // Wait for editable rows (skip the header row)
     const dataRow = page.locator('[data-index="0"]');
     await dataRow.waitFor({ state: "visible" });
@@ -803,6 +819,7 @@ test.describe("Documentation screenshots", () => {
   test("library — soundcloud view", async ({ page }) => {
     await page.goto("/library?source=soundcloud");
     await page.waitForLoadState("networkidle");
+    await waitForBackendGate(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "library-soundcloud.png"),
       fullPage: false,
@@ -812,6 +829,7 @@ test.describe("Documentation screenshots", () => {
   test("weekly favorites", async ({ page }) => {
     await page.goto("/weekly");
     await page.waitForLoadState("networkidle");
+    await waitForBackendGate(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "weekly.png"),
       fullPage: false,
@@ -833,6 +851,7 @@ test.describe("Documentation screenshots", () => {
     );
     await page.goto("/setup");
     await page.waitForLoadState("networkidle");
+    await waitForBackendGate(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "setup.png"),
       fullPage: false,
@@ -842,6 +861,7 @@ test.describe("Documentation screenshots", () => {
   test("settings — folders", async ({ page }) => {
     await page.goto("/library");
     await page.waitForLoadState("networkidle");
+    await waitForBackendGate(page);
     // Open settings dialog via sidebar button
     await page.locator('button[aria-label="Settings"]').click();
     await page
@@ -860,6 +880,7 @@ test.describe("Documentation screenshots", () => {
   test("settings — rulesets (classic)", async ({ page }) => {
     await page.goto("/library");
     await page.waitForLoadState("networkidle");
+    await waitForBackendGate(page);
     // Open settings dialog
     await page.locator('button[aria-label="Settings"]').click();
     await page
@@ -885,6 +906,7 @@ test.describe("Documentation screenshots", () => {
     });
     await page.goto("/auth/login");
     await page.waitForLoadState("networkidle");
+    await waitForBackendGate(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "login.png"),
       fullPage: false,

@@ -1,9 +1,10 @@
 "use client";
 
-import { ChevronDown, Loader2, Waves, X } from "lucide-react";
+import { ChevronDown, Waves, X } from "lucide-react";
 import { useCallback } from "react";
 import { toast } from "sonner";
 
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,11 +13,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
+import { analyzeSc, TrackUnanalysableError } from "@/lib/sc-bpm";
 import type { SCTrack } from "@/lib/soundcloud";
-import { analyzeScBpm, isTauri } from "@/lib/tauri";
+import { isTauri } from "@/lib/tauri";
 import {
   useBatchBpmRunner,
   useConsensusPref,
+  useStrongPref,
 } from "@/lib/use-batch-bpm-runner";
 
 interface Props {
@@ -63,6 +66,7 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
   const { running, total, done, failed, cancel, start } =
     useBatchBpmRunner(CONCURRENCY);
   const [consensus, setConsensus] = useConsensusPref();
+  const [strong, setStrong] = useStrongPref();
 
   const run = useCallback(async () => {
     if (!isTauri()) return;
@@ -96,35 +100,43 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
       return;
     }
 
-    let token: string;
-    try {
-      ({ token } = await api.getSoundcloudClientToken());
-    } catch (err) {
-      toast.error(
-        `Couldn't fetch SoundCloud token: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return;
-    }
-
+    let unanalysable = 0;
     const { completed, failures, cancelled } = await start(
       queue,
       async (trackId) => {
-        const result = await analyzeScBpm(trackId, token, consensus);
-        await api.saveSoundcloudBpm(trackId, result.bpm);
-        dispatchBpmUpdate(trackId, Math.round(result.bpm));
+        try {
+          const result = await analyzeSc(trackId, consensus, strong);
+          await api.saveSoundcloudBpm(trackId, result.bpm);
+          dispatchBpmUpdate(trackId, Math.round(result.bpm));
+        } catch (err) {
+          // Tracks SC refuses to stream count as a clean skip, not a
+          // failure — they would never succeed no matter how many times
+          // we retried, so the summary should make that clear.
+          if (err instanceof TrackUnanalysableError) {
+            unanalysable += 1;
+            return;
+          }
+          throw err;
+        }
       },
     );
 
+    const succeeded = completed - failures - unanalysable;
     if (cancelled) {
       toast(`Cancelled after ${completed} track${completed === 1 ? "" : "s"}`);
-    } else if (failures > 0) {
-      toast.warning(
-        `Analyzed ${completed - failures}/${queue.length} — ${failures} failed`,
-      );
+    } else if (failures > 0 || unanalysable > 0) {
+      const parts = [`Analyzed ${succeeded}/${queue.length}`];
+      if (failures > 0) parts.push(`${failures} failed`);
+      if (unanalysable > 0) parts.push(`${unanalysable} unavailable`);
+      toast.warning(parts.join(" — "));
     } else {
       toast.success(`Analyzed ${completed} track${completed === 1 ? "" : "s"}`);
     }
-  }, [tracks, consensus, start]);
+  }, [tracks, consensus, strong, start]);
+
+  const modeSuffix = [consensus ? "consensus" : null, strong ? "strong" : null]
+    .filter(Boolean)
+    .join(" · ");
 
   if (!isTauri()) return null;
 
@@ -137,7 +149,7 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
         onClick={cancel}
         title="Cancel batch analysis"
       >
-        <Loader2 className="size-3.5 animate-spin" />
+        <Spinner className="size-3.5" />
         <span className="tabular-nums">
           {done}/{total}
           {failed > 0 ? ` · ${failed} failed` : ""}
@@ -155,13 +167,13 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
         className={className}
         onClick={run}
         title={
-          consensus
-            ? "Analyze visible tracks in consensus mode (~3× slower per track)"
+          modeSuffix
+            ? `Analyze visible tracks (${modeSuffix})`
             : "Analyze BPM for all visible tracks that don't have one"
         }
       >
         <Waves className="size-3.5" />
-        Analyze BPMs{consensus ? " · consensus" : ""}
+        Analyze BPMs{modeSuffix ? ` · ${modeSuffix}` : ""}
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -174,13 +186,32 @@ export function SoundcloudBatchAnalyzeButton({ tracks, className }: Props) {
             <ChevronDown className="size-3.5" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-72">
           <DropdownMenuCheckboxItem
             checked={consensus}
             onCheckedChange={setConsensus}
+            data-testid="batch-analyze-consensus"
+            className="items-start py-2"
           >
-            Consensus mode (median of 3 windows — more robust on tracks with
-            intros/breakdowns)
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Consensus mode</span>
+              <span className="text-muted-foreground text-xs">
+                Median of 3 windows — robust to intros &amp; breakdowns
+              </span>
+            </div>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={strong}
+            onCheckedChange={setStrong}
+            data-testid="batch-analyze-strong"
+            className="items-start py-2"
+          >
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Stronger algorithm</span>
+              <span className="text-muted-foreground text-xs">
+                DP beat tracker — fixes dotted/triplet sub-rate locks
+              </span>
+            </div>
           </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>

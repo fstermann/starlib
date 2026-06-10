@@ -59,8 +59,11 @@ _SORT_COLS: dict[str, str] = {
     "file_name": "file_name",
     "folder": "folder",
     "mtime": "mtime",
+    "file_format": "file_format",
+    "file_size": "file_size",
+    "duration": "duration",
 }
-_NULLABLE_SORT_COLS = {"bpm", "release_date", "release_year"}
+_NULLABLE_SORT_COLS = {"bpm", "release_date", "release_year", "file_format", "file_size", "duration"}
 
 # Columns matched by search_query LIKE clauses — derived from registry.
 _SEARCH_COLS: tuple[str, ...] = tuple(_REGISTRY_COL.get(f.name, f.name) for f in SIMPLE_TAG_FIELDS if f.searchable)
@@ -263,6 +266,11 @@ def _folder_clause(folder: Path, recursive: bool = False):
     return Track.folder == folder_str
 
 
+def _normalize_format(value: str) -> str:
+    """Lowercase and strip a leading dot from a file format string."""
+    return value.lstrip(".").lower()
+
+
 def _apply_filters(  # noqa: C901
     stmt: Select,
     *,
@@ -277,6 +285,9 @@ def _apply_filters(  # noqa: C901
     end_date: date | None = None,
     artists: list[str] | None = None,
     has_soundcloud_id: bool | None = None,
+    file_formats: list[str] | None = None,
+    size_min: int | None = None,
+    size_max: int | None = None,
 ) -> Select:
     if folder is not None:
         stmt = stmt.where(_folder_clause(folder, recursive))
@@ -294,6 +305,14 @@ def _apply_filters(  # noqa: C901
         stmt = stmt.where(Track.release_date <= str(end_date))
     if has_soundcloud_id is not None:
         stmt = stmt.where(Track.soundcloud_id.is_not(None) if has_soundcloud_id else Track.soundcloud_id.is_(None))
+    if file_formats:
+        normalized = [_normalize_format(f) for f in file_formats if f]
+        if normalized:
+            stmt = stmt.where(func.lower(func.replace(Track.file_format, ".", "")).in_(normalized))
+    if size_min is not None:
+        stmt = stmt.where(Track.file_size >= size_min)
+    if size_max is not None:
+        stmt = stmt.where(Track.file_size <= size_max)
     if artists:
         clauses = [Track.artist_str.like(f"%{a}%") for a in artists]
         stmt = stmt.where(or_(*clauses))
@@ -317,6 +336,9 @@ def get_tracks(
     start_date: date | None = None,
     end_date: date | None = None,
     has_soundcloud_id: bool | None = None,
+    file_formats: list[str] | None = None,
+    size_min: int | None = None,
+    size_max: int | None = None,
     sort_by: str = "file_name",
     sort_order: str = "asc",
 ):
@@ -334,6 +356,9 @@ def get_tracks(
         start_date=start_date,
         end_date=end_date,
         has_soundcloud_id=has_soundcloud_id,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
     )
 
     sort_col_name = _SORT_COLS.get(sort_by, "file_name")
@@ -367,6 +392,9 @@ def get_filter_values(
     keys: list[str] | None = None,
     bpm_min: int | None = None,
     bpm_max: int | None = None,
+    file_formats: list[str] | None = None,
+    size_min: int | None = None,
+    size_max: int | None = None,
 ) -> dict:
     """Return dropdown option lists + faceted counts for genres, keys, artists, BPM range."""
     engine = get_engine()
@@ -400,6 +428,8 @@ def get_filter_values(
             ).all()
         ]
 
+    fmt_expr = func.lower(func.replace(Track.file_format, ".", ""))
+
     # Genre counts: apply all filters EXCEPT genres.
     genre_stmt = _apply_filters(
         select(Track.genre, func.count()).where(fc, Track.genre.is_not(None), Track.genre != ""),
@@ -407,6 +437,9 @@ def get_filter_values(
         keys=keys,
         bpm_min=bpm_min,
         bpm_max=bpm_max,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
     ).group_by(Track.genre)
     filtered_genre_counts = {r[0]: r[1] for r in _count(genre_stmt)}
     genre_counts = {g: filtered_genre_counts.get(g, 0) for g in all_genres}
@@ -418,13 +451,43 @@ def get_filter_values(
         genres=genres,
         bpm_min=bpm_min,
         bpm_max=bpm_max,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
     ).group_by(Track.key)
     filtered_key_counts = {r[0]: r[1] for r in _count(key_stmt)}
     key_counts = {k: filtered_key_counts.get(k, 0) for k in all_keys}
 
+    # File-format options + counts (counts apply all filters EXCEPT file_formats).
+    with engine.connect() as conn:
+        all_formats = [
+            r[0]
+            for r in conn.execute(
+                select(fmt_expr)
+                .where(fc, Track.file_format.is_not(None), Track.file_format != "")
+                .group_by(fmt_expr)
+                .order_by(fmt_expr)
+            ).all()
+        ]
+    fmt_stmt = _apply_filters(
+        select(fmt_expr, func.count()).where(fc, Track.file_format.is_not(None), Track.file_format != ""),
+        search_query=search_query,
+        genres=genres,
+        keys=keys,
+        bpm_min=bpm_min,
+        bpm_max=bpm_max,
+        size_min=size_min,
+        size_max=size_max,
+    ).group_by(fmt_expr)
+    filtered_fmt_counts = {r[0]: r[1] for r in _count(fmt_stmt)}
+    file_format_counts = {f: filtered_fmt_counts.get(f, 0) for f in all_formats}
+
     with engine.connect() as conn:
         bpm_row = conn.execute(
             select(func.min(Track.bpm), func.max(Track.bpm)).where(fc, Track.bpm.is_not(None))
+        ).first()
+        size_row = conn.execute(
+            select(func.min(Track.file_size), func.max(Track.file_size)).where(fc, Track.file_size.is_not(None))
         ).first()
         artists_rows = conn.execute(
             select(Track.artist_str)
@@ -445,6 +508,10 @@ def get_filter_values(
         "key_counts": key_counts,
         "bpm_min": bpm_row[0] if bpm_row else None,
         "bpm_max": bpm_row[1] if bpm_row else None,
+        "file_formats": all_formats,
+        "file_format_counts": file_format_counts,
+        "file_size_min": size_row[0] if size_row else None,
+        "file_size_max": size_row[1] if size_row else None,
     }
 
 

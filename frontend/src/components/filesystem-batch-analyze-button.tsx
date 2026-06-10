@@ -1,9 +1,10 @@
 "use client";
 
-import { ChevronDown, Loader2, Waves, X } from "lucide-react";
+import { ChevronDown, Waves, X } from "lucide-react";
 import { useCallback } from "react";
 import { toast } from "sonner";
 
+import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,6 +17,7 @@ import { analyzeLocalBpm, isTauri } from "@/lib/tauri";
 import {
   useBatchBpmRunner,
   useConsensusPref,
+  useStrongPref,
 } from "@/lib/use-batch-bpm-runner";
 
 interface Props {
@@ -53,6 +55,7 @@ export function FilesystemBatchAnalyzeButton({
   const { running, total, done, failed, cancel, start } =
     useBatchBpmRunner(CONCURRENCY);
   const [consensus, setConsensus] = useConsensusPref();
+  const [strong, setStrong] = useStrongPref();
 
   const run = useCallback(async () => {
     if (!isTauri() || !folderPath) return;
@@ -75,7 +78,7 @@ export function FilesystemBatchAnalyzeButton({
     const { completed, failures, cancelled } = await start(
       paths,
       async (path) => {
-        const result = await analyzeLocalBpm(path, consensus);
+        const result = await analyzeLocalBpm(path, consensus, strong);
         await api.saveLocalBpm(path, result.bpm, result.algorithm_version);
       },
     );
@@ -91,7 +94,11 @@ export function FilesystemBatchAnalyzeButton({
     } else {
       toast.success(`Analyzed ${completed} track${completed === 1 ? "" : "s"}`);
     }
-  }, [folderPath, consensus, start, onComplete]);
+  }, [folderPath, consensus, strong, start, onComplete]);
+
+  const modeSuffix = [consensus ? "consensus" : null, strong ? "strong" : null]
+    .filter(Boolean)
+    .join(" · ");
 
   if (!isTauri()) return null;
 
@@ -104,7 +111,7 @@ export function FilesystemBatchAnalyzeButton({
         onClick={cancel}
         title="Cancel batch analysis"
       >
-        <Loader2 className="size-3.5 animate-spin" />
+        <Spinner className="size-3.5" />
         <span className="tabular-nums">
           {done}/{total}
           {failed > 0 ? ` · ${failed} failed` : ""}
@@ -123,13 +130,13 @@ export function FilesystemBatchAnalyzeButton({
         onClick={run}
         disabled={!folderPath}
         title={
-          consensus
-            ? "Analyze unanalyzed tracks in this folder (consensus mode, ~3× slower)"
+          modeSuffix
+            ? `Analyze unanalyzed tracks in this folder (${modeSuffix})`
             : "Analyze BPM for all tracks in this folder that don't have one"
         }
       >
         <Waves className="size-3.5" />
-        Analyze BPMs{consensus ? " · consensus" : ""}
+        Analyze BPMs{modeSuffix ? ` · ${modeSuffix}` : ""}
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -142,13 +149,32 @@ export function FilesystemBatchAnalyzeButton({
             <ChevronDown className="size-3.5" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-72">
           <DropdownMenuCheckboxItem
             checked={consensus}
             onCheckedChange={setConsensus}
+            data-testid="batch-analyze-consensus"
+            className="items-start py-2"
           >
-            Consensus mode (median of 3 windows — more robust on tracks with
-            intros/breakdowns)
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Consensus mode</span>
+              <span className="text-muted-foreground text-xs">
+                Median of 3 windows — robust to intros &amp; breakdowns
+              </span>
+            </div>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={strong}
+            onCheckedChange={setStrong}
+            data-testid="batch-analyze-strong"
+            className="items-start py-2"
+          >
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Stronger algorithm</span>
+              <span className="text-muted-foreground text-xs">
+                DP beat tracker — fixes dotted/triplet sub-rate locks
+              </span>
+            </div>
           </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>

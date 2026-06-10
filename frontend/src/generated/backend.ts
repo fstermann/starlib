@@ -285,6 +285,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metadata/folders/fetch-from-downloads/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch From Downloads Preview
+         * @description List recent audio files in ~/Downloads that would be moved into *dest_path*.
+         *
+         *     Files already present in the destination (collisions) are reported under
+         *     ``skipped`` and are not part of ``candidates``.
+         */
+        get: operations["fetch_from_downloads_preview_api_metadata_folders_fetch_from_downloads_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metadata/folders/fetch-from-downloads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch From Downloads
+         * @description Move recent audio files from ~/Downloads into a library subfolder.
+         *
+         *     Files are filtered by extension (audio formats only) and mtime (within
+         *     ``window_days`` of now). A file is skipped when the destination already
+         *     contains an entry with the same name — making the operation idempotent.
+         *     When ``request.file_names`` is set, only those names are eligible to move.
+         */
+        post: operations["fetch_from_downloads_api_metadata_folders_fetch_from_downloads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metadata/folders/tree": {
         parameters: {
             query?: never;
@@ -1010,6 +1058,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/profile-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Groups
+         * @description Return all groups and the active group id.
+         */
+        get: operations["list_groups_api_profile_groups_get"];
+        put?: never;
+        /**
+         * Create Group
+         * @description Create a new ProfileGroup.
+         */
+        post: operations["create_group_api_profile_groups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profile-groups/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Active Group
+         * @description Return the currently active group, or null if none is active.
+         */
+        get: operations["get_active_group_api_profile_groups_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profile-groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Group
+         * @description Update a group's name and/or members.
+         *
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         404 if not found.
+         */
+        put: operations["update_group_api_profile_groups__group_id__put"];
+        post?: never;
+        /**
+         * Delete Group
+         * @description Delete a group.
+         *
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         404 if not found.
+         */
+        delete: operations["delete_group_api_profile_groups__group_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profile-groups/{group_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Activate Group
+         * @description Set the active group.
+         *
+         *     Raises
+         *     ------
+         *     HTTPException
+         *         404 if not found.
+         */
+        put: operations["activate_group_api_profile_groups__group_id__activate_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/folders/config": {
         parameters: {
             query?: never;
@@ -1516,6 +1667,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/suggestions/track": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Track Metadata
+         * @description Compute ranked metadata suggestions for a single local track.
+         */
+        post: operations["suggest_track_metadata_api_suggestions_track_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1822,6 +1993,87 @@ export interface components {
             bpm_max?: number | null;
         };
         /**
+         * FetchCandidate
+         * @description One candidate audio file under ~/Downloads for the preview dialog.
+         */
+        FetchCandidate: {
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+            /** Mtime */
+            mtime: number;
+        };
+        /**
+         * FetchFromDownloadsPreview
+         * @description Preview of what a Fetch-from-Downloads call would do.
+         */
+        FetchFromDownloadsPreview: {
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["FetchCandidate"][];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: string[];
+        };
+        /**
+         * FetchFromDownloadsRequest
+         * @description Request to move recent audio files from ~/Downloads into a folder.
+         */
+        FetchFromDownloadsRequest: {
+            /** Dest Path */
+            dest_path: string;
+            /**
+             * Window Days
+             * @default 1
+             */
+            window_days: number;
+            /** File Names */
+            file_names?: string[] | null;
+        };
+        /**
+         * FetchFromDownloadsResponse
+         * @description Result of a Fetch-from-Downloads operation.
+         */
+        FetchFromDownloadsResponse: {
+            /**
+             * Moved
+             * @default []
+             */
+            moved: string[];
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: string[];
+            /**
+             * Errors
+             * @default []
+             */
+            errors: string[];
+        };
+        /**
+         * FieldSuggestion
+         * @description A single ranked candidate value for one editor field.
+         */
+        FieldSuggestion: {
+            /** Value */
+            value: unknown;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "sc_title" | "sc_metadata_artist" | "sc_uploader" | "sc_genre" | "sc_release_date" | "sc_artwork_url" | "sc_bpm" | "sc_key" | "sc_tag" | "filename_parse" | "tag_existing" | "derived" | "list_normalized" | "list_aggregated";
+            /** Confidence */
+            confidence: number;
+            /** Label */
+            label: string;
+        };
+        /**
          * FileInfoResponse
          * @description Response containing basic file information.
          */
@@ -1892,6 +2144,22 @@ export interface components {
             bpm_min?: number | null;
             /** Bpm Max */
             bpm_max?: number | null;
+            /**
+             * File Formats
+             * @default []
+             */
+            file_formats: string[];
+            /**
+             * File Format Counts
+             * @default {}
+             */
+            file_format_counts: {
+                [key: string]: number;
+            };
+            /** File Size Min */
+            file_size_min?: number | null;
+            /** File Size Max */
+            file_size_max?: number | null;
         };
         /**
          * FolderConfig
@@ -2084,6 +2352,76 @@ export interface components {
             peaks: number[];
         };
         /**
+         * ProfileGroup
+         * @description A persisted ProfileGroup.
+         */
+        ProfileGroup: {
+            /** Id */
+            id?: string;
+            /** Name */
+            name: string;
+            /** Members */
+            members?: components["schemas"]["ProfileGroupMember"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /**
+         * ProfileGroupCreate
+         * @description Payload for creating a new group.
+         */
+        ProfileGroupCreate: {
+            /** Name */
+            name: string;
+            /** Members */
+            members?: components["schemas"]["ProfileGroupMember"][];
+        };
+        /**
+         * ProfileGroupMember
+         * @description A SoundCloud profile pinned into a group.
+         *
+         *     Cached display fields (`username`, `avatar_url`) snapshot the profile at
+         *     add-time so the UI can render members without a per-row SoundCloud API
+         *     call. They drift over time — we accept that for v1.
+         */
+        ProfileGroupMember: {
+            /** User Urn */
+            user_urn: string;
+            /** Permalink */
+            permalink: string;
+            /** Username */
+            username: string;
+            /** Avatar Url */
+            avatar_url?: string | null;
+        };
+        /**
+         * ProfileGroupUpdate
+         * @description Payload for updating an existing group.
+         */
+        ProfileGroupUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Members */
+            members?: components["schemas"]["ProfileGroupMember"][] | null;
+        };
+        /**
+         * ProfileGroupsResponse
+         * @description Response listing all groups plus the active one.
+         */
+        ProfileGroupsResponse: {
+            /** Groups */
+            groups: components["schemas"]["ProfileGroup"][];
+            /** Active Group Id */
+            active_group_id: string;
+        };
+        /**
          * RefreshRequest
          * @description Token refresh request.
          */
@@ -2191,6 +2529,55 @@ export interface components {
             active_ruleset_id: string;
         };
         /**
+         * SCTrackPayload
+         * @description Loose subset of the SoundCloud OpenAPI track shape used by the engine.
+         *
+         *     The frontend sends the raw `SCTrack` (the OpenAPI generated type); we only
+         *     pull the fields suggesters need and ignore the rest. Adding a new
+         *     suggestion source means: add the field here + add a suggester.
+         */
+        SCTrackPayload: {
+            /** Title */
+            title?: string | null;
+            /** Metadata Artist */
+            metadata_artist?: string | null;
+            /** Genre */
+            genre?: string | null;
+            /** Bpm */
+            bpm?: number | null;
+            /** Key Signature */
+            key_signature?: string | null;
+            /** Tag List */
+            tag_list?: string | null;
+            /** Label Name */
+            label_name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Artwork Url */
+            artwork_url?: string | null;
+            /** Permalink Url */
+            permalink_url?: string | null;
+            /** Urn */
+            urn?: string | null;
+            /** Release Year */
+            release_year?: number | null;
+            /** Release Month */
+            release_month?: number | null;
+            /** Release Day */
+            release_day?: number | null;
+            /** Created At */
+            created_at?: string | null;
+            user?: components["schemas"]["SCUserPayload"] | null;
+        };
+        /**
+         * SCUserPayload
+         * @description Loose subset of the SC user object used during suggestion.
+         */
+        SCUserPayload: {
+            /** Username */
+            username?: string | null;
+        };
+        /**
          * SessionCookieRequest
          * @description Web-session ``oauth_token`` captured from the SoundCloud cookie jar.
          *
@@ -2268,6 +2655,39 @@ export interface components {
             url: string;
             /** Expires At */
             expires_at: string;
+        };
+        /**
+         * SuggestionRequest
+         * @description Request body for the suggestion endpoint.
+         *
+         *     Parameters
+         *     ----------
+         *     file_path:
+         *         Absolute or root-relative path of the local track being edited. The
+         *         server uses it for filename parsing and (in the future) reading
+         *         existing on-disk tags as a suggestion source.
+         *     sc_track:
+         *         Optional SoundCloud track payload. When ``None``, only filename- and
+         *         tag-based suggestions are produced.
+         *     current:
+         *         In-flight editor state. Suggestions equal to a current value are
+         *         suppressed so the UI never proposes a no-op.
+         */
+        SuggestionRequest: {
+            /** File Path */
+            file_path: string;
+            sc_track?: components["schemas"]["SCTrackPayload"] | null;
+            current?: components["schemas"]["TrackInfoUpdateRequest"];
+        };
+        /**
+         * SuggestionResponse
+         * @description Map of field name → ranked candidates (top first).
+         */
+        SuggestionResponse: {
+            /** Fields */
+            fields?: {
+                [key: string]: components["schemas"]["FieldSuggestion"][];
+            };
         };
         /**
          * SystemPlaylistSummary
@@ -2778,6 +3198,72 @@ export interface operations {
             };
         };
     };
+    fetch_from_downloads_preview_api_metadata_folders_fetch_from_downloads_preview_get: {
+        parameters: {
+            query: {
+                /** @description Destination folder under the music root */
+                dest_path: string;
+                window_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FetchFromDownloadsPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fetch_from_downloads_api_metadata_folders_fetch_from_downloads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FetchFromDownloadsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FetchFromDownloadsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_folder_tree_api_metadata_folders_tree_get: {
         parameters: {
             query?: never;
@@ -2814,6 +3300,9 @@ export interface operations {
                 date_from?: string | null;
                 date_to?: string | null;
                 has_soundcloud_id?: boolean | null;
+                file_formats?: string[] | null;
+                size_min?: number | null;
+                size_max?: number | null;
                 sort_by?: string;
                 sort_order?: string;
                 /** @description Page number */
@@ -2858,6 +3347,9 @@ export interface operations {
                 keys?: string[] | null;
                 bpm_min?: number | null;
                 bpm_max?: number | null;
+                file_formats?: string[] | null;
+                size_min?: number | null;
+                size_max?: number | null;
             };
             header?: never;
             path?: never;
@@ -2942,6 +3434,12 @@ export interface operations {
                 date_to?: string | null;
                 /** @description Filter by SoundCloud link presence */
                 has_soundcloud_id?: boolean | null;
+                /** @description Filter by file format (e.g. mp3, flac) */
+                file_formats?: string[] | null;
+                /** @description Minimum file size in bytes */
+                size_min?: number | null;
+                /** @description Maximum file size in bytes */
+                size_max?: number | null;
                 sort_by?: string;
                 sort_order?: string;
                 /** @description Page number */
@@ -2990,6 +3488,12 @@ export interface operations {
                 bpm_min?: number | null;
                 /** @description Active BPM maximum */
                 bpm_max?: number | null;
+                /** @description Active file-format filters */
+                file_formats?: string[] | null;
+                /** @description Active file-size minimum (bytes) */
+                size_min?: number | null;
+                /** @description Active file-size maximum (bytes) */
+                size_max?: number | null;
             };
             header?: never;
             path: {
@@ -3636,6 +4140,174 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Ruleset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_groups_api_profile_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileGroupsResponse"];
+                };
+            };
+        };
+    };
+    create_group_api_profile_groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileGroupCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileGroup"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_group_api_profile_groups_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileGroup"] | null;
+                };
+            };
+        };
+    };
+    update_group_api_profile_groups__group_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileGroupUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileGroup"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_group_api_profile_groups__group_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_group_api_profile_groups__group_id__activate_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileGroup"];
                 };
             };
             /** @description Validation Error */
@@ -4480,6 +5152,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClientTokenResponse"];
+                };
+            };
+        };
+    };
+    suggest_track_metadata_api_suggestions_track_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
