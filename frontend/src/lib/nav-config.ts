@@ -1,4 +1,11 @@
-import { CalendarDays, Compass, FolderOpen, Heart, Search } from "lucide-react";
+import {
+  AudioWaveform,
+  CalendarDays,
+  Compass,
+  FolderOpen,
+  Heart,
+  Search,
+} from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
 import { LibraryIcon } from "@/components/icons/library-icon";
@@ -28,6 +35,12 @@ export const NAV_LINKS: NavLink[] = [
     label: "Weekly Favorites",
     icon: CalendarDays,
     keywords: ["releases", "followed", "artists"],
+  },
+  {
+    href: "/analyser",
+    label: "Set Analyser",
+    icon: AudioWaveform,
+    keywords: ["bpm", "shazam", "sections", "mix", "tracklist"],
   },
 ];
 
@@ -62,5 +75,11 @@ export const QUICK_JUMPS: NavLink[] = [
     label: "Weekly Favorites",
     icon: Heart,
     keywords: ["releases", "new"],
+  },
+  {
+    href: "/analyser",
+    label: "Set Analyser",
+    icon: AudioWaveform,
+    keywords: ["bpm", "shazam", "sections", "mix", "tracklist"],
   },
 ];

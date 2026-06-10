@@ -1,9 +1,8 @@
 //! Audio decoding to mono f32 PCM at a configurable target sample rate.
 //!
-//! Ported from the `bpm_bench_rs` prototype. Uses symphonia for decoding
-//! (fMP4/AAC, MP3, FLAC, WAV, Vorbis) and a simple linear resampler — good
-//! enough for tempo detection, where spectral precision matters less than
-//! onset timing.
+//! Uses symphonia for decoding (fMP4/AAC, MP3, FLAC, WAV, Vorbis) and a
+//! simple linear resampler — good enough for tempo detection, where spectral
+//! precision matters less than onset timing.
 
 use std::fs::File;
 use std::io::Cursor;
@@ -17,7 +16,7 @@ use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
 
-use super::types::{BpmError, BpmOptions};
+use crate::types::{BpmError, BpmOptions};
 
 /// Decode in-memory audio bytes to mono f32 PCM at `options.target_sr`.
 ///

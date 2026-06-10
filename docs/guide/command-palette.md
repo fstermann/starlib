@@ -22,6 +22,14 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 | `pitcher.toggle` | Enable/Disable target-BPM pitching | a track is loaded in the player | `components/bpm-pitcher.tsx` |
 | `library.fetch-from-downloads` | Fetch audio files from Downloads | a library folder is selected | `components/fetch-from-downloads-button.tsx` |
 
+### Analyser
+
+| ID | Label | When | Source |
+|----|-------|------|--------|
+| `analyser.paste-url` | Analyse SoundCloud URL from clipboard | on `/analyser` | `app/analyser/_components/commands.tsx` |
+| `analyser.reanalyse-selection` | Re-analyse selected region | on `/analyser`, region selected on the timeline | `app/analyser/_components/commands.tsx` |
+| `analyser.export-tracklist` | Export detected tracklist | on `/analyser`, a job is loaded | `app/analyser/_components/commands.tsx` |
+
 ### Go to
 
 Pulled from `src/lib/nav-config.ts` (`NAV_LINKS` + `QUICK_JUMPS`). Add an entry there to auto-add a palette command.
@@ -30,6 +38,7 @@ Pulled from `src/lib/nav-config.ts` (`NAV_LINKS` + `QUICK_JUMPS`). Add an entry 
 |----|-------|
 | `nav:/library` | Go to Library |
 | `nav:/weekly` | Go to Weekly Favorites |
+| `nav:/analyser` | Go to Set Analyser |
 | `nav:/library?source=filesystem` | Go to Library: Filesystem |
 | `nav:/library?source=soundcloud&tab=me` | Go to Library: SoundCloud — My Library |
 | `nav:/library?source=soundcloud&tab=discover` | Go to Library: SoundCloud — Discover |

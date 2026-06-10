@@ -1,0 +1,40 @@
+[package]
+name = "starlib_audio"
+version = "0.1.0"
+description = "Starlib audio analysis: BPM detection, section segmentation, streaming analyser CLI."
+authors = ["Fabian Stermann <56961284+fstermann@users.noreply.github.com>"]
+license = "MIT"
+repository = "https://github.com/fstermann/starlib"
+edition = "2021"
+
+[lib]
+name = "starlib_audio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "analyser-stream"
+path = "src/bin/analyser_stream.rs"
+
+[features]
+default = []
+soundcloud = ["dep:reqwest", "dep:futures", "dep:url", "dep:tokio"]
+
+[dependencies]
+anyhow = "1"
+log = "0.4"
+rustfft = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+symphonia = { version = "0.6", features = ["aac", "aiff", "alac", "isomp4", "mp3", "flac", "wav", "vorbis"] }
+thiserror = "2"
+
+# Optional (enabled via the "soundcloud" feature). These are needed for the
+# HLS-driven SoundCloud analyzer and are inherited from the workspace
+# resolver when desktop/src-tauri turns on the feature.
+futures = { version = "0.3", optional = true }
+reqwest = { version = "0.13", features = ["json"], optional = true }
+tokio = { version = "1", features = ["time", "sync"], optional = true }
+url = { version = "2", optional = true }
+
+[dev-dependencies]
+# write_wav helpers etc. used by integration-style tests.
