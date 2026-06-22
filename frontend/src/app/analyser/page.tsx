@@ -63,6 +63,9 @@ function AnalyserPageInner() {
   const handleFocusTrack = useCallback((key: string) => {
     setFocusedTrack((prev) => ({ key, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
+  // Remember which job the user asked to stop, so the Stop button can
+  // show "Stopping…" until the run actually winds down.
+  const [stopRequestedJob, setStopRequestedJob] = useState<string | null>(null);
   // Confirmed state lives on the track row in the DB now (was a
   // localStorage-keyed set before the consolidation). The set we
   // expose to children is just the ids of currently-confirmed tracks
@@ -171,6 +174,10 @@ function AnalyserPageInner() {
   const handleRunShazam = useCallback(
     async (tier: ShazamTier) => {
       if (!jobId) return;
+      // Clear any prior stop intent — this is a fresh run, not the one
+      // the user stopped earlier. Without this the new pass would render
+      // a disabled "Stopping…" button the user can't act on.
+      setStopRequestedJob(null);
       try {
         await startShazamScan(jobId, { tier, overrides: options });
         // The previous SSE was closed when the BPM pass emitted
@@ -188,6 +195,8 @@ function AnalyserPageInner() {
   const handleScanRange = useCallback(
     async (range: { start_s: number; end_s: number }, tier: ShazamTier) => {
       if (!jobId) return;
+      // A region rescan is a fresh run too — drop stale stop intent.
+      setStopRequestedJob(null);
       try {
         await startShazamScan(jobId, {
           tier,
@@ -221,11 +230,11 @@ function AnalyserPageInner() {
       .map((t) => [t.start_s, t.end_s] as [number, number]);
   }, [state.timeline]);
 
-  // Remember which job the user asked to stop. When the backend
-  // transitions that job out of ``running`` the derived ``stopping``
-  // flips to ``false`` automatically — no useEffect-driven setState
-  // shenanigans needed.
-  const [stopRequestedJob, setStopRequestedJob] = useState<string | null>(null);
+  // When the backend transitions the stop-requested job out of
+  // ``running`` the derived ``stopping`` flips to ``false`` automatically
+  // — no useEffect-driven setState shenanigans needed. The flag is
+  // cleared again when a fresh run starts (see the scan handlers) so a
+  // new pass never inherits the previous run's stop intent.
   const stopping =
     stopRequestedJob != null &&
     stopRequestedJob === jobId &&

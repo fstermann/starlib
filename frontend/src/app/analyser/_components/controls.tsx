@@ -28,7 +28,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { AnalyserJobOptions, ShazamTier } from "@/lib/analyser";
+import {
+  SHAZAM_TIER_DEFAULTS,
+  type AnalyserJobOptions,
+  type ShazamTier,
+} from "@/lib/analyser";
 
 /** Field label style — mirrors the library's track editor so the
  *  analyser's controls feel consistent with the rest of the app. */
@@ -103,6 +107,9 @@ export function AnalyserControls({
   const [tempoEnd, setTempoEnd] = useState(
     options.bpm_range?.[1]?.toString() ?? "",
   );
+  // The range is the advanced case — start collapsed unless a saved
+  // upper bound already exists, then reveal it on demand.
+  const [rangeOpen, setRangeOpen] = useState(Boolean(tempoEnd));
 
   const commit = (next: AnalyserJobOptions) => onChange(next);
 
@@ -138,6 +145,14 @@ export function AnalyserControls({
     });
   };
 
+  // Collapsing the range drops the upper bound entirely — re-commit as a
+  // single tempo so the backend strategy follows the visible UI.
+  const closeRange = () => {
+    setRangeOpen(false);
+    setTempoEnd("");
+    commitPitch(tempoStart, "");
+  };
+
   // Hint when the band is narrow enough that the per-scan-point pitch
   // dedup will collapse it to a single midpoint query — keeps users
   // from expecting "3× hits" when the backend will only fire one call
@@ -158,49 +173,66 @@ export function AnalyserControls({
     >
       <div className="flex flex-col gap-1">
         <Label htmlFor="tempo-start" className={FIELD_LABEL}>
-          Tempo (BPM)
+          Original tempo (BPM)
           <FieldHelp>
-            The tempo Shazam should hear each probe at — pick the cruising
-            tempo of the original tracks (128 house, 140 speedhouse, …).
-            Leave blank to probe audio as-is (fastest; misses any track
-            the DJ sped up or slowed down).
+            DJs pitch tracks up or down to mix them. Set the original release
+            tempo (128 house, 140 speedhouse, …) and each snippet is pitched
+            back to it before Shazam listens — so it matches the release, not
+            the sped-up mix. Leave blank to send the audio untouched (fastest;
+            misses anything the DJ pitched).
           </FieldHelp>
         </Label>
-        <Input
-          id="tempo-start"
-          type="number"
-          min={60}
-          max={200}
-          className="w-24"
-          aria-label="Tempo (BPM)"
-          value={tempoStart}
-          onChange={(e) => setTempoStart(e.target.value)}
-          onBlur={() => commitPitch(tempoStart, tempoEnd)}
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <Label htmlFor="tempo-end" className={FIELD_LABEL}>
-          Up to (BPM)
-          <FieldHelp>
-            Optional upper bound. When set, the scanner fans out across
-            the [Tempo, Up to] band. Leave blank to query at a single
-            tempo. Narrow bands (&lt;4 BPM) collapse to one query at the
-            midpoint — they barely change the audio Shazam sees.
-          </FieldHelp>
-        </Label>
-        <Input
-          id="tempo-end"
-          type="number"
-          min={60}
-          max={200}
-          className="w-24"
-          aria-label="Up to (BPM)"
-          placeholder="optional"
-          value={tempoEnd}
-          onChange={(e) => setTempoEnd(e.target.value)}
-          onBlur={() => commitPitch(tempoStart, tempoEnd)}
-          disabled={!tempoStart}
-        />
+        <div className="flex items-center gap-2">
+          <Input
+            id="tempo-start"
+            type="number"
+            min={60}
+            max={200}
+            className="w-24"
+            aria-label="Original tempo (BPM)"
+            placeholder="e.g. 128"
+            value={tempoStart}
+            onChange={(e) => setTempoStart(e.target.value)}
+            onBlur={() => commitPitch(tempoStart, tempoEnd)}
+          />
+          {rangeOpen ? (
+            <>
+              <span className="text-text-subtle text-xs">to</span>
+              <Input
+                id="tempo-end"
+                type="number"
+                min={60}
+                max={200}
+                className="w-24"
+                aria-label="Up to (BPM)"
+                placeholder="up to"
+                autoFocus
+                value={tempoEnd}
+                onChange={(e) => setTempoEnd(e.target.value)}
+                onBlur={() => commitPitch(tempoStart, tempoEnd)}
+                disabled={!tempoStart}
+              />
+              <button
+                type="button"
+                className="text-text-subtle hover:text-text-muted text-xs"
+                onClick={closeRange}
+                data-testid="toggle-tempo-range"
+              >
+                Remove
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="text-text-subtle hover:text-text-muted text-xs whitespace-nowrap disabled:pointer-events-none disabled:opacity-40"
+              onClick={() => setRangeOpen(true)}
+              disabled={!tempoStart}
+              data-testid="toggle-tempo-range"
+            >
+              + tempo range
+            </button>
+          )}
+        </div>
         {narrowBand && (
           <span
             className="text-text-subtle text-2xs"
@@ -213,7 +245,7 @@ export function AnalyserControls({
       {/* Action cluster sits to the right. ``mt-5`` pushes it down past
           the label row above so the buttons align with the input
           baseline rather than the labels. */}
-      <div className="ml-auto mt-5 flex flex-col items-end gap-1">
+      <div className="mt-5 ml-auto flex flex-col items-end gap-1">
         <div className="flex items-center gap-2">
           {onReset && (
             <AlertDialog>
@@ -232,10 +264,9 @@ export function AnalyserControls({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Reset analysis?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This wipes BPM windows, sections, Shazam matches and
-                    every manual edit on the tracklist. The set itself
-                    (URL, title) stays — you can re-analyse from scratch.
-                    Cannot be undone.
+                    This wipes BPM windows, sections, Shazam matches and every
+                    manual edit on the tracklist. The set itself (URL, title)
+                    stays — you can re-analyse from scratch. Cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -287,27 +318,33 @@ export function AnalyserControls({
   );
 }
 
-
 const TIER_LABEL: Record<ShazamTier, string> = {
   sweep: "Sweep",
   refine: "Refine",
   pinpoint: "Pinpoint",
 };
 
-const TIER_HINT: Record<ShazamTier, string> = {
-  sweep: "Coarse pass — 60 s grid, fastest first look.",
-  refine: "Mid pass — 20 s grid, runs on gaps after sweep.",
-  pinpoint: "Fine pass — 8 s grid, locks transitions after refine.",
+/** One-liner role per tier; the clip length + cadence are appended from
+ *  ``SHAZAM_TIER_DEFAULTS`` so the "how long a snippet is" question the
+ *  buttons never answered is now spelled out — and stays in sync with the
+ *  backend table. */
+const TIER_ROLE: Record<ShazamTier, string> = {
+  sweep: "Coarse first pass.",
+  refine: "Fills Sweep's gaps.",
+  pinpoint: "Locks transitions.",
 };
+
+function tierHint(tier: ShazamTier): string {
+  const { cadence_s, window_s } = SHAZAM_TIER_DEFAULTS[tier];
+  return `${TIER_ROLE[tier]} ${window_s} s clip every ${cadence_s} s.`;
+}
 
 const TIER_ORDER: ReadonlyArray<ShazamTier> = ["sweep", "refine", "pinpoint"];
 
 /** Pick the tier the primary "Identify" button should default to:
  *  the first un-run tier in the chain, or pinpoint once everything's run
  *  (so a user can keep re-pinpointing without opening the menu). */
-function nextTier(
-  completed: Record<ShazamTier, boolean>,
-): ShazamTier {
+function nextTier(completed: Record<ShazamTier, boolean>): ShazamTier {
   if (!completed.sweep) return "sweep";
   if (!completed.refine) return "refine";
   return "pinpoint";
@@ -357,8 +394,8 @@ function TierButtons({
             {TIER_LABEL[primary]}
           </Button>
         </TooltipTrigger>
-        <TooltipContent className="max-w-xs text-xs">
-          {TIER_HINT[primary]}
+        <TooltipContent side="left" sideOffset={8} className="max-w-52 text-xs">
+          {tierHint(primary)}
         </TooltipContent>
       </Tooltip>
       <DropdownMenu>
@@ -400,7 +437,7 @@ function TierButtons({
                       ? tier === "refine"
                         ? "Run Sweep first"
                         : "Run Refine first"
-                      : TIER_HINT[tier]}
+                      : tierHint(tier)}
                   </span>
                 </span>
               </DropdownMenuItem>

@@ -753,19 +753,10 @@ test.describe("Set Analyser", () => {
     await expect(page.getByTestId("analyser-main")).toBeVisible();
   });
 
-  test("find on SoundCloud resolves a hit and starts the global player", async ({
+  test("find on SoundCloud opens an in-section preview popover (not the player bar)", async ({
     page,
   }) => {
     await mockAnalyserApi(page);
-    await page.route(
-      new RegExp(`/api/analyser/sets/${FAKE_JOB_ID}/audio$`),
-      (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: "audio/mp4",
-          body: "",
-        }),
-    );
     // Seed a non-expired access token so `ensureValidToken` returns
     // synchronously without hitting the refresh endpoint.
     await page.addInitScript(() => {
@@ -785,19 +776,38 @@ test.describe("Set Analyser", () => {
             urn: "soundcloud:tracks:999111",
             title: "Mock Track A — Official",
             permalink_url: "https://soundcloud.com/dj/mock-track-a",
-            waveform_url: "https://example.com/wave.png",
+            waveform_url: null,
+            duration: 210000,
             artwork_url: null,
             user: { username: "Mock Artist A", urn: "soundcloud:users:1" },
           },
         ]),
       });
     });
+    // The popover resolves an HLS stream URL on open; mock it so nothing
+    // hits the network. The popover renders its waveform regardless.
+    await page.route(/\/api\/soundcloud\/tracks\/\d+\/stream/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          url: "https://example.invalid/stream.m3u8",
+          expires_at: new Date(Date.now() + 600_000).toISOString(),
+        }),
+      }),
+    );
 
     await page.goto(`/analyser?job=${FAKE_JOB_ID}`);
     await expect(page.getByTestId("tracklist-panel")).toBeVisible();
     await page.getByTestId("find-soundcloud").click();
     // The click must trigger a /tracks search against the SoundCloud API.
     await expect.poll(() => searchCalls).toBeGreaterThan(0);
+    // …and surface the in-section waveform popover, not the global bar.
+    await expect(page.getByTestId("soundcloud-preview-popover")).toBeVisible();
+    // The waveform <div> is 0px until WaveSurfer injects a canvas (it
+    // won't finish decoding in headless); the fixed-size toggle button
+    // is the stable proof the in-section preview surface rendered.
+    await expect(page.getByTestId("preview-toggle")).toBeVisible();
   });
 
   test("tracklist row exposes alternative Shazam matches", async ({ page }) => {
@@ -980,6 +990,147 @@ test.describe("Set Analyser", () => {
     await expect.poll(() => cancelCalls).toBeGreaterThan(0);
   });
 
+  test("a fresh scan after a stop shows an actionable Stop button (not stuck 'Stopping…')", async ({
+    page,
+  }) => {
+    const JOB = "test-restop-job";
+    // The /events stream stays running until the test flips this flag,
+    // then delivers job.complete on the next poll — lets us drive the
+    // running → complete → running sequence deterministically.
+    let deliverComplete = false;
+    let scanPosts = 0;
+
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(/\/api\/analyser\/sets\/[^/?]+\/audio$/, (route) =>
+      route.fulfill({ status: 200, contentType: "audio/mp4", body: "" }),
+    );
+    // Snapshot is always "running with one scan" — the complete phase is
+    // driven by the SSE stream, not the snapshot.
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "Restop Set",
+          artist: "Tester",
+          duration_s: 200.0,
+          status: "running",
+          options: {
+            pitch_strategy: "none",
+            window_s: 30,
+            hop_s: 25,
+            min_section_gap_s: 30,
+            sections_enabled: true,
+            scan_cadence_s: 60,
+            scan_window_s: 12,
+          },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          scans: [
+            {
+              scan_s: 0.0,
+              title: "Live Track",
+              artist: "Live Artist",
+              shazam_id: "k1",
+              confidence: 0.9,
+              pitch_offset: 0.0,
+            },
+          ],
+          timeline: [],
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${JOB}/events$`),
+      async (route) => {
+        // Hold the connection open, polling for the test's signal. When
+        // set, emit a terminal job.complete (EventSource then closes).
+        for (let i = 0; i < 200; i++) {
+          if (deliverComplete) {
+            deliverComplete = false;
+            await route.fulfill({
+              status: 200,
+              contentType: "text/event-stream",
+              headers: { "Cache-Control": "no-cache" },
+              body: sseBody([
+                {
+                  event: "job.complete",
+                  data: { type: "job.complete", job_id: JOB },
+                },
+              ]),
+            });
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: sseBody([]),
+        });
+      },
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${JOB}/shazam-scan/cancel$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ job_id: JOB, cancelled: true }),
+        }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${JOB}/shazam-scan$`),
+      (route) => {
+        scanPosts += 1;
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            job_id: JOB,
+            status: "scheduled",
+            tier: "sweep",
+            region: null,
+            excluded_confirmed_tracks: 0,
+          }),
+        });
+      },
+    );
+
+    await page.goto(`/analyser?job=${JOB}`);
+
+    // Phase 1 — a scan is running: Stop is offered and actionable.
+    const stop = page.getByTestId("stop-shazam");
+    await expect(stop).toBeEnabled();
+    await stop.click();
+    await expect(stop).toContainText("Stopping");
+
+    // Backend winds the run down → the controls return to the run state.
+    deliverComplete = true;
+    await expect(page.getByTestId("run-shazam-sweep")).toBeVisible();
+
+    // Phase 2 — start a *fresh* scan. The Stop button must be usable
+    // again; the prior stop intent must not bleed into this run.
+    await page.getByTestId("run-shazam-sweep").click();
+    await expect.poll(() => scanPosts).toBe(1);
+    await expect(stop).toBeVisible();
+    await expect(stop).toBeEnabled();
+    await expect(stop).toHaveText("Stop identifying");
+  });
+
   test("BPM lane shows a chip per stable BPM run", async ({ page }) => {
     const RUN_JOB = "test-bpm-run-job";
     // 12 consecutive windows at ~128 BPM, then 12 at ~140 BPM. With
@@ -1129,7 +1280,7 @@ test.describe("Set Analyser", () => {
     await expect(page.getByTestId("run-shazam-sweep")).toBeEnabled();
 
     // Set a tempo (single-tempo mode) and click Sweep.
-    const tempo = page.getByLabel("Tempo (BPM)");
+    const tempo = page.getByLabel("Original tempo (BPM)");
     await tempo.fill("128");
     await tempo.blur();
     await page.getByTestId("run-shazam-sweep").click();
@@ -1140,7 +1291,9 @@ test.describe("Set Analyser", () => {
       bpm_range: null,
     });
 
-    // Add an Up-to value > tempo → strategy flips to range.
+    // Reveal the range field, then add an Up-to value > tempo → strategy
+    // flips to range.
+    await page.getByTestId("toggle-tempo-range").click();
     const end = page.getByLabel("Up to (BPM)");
     await end.fill("136");
     await end.blur();
@@ -1863,6 +2016,107 @@ test.describe("Set Analyser", () => {
     expect(patches[1].bpm).toBe(150);
   });
 
+  test("BPM fix offers a snap for a single-window spike", async ({ page }) => {
+    const SPIKE_JOB = "test-bpm-spike-job";
+    const patches: Array<Record<string, unknown>> = [];
+
+    // Dead-flat 128 BPM across the whole mix, with one window spiking to
+    // 200. The spike doesn't move the selection median (it's washed out
+    // by the surrounding flat windows), so only the spike-detection path
+    // can surface a snap suggestion here.
+    const windows: Array<Record<string, unknown>> = [];
+    for (let s = 0; s < 1000; s += 30) {
+      windows.push({
+        start_s: s,
+        end_s: s + 30,
+        bpm: s === 390 ? 200.0 : 128.0,
+        confidence: "medium",
+      });
+    }
+
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${SPIKE_JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: SPIKE_JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "BPM Spike Set",
+          artist: "Tester",
+          duration_s: 1000,
+          status: "complete",
+          options: {
+            pitch_strategy: "none",
+            window_s: 30,
+            hop_s: 30,
+            min_section_gap_s: 30,
+            sections_enabled: true,
+            scan_cadence_s: 60,
+            scan_window_s: 12,
+          },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows,
+          sections: [],
+          scans: [],
+          timeline: [],
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${SPIKE_JOB}/events$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: "",
+        }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${SPIKE_JOB}/windows$`),
+      (route) => {
+        patches.push(route.request().postDataJSON() as Record<string, unknown>);
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ job_id: SPIKE_JOB, updated: 7 }),
+        });
+      },
+    );
+
+    await page.goto(`/analyser?job=${SPIKE_JOB}`);
+    await expect(page.getByTestId("analyser-main")).toBeVisible();
+
+    // Drag a selection over the spike (~30%–50%), which also captures the
+    // flat 128 windows on either side of it.
+    const timeline = page.getByTestId("analyser-timeline");
+    const box = await timeline.boundingBox();
+    if (!box) throw new Error("timeline has no bounding box");
+    await page.mouse.move(box.x + box.width * 0.3, box.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.5, box.y + 20);
+    await page.mouse.up();
+
+    await expect(page.getByTestId("detail-pane")).toBeVisible();
+    // Median sits on 128 (the spike is a lone outlier), so the snap
+    // offers to flatten the span back to the neighbour tempo.
+    const snap = page.getByTestId("detail-bpm-snap");
+    await expect(snap).toContainText("128.0");
+    await snap.click();
+    await expect.poll(() => patches.length).toBe(1);
+    expect(patches[0].bpm).toBe(128.0);
+  });
+
   test("scan progress counts only the active run, not cached history", async ({
     page,
   }) => {
@@ -2048,7 +2302,16 @@ test.describe("Set Analyser", () => {
 
     await page.goto(`/analyser?job=${PREVIEW_JOB}`);
     await expect(page.getByTestId("tracklist-row")).toHaveCount(1);
-    await expect(page.getByTestId("shazam-preview")).toBeVisible();
+
+    // Clicking the preview button opens the in-section waveform popover
+    // (not the global player bar). The Shazam clip URL is mocked empty —
+    // we only assert the popover surface renders, not decoded playback.
+    await page.route("https://cdn.example/preview.m4a", (route) =>
+      route.fulfill({ status: 200, contentType: "audio/mp4", body: "" }),
+    );
+    await page.getByTestId("shazam-preview").click();
+    await expect(page.getByTestId("shazam-preview-popover")).toBeVisible();
+    await expect(page.getByTestId("preview-toggle")).toBeVisible();
   });
 
   test("alignment dialog saves a nudged start_s", async ({ page }) => {

@@ -122,12 +122,25 @@ export function AnalyserDetailPane({
   let snapTarget: number | null = null;
   if (median != null && neighbour != null) {
     const off = Math.abs(median - neighbour) / neighbour;
-    if (
+    // Whole-span metre confusion: the selection sits uniformly off the
+    // surrounding tempo at a clean metre ratio (the classic 2:3 / 1:2
+    // detector mistake). Gate on the ratio so we never offer to "snap" a
+    // genuinely different-tempo section.
+    const metreConfusion =
       off > 0.04 &&
       METRE_RATIOS.some(
         (r) => Math.abs(median * r - neighbour) / neighbour < 0.03,
-      )
-    ) {
+      );
+    // Localized spike: the selection broadly agrees with its neighbours
+    // (the median sits on the surrounding tempo) but one or more windows
+    // jump far from it — a glitch the median washes out, so the metre test
+    // above can't see it. No ratio gate: an outlier inside an otherwise-
+    // agreeing span is a detection error, not a real tempo change.
+    const maxDev = Math.max(
+      ...bpms.map((b) => Math.abs(b - neighbour) / neighbour),
+    );
+    const spike = off < 0.04 && maxDev > 0.1;
+    if (metreConfusion || spike) {
       snapTarget = neighbour;
     }
   }
