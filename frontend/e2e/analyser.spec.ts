@@ -2502,4 +2502,115 @@ test.describe("Set Analyser", () => {
     expect(typeof sent.start_s).toBe("number");
     expect(sent.start_s as number).toBeGreaterThan(60);
   });
+
+  test("confirmed tracks mark their band and a column over the upper lanes", async ({
+    page,
+  }) => {
+    const CONFIRM_JOB = "test-confirm-job";
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${CONFIRM_JOB}$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: CONFIRM_JOB,
+            soundcloud_id: 1,
+            source_url: null,
+            title: "Confirm Set",
+            artist: "Tester",
+            duration_s: 600,
+            status: "complete",
+            options: {
+              pitch_strategy: "none",
+              window_s: 30,
+              hop_s: 25,
+              min_section_gap_s: 30,
+              sections_enabled: true,
+              scan_cadence_s: 60,
+              scan_window_s: 12,
+            },
+            error: null,
+            created_at: 0,
+            updated_at: 0,
+            windows: [],
+            sections: [],
+            scans: [],
+            timeline: [
+              {
+                id: 1,
+                start_s: 60,
+                end_s: 180,
+                title: "Confirmed Cut",
+                artist: "DJ",
+                shazam_id: "shz-yes",
+                confidence: 0.9,
+                source: "shazam",
+                soundcloud_id: null,
+                soundcloud_permalink_url: null,
+                artwork_url: null,
+                preview_url: null,
+                duration_s: null,
+                confirmed: true,
+                user_edited: false,
+                set_bpm: null,
+                pitch_offset: null,
+              },
+              {
+                id: 2,
+                start_s: 420,
+                end_s: 540,
+                title: "Unconfirmed Cut",
+                artist: "DJ",
+                shazam_id: "shz-no",
+                confidence: 0.9,
+                source: "shazam",
+                soundcloud_id: null,
+                soundcloud_permalink_url: null,
+                artwork_url: null,
+                preview_url: null,
+                duration_s: null,
+                confirmed: false,
+                user_edited: false,
+                set_bpm: null,
+                pitch_offset: null,
+              },
+            ],
+          }),
+        }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${CONFIRM_JOB}/events$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: "",
+        }),
+    );
+
+    await page.goto(`/analyser?job=${CONFIRM_JOB}`);
+    await expect(page.getByTestId("track-band")).toHaveCount(2);
+
+    // The confirmed band carries data-confirmed="true"; the other doesn't.
+    await expect(
+      page.locator('[data-testid="track-band"][data-confirmed="true"]'),
+    ).toHaveCount(1);
+    await expect(
+      page.locator('[data-testid="track-band"][data-confirmed="false"]'),
+    ).toHaveCount(1);
+
+    // One column is drawn over the upper lanes — one per confirmed track.
+    const overlay = page.getByTestId("timeline-confirmed-overlay");
+    await expect(overlay).toBeVisible();
+    await expect(overlay.locator(":scope > div")).toHaveCount(1);
+  });
 });

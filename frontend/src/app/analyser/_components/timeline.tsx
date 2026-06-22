@@ -333,6 +333,15 @@ export function AnalyserTimeline({
           onEditBounds={onEditBounds}
         />
 
+        {/* Confirmed-track columns over the lanes above the track lane, so
+            sections with a verified match are findable at a glance. */}
+        <ConfirmedOverlay
+          timeline={state.timeline}
+          duration={duration}
+          confirmed={confirmed}
+          height={TOTAL_HEIGHT - ROW_HEIGHTS.tracks}
+        />
+
         {/* Audio playhead spanning all lanes. */}
         {playheadLeft != null && (
           <div
@@ -865,6 +874,73 @@ function groupOverlappingTracks(
   return groups;
 }
 
+/** Horizontal geometry (percent of duration) for each track group. The
+ *  raw ``end_s`` only spans the seconds Shazam sampled, so each band is
+ *  stretched to whichever comes first: an explicit user end, the known
+ *  SoundCloud duration, or the next group's start (capped). Shared by the
+ *  track lane and the confirmed overlay so a confirmed column lines up
+ *  exactly with its band. */
+function bandGeometry(
+  groups: DerivedRun[][],
+  duration: number,
+): Array<{
+  group: DerivedRun[];
+  groupStart: number;
+  left: number;
+  width: number;
+}> {
+  const MAX_VISUAL_TRACK_S = 600; // 10 min — typical longest DJ-set cut
+  return groups.map((group, i) => {
+    const groupStart = Math.min(...group.map((t) => t.start_s));
+    const groupEnd = Math.max(...group.map((t) => t.end_s));
+    // A manual's ``end_s`` is an explicit user choice — trust it over
+    // every other heuristic, including ``nextStart`` clamping.
+    const explicitEnd = group.reduce<number>((acc, t) => {
+      if (!isManual(t)) return acc;
+      return t.end_s > t.start_s + 0.5 ? Math.max(acc, t.end_s) : acc;
+    }, 0);
+    const knownDuration = group.reduce<number>((acc, t) => {
+      const d = "duration_s" in t ? t.duration_s : null;
+      return typeof d === "number" && d > 0 ? Math.max(acc, d) : acc;
+    }, 0);
+    const nextStart =
+      i < groups.length - 1
+        ? Math.min(...groups[i + 1].map((t) => t.start_s))
+        : duration;
+    let visualEnd: number;
+    if (explicitEnd > groupStart) {
+      visualEnd = explicitEnd;
+    } else {
+      const targetEnd =
+        knownDuration > 0
+          ? groupStart + knownDuration
+          : Math.max(groupEnd, groupStart) + MAX_VISUAL_TRACK_S;
+      visualEnd = Math.max(
+        Math.min(nextStart, targetEnd),
+        groupStart + duration * 0.005,
+      );
+    }
+    return {
+      group,
+      groupStart,
+      left: (groupStart / duration) * 100,
+      width: ((visualEnd - groupStart) / duration) * 100,
+    };
+  });
+}
+
+/** True when every track in a group is confirmed. A group keyed by
+ *  persisted id; live ``DerivedRun`` scans (no id, no DB row) can never
+ *  be confirmed. Partial confirmation still reads as work in progress. */
+function isGroupConfirmed(
+  group: DerivedRun[],
+  confirmed: Set<string> | undefined,
+): boolean {
+  return (
+    !!confirmed && group.every((t) => "id" in t && confirmed.has(String(t.id)))
+  );
+}
+
 function TracksLane({
   scans,
   timeline,
@@ -892,6 +968,10 @@ function TracksLane({
     () => groupOverlappingTracks(tracks, duration),
     [tracks, duration],
   );
+  const geometry = useMemo(
+    () => bandGeometry(groups, duration),
+    [groups, duration],
+  );
   return (
     <div
       className="bg-surface-1/30 relative overflow-hidden"
@@ -916,52 +996,7 @@ function TracksLane({
           />
         );
       })}
-      {groups.map((group, i) => {
-        const groupStart = Math.min(...group.map((t) => t.start_s));
-        const groupEnd = Math.max(...group.map((t) => t.end_s));
-        // The raw ``end_s`` only spans the seconds Shazam actually
-        // sampled — typically a handful of scan points, so bands look
-        // like dots rather than the multi-minute tracks they represent.
-        // Stretch each band to whichever comes first:
-        //   - ``start + max(track duration_s)`` when known (manual
-        //     entries that linked a SoundCloud track carry duration);
-        //   - the next group's start (default cap);
-        //   - a ``MAX_VISUAL_TRACK_S`` ceiling so an unidentified gap
-        //     can't get wrongly attributed to one track.
-        const MAX_VISUAL_TRACK_S = 600; // 10 min — typical longest DJ-set cut
-        // A manual's ``end_s`` is an explicit user choice (the drag-edit
-        // just persisted it). Trust it over every other heuristic —
-        // including ``nextStart`` clamping — otherwise the band
-        // re-stretches back as soon as the snapshot loads.
-        const explicitEnd = group.reduce<number>((acc, t) => {
-          if (!isManual(t)) return acc;
-          return t.end_s > t.start_s + 0.5 ? Math.max(acc, t.end_s) : acc;
-        }, 0);
-        const knownDuration = group.reduce<number>((acc, t) => {
-          const d = "duration_s" in t ? t.duration_s : null;
-          return typeof d === "number" && d > 0 ? Math.max(acc, d) : acc;
-        }, 0);
-        const nextStart =
-          i < groups.length - 1
-            ? Math.min(...groups[i + 1].map((t) => t.start_s))
-            : duration;
-        // Priority: explicit user end > known SoundCloud duration >
-        // next-track-start (capped by ``MAX_VISUAL_TRACK_S``).
-        let visualEnd: number;
-        if (explicitEnd > groupStart) {
-          visualEnd = explicitEnd;
-        } else {
-          const targetEnd =
-            knownDuration > 0
-              ? groupStart + knownDuration
-              : Math.max(groupEnd, groupStart) + MAX_VISUAL_TRACK_S;
-          visualEnd = Math.max(
-            Math.min(nextStart, targetEnd),
-            groupStart + duration * 0.005,
-          );
-        }
-        const left = (groupStart / duration) * 100;
-        const width = ((visualEnd - groupStart) / duration) * 100;
+      {geometry.map(({ group, groupStart, left, width }) => {
         const isSelected = selection
           ? group.some(
               (t) =>
@@ -1058,13 +1093,7 @@ function TrackBand({
     "id" in primary
       ? String((primary as TrackTimelineEntry).id)
       : `${primary.start_s}-${primary.title}`;
-  // A group is "confirmed" when *every* track in it is checked — partial
-  // confirmation still reads as work in progress, so the stripe stays.
-  const isConfirmed =
-    !!confirmed &&
-    tracks.every((t) =>
-      confirmed.has(`${t.start_s}-${t.shazam_id ?? t.title}`),
-    );
+  const isConfirmed = isGroupConfirmed(tracks, confirmed);
 
   const tooltip = tracks
     .map(
@@ -1326,6 +1355,48 @@ function TrackBand({
         </>
       )}
     </button>
+  );
+}
+
+/** Faint brand columns over the lanes above the track lane, marking the
+ *  spans of confirmed tracks so correct sections are findable at a glance.
+ *  Geometry mirrors the bands below exactly via the shared helpers, so each
+ *  column lines up with its confirmed band. */
+function ConfirmedOverlay({
+  timeline,
+  duration,
+  confirmed,
+  height,
+}: {
+  timeline: AnalyserUiState["timeline"];
+  duration: number;
+  confirmed: Set<string> | undefined;
+  height: number;
+}) {
+  const spans = useMemo(() => {
+    if (duration <= 0 || !confirmed?.size) return [];
+    return bandGeometry(
+      groupOverlappingTracks(timeline, duration),
+      duration,
+    ).filter(({ group }) => isGroupConfirmed(group, confirmed));
+  }, [timeline, duration, confirmed]);
+  if (!spans.length) return null;
+  return (
+    <div
+      className="pointer-events-none absolute top-0 left-0 z-0 w-full"
+      style={{ height }}
+      data-testid="timeline-confirmed-overlay"
+    >
+      {spans.map(({ groupStart, left, width }) => (
+        <div
+          key={`confirmed-${groupStart}`}
+          className="bg-brand/[0.06] absolute top-0 bottom-0"
+          style={{ left: `${left}%`, width: `${Math.max(0.1, width)}%` }}
+        >
+          <span className="bg-brand/70 absolute inset-x-0 top-0 h-0.5" />
+        </div>
+      ))}
+    </div>
   );
 }
 

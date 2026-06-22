@@ -151,13 +151,17 @@ export function AnalyserDetailPane({
     (t) => t.start_s < end_s && t.end_s + 1e-3 >= start_s,
   );
 
+  const overlapping = confirmedRanges.filter(
+    ([s, e]) => e > start_s && s < end_s,
+  ).length;
+
   return (
     <aside
-      className="border-border bg-surface-2 flex flex-col gap-3 rounded-lg border px-4 py-3"
+      className="border-border bg-surface-2 flex flex-col gap-4 rounded-lg border px-4 py-3.5"
       data-testid="detail-pane"
     >
       <header className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-baseline gap-3">
+        <div className="flex min-w-0 items-baseline gap-2.5">
           <span className={FIELD_LABEL}>Range</span>
           <h2 className="text-text font-mono text-sm font-semibold tabular-nums">
             {formatTimecode(start_s)} – {formatTimecode(end_s)}
@@ -176,7 +180,7 @@ export function AnalyserDetailPane({
         </Button>
       </header>
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+      <div className="grid grid-cols-4 gap-x-3 gap-y-2">
         <Stat
           label="Median BPM"
           value={median != null ? median.toFixed(1) : "—"}
@@ -186,86 +190,93 @@ export function AnalyserDetailPane({
         <Stat label="Tracks" value={String(matchedTracks.length)} />
       </div>
 
-      {inRange.length > 0 && (
-        <BpmFix
-          key={`${start_s}-${end_s}`}
-          range={{ start_s, end_s }}
-          snapTarget={snapTarget}
-          onSetBpm={onSetBpm}
-        />
+      {(matchedTracks.length > 0 || overlapping > 0) && (
+        <div className="border-border/60 flex flex-col gap-2 border-t pt-3">
+          {matchedTracks.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {matchedTracks.map((t) => (
+                <li
+                  key={`${t.start_s}-${t.shazam_id ?? t.title}`}
+                  className="grid grid-cols-[1fr_auto] items-center gap-3 text-xs"
+                >
+                  <span className="min-w-0 truncate">
+                    <span className="text-text font-medium">{t.title}</span>
+                    {t.artist && (
+                      <span className="text-text-muted"> — {t.artist}</span>
+                    )}
+                  </span>
+                  <span className="text-text-subtle font-mono tabular-nums">
+                    {Math.round(t.confidence * 100)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Confirmed-track exclusion notice — the scheduler skips scan
+              points that overlap a confirmed track regardless of tier. */}
+          {overlapping > 0 && (
+            <div
+              className="text-text-subtle text-xs"
+              data-testid="detail-excluded-confirmed"
+            >
+              {overlapping} confirmed track{overlapping === 1 ? "" : "s"} in
+              this range will be skipped — unconfirm to re-scan.
+            </div>
+          )}
+        </div>
       )}
 
-      {matchedTracks.length > 0 && (
-        <ul className="border-border/60 flex flex-col gap-1 border-t pt-2">
-          {matchedTracks.map((t) => (
-            <li
-              key={`${t.start_s}-${t.shazam_id ?? t.title}`}
-              className="grid grid-cols-[1fr_auto] items-center gap-3 text-xs"
-            >
-              <span className="min-w-0 truncate">
-                <span className="text-text font-medium">{t.title}</span>
-                {t.artist && (
-                  <span className="text-text-muted"> — {t.artist}</span>
-                )}
-              </span>
-              <span className="text-text-subtle font-mono tabular-nums">
-                {Math.round(t.confidence * 100)}%
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/* Confirmed-track exclusion notice — the scheduler skips scan
-          points that overlap a confirmed track regardless of tier. */}
-      {(() => {
-        const overlapping = confirmedRanges.filter(
-          ([s, e]) => e > start_s && s < end_s,
-        ).length;
-        if (overlapping === 0) return null;
-        return (
-          <div
-            className="text-text-subtle text-xs"
-            data-testid="detail-excluded-confirmed"
-          >
-            {overlapping} confirmed track{overlapping === 1 ? "" : "s"} in this
-            range will be skipped — unconfirm to re-scan.
-          </div>
-        );
-      })()}
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              className="border-border bg-surface-3 text-text-muted inline-flex cursor-help items-center gap-1 rounded border px-1.5 py-0.5 text-xs"
-              data-testid="detail-pitch-chip"
-            >
-              <span className={FIELD_LABEL}>Pitch</span>
-              <span>{describePitchStrategy(options)}</span>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-xs text-xs">
-            Range scans use the same pitch strategy configured for the whole-mix
-            scan — change it in the controls panel.
-          </TooltipContent>
-        </Tooltip>
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Tempo — automatic re-detection plus manual override. */}
+      <div className="border-border/60 flex flex-col gap-2.5 border-t pt-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className={FIELD_LABEL}>Tempo</span>
           <Button
             size="sm"
-            variant="ghost"
+            variant="outline"
             onClick={() => onReanalyse({ start_s, end_s })}
             data-testid="detail-reanalyse"
           >
             Re-analyse BPM
           </Button>
-          <span className="text-text-subtle text-xs">Scan:</span>
+        </div>
+        {inRange.length > 0 && (
+          <BpmFix
+            key={`${start_s}-${end_s}`}
+            range={{ start_s, end_s }}
+            snapTarget={snapTarget}
+            onSetBpm={onSetBpm}
+          />
+        )}
+      </div>
+
+      {/* Identify — Shazam scan tiers, sharing the page-level pitch strategy. */}
+      <div className="border-border/60 flex flex-col gap-2.5 border-t pt-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className={FIELD_LABEL}>Identify</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="border-border bg-surface-3 text-text-muted inline-flex cursor-help items-center gap-1 rounded border px-1.5 py-0.5 text-xs"
+                data-testid="detail-pitch-chip"
+              >
+                <span className={FIELD_LABEL}>Pitch</span>
+                <span>{describePitchStrategy(options)}</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs text-xs">
+              Range scans use the same pitch strategy configured for the
+              whole-mix scan — change it in the controls panel.
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
           {(["sweep", "refine", "pinpoint"] as const).map((tier) => (
             <Tooltip key={tier}>
               <TooltipTrigger asChild>
                 <Button
                   size="sm"
-                  variant={tier === "sweep" ? "secondary" : "ghost"}
+                  variant={tier === "sweep" ? "secondary" : "outline"}
                   disabled={shazamDisabled}
                   onClick={() => onScanRange({ start_s, end_s }, tier)}
                   data-testid={`detail-scan-${tier}`}
