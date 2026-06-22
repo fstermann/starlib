@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   Circle,
   CirclePause,
-  ExternalLink,
   Loader2,
   Pause,
   Play,
@@ -23,14 +22,13 @@ import {
   originalBpmFromSet,
   type TrackTimelineEntry,
 } from "@/lib/analyser";
-import { claimPlayback, releasePlayback } from "@/lib/exclusive-audio";
-import { usePlayer } from "@/lib/player-context";
 import { searchTracks, type SCTrack } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
 import type { AnalyserUiState } from "../_state";
 import { AddTrackDialog } from "./add-track-dialog";
 import { AlignmentDialog } from "./alignment-dialog";
+import { PreviewPopover, type PreviewSource } from "./preview-popover";
 import { computeNextStarts, rowKeyOf } from "./row-keys";
 import type { SetAudio } from "./set-waveform";
 
@@ -222,8 +220,15 @@ export function TracklistPanel({
 
   // Per-row "find on SoundCloud" cache so re-clicking on an already-resolved
   // row plays instantly without a fresh /tracks search.
-  const player = usePlayer();
-  const preview = useShazamPreview();
+  // One in-section preview popover open at a time (Shazam clip or
+  // SoundCloud stream). Keyed `${baseKey}:${kind}`.
+  const [openPreview, setOpenPreview] = useState<string | null>(null);
+  // Functional toggle: closing only clears the slot when this key is
+  // still the active one, so a click that opens another preview (which
+  // also fires the previous popover's outside-dismiss) doesn't race to
+  // null and reopen-flicker.
+  const togglePreview = (key: string, next: boolean) =>
+    setOpenPreview((prev) => (next ? key : prev === key ? null : prev));
   const [findState, setFindState] = useState<Record<string, FindState>>({});
   const setFindFor = (key: string, value: FindState) =>
     setFindState((prev) => ({ ...prev, [key]: value }));
@@ -262,42 +267,61 @@ export function TracklistPanel({
     };
   }, [focusedTrack]);
 
-  const findAndPlay = async (
-    rowKey: string,
+  // Resolve a row/alt to a SoundCloud hit via search. Returns the hit
+  // (or null) so callers can open the preview popover without racing the
+  // async ``findState`` update.
+  const resolveSc = async (
+    key: string,
     track: { title: string; artist: string | null },
-  ) => {
-    const cached = findState[rowKey];
-    if (cached?.kind === "loading") return;
-    if (cached?.kind === "hit") {
-      playSoundcloudTrack(player, cached.track);
-      return;
-    }
-    setFindFor(rowKey, { kind: "loading" });
+  ): Promise<SCTrack | null> => {
+    const cached = findState[key];
+    if (cached?.kind === "hit") return cached.track;
+    if (cached?.kind === "loading") return null;
+    setFindFor(key, { kind: "loading" });
     try {
       const query = track.artist
         ? `${track.title} ${track.artist}`
         : track.title;
       const results = await searchTracks(query, 3);
       if (results.length === 0) {
-        setFindFor(rowKey, { kind: "miss" });
-        return;
+        setFindFor(key, { kind: "miss" });
+        return null;
       }
-      const hit = results[0];
-      setFindFor(rowKey, { kind: "hit", track: hit });
-      // Hand off to the global player. Wrapped so a player-side error
-      // (e.g. unsupported audio context in a headless test) doesn't undo
-      // the visible "found it" state.
-      try {
-        playSoundcloudTrack(player, hit);
-      } catch (err) {
-        console.warn("analyser: failed to start playback", err);
-      }
+      setFindFor(key, { kind: "hit", track: results[0] });
+      return results[0];
     } catch (err) {
-      setFindFor(rowKey, {
+      setFindFor(key, {
         kind: "error",
         message: err instanceof Error ? err.message : String(err),
       });
+      return null;
     }
+  };
+
+  // Resolved SoundCloud preview props for a row/alt key: the audio
+  // source, the open-in-SoundCloud link, and the urn the like button
+  // acts on. All null until the row's search resolves to a hit.
+  const scPreviewProps = (
+    key: string,
+  ): {
+    source: PreviewSource;
+    openUrl: string | null;
+    likeUrn: string;
+  } | null => {
+    const st = findState[key];
+    if (st?.kind !== "hit") return null;
+    const id = scTrackId(st.track);
+    if (id == null) return null;
+    return {
+      source: {
+        kind: "soundcloud",
+        trackId: id,
+        waveformUrl: st.track.waveform_url ?? null,
+        durationS: st.track.duration != null ? st.track.duration / 1000 : null,
+      },
+      openUrl: st.track.permalink_url ?? null,
+      likeUrn: `soundcloud:tracks:${id}`,
+    };
   };
 
   // Map each row to the start of the next row so the per-row Play
@@ -526,32 +550,6 @@ export function TracklistPanel({
                     )}
                     <BpmChip track={t} />
                     <DurationChip track={t} />
-                    {find.kind === "miss" && (
-                      <span
-                        className="text-text-subtle italic"
-                        data-testid="find-miss"
-                      >
-                        not found on SoundCloud
-                      </span>
-                    )}
-                    {find.kind === "error" && (
-                      <span
-                        className="text-destructive italic"
-                        title={find.message}
-                      >
-                        SoundCloud lookup failed
-                      </span>
-                    )}
-                    {find.kind === "hit" && find.track.permalink_url && (
-                      <a
-                        href={find.track.permalink_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-text-subtle hover:text-text underline-offset-2 hover:underline"
-                      >
-                        open on SoundCloud
-                      </a>
-                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
@@ -759,120 +757,156 @@ export function TracklistPanel({
                           : null) ??
                       previewMeta?.preview_url ??
                       null;
-                    const previewing = preview.isPlaying(previewKey);
-                    if (!previewUrl) return null;
-                    return (
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant={previewing ? "default" : "ghost"}
-                        aria-label={
-                          previewing
-                            ? "Pause Shazam preview"
-                            : "Play Shazam preview"
-                        }
-                        title={
-                          previewing
-                            ? "Pause Shazam preview"
-                            : "Play Shazam preview"
-                        }
-                        onClick={() => preview.toggle(previewKey, previewUrl)}
-                        data-testid="shazam-preview"
-                      >
-                        {previewing ? (
-                          <CirclePause className="size-4" />
-                        ) : (
+                    if (!previewUrl) {
+                      // No preview clip — keep the column slot filled with a
+                      // disabled glyph so the button rows stay aligned.
+                      return (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          disabled
+                          aria-label="No Shazam preview available"
+                          title="No Shazam preview available"
+                          data-testid="shazam-preview"
+                          data-available="false"
+                          className="opacity-30"
+                        >
                           <ShazamGlyph className="size-4" />
-                        )}
-                      </Button>
+                        </Button>
+                      );
+                    }
+                    const popKey = `${rowKey}:shazam`;
+                    const isOpen = openPreview === popKey;
+                    return (
+                      <PreviewPopover
+                        open={isOpen}
+                        onOpenChange={(o) => togglePreview(popKey, o)}
+                        source={{ kind: "url", url: previewUrl }}
+                        title={display.title}
+                        subtitle={display.artist}
+                        contentTestId="shazam-preview-popover"
+                        openUrl={
+                          display.shazam_id
+                            ? shazamTrackUrl(display.shazam_id)
+                            : null
+                        }
+                        openLabel="Open on Shazam"
+                        openTestId="shazam-link"
+                      >
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant={isOpen ? "default" : "ghost"}
+                          aria-label={
+                            isOpen
+                              ? "Close Shazam preview"
+                              : "Play Shazam preview"
+                          }
+                          title={
+                            isOpen
+                              ? "Close Shazam preview"
+                              : "Play Shazam preview"
+                          }
+                          data-testid="shazam-preview"
+                        >
+                          {isOpen ? (
+                            <CirclePause className="size-4" />
+                          ) : (
+                            <ShazamGlyph className="size-4" />
+                          )}
+                        </Button>
+                      </PreviewPopover>
                     );
                   })()}
                   {(() => {
-                    // When the global SoundCloud player is currently
-                    // playing this row's resolved track, flip the button
-                    // to a Pause affordance and toggle playback instead
-                    // of re-running the find+play flow. Mirrors the way
-                    // the per-row set Play button mirrors the set
-                    // transport.
-                    const scId =
-                      find.kind === "hit" ? scTrackId(find.track) : null;
-                    const filePath = scId != null ? `soundcloud:${scId}` : null;
-                    const scPlayingHere =
-                      filePath != null &&
-                      player.currentTrack?.filePath === filePath &&
-                      player.isPlaying;
+                    const popKey = `${rowKey}:sc`;
+                    const isOpen = openPreview === popKey;
+                    const sc = isOpen ? scPreviewProps(rowKey) : null;
+                    // A confirmed miss/error grays the button out — the icon
+                    // now carries the "not found" state the inline text used
+                    // to. Disabling it also makes it a non-opening slot so
+                    // the column stays aligned.
+                    const unavailable =
+                      find.kind === "miss" || find.kind === "error";
                     return (
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant={scPlayingHere ? "default" : "ghost"}
-                        aria-label={
-                          scPlayingHere
-                            ? "Pause SoundCloud playback"
-                            : "Find & play on SoundCloud"
-                        }
-                        title={
-                          scPlayingHere
-                            ? "Pause SoundCloud playback"
-                            : "Find & play on SoundCloud"
-                        }
-                        onClick={() =>
-                          scPlayingHere
-                            ? player.pause()
-                            : void findAndPlay(rowKey, display)
-                        }
-                        disabled={find.kind === "loading"}
-                        data-testid="find-soundcloud"
-                        className="rounded-full"
+                      <PreviewPopover
+                        open={isOpen}
+                        onOpenChange={(o) => {
+                          togglePreview(popKey, o);
+                          // Resolve on open; if nothing's found, close again
+                          // so the popover doesn't hang empty — the grayed
+                          // button then reflects the miss.
+                          if (o)
+                            void resolveSc(rowKey, display).then((hit) => {
+                              if (!hit) togglePreview(popKey, false);
+                            });
+                        }}
+                        source={sc?.source ?? null}
+                        title={display.title}
+                        subtitle={display.artist}
+                        contentTestId="soundcloud-preview-popover"
+                        openUrl={sc?.openUrl ?? null}
+                        openLabel="Open on SoundCloud"
+                        openTestId="soundcloud-link"
+                        likeUrn={sc?.likeUrn ?? null}
                       >
-                        {find.kind === "loading" ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : scPlayingHere ? (
-                          <Pause className="size-4" />
-                        ) : (
-                          <SoundcloudGlyph className="size-4" />
-                        )}
-                      </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant={isOpen ? "default" : "ghost"}
+                          aria-label={
+                            unavailable
+                              ? "Not found on SoundCloud"
+                              : isOpen
+                                ? "Close SoundCloud preview"
+                                : "Find & play on SoundCloud"
+                          }
+                          title={
+                            unavailable
+                              ? find.kind === "error"
+                                ? "SoundCloud lookup failed"
+                                : "Not found on SoundCloud"
+                              : isOpen
+                                ? "Close SoundCloud preview"
+                                : "Find & play on SoundCloud"
+                          }
+                          disabled={find.kind === "loading" || unavailable}
+                          data-testid="find-soundcloud"
+                          data-available={unavailable ? "false" : "true"}
+                          className={cn(
+                            "rounded-full",
+                            unavailable && "opacity-30",
+                          )}
+                        >
+                          {find.kind === "loading" ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : isOpen ? (
+                            <Pause className="size-4" />
+                          ) : (
+                            <SoundcloudGlyph className="size-4" />
+                          )}
+                        </Button>
+                      </PreviewPopover>
                     );
                   })()}
-                  {display.shazam_id && (
-                    <Button
-                      asChild
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      aria-label="Open on Shazam"
-                      title="Open on Shazam"
-                    >
-                      <a
-                        href={`https://www.shazam.com/track/${encodeURIComponent(display.shazam_id)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        data-testid="shazam-link"
-                      >
-                        <ExternalLink className="size-4" />
-                      </a>
-                    </Button>
-                  )}
                 </div>
                 {alts.length > 0 && (
                   <AlternativesList
                     alternatives={alts}
                     primaryStart={t.start_s}
                     onPick={(alt) => pickAlternative(rowKey, alt)}
-                    onFindOnSoundcloud={(alt) =>
-                      void findAndPlay(
-                        `${rowKey}::alt::${alt.shazam_id ?? alt.title}`,
-                        alt,
-                      )
-                    }
                     findStateFor={(alt) =>
                       findState[
                         `${rowKey}::alt::${alt.shazam_id ?? alt.title}`
                       ] ?? { kind: "idle" }
                     }
                     previewByKey={previewByKey}
-                    preview={preview}
+                    rowKey={rowKey}
+                    openPreview={openPreview}
+                    togglePreview={togglePreview}
+                    onResolveSc={resolveSc}
+                    scPreviewProps={scPreviewProps}
                   />
                 )}
               </li>
@@ -903,21 +937,34 @@ function AlternativesList({
   alternatives,
   primaryStart,
   onPick,
-  onFindOnSoundcloud,
   findStateFor,
   previewByKey,
-  preview,
+  rowKey,
+  openPreview,
+  togglePreview,
+  onResolveSc,
+  scPreviewProps,
 }: {
   alternatives: Alternative[];
   primaryStart: number;
   onPick: (alt: Alternative) => void;
-  onFindOnSoundcloud: (alt: Alternative) => void;
   findStateFor: (alt: Alternative) => FindState;
   previewByKey: Map<
     string,
     { preview_url: string | null; artwork_url: string | null }
   >;
-  preview: ShazamPreviewState;
+  rowKey: string;
+  openPreview: string | null;
+  togglePreview: (key: string, next: boolean) => void;
+  onResolveSc: (
+    key: string,
+    track: { title: string; artist: string | null },
+  ) => Promise<SCTrack | null>;
+  scPreviewProps: (key: string) => {
+    source: PreviewSource;
+    openUrl: string | null;
+    likeUrn: string;
+  } | null;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -939,10 +986,16 @@ function AlternativesList({
         <ul className="mt-1 space-y-0.5 text-xs">
           {alternatives.map((a) => {
             const altKey = a.shazam_id ?? `${a.title}|${a.artist ?? ""}`;
+            const fullKey = `${rowKey}::alt::${altKey}`;
             const find = findStateFor(a);
             const previewMeta = previewByKey.get(altKey);
             const previewUrl = previewMeta?.preview_url ?? null;
-            const previewing = preview.isPlaying(altKey);
+            const shazamPopKey = `${fullKey}:shazam`;
+            const scPopKey = `${fullKey}:sc`;
+            const shazamOpen = openPreview === shazamPopKey;
+            const scOpen = openPreview === scPopKey;
+            const scAlt = scOpen ? scPreviewProps(fullKey) : null;
+            const scUnavailable = find.kind === "miss" || find.kind === "error";
             return (
               <li
                 key={altKey}
@@ -971,57 +1024,98 @@ function AlternativesList({
                 >
                   <Check className="size-3" />
                 </button>
-                {previewUrl && (
+                {previewUrl ? (
+                  <PreviewPopover
+                    open={shazamOpen}
+                    onOpenChange={(o) => togglePreview(shazamPopKey, o)}
+                    source={{ kind: "url", url: previewUrl }}
+                    title={a.title}
+                    subtitle={a.artist}
+                    contentTestId="shazam-preview-popover"
+                    openUrl={a.shazam_id ? shazamTrackUrl(a.shazam_id) : null}
+                    openLabel="Open on Shazam"
+                    openTestId="shazam-link"
+                  >
+                    <button
+                      type="button"
+                      className="text-text-subtle hover:text-text grid size-5 place-items-center rounded transition-colors"
+                      aria-label={
+                        shazamOpen
+                          ? "Close Shazam preview"
+                          : "Play Shazam preview"
+                      }
+                      title={
+                        shazamOpen
+                          ? "Close Shazam preview"
+                          : "Play Shazam preview"
+                      }
+                      data-testid="shazam-preview-alternative"
+                    >
+                      {shazamOpen ? (
+                        <CirclePause className="size-3" />
+                      ) : (
+                        <ShazamGlyph className="size-3" />
+                      )}
+                    </button>
+                  </PreviewPopover>
+                ) : (
+                  <span
+                    className="text-text-subtle grid size-5 place-items-center opacity-30"
+                    aria-label="No Shazam preview available"
+                    title="No Shazam preview available"
+                    data-testid="shazam-preview-alternative"
+                    data-available="false"
+                  >
+                    <ShazamGlyph className="size-3" />
+                  </span>
+                )}
+                <PreviewPopover
+                  open={scOpen}
+                  onOpenChange={(o) => {
+                    togglePreview(scPopKey, o);
+                    if (o)
+                      void onResolveSc(fullKey, a).then((hit) => {
+                        if (!hit) togglePreview(scPopKey, false);
+                      });
+                  }}
+                  source={scAlt?.source ?? null}
+                  title={a.title}
+                  subtitle={a.artist}
+                  contentTestId="soundcloud-preview-popover"
+                  openUrl={scAlt?.openUrl ?? null}
+                  openLabel="Open on SoundCloud"
+                  openTestId="soundcloud-link"
+                  likeUrn={scAlt?.likeUrn ?? null}
+                >
                   <button
                     type="button"
-                    className="text-text-subtle hover:text-text grid size-5 place-items-center rounded transition-colors"
+                    className={cn(
+                      "text-text-subtle hover:text-text grid size-5 place-items-center rounded transition-colors",
+                      scUnavailable && "opacity-30",
+                    )}
                     aria-label={
-                      previewing
-                        ? "Pause Shazam preview"
-                        : "Play Shazam preview"
+                      scUnavailable
+                        ? "Not found on SoundCloud"
+                        : "Find & play on SoundCloud"
                     }
                     title={
-                      previewing
-                        ? "Pause Shazam preview"
-                        : "Play Shazam preview"
+                      scUnavailable
+                        ? find.kind === "error"
+                          ? "SoundCloud lookup failed"
+                          : "Not found on SoundCloud"
+                        : "Find & play on SoundCloud"
                     }
-                    onClick={() => preview.toggle(altKey, previewUrl)}
-                    data-testid="shazam-preview-alternative"
+                    disabled={find.kind === "loading" || scUnavailable}
+                    data-testid="find-soundcloud-alternative"
+                    data-available={scUnavailable ? "false" : "true"}
                   >
-                    {previewing ? (
-                      <CirclePause className="size-3" />
+                    {find.kind === "loading" ? (
+                      <Loader2 className="size-3 animate-spin" />
                     ) : (
-                      <ShazamGlyph className="size-3" />
+                      <SoundcloudGlyph className="size-3" />
                     )}
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="text-text-subtle hover:text-text grid size-5 place-items-center rounded transition-colors disabled:opacity-50"
-                  aria-label="Find &amp; play on SoundCloud"
-                  title="Find &amp; play on SoundCloud"
-                  onClick={() => onFindOnSoundcloud(a)}
-                  disabled={find.kind === "loading"}
-                  data-testid="find-soundcloud-alternative"
-                >
-                  {find.kind === "loading" ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <SoundcloudGlyph className="size-3" />
-                  )}
-                </button>
-                {a.shazam_id && (
-                  <a
-                    href={`https://www.shazam.com/track/${encodeURIComponent(a.shazam_id)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-text-subtle hover:text-text grid size-5 place-items-center rounded transition-colors"
-                    aria-label="Open on Shazam"
-                    title="Open on Shazam"
-                  >
-                    <ExternalLink className="size-3" />
-                  </a>
-                )}
+                </PreviewPopover>
               </li>
             );
           })}
@@ -1029,26 +1123,6 @@ function AlternativesList({
       )}
     </div>
   );
-}
-
-/** Hand a SoundCloud search hit to the global player. The WaveformPlayer
- *  resolves the actual stream URL on demand via the shared TTL cache. */
-function playSoundcloudTrack(
-  player: ReturnType<typeof usePlayer>,
-  track: SCTrack,
-): void {
-  const id = scTrackId(track);
-  if (id == null) return;
-  player.play({
-    filePath: `soundcloud:${id}`,
-    fileName: track.title ?? String(id),
-    title: track.title ?? undefined,
-    artist: track.user?.username ?? undefined,
-    waveformUrl: track.waveform_url ?? undefined,
-    streamRefreshKey: id,
-    permalinkUrl: track.permalink_url ?? undefined,
-    artworkUrl: track.artwork_url ?? undefined,
-  });
 }
 
 /** Pull set_bpm + pitch_offset from the live scan grid for a Shazam-
@@ -1072,6 +1146,10 @@ function backfillBpmFromScans(
     ...track,
     pitch_offset: track.pitch_offset ?? best.pitch_offset ?? null,
   };
+}
+
+function shazamTrackUrl(shazamId: string): string {
+  return `https://www.shazam.com/track/${encodeURIComponent(shazamId)}`;
 }
 
 function scTrackId(track: SCTrack): number | null {
@@ -1118,73 +1196,6 @@ function SoundcloudGlyph({ className }: { className?: string }) {
 
 function ShazamGlyph({ className }: { className?: string }) {
   return <BrandIcon src="/icons/shazam.svg" alt="" className={className} />;
-}
-
-interface ShazamPreviewState {
-  /** Currently-playing preview key, ``null`` when nothing is playing. */
-  playingKey: string | null;
-  /** Whether ``play(key, url)`` is supported (always true — kept for API
-   *  symmetry with other audio handles). */
-  toggle: (key: string, url: string) => void;
-  isPlaying: (key: string) => boolean;
-}
-
-/** Plays a Shazam preview clip in a single shared `<Audio>`. Claims
- *  the exclusive-playback slot while playing so the set audio and the
- *  global player pause automatically (and pause the preview back);
- *  resumes nothing on stop. */
-function useShazamPreview(): ShazamPreviewState {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [playingKey, setPlayingKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof Audio === "undefined") return;
-    const a = new Audio();
-    a.preload = "none";
-    audioRef.current = a;
-    const onEnded = () => {
-      releasePlayback("shazam-preview");
-      setPlayingKey(null);
-    };
-    a.addEventListener("ended", onEnded);
-    return () => {
-      a.removeEventListener("ended", onEnded);
-      a.pause();
-      a.src = "";
-      audioRef.current = null;
-    };
-  }, []);
-
-  const toggle = (key: string, url: string) => {
-    const a = audioRef.current;
-    if (!a) return;
-    if (playingKey === key) {
-      a.pause();
-      releasePlayback("shazam-preview");
-      setPlayingKey(null);
-      return;
-    }
-    claimPlayback("shazam-preview", () => {
-      a.pause();
-      setPlayingKey(null);
-    });
-    if (a.src !== url) a.src = url;
-    a.currentTime = 0;
-    // Optimistically flip the button to Pause as soon as the user
-    // clicks. ``play()`` returns a promise that resolves on the next
-    // tick — without this, the icon would stay on the Shazam glyph
-    // until then, making the press feel unresponsive. If play
-    // actually fails (e.g. autoplay blocked), we revert below.
-    setPlayingKey(key);
-    void a.play().catch(() => {
-      releasePlayback("shazam-preview");
-      setPlayingKey(null);
-    });
-  };
-
-  const isPlaying = (key: string) => playingKey === key;
-
-  return { playingKey, toggle, isPlaying };
 }
 
 /** ``128 → 124 BPM`` chip. Hidden for derived/manual rows that don't

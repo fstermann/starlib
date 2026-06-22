@@ -652,12 +652,16 @@ test.describe("Set Analyser", () => {
     // Browser fires a request for src on first play().
     await expect.poll(() => audioRequests).toBeGreaterThan(0);
 
-    // External Shazam link is present and targets the right host.
-    const shazam = page.getByTestId("shazam-link");
-    await expect(shazam).toHaveAttribute("href", /shazam\.com\/track\/abc123/);
     // The "find on SoundCloud" affordance is a button (resolves + plays
-    // inline); the static search link is gone now.
+    // inline); the static search link is gone now. The "open on Shazam"
+    // link now lives inside the Shazam preview popover (asserted in the
+    // preview-popover test, which has a preview clip to open).
     await expect(page.getByTestId("find-soundcloud")).toBeVisible();
+    // This row's match has no preview clip, so the Shazam button stays as
+    // a disabled, grayed-out slot — keeping the button columns aligned.
+    const shazamBtn = page.getByTestId("shazam-preview");
+    await expect(shazamBtn).toHaveAttribute("data-available", "false");
+    await expect(shazamBtn).toBeDisabled();
 
     // Avoid the unused-handle lint warning when the helper has no
     // assertions in this particular test.
@@ -796,6 +800,11 @@ test.describe("Set Analyser", () => {
         }),
       }),
     );
+    let likeCalls = 0;
+    await page.route(/\/api\/soundcloud\/tracks\/999111\/like$/, (route) => {
+      if (route.request().method() === "POST") likeCalls += 1;
+      route.fulfill({ status: 204, body: "" });
+    });
 
     await page.goto(`/analyser?job=${FAKE_JOB_ID}`);
     await expect(page.getByTestId("tracklist-panel")).toBeVisible();
@@ -803,11 +812,55 @@ test.describe("Set Analyser", () => {
     // The click must trigger a /tracks search against the SoundCloud API.
     await expect.poll(() => searchCalls).toBeGreaterThan(0);
     // …and surface the in-section waveform popover, not the global bar.
-    await expect(page.getByTestId("soundcloud-preview-popover")).toBeVisible();
+    const popover = page.getByTestId("soundcloud-preview-popover");
+    await expect(popover).toBeVisible();
     // The waveform <div> is 0px until WaveSurfer injects a canvas (it
     // won't finish decoding in headless); the fixed-size toggle button
     // is the stable proof the in-section preview surface rendered.
     await expect(page.getByTestId("preview-toggle")).toBeVisible();
+    // Once the search resolves, the popover exposes an open-on-SoundCloud
+    // link and a like button acting on the resolved track.
+    await expect(popover.getByTestId("soundcloud-link")).toHaveAttribute(
+      "href",
+      "https://soundcloud.com/dj/mock-track-a",
+    );
+    const like = popover.getByTestId("soundcloud-like-button");
+    await expect(like).toHaveAttribute("data-liked", "false");
+    await like.click();
+    await expect.poll(() => likeCalls).toBe(1);
+    await expect(like).toHaveAttribute("data-liked", "true");
+  });
+
+  test("a SoundCloud miss grays out the button and closes the popover", async ({
+    page,
+  }) => {
+    await mockAnalyserApi(page);
+    await page.addInitScript(() => {
+      const future = Date.now() + 60 * 60 * 1000;
+      localStorage.setItem("access_token", "fake-token");
+      localStorage.setItem("token_expires_at", String(future));
+    });
+    // Search returns no results → a miss.
+    await page.route(/api\.soundcloud\.com\/tracks/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      }),
+    );
+
+    await page.goto(`/analyser?job=${FAKE_JOB_ID}`);
+    await expect(page.getByTestId("tracklist-panel")).toBeVisible();
+    const sc = page.getByTestId("find-soundcloud");
+    await expect(sc).toHaveAttribute("data-available", "true");
+    await sc.click();
+    // No hit → the popover closes itself and the button grays out. The
+    // old inline "not found on SoundCloud" text is gone; the icon carries
+    // the state.
+    await expect(sc).toHaveAttribute("data-available", "false");
+    await expect(sc).toBeDisabled();
+    await expect(page.getByTestId("soundcloud-preview-popover")).toHaveCount(0);
+    await expect(page.getByText("not found on SoundCloud")).toHaveCount(0);
   });
 
   test("tracklist row exposes alternative Shazam matches", async ({ page }) => {
@@ -2312,6 +2365,11 @@ test.describe("Set Analyser", () => {
     await page.getByTestId("shazam-preview").click();
     await expect(page.getByTestId("shazam-preview-popover")).toBeVisible();
     await expect(page.getByTestId("preview-toggle")).toBeVisible();
+    // The "open on Shazam" link lives inside the preview popover now.
+    await expect(page.getByTestId("shazam-link")).toHaveAttribute(
+      "href",
+      /shazam\.com\/track\/shz-keep/,
+    );
   });
 
   test("alignment dialog saves a nudged start_s", async ({ page }) => {
