@@ -7,32 +7,32 @@ readme = "README.md"
 requires-python = ">=3.13.0"
 dependencies = [
     "pydantic>=2.13.4",
-    "pydantic-settings>=2.14.1",
+    "pydantic-settings>=2.14.2",
     "httpx>=0.27.2",
-    "starlette>=1.2.1",
+    "starlette>=1.3.1",
     "devtools>=0.12.2",
     "fake-useragent>=1.5.1",
     "requests>=2.34.2",
-    "mutagen>=1.47.0",
-    "fastapi>=0.136.3",
+    "mutagen>=1.48.1",
+    "fastapi>=0.138.1",
     "uvicorn[standard]>=0.49.0",
     "python-multipart>=0.0.32",
-    "fastapi-pagination>=0.15.14",
+    "fastapi-pagination>=0.15.15",
     "watchdog>=4.0.0",
     "platformdirs>=4.10.0",
-    "sqlmodel>=0.0.22",
-    "alembic>=1.13",
-    "anthropic>=0.107.1",
+    "sqlmodel>=0.0.39",
+    "alembic>=1.18.5",
+    "anthropic>=0.112.0",
     "keyring>=25.0.0",
 ]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.16",
+    "ruff>=0.15.20",
     "pre-commit>=4.6.0",
-    "pytest>=9.0.3",
+    "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "zensical>=0.0.44",
+    "zensical>=0.0.46",
     # pygments 2.20 added `filename` as a recognized HtmlFormatter option; pymdownx 10.21
     # passes filename=None when no code block title is given, which causes html.escape(None)
     # to fail and silently breaks all code block rendering. Pin until pymdownx is fixed.
@@ -41,7 +41,7 @@ dev = [
 desktop = [
     # PyInstaller is used to package the FastAPI backend into a self-contained binary.
     # Run: pyinstaller desktop/sidecar.spec --distpath desktop/binaries
-    "pyinstaller>=6.20.0",
+    "pyinstaller>=6.21.0",
 ]
 
 [build-system]
