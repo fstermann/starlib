@@ -34,16 +34,36 @@ export interface RekordboxStatus {
   reason: string | null;
 }
 
+export interface RekordboxUsbDevice {
+  id: string;
+  label: string;
+  mount_path: string;
+}
+
+/** Append `?device=` when a USB export is selected; omit for the local install. */
+function withDevice(path: string, device: string | null): string {
+  if (!device) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}device=${encodeURIComponent(device)}`;
+}
+
 interface AsyncState<T> {
   data: T;
   loading: boolean;
+  /** True once the first fetch has resolved (success or error). */
+  loaded: boolean;
   error: string | null;
   refetch: () => void;
 }
 
-function useRekordboxFetch<T>(path: string | null, initial: T): AsyncState<T> {
+function useRekordboxFetch<T>(
+  path: string | null,
+  initial: T,
+  pollMs?: number,
+): AsyncState<T> {
   const [data, setData] = useState<T>(initial);
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -65,7 +85,10 @@ function useRekordboxFetch<T>(path: string | null, initial: T): AsyncState<T> {
         if (!cancelled) setError(err.message);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setLoaded(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -74,30 +97,57 @@ function useRekordboxFetch<T>(path: string | null, initial: T): AsyncState<T> {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, tick]);
 
+  // Optional background polling — used to keep the USB device list live so a
+  // disconnect is noticed without a manual reload.
+  useEffect(() => {
+    if (path === null || !pollMs) return;
+    const id = setInterval(() => setTick((t) => t + 1), pollMs);
+    return () => clearInterval(id);
+  }, [path, pollMs]);
+
   const refetch = () => setTick((t) => t + 1);
-  return { data, loading, error, refetch };
+  return { data, loading, loaded, error, refetch };
 }
 
-export function useRekordboxStatus(): AsyncState<RekordboxStatus> {
-  return useRekordboxFetch<RekordboxStatus>("/api/rekordbox/status", {
-    available: false,
-    reason: null,
-  });
+export function useRekordboxDevices(pollMs?: number): AsyncState<{
+  devices: RekordboxUsbDevice[];
+}> {
+  return useRekordboxFetch(
+    "/api/rekordbox/usb/devices",
+    { devices: [] },
+    pollMs,
+  );
 }
 
-export function useRekordboxPlaylists(enabled: boolean): AsyncState<{
+export function useRekordboxStatus(
+  device: string | null = null,
+): AsyncState<RekordboxStatus> {
+  return useRekordboxFetch<RekordboxStatus>(
+    withDevice("/api/rekordbox/status", device),
+    { available: false, reason: null },
+  );
+}
+
+export function useRekordboxPlaylists(
+  enabled: boolean,
+  device: string | null = null,
+): AsyncState<{
   playlists: RekordboxPlaylist[];
 }> {
-  return useRekordboxFetch(enabled ? "/api/rekordbox/playlists" : null, {
-    playlists: [],
-  });
+  return useRekordboxFetch(
+    enabled ? withDevice("/api/rekordbox/playlists", device) : null,
+    { playlists: [] },
+  );
 }
 
 export function useRekordboxPlaylistTracks(
   playlistId: string | null,
+  device: string | null = null,
 ): AsyncState<{ tracks: RekordboxTrack[] }> {
   return useRekordboxFetch(
-    playlistId ? `/api/rekordbox/playlists/${playlistId}/tracks` : null,
+    playlistId
+      ? withDevice(`/api/rekordbox/playlists/${playlistId}/tracks`, device)
+      : null,
     { tracks: [] },
   );
 }
