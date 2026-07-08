@@ -7,7 +7,7 @@ readme = "README.md"
 requires-python = ">=3.13.0"
 dependencies = [
     "pydantic>=2.13.4",
-    "pydantic-settings>=2.14.1",
+    "pydantic-settings>=2.14.2",
     "httpx>=0.27.2",
     "starlette>=1.3.1",
     "devtools>=0.12.2",
