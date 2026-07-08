@@ -21,26 +21,36 @@ interface RekordboxWaveformProps {
   width?: number;
   /** Display height in CSS pixels. */
   height?: number;
+  /** Selected USB device id; targets the waveform fetch at the device. */
+  device?: string;
 }
 
 // PWV4 column count from Rekordbox EXT analysis files.
 const SOURCE_COLS = 1200;
 
-// Module-level cache: trackId → 7200-byte PWV4 payload. The same playlist row
+// Module-level cache: cacheKey → 7200-byte PWV4 payload. The same playlist row
 // can rerender during scroll/virtualization; refetching each time would spam
 // the backend and the browser's own HTTP cache adds latency we don't need.
+// Keyed by device+trackId so the same id on the local install and a USB export
+// don't collide.
 const cache = new Map<string, Uint8Array | null>();
 const inflight = new Map<string, Promise<Uint8Array | null>>();
 
+function cacheKey(trackId: string, device?: string): string {
+  return device ? `${device}:${trackId}` : trackId;
+}
+
 export async function loadWaveform(
   trackId: string,
+  device?: string,
 ): Promise<Uint8Array | null> {
-  if (cache.has(trackId)) return cache.get(trackId) ?? null;
-  let p = inflight.get(trackId);
+  const key = cacheKey(trackId, device);
+  if (cache.has(key)) return cache.get(key) ?? null;
+  let p = inflight.get(key);
   if (!p) {
     p = (async () => {
       try {
-        const res = await fetch(api.getRekordboxWaveformUrl(trackId));
+        const res = await fetch(api.getRekordboxWaveformUrl(trackId, device));
         if (!res.ok) return null;
         const buf = await res.arrayBuffer();
         return new Uint8Array(buf);
@@ -48,11 +58,11 @@ export async function loadWaveform(
         return null;
       }
     })().then((data) => {
-      cache.set(trackId, data);
-      inflight.delete(trackId);
+      cache.set(key, data);
+      inflight.delete(key);
       return data;
     });
-    inflight.set(trackId, p);
+    inflight.set(key, p);
   }
   return p;
 }
@@ -90,6 +100,7 @@ export function RekordboxWaveform({
   className,
   width = 96,
   height = 24,
+  device,
 }: RekordboxWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [data, setData] = useState<Uint8Array | null>(null);
@@ -187,13 +198,13 @@ export function RekordboxWaveform({
 
   useEffect(() => {
     let cancelled = false;
-    loadWaveform(trackId).then((d) => {
+    loadWaveform(trackId, device).then((d) => {
       if (!cancelled) setData(d);
     });
     return () => {
       cancelled = true;
     };
-  }, [trackId]);
+  }, [trackId, device]);
 
   // Redraw whenever the painted data or the active track changes, and
   // subscribe to live progress while this track is playing.

@@ -45,6 +45,10 @@ export interface PlayerTrack {
    * derives its peaks from the Rekordbox PWV4 preview (a ~2ms fetch)
    * instead of decoding the audio file via ffmpeg. */
   rekordboxId?: string;
+  /** Selected Rekordbox USB device id, if this track comes from a mounted
+   * export. Threads through to the PWV4 waveform fetch so it targets the
+   * device rather than the local install. */
+  rekordboxDevice?: string;
 }
 
 interface PlayerContextValue {

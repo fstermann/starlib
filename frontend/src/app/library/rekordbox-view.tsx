@@ -1,6 +1,6 @@
 "use client";
 
-import { Folder, Sparkles } from "lucide-react";
+import { Folder, HardDrive, Sparkles, Usb } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useCallback, useMemo, useState } from "react";
 
@@ -22,6 +22,13 @@ import {
 import { TreeView } from "@/components/tree/tree-view";
 import type { TreeNodeShape } from "@/components/tree/types";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { semitonesFromBpmRatio, transposeCamelot } from "@/lib/camelot";
 import type { ColumnDef } from "@/lib/columns/types";
@@ -36,12 +43,17 @@ import { cn } from "@/lib/utils";
 
 import { LibraryTitle } from "./library-title";
 import {
+  useRekordboxDevices,
   useRekordboxPlaylists,
   useRekordboxPlaylistTracks,
   useRekordboxStatus,
   type RekordboxPlaylist,
   type RekordboxTrack,
 } from "./use-rekordbox";
+
+// Sentinel select value for the local Rekordbox install (Radix Select forbids
+// an empty-string item value).
+const LOCAL_DEVICE = "__local__";
 
 // ─── Tree node shape ────────────────────────────────────────────────────────
 
@@ -139,8 +151,9 @@ function KeyCell({
   );
 }
 
-function toPlayerTrack(t: RekordboxTrack): PlayerTrack | null {
+function toPlayerTrack(t: RekordboxTrack, device: string): PlayerTrack | null {
   if (!t.file_path) return null;
+  const usb = !!device;
   return {
     filePath: t.file_path,
     fileName: t.file_path.split("/").pop() ?? t.title,
@@ -148,6 +161,10 @@ function toPlayerTrack(t: RekordboxTrack): PlayerTrack | null {
     artist: t.artist ?? undefined,
     bpm: t.bpm ?? null,
     rekordboxId: t.has_waveform ? t.id : undefined,
+    rekordboxDevice: usb ? device : undefined,
+    // USB tracks live on the device, not under the local root — stream them
+    // through the device-scoped audio endpoint instead of the local file path.
+    streamUrl: usb ? api.getRekordboxUsbAudioUrl(t.id, device) : undefined,
   };
 }
 
@@ -195,9 +212,15 @@ const REKORDBOX_COLUMN_DEFS: ColumnDef[] = REKORDBOX_COLUMNS.map((c) => ({
 // ─── View ───────────────────────────────────────────────────────────────────
 
 export function RekordboxView() {
-  useTopBar({ title: <LibraryTitle /> });
+  // "" = local install; otherwise a mounted USB export's device id.
+  const [device, setDevice] = useQueryState("device", { defaultValue: "" });
+  const [selectedId, setSelectedId] = useQueryState("playlist", {
+    defaultValue: "",
+  });
+  const deviceId = device || null;
 
-  const status = useRekordboxStatus();
+  const devices = useRekordboxDevices().data.devices;
+  const status = useRekordboxStatus(deviceId);
   const enabled = status.data.available;
 
   const {
@@ -205,11 +228,40 @@ export function RekordboxView() {
     loading,
     error,
     refetch: refetchPlaylists,
-  } = useRekordboxPlaylists(enabled);
-  const [selectedId, setSelectedId] = useQueryState("playlist", {
-    defaultValue: "",
-  });
-  const tracksResp = useRekordboxPlaylistTracks(selectedId || null);
+  } = useRekordboxPlaylists(enabled, deviceId);
+  const tracksResp = useRekordboxPlaylistTracks(selectedId || null, deviceId);
+
+  const changeDevice = useCallback(
+    (value: string) => {
+      setSelectedId(""); // playlists differ per source — clear the selection
+      setDevice(value === LOCAL_DEVICE ? "" : value);
+    },
+    [setDevice, setSelectedId],
+  );
+
+  // Only surface the picker when there's actually a USB export to switch to.
+  const devicePicker =
+    devices.length > 0 ? (
+      <Select value={device || LOCAL_DEVICE} onValueChange={changeDevice}>
+        <SelectTrigger size="sm" className="h-7 w-44 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={LOCAL_DEVICE}>
+            <HardDrive className="size-3.5" />
+            Local install
+          </SelectItem>
+          {devices.map((d) => (
+            <SelectItem key={d.id} value={d.id}>
+              <Usb className="size-3.5" />
+              {d.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    ) : null;
+
+  useTopBar({ title: <LibraryTitle>{devicePicker}</LibraryTitle> });
 
   useReloadHandler(() => {
     refetchPlaylists();
@@ -290,7 +342,7 @@ export function RekordboxView() {
   const handleStartPlay = useCallback(
     (index: number, startRatio?: number) => {
       const queue = filteredTracks
-        .map(toPlayerTrack)
+        .map((t) => toPlayerTrack(t, device))
         .filter((t): t is PlayerTrack => t !== null);
       if (queue.length === 0) return;
       // Map the table index back to the queue (skips entries without a file).
@@ -300,7 +352,7 @@ export function RekordboxView() {
       if (playableIdx < 0) return;
       player.playQueue(queue, playableIdx, startRatio);
     },
-    [filteredTracks, player],
+    [filteredTracks, player, device],
   );
 
   // Cell contents only — wrapping div owns width + truncation so a resize
@@ -381,11 +433,15 @@ export function RekordboxView() {
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <RekordboxLogo className="text-muted-foreground size-8" />
         <p className="text-foreground text-sm font-medium">
-          Rekordbox isn&apos;t available
+          {device
+            ? "Couldn't read this USB export"
+            : "Rekordbox isn't available"}
         </p>
         <p className="text-muted-foreground max-w-sm text-sm">
           {status.data.reason ??
-            "Could not open the Rekordbox master database on this machine."}
+            (device
+              ? "Could not open the export database on this device."
+              : "Could not open the Rekordbox master database on this machine.")}
         </p>
       </div>
     );
@@ -566,7 +622,13 @@ export function RekordboxView() {
                     </div>
                     <CoverPlayButton
                       artworkUrl={
-                        t.has_artwork ? api.getRekordboxArtworkUrl(t.id) : null
+                        t.has_artwork
+                          ? api.getRekordboxArtworkUrl(
+                              t.id,
+                              true,
+                              deviceId ?? undefined,
+                            )
+                          : null
                       }
                       isCurrent={isCurrent}
                       onStartPlay={
@@ -578,7 +640,8 @@ export function RekordboxView() {
                       {t.has_waveform ? (
                         <RekordboxWaveform
                           trackId={t.id}
-                          track={playable ? toPlayerTrack(t) : null}
+                          device={deviceId ?? undefined}
+                          track={playable ? toPlayerTrack(t, device) : null}
                           onStartPlay={
                             playable
                               ? (startRatio) =>

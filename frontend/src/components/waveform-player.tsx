@@ -251,7 +251,10 @@ export function WaveformPlayer() {
         : currentTrack!.rekordboxId
           ? // Rekordbox already analyzed this track — its PWV4 preview is a
             // ~2ms fetch vs an ~1s ffmpeg decode for backend peaks.
-            loadWaveform(currentTrack!.rekordboxId).then((data) =>
+            loadWaveform(
+              currentTrack!.rekordboxId,
+              currentTrack!.rekordboxDevice,
+            ).then((data) =>
               data
                 ? pwv4ToPeaks(data)
                 : api.getFilePeaks(currentTrack!.filePath, numPeaks),
@@ -613,9 +616,11 @@ export function WaveformPlayer() {
         /* Prefetch is best-effort. */
       });
     } else if (nextTrack.rekordboxId) {
-      loadWaveform(nextTrack.rekordboxId).catch(() => {
-        /* Prefetch is best-effort. */
-      });
+      loadWaveform(nextTrack.rekordboxId, nextTrack.rekordboxDevice).catch(
+        () => {
+          /* Prefetch is best-effort. */
+        },
+      );
     } else if (nextTrack.streamRefreshKey == null) {
       // Local file — warm the backend's peaks cache so the next track's
       // ffmpeg decode (~1s) happens now instead of on skip.

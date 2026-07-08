@@ -34,6 +34,19 @@ export interface RekordboxStatus {
   reason: string | null;
 }
 
+export interface RekordboxUsbDevice {
+  id: string;
+  label: string;
+  mount_path: string;
+}
+
+/** Append `?device=` when a USB export is selected; omit for the local install. */
+function withDevice(path: string, device: string | null): string {
+  if (!device) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}device=${encodeURIComponent(device)}`;
+}
+
 interface AsyncState<T> {
   data: T;
   loading: boolean;
@@ -78,26 +91,41 @@ function useRekordboxFetch<T>(path: string | null, initial: T): AsyncState<T> {
   return { data, loading, error, refetch };
 }
 
-export function useRekordboxStatus(): AsyncState<RekordboxStatus> {
-  return useRekordboxFetch<RekordboxStatus>("/api/rekordbox/status", {
-    available: false,
-    reason: null,
-  });
+export function useRekordboxDevices(): AsyncState<{
+  devices: RekordboxUsbDevice[];
+}> {
+  return useRekordboxFetch("/api/rekordbox/usb/devices", { devices: [] });
 }
 
-export function useRekordboxPlaylists(enabled: boolean): AsyncState<{
+export function useRekordboxStatus(
+  device: string | null = null,
+): AsyncState<RekordboxStatus> {
+  return useRekordboxFetch<RekordboxStatus>(
+    withDevice("/api/rekordbox/status", device),
+    { available: false, reason: null },
+  );
+}
+
+export function useRekordboxPlaylists(
+  enabled: boolean,
+  device: string | null = null,
+): AsyncState<{
   playlists: RekordboxPlaylist[];
 }> {
-  return useRekordboxFetch(enabled ? "/api/rekordbox/playlists" : null, {
-    playlists: [],
-  });
+  return useRekordboxFetch(
+    enabled ? withDevice("/api/rekordbox/playlists", device) : null,
+    { playlists: [] },
+  );
 }
 
 export function useRekordboxPlaylistTracks(
   playlistId: string | null,
+  device: string | null = null,
 ): AsyncState<{ tracks: RekordboxTrack[] }> {
   return useRekordboxFetch(
-    playlistId ? `/api/rekordbox/playlists/${playlistId}/tracks` : null,
+    playlistId
+      ? withDevice(`/api/rekordbox/playlists/${playlistId}/tracks`, device)
+      : null,
     { tracks: [] },
   );
 }
