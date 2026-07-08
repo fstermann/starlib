@@ -152,14 +152,25 @@ def get_track_artwork(track_id: str, small: bool = True, device: str | None = De
 
 
 @router.get("/tracks/{track_id}/waveform")
-def get_track_waveform(track_id: str, device: str | None = DeviceParam) -> Response:
-    """Serve the raw PWV4 color preview entries (7200 bytes: 1200 x 6).
+def get_track_waveform(
+    track_id: str,
+    device: str | None = DeviceParam,
+    variant: str = Query("color", pattern="^(color|blue)$"),
+) -> Response:
+    """Serve a track's raw ANLZ preview waveform bytes.
 
-    The frontend decodes the byte stream onto a small canvas to render an inline
-    RGB waveform matching what Rekordbox shows in its track list.
+    ``variant=color`` (default) returns the PWV4 colour preview (7200 bytes:
+    1200 x 6). ``variant=blue`` returns the PWAV monochrome preview (400 bytes:
+    400 x 1, 5-bit height + 3-bit whiteness). The frontend decodes the byte
+    stream onto a canvas to render the waveform.
     """
+    source = rb_service.get_source(device)
     try:
-        data = rb_service.get_source(device).get_track_waveform_preview(track_id)
+        data = (
+            source.get_track_waveform_blue(track_id)
+            if variant == "blue"
+            else source.get_track_waveform_preview(track_id)
+        )
     except rb_service.RekordboxUnavailable as exc:
         raise _unavailable(str(exc)) from exc
     if data is None:

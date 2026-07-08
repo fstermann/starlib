@@ -20,6 +20,7 @@ from .base import (
     RekordboxTrack,
     RekordboxUnavailable,
     extract_soundcloud_id,
+    read_pwav,
     read_pwv4,
 )
 
@@ -213,6 +214,26 @@ class LocalMasterDbSource(RekordboxSource):
         except OSError:
             return None
         return read_pwv4(str(ext), mtime_ns)
+
+    def get_track_waveform_blue(self, track_id: str) -> bytes | None:
+        """Return the raw PWAV monochrome preview bytes (400 x 1 byte).
+
+        Each byte packs a 5-bit height (low) and 3-bit whiteness (high). The
+        PWAV tag lives in the ``.DAT`` ANLZ file (colour PWV4 is in ``.EXT``).
+        """
+        db = self._open_db()
+        row = db.get_content(ID=track_id)
+        if row is None:
+            return None
+        rel = getattr(row, "AnalysisDataPath", None)
+        if not rel:
+            return None
+        dat = self._resolve_relative(str(rel)).with_suffix(".DAT")
+        try:
+            mtime_ns = dat.stat().st_mtime_ns
+        except OSError:
+            return None
+        return read_pwav(str(dat), mtime_ns)
 
     def list_all_tracks(self, limit: int | None = None) -> list[RekordboxTrack]:
         """Return all tracks in the collection."""

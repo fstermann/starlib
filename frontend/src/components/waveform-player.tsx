@@ -7,9 +7,11 @@ import { useEffect, useRef, useState } from "react";
 import type WaveSurferType from "wavesurfer.js";
 
 import { BpmPitcher, computePlaybackRate } from "@/components/bpm-pitcher";
+import { PlayerRekordboxWaveform } from "@/components/player-rekordbox-waveform";
 import { loadWaveform, pwv4ToPeaks } from "@/components/rekordbox-waveform";
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
+import { selectPeaksSource } from "@/lib/player-peaks";
 import { markScUnplayable } from "@/lib/sc-unplayable";
 import {
   getCachedSoundcloudPeaks,
@@ -17,6 +19,7 @@ import {
   invalidateSoundcloudStreamUrl,
 } from "@/lib/soundcloud-cache";
 import { useResizableWidth } from "@/lib/use-resizable";
+import { useWaveformStyle } from "@/lib/use-waveform-style";
 import { cn } from "@/lib/utils";
 
 /** Heuristic: URL is an HLS playlist (by extension). */
@@ -93,6 +96,7 @@ export function WaveformPlayer() {
   const [expanded, setExpanded] = useState(false);
 
   const treeWidth = useResizableWidth("tree-panel-width", 240);
+  const waveformStyle = useWaveformStyle();
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -226,12 +230,6 @@ export function WaveformPlayer() {
       // gaps between bars.
       const numPeaks = 2000;
 
-      // Skeleton SoundCloud entries from the queue have no `streamUrl` yet —
-      // `streamRefreshKey` is the durable marker that this is a SC track.
-      const isStream =
-        !!currentTrack!.streamUrl ||
-        currentTrack!.streamRefreshKey !== undefined;
-
       // Kick off all network-bound work in parallel:
       //   - WaveSurfer module imports (cached after first track)
       //   - peaks fetch (backend or SC CDN)
@@ -242,24 +240,29 @@ export function WaveformPlayer() {
       const wsImportPromise = import("wavesurfer.js");
       const hoverImportPromise =
         import("wavesurfer.js/dist/plugins/hover.esm.js");
-      const peaksPromise: Promise<number[]> = isStream
-        ? currentTrack!.waveformUrl
-          ? getCachedSoundcloudPeaks(currentTrack!.waveformUrl, numPeaks).then(
-              (p) => p ?? new Array<number>(numPeaks).fill(0.5),
-            )
-          : Promise.resolve(new Array<number>(numPeaks).fill(0.5))
-        : currentTrack!.rekordboxId
+      const peaksSource = selectPeaksSource(currentTrack!);
+      const peaksPromise: Promise<number[]> =
+        peaksSource.kind === "rekordbox"
           ? // Rekordbox already analyzed this track — its PWV4 preview is a
             // ~2ms fetch vs an ~1s ffmpeg decode for backend peaks.
-            loadWaveform(
-              currentTrack!.rekordboxId,
-              currentTrack!.rekordboxDevice,
-            ).then((data) =>
+            loadWaveform(peaksSource.id, peaksSource.device).then((data) =>
               data
                 ? pwv4ToPeaks(data)
-                : api.getFilePeaks(currentTrack!.filePath, numPeaks),
+                : // No PWV4 for this track: local-install tracks resolve to a
+                  // real file we can decode; USB tracks live off-root, so fall
+                  // back to a flat placeholder rather than a doomed ffmpeg call.
+                  peaksSource.device
+                  ? new Array<number>(numPeaks).fill(0.5)
+                  : api.getFilePeaks(currentTrack!.filePath, numPeaks),
             )
-          : api.getFilePeaks(currentTrack!.filePath, numPeaks);
+          : peaksSource.kind === "soundcloud"
+            ? peaksSource.waveformUrl
+              ? getCachedSoundcloudPeaks(
+                  peaksSource.waveformUrl,
+                  numPeaks,
+                ).then((p) => p ?? new Array<number>(numPeaks).fill(0.5))
+              : Promise.resolve(new Array<number>(numPeaks).fill(0.5))
+            : api.getFilePeaks(currentTrack!.filePath, numPeaks);
       const streamUrlPromise: Promise<string | undefined> = currentTrack!
         .streamUrl
         ? Promise.resolve(currentTrack!.streamUrl)
@@ -642,6 +645,14 @@ export function WaveformPlayer() {
   const artistText = currentTrack.artist ?? "";
   const loadingProgress = duration > 0 ? currentTime / duration : 0;
 
+  // Colour the bottom waveform with Rekordbox's own analysis when the user
+  // picked a Rekordbox style and the current track carries one. Non-Rekordbox
+  // sources always fall through to the default WaveSurfer render.
+  const rekColored =
+    !!currentTrack.rekordboxId &&
+    (waveformStyle === "rekordbox_rgb" || waveformStyle === "rekordbox_blue");
+  const rekVariant = waveformStyle === "rekordbox_blue" ? "blue" : "color";
+
   const morphTransition = {
     type: "spring" as const,
     stiffness: 380,
@@ -910,9 +921,27 @@ export function WaveformPlayer() {
             <div className="relative flex min-w-0 flex-1 items-center px-3">
               <div
                 ref={containerRef}
-                className="min-w-0 flex-1"
+                className={cn("min-w-0 flex-1", rekColored && "opacity-0")}
                 style={{ cursor: "pointer" }}
               />
+              {/* Rekordbox RGB/Blue overlay — WaveSurfer stays mounted (hidden)
+                  to keep driving audio + progress; this canvas paints the
+                  coloured waveform and owns seek/hover. */}
+              {rekColored && currentTrack.rekordboxId && (
+                <div
+                  data-testid="player-rekordbox-waveform"
+                  data-variant={rekVariant}
+                  className="absolute inset-y-0 right-3 left-3 flex items-center"
+                >
+                  <PlayerRekordboxWaveform
+                    trackId={currentTrack.rekordboxId}
+                    device={currentTrack.rekordboxDevice}
+                    variant={rekVariant}
+                    durationSec={duration}
+                    className="h-8"
+                  />
+                </div>
+              )}
               {/* Loading-state fallback progress — fades out once waveform is ready. */}
               <div
                 className={cn(
