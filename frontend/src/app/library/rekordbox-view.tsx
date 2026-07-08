@@ -247,12 +247,12 @@ export function RekordboxView() {
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={LOCAL_DEVICE}>
+          <SelectItem value={LOCAL_DEVICE} className="text-xs">
             <HardDrive className="size-3.5" />
             Local install
           </SelectItem>
           {devices.map((d) => (
-            <SelectItem key={d.id} value={d.id}>
+            <SelectItem key={d.id} value={d.id} className="text-xs">
               <Usb className="size-3.5" />
               {d.label}
             </SelectItem>
