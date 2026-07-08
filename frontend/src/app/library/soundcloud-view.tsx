@@ -21,7 +21,10 @@ import {
 } from "@/components/create-playlist-dialog";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { GroupBar } from "@/components/group-bar";
-import { useTopBar } from "@/components/layout/top-bar-context";
+import {
+  useReloadHandler,
+  useTopBar,
+} from "@/components/layout/top-bar-context";
 import { LIKES_COLUMN_DEFS, LikesTable } from "@/components/likes-table";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { ProfileGroupDialog } from "@/components/profile-group-dialog";
@@ -912,6 +915,7 @@ function LikesView({
       : isTracksView && activeTracks
         ? activeTracks.reload
         : activeLikes.reload;
+  useReloadHandler(reloadActiveLikes);
   useCommand({
     id: "sc:reload",
     label:
