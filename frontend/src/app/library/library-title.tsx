@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderTree } from "lucide-react";
+import { Disc3, FolderTree } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { ComponentType, SVGProps } from "react";
@@ -16,6 +16,7 @@ type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 const SOURCE_META: Record<SourceId, { label: string; icon: IconComponent }> = {
   filesystem: { label: "Filesystem", icon: FolderTree },
   soundcloud: { label: "SoundCloud", icon: SoundCloudLogo },
+  rekordbox: { label: "Rekordbox", icon: Disc3 },
 };
 
 /**
