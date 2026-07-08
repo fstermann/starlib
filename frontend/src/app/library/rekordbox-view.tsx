@@ -160,6 +160,12 @@ function toPlayerTrack(t: RekordboxTrack, device: string): PlayerTrack | null {
     title: t.title,
     artist: t.artist ?? undefined,
     bpm: t.bpm ?? null,
+    // Use the Rekordbox artwork endpoint (same source as the table row), not the
+    // metadata file endpoint — the USB path is off-root there, and this keeps the
+    // player cover consistent with the row. Full variant for the expanded view.
+    artworkUrl: t.has_artwork
+      ? api.getRekordboxArtworkUrl(t.id, false, device || undefined)
+      : undefined,
     rekordboxId: t.has_waveform ? t.id : undefined,
     rekordboxDevice: usb ? device : undefined,
     // USB tracks live on the device, not under the local root — stream them
