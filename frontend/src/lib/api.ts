@@ -448,6 +448,14 @@ export const api = {
     return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/audio?device=${encodeURIComponent(device)}`;
   },
 
+  // Safely eject a mounted USB export. Rejects (409) if the volume is busy.
+  async ejectRekordboxUsb(device: string): Promise<void> {
+    await fetchApi(
+      `/api/rekordbox/usb/eject?device=${encodeURIComponent(device)}`,
+      { method: "POST" },
+    );
+  },
+
   // Audio streaming
   getAudioUrl(filePath: string): string {
     const encoded = encodeURIComponent(filePath);

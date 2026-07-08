@@ -1,8 +1,9 @@
 "use client";
 
-import { Folder, HardDrive, Sparkles, Usb } from "lucide-react";
+import { Folder, HardDrive, Sparkles, Unplug, Usb } from "lucide-react";
 import { useQueryState } from "nuqs";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
 import { CoverPlayButton } from "@/components/cover-play-button";
@@ -21,6 +22,7 @@ import {
 } from "@/components/track-table/track-table";
 import { TreeView } from "@/components/tree/tree-view";
 import type { TreeNodeShape } from "@/components/tree/types";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -224,8 +226,11 @@ export function RekordboxView() {
     defaultValue: "",
   });
   const deviceId = device || null;
+  const [ejecting, setEjecting] = useState(false);
 
-  const devices = useRekordboxDevices().data.devices;
+  // Poll the device list so an unplug/eject is noticed without a manual reload.
+  const devicesState = useRekordboxDevices(4000);
+  const devices = devicesState.data.devices;
   const status = useRekordboxStatus(deviceId);
   const enabled = status.data.available;
 
@@ -244,6 +249,35 @@ export function RekordboxView() {
     },
     [setDevice, setSelectedId],
   );
+
+  const deviceMounted = !!device && devices.some((d) => d.id === device);
+
+  // Auto-recover when the selected USB device disappears (unplugged/ejected):
+  // fall back to the local install and drop the now-unplayable playlist.
+  useEffect(() => {
+    if (!device || !devicesState.loaded || deviceMounted) return;
+    setDevice("");
+    setSelectedId("");
+    toast(`${device.split("/").pop() || "USB device"} disconnected`);
+  }, [device, deviceMounted, devicesState.loaded, setDevice, setSelectedId]);
+
+  const handleEject = useCallback(async () => {
+    const label = devices.find((d) => d.id === device)?.label ?? "USB device";
+    setEjecting(true);
+    try {
+      await api.ejectRekordboxUsb(device);
+      setSelectedId("");
+      setDevice("");
+      devicesState.refetch();
+      toast.success(`Ejected ${label}`);
+    } catch (e) {
+      toast.error(`Couldn't eject ${label}`, {
+        description: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setEjecting(false);
+    }
+  }, [device, devices, devicesState, setDevice, setSelectedId]);
 
   // Only surface the picker when there's actually a USB export to switch to.
   const devicePicker =
@@ -267,7 +301,27 @@ export function RekordboxView() {
       </Select>
     ) : null;
 
-  useTopBar({ title: <LibraryTitle>{devicePicker}</LibraryTitle> });
+  const topBarExtras =
+    devicePicker || deviceMounted ? (
+      <div className="flex items-center gap-1">
+        {devicePicker}
+        {deviceMounted && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground hover:text-foreground size-7"
+            onClick={handleEject}
+            disabled={ejecting}
+            title="Eject USB"
+            aria-label="Eject USB"
+          >
+            <Unplug className="size-3.5" />
+          </Button>
+        )}
+      </div>
+    ) : null;
+
+  useTopBar({ title: <LibraryTitle>{topBarExtras}</LibraryTitle> });
 
   useReloadHandler(() => {
     refetchPlaylists();

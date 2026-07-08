@@ -100,6 +100,16 @@ class UsbExportSource(RekordboxSource):
         with self._lock:
             self._connect()
 
+    def close(self) -> None:
+        """Close the cached DB connection (e.g. before the device is ejected)."""
+        with self._lock:
+            if self._conn is not None:
+                try:
+                    self._conn.close()
+                except Exception:  # pragma: no cover - best-effort cleanup
+                    pass
+                self._conn = None
+
     def _resolve(self, rel: str) -> Path:
         """Resolve a device-root-relative path (leading slash) to the mount."""
         return self.device_root / rel.lstrip("/")

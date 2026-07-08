@@ -247,3 +247,51 @@ def test_api_unknown_device_is_503(usb_client) -> None:
     client, _ = usb_client
     resp = client.get("/api/rekordbox/playlists", params={"device": "/nope"})
     assert resp.status_code == 503
+
+
+def test_api_eject_success_forgets_cached_source(usb_client, monkeypatch) -> None:
+    client, dev_id = usb_client
+    from backend.core.services import rekordbox as rb_service
+
+    calls: list[str] = []
+    monkeypatch.setattr(rb_service, "eject_device", calls.append)
+    rb_service.get_source(dev_id)  # warm the cache
+    assert dev_id in rb_service._usb_sources
+
+    resp = client.post("/api/rekordbox/usb/eject", params={"device": dev_id})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert calls == [dev_id]
+    assert dev_id not in rb_service._usb_sources  # source dropped before unmount
+
+
+def test_api_eject_busy_is_409(usb_client, monkeypatch) -> None:
+    client, dev_id = usb_client
+    from backend.core.services import rekordbox as rb_service
+
+    def boom(_: str) -> None:
+        raise rb_service.EjectError("Volume in use")
+
+    monkeypatch.setattr(rb_service, "eject_device", boom)
+    resp = client.post("/api/rekordbox/usb/eject", params={"device": dev_id})
+    assert resp.status_code == 409
+    assert "in use" in resp.json()["detail"]
+
+
+def test_api_eject_unknown_device_is_404(usb_client) -> None:
+    client, _ = usb_client
+    resp = client.post("/api/rekordbox/usb/eject", params={"device": "/nope"})
+    assert resp.status_code == 404
+
+
+def test_eject_device_raises_on_nonzero_exit(monkeypatch) -> None:
+    from backend.core.services.rekordbox import EjectError
+    from backend.core.services.rekordbox import devices as dev_mod
+
+    class _Result:
+        returncode = 1
+        stderr = "Unmount failed: busy"
+
+    monkeypatch.setattr(dev_mod.subprocess, "run", lambda *a, **k: _Result())
+    with pytest.raises(EjectError, match="busy"):
+        dev_mod.eject_device("/Volumes/X")

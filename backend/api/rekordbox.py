@@ -41,6 +41,10 @@ class DevicesResponse(BaseModel):
     devices: list[UsbDevice]
 
 
+class EjectResponse(BaseModel):
+    ok: bool
+
+
 class RekordboxPlaylist(BaseModel):
     id: str
     name: str
@@ -88,6 +92,19 @@ def get_usb_devices() -> DevicesResponse:
     """List mounted Rekordbox USB/SD exports that carry a readable library."""
     devices = rb_service.discover_usb_devices()
     return DevicesResponse(devices=[UsbDevice(**asdict(d)) for d in devices])
+
+
+@router.post("/usb/eject", response_model=EjectResponse)
+def eject_usb_device(device: str = Query(..., description="USB device id")) -> EjectResponse:
+    """Safely eject a mounted Rekordbox USB/SD export."""
+    if device not in {d.id for d in rb_service.discover_usb_devices()}:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not mounted")
+    rb_service.forget_usb_source(device)  # close our DB handle before unmounting
+    try:
+        rb_service.eject_device(device)
+    except rb_service.EjectError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return EjectResponse(ok=True)
 
 
 @router.get("/status", response_model=RekordboxStatus)

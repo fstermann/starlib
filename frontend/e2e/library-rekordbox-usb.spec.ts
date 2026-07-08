@@ -1,8 +1,9 @@
-import type { Route } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
 
 const DEVICE_ID = "/Volumes/TESTUSB";
+const DEVICE = { id: DEVICE_ID, label: "TESTUSB", mount_path: DEVICE_ID };
 
 const USB_PLAYLISTS = [
   {
@@ -26,8 +27,8 @@ const USB_TRACKS = [
     key: "8A",
     duration_seconds: 300,
     file_path: "/Contents/DJ USB/On The Stick.mp3",
-    comment: "soundcloud_id=999",
-    soundcloud_id: 999,
+    comment: null,
+    soundcloud_id: null,
     date_added: "2025-05-01",
     release_date: "2025-04-01",
     has_artwork: true,
@@ -70,48 +71,49 @@ function jsonRoute(body: unknown) {
     });
 }
 
+/** Mock everything except device discovery (each test drives that itself). */
+async function mockLibrary(page: Page): Promise<void> {
+  await page.route(
+    /\/api\/rekordbox\/status/,
+    jsonRoute({ available: true, reason: null }),
+  );
+  await page.route(/\/api\/rekordbox\/playlists(\?|$)/, (route) =>
+    jsonRoute({
+      playlists: route.request().url().includes("device=") ? USB_PLAYLISTS : [],
+    })(route),
+  );
+  await page.route(
+    /\/api\/rekordbox\/playlists\/[^/]+\/tracks/,
+    jsonRoute({ tracks: USB_TRACKS }),
+  );
+  await page.route(/\/api\/rekordbox\/tracks\/[^/]+\/artwork/, (route) =>
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG }),
+  );
+  await page.route(/\/api\/rekordbox\/tracks\/[^/]+\/waveform/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/octet-stream",
+      body: WAVEFORM_BYTES,
+    }),
+  );
+}
+
+async function selectDevice(page: Page): Promise<void> {
+  await page.getByRole("combobox").click();
+  await page.getByRole("option", { name: "TESTUSB" }).click();
+  await expect(page).toHaveURL(/device=/);
+}
+
 test.describe("Library: Rekordbox USB export", () => {
   test("select device, load its playlists, and play routes to the USB audio endpoint", async ({
     page,
   }) => {
     let usbAudioHit: string | null = null;
-
-    // One discovered stick.
+    await mockLibrary(page);
     await page.route(
       /\/api\/rekordbox\/usb\/devices/,
-      jsonRoute({
-        devices: [{ id: DEVICE_ID, label: "TESTUSB", mount_path: DEVICE_ID }],
-      }),
+      jsonRoute({ devices: [DEVICE] }),
     );
-    // Status available for both local and device.
-    await page.route(
-      /\/api\/rekordbox\/status/,
-      jsonRoute({ available: true, reason: null }),
-    );
-    // Playlists differ by source: local returns none, the device returns its set.
-    await page.route(/\/api\/rekordbox\/playlists(\?|$)/, (route) => {
-      const onDevice = route.request().url().includes("device=");
-      return jsonRoute({ playlists: onDevice ? USB_PLAYLISTS : [] })(route);
-    });
-    await page.route(
-      /\/api\/rekordbox\/playlists\/[^/]+\/tracks/,
-      jsonRoute({ tracks: USB_TRACKS }),
-    );
-    await page.route(/\/api\/rekordbox\/tracks\/[^/]+\/artwork/, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "image/jpeg",
-        body: TINY_JPEG,
-      }),
-    );
-    await page.route(/\/api\/rekordbox\/tracks\/[^/]+\/waveform/, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/octet-stream",
-        body: WAVEFORM_BYTES,
-      }),
-    );
-    // USB audio endpoint — record that playback routed here (with a device).
     await page.route(/\/api\/rekordbox\/tracks\/[^/]+\/audio/, (route) => {
       usbAudioHit = route.request().url();
       return route.fulfill({
@@ -122,31 +124,63 @@ test.describe("Library: Rekordbox USB export", () => {
     });
 
     await page.goto("/library?source=rekordbox");
+    await selectDevice(page);
 
-    // The device picker appears because a stick was discovered.
-    const picker = page.getByRole("combobox");
-    await expect(picker).toBeVisible();
-    await picker.click();
-    await page.getByRole("option", { name: "TESTUSB" }).click();
-
-    // Selecting the device puts it in the URL and loads its playlists.
-    await expect(page).toHaveURL(/device=/);
     const usbSet = page.getByText("USB Set");
     await expect(usbSet).toBeVisible();
-
     await usbSet.click();
     const tracks = page.getByTestId("rekordbox-tracks");
     await expect(
       tracks.getByText("On The Stick", { exact: true }),
     ).toBeVisible();
 
-    // Play the track — the cover overlay is the accessible control.
     await tracks.getByRole("button", { name: "Play On The Stick" }).click();
     await expect(page.getByTestId("waveform-player")).toBeVisible();
-
-    // Playback hit the device-scoped audio endpoint, not the local file route.
     await expect
       .poll(() => usbAudioHit)
       .toMatch(/\/api\/rekordbox\/tracks\/u-1\/audio\?device=/);
+  });
+
+  test("eject button unmounts the device and returns to the local install", async ({
+    page,
+  }) => {
+    let ejectHit: string | null = null;
+    await mockLibrary(page);
+    await page.route(
+      /\/api\/rekordbox\/usb\/devices/,
+      jsonRoute({ devices: [DEVICE] }),
+    );
+    await page.route(/\/api\/rekordbox\/usb\/eject/, (route) => {
+      ejectHit = route.request().url();
+      return jsonRoute({ ok: true })(route);
+    });
+
+    await page.goto("/library?source=rekordbox");
+    await selectDevice(page);
+
+    await page.getByRole("button", { name: "Eject USB" }).click();
+    await expect.poll(() => ejectHit).toMatch(/\/usb\/eject\?device=/);
+    // Selection falls back to the local install.
+    await expect(page).not.toHaveURL(/device=/);
+    await expect(page.getByRole("button", { name: "Eject USB" })).toHaveCount(
+      0,
+    );
+  });
+
+  test("auto-recovers to the local install when the device is unplugged", async ({
+    page,
+  }) => {
+    let present = true;
+    await mockLibrary(page);
+    await page.route(/\/api\/rekordbox\/usb\/devices/, (route) =>
+      jsonRoute({ devices: present ? [DEVICE] : [] })(route),
+    );
+
+    await page.goto("/library?source=rekordbox");
+    await selectDevice(page);
+
+    // Unplug: the next device poll (every 4s) no longer lists it.
+    present = false;
+    await expect(page).not.toHaveURL(/device=/, { timeout: 8000 });
   });
 });

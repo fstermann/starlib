@@ -14,11 +14,12 @@ from .base import (
     RekordboxTrack,
     RekordboxUnavailable,
 )
-from .devices import UsbDevice, discover_usb_devices
+from .devices import EjectError, UsbDevice, discover_usb_devices, eject_device
 from .local import LocalMasterDbSource
 from .usb import UsbExportSource
 
 __all__ = [
+    "EjectError",
     "LocalMasterDbSource",
     "RekordboxPlaylist",
     "RekordboxSource",
@@ -27,6 +28,8 @@ __all__ = [
     "UsbDevice",
     "UsbExportSource",
     "discover_usb_devices",
+    "eject_device",
+    "forget_usb_source",
     "get_source",
 ]
 
@@ -60,3 +63,10 @@ def get_source(device: str | None = None) -> RekordboxSource:
         source = UsbExportSource(device)
         _usb_sources[device] = source
     return source
+
+
+def forget_usb_source(device: str) -> None:
+    """Drop and close a cached USB source (e.g. after ejecting the device)."""
+    source = _usb_sources.pop(device, None)
+    if source is not None:
+        source.close()

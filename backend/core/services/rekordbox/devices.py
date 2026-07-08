@@ -8,11 +8,16 @@ show up — a stick with just the legacy ``export.pdb`` is skipped.
 from __future__ import annotations
 
 import glob
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from .usb import _EXPORT_DB_REL
+
+
+class EjectError(RuntimeError):
+    """Raised when a device cannot be unmounted/ejected."""
 
 
 @dataclass(frozen=True)
@@ -45,3 +50,34 @@ def discover_usb_devices() -> list[UsbDevice]:
         except OSError:
             continue
     return sorted(out, key=lambda d: d.label.lower())
+
+
+def _eject_command(mount_path: str) -> list[str]:
+    """Return the platform command to safely eject a mounted device."""
+    if sys.platform == "darwin":
+        diskutil = "/usr/sbin/diskutil" if Path("/usr/sbin/diskutil").exists() else "diskutil"
+        return [diskutil, "eject", mount_path]
+    return ["umount", mount_path]
+
+
+def eject_device(mount_path: str) -> None:
+    """Safely unmount/eject a device by its mount path.
+
+    Args:
+        mount_path: The device's mount point (its discovery id).
+
+    Raises:
+        EjectError: If the unmount command is missing, times out, or fails
+            (e.g. the volume is busy).
+    """
+    try:
+        proc = subprocess.run(
+            _eject_command(mount_path),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise EjectError(str(exc)) from exc
+    if proc.returncode != 0:
+        raise EjectError(proc.stderr.strip() or f"eject failed (exit {proc.returncode})")
