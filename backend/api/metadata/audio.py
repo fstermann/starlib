@@ -110,37 +110,24 @@ async def get_file_peaks(
     return PeaksResponse(peaks=peaks)
 
 
-@router.get("/files/{file_path:path}/audio", response_model=None)
-async def stream_audio(
-    file_path: str,
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> FileResponse:
-    """Stream an audio file.
+async def stream_local_file(resolved_path: Path) -> FileResponse:
+    """Return a browser-playable :class:`FileResponse` for a local audio file.
 
-    Formats not natively supported by browsers (e.g. AIFF) are transcoded to
-    WAV via ffmpeg and cached.  Transcoding is awaited before responding so
-    that the browser always receives a real file with Content-Length and range
-    support, which is required for seeking to work.
+    Formats not natively supported by browsers (e.g. AIFF) are transcoded to WAV
+    via ffmpeg and cached. Transcoding is awaited before responding so the
+    browser always receives a real file with Content-Length and range support,
+    which is required for seeking to work. The path must already be resolved and
+    security-checked by the caller.
 
-    Parameters
-    ----------
-    file_path : str
-        Relative or absolute path to audio file
-    root_folder : Path
-        Root music folder (injected)
+    Args:
+        resolved_path: An existing, caller-validated audio file path.
 
-    Returns
-    -------
-    FileResponse
-        Audio file bytes
+    Returns:
+        A ``FileResponse`` serving the audio (native or transcoded WAV).
 
-    Raises
-    ------
-    HTTPException
-        If the file doesn't exist or transcoding fails
+    Raises:
+        HTTPException: If the file is missing or transcoding fails.
     """
-    resolved_path = validate_file_path(file_path, root_folder)
-
     if not resolved_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
 
@@ -170,6 +157,34 @@ async def stream_audio(
         media_type=mime_type,
         headers={"Content-Disposition": _content_disposition(resolved_path.name)},
     )
+
+
+@router.get("/files/{file_path:path}/audio", response_model=None)
+async def stream_audio(
+    file_path: str,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> FileResponse:
+    """Stream an audio file.
+
+    Parameters
+    ----------
+    file_path : str
+        Relative or absolute path to audio file
+    root_folder : Path
+        Root music folder (injected)
+
+    Returns
+    -------
+    FileResponse
+        Audio file bytes
+
+    Raises
+    ------
+    HTTPException
+        If the file doesn't exist or transcoding fails
+    """
+    resolved_path = validate_file_path(file_path, root_folder)
+    return await stream_local_file(resolved_path)
 
 
 def _cached_wav_path(path: Path, cache_dir: Path) -> Path:
