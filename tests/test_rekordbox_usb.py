@@ -87,7 +87,7 @@ def device(tmp_path: Path) -> Path:
                 12800,
                 210,
                 "/Contents/BoC/Music/roygbiv.mp3",
-                "version=1.0; \nsoundcloud_id=42; \nsoundcloud_permalink=https://x",
+                "sc:42",
                 "2025-01-02",
                 "1998-06-01",
                 1,
@@ -150,7 +150,7 @@ def test_lists_tracks_with_resolved_metadata(device: Path) -> None:
     assert roygbiv.bpm == 128.0
     assert roygbiv.duration_seconds == 210
     assert roygbiv.file_path == "/Contents/BoC/Music/roygbiv.mp3"
-    assert roygbiv.soundcloud_id == 42  # parsed from the structured comment
+    assert roygbiv.soundcloud_id == 42  # parsed from the sc:<id> prefix
     assert roygbiv.date_added == "2025-01-02"
     assert roygbiv.release_date == "1998-06-01"
     assert roygbiv.has_artwork is True

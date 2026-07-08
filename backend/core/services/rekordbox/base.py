@@ -13,7 +13,6 @@ SoundCloud-id comment convention) live here so both sources reuse them.
 from __future__ import annotations
 
 import logging
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import lru_cache
@@ -100,17 +99,13 @@ class RekordboxSource(ABC):
         """Return the raw PWV4 color-preview entry bytes, or ``None``."""
 
 
-_SOUNDCLOUD_ID_RE = re.compile(r"soundcloud_id\s*=\s*(\d+)", re.IGNORECASE)
-
-
 def extract_soundcloud_id(comment: str | None) -> int | None:
     """Extract a SoundCloud track id stored in the track comment.
 
-    Convention used by the export-to-SoundCloud flow: the SoundCloud track id
-    is written into the Rekordbox comment field. Accepts a structured comment
-    holding a ``soundcloud_id=<id>`` key (as written by the export tool, e.g.
-    ``version=1.0; soundcloud_id=699524932; soundcloud_permalink=...``), a plain
-    numeric comment, or ``sc:<id>`` / ``soundcloud:<id>`` style prefixes.
+    Accepts a plain numeric comment or an ``sc:<id>`` / ``soundcloud:<id>``
+    prefix. Note: app-managed SoundCloud metadata now lives in the file's
+    ``TXXX:starlib`` tag, which Rekordbox does not import into its database, so
+    it is not available from the comment field read here.
 
     Args:
         comment: The track comment, or ``None``.
@@ -120,9 +115,6 @@ def extract_soundcloud_id(comment: str | None) -> int | None:
     """
     if not comment:
         return None
-    match = _SOUNDCLOUD_ID_RE.search(comment)
-    if match:
-        return int(match.group(1))
     text = comment.strip()
     for prefix in ("soundcloud:", "sc:"):
         if text.lower().startswith(prefix):
