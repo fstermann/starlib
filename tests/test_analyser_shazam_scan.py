@@ -39,7 +39,6 @@ from backend.core.services.analyser.events import (
 )
 from backend.core.services.analyser.shazam import ShazamMatch
 
-
 # ---------------------------------------------------------------------------
 # Scaffolding
 # ---------------------------------------------------------------------------
@@ -123,6 +122,81 @@ class TestBuildScanGrid:
 
     def test_grid_for_short_audio_yields_single_point(self) -> None:
         assert _build_scan_grid(cadence=45.0, last_start=0.0) == [0.0]
+
+
+class TestBuildSectionGrid:
+    def _sec(self, start_s: float, end_s: float) -> analyser_db.SectionRow:
+        return analyser_db.SectionRow(section_index=0, start_s=start_s, end_s=end_s, confidence=0.8)
+
+    def test_samples_interior_by_spacing_avoiding_boundaries(self) -> None:
+        from backend.core.services.analyser.controller import _build_section_grid
+
+        grid = _build_section_grid(
+            [self._sec(0.0, 300.0)],
+            region=(0.0, 300.0),
+            window=16.0,
+            spacing_s=60.0,
+        )
+        # 20 s guard each end → interior (20 .. 264), len 244; one probe per
+        # 60 s → 5 evenly-spaced points from 20 to 264.
+        assert len(grid) == 5
+        assert all(20.0 <= p <= 264.0 for p in grid)
+        assert grid == sorted(grid)
+
+    def test_short_interior_gets_min_two_probes(self) -> None:
+        from backend.core.services.analyser.controller import _build_section_grid
+
+        # Interior shorter than the spacing still gets the 2-probe floor so
+        # the consensus gate stays reachable.
+        grid = _build_section_grid(
+            [self._sec(0.0, 120.0)],
+            region=(0.0, 120.0),
+            window=16.0,
+            spacing_s=200.0,
+        )
+        # guard 20 → interior (20 .. 84); floor of 2 → endpoints.
+        assert grid == [20.0, 84.0]
+
+    def test_short_section_falls_back_to_centred_window(self) -> None:
+        from backend.core.services.analyser.controller import _build_section_grid
+
+        # Section (10..24) is shorter than the 16 s window → one centred clip.
+        grid = _build_section_grid(
+            [self._sec(10.0, 24.0)],
+            region=(0.0, 300.0),
+            window=16.0,
+            spacing_s=45.0,
+        )
+        assert grid == [10.0]
+
+    def test_clamps_points_into_region(self) -> None:
+        from backend.core.services.analyser.controller import _build_section_grid
+
+        # Section spans far past the region; every probe must keep its
+        # [p, p+window] clip inside the region.
+        grid = _build_section_grid(
+            [self._sec(0.0, 300.0)],
+            region=(0.0, 50.0),
+            window=16.0,
+            spacing_s=45.0,
+        )
+        assert grid
+        assert all(0.0 <= p <= 50.0 - 16.0 for p in grid)
+
+    def test_each_section_gets_probes(self) -> None:
+        from backend.core.services.analyser.controller import _build_section_grid
+
+        grid = _build_section_grid(
+            [self._sec(0.0, 200.0), self._sec(200.0, 400.0)],
+            region=(0.0, 400.0),
+            window=16.0,
+            spacing_s=200.0,
+        )
+        # Spacing exceeds each interior → 2-probe floor per section, so both
+        # sections are sampled (two points below 200, two above).
+        assert len(grid) == 4
+        assert sum(1 for p in grid if p < 200.0) == 2
+        assert sum(1 for p in grid if p > 200.0) == 2
 
 
 class TestAggregateTimeline:
@@ -228,10 +302,12 @@ async def test_shazam_scan_emits_scan_and_timeline_events(monkeypatch: pytest.Mo
         if isinstance(ev, JobCompleteEvent):
             break
 
-    # Four scan points (0, 60, 120, 180 — last_start=200-12=188 admits 180);
-    # first two match the same track, last two miss.
+    # No sections emitted → fallback grid: sweep spacing 45 s, window 16 s,
+    # last_start = 200 - 16 = 184 → points 0, 45, 90, 135, 180. The
+    # responses are consumed in call order (FakeShazam maps by call index),
+    # so the first two points match the same track and the rest miss.
     same = ShazamMatch(title="Speedhouse Anthem", artist="DJ X", shazam_id="abc", confidence=0.9)
-    client = FakeShazam(responses={0.0: same, 60.0: same, 120.0: None, 180.0: None})
+    client = FakeShazam(responses={0.0: same, 45.0: same, 90.0: None, 135.0: None})
 
     received: list[Any] = []
 
@@ -250,15 +326,15 @@ async def test_shazam_scan_emits_scan_and_timeline_events(monkeypatch: pytest.Mo
 
     scans = [e for e in received if isinstance(e, ShazamScanEvent)]
     timeline = [e for e in received if isinstance(e, TrackTimelineEvent)]
-    assert len(scans) == 4
-    assert {s.scan_s for s in scans} == {0.0, 60.0, 120.0, 180.0}
-    # Two consecutive hits → one materialised track. The scan loop now
-    # broadcasts the row live (insert at scan_s=0) and re-broadcasts
-    # the final state at end-of-loop, so we expect ≥ 1 timeline event
-    # and the last one carries the fully-extended run [0..60].
+    assert len(scans) == 5
+    assert {s.scan_s for s in scans} == {0.0, 45.0, 90.0, 135.0, 180.0}
+    # Two agreeing hits → one materialised track (clears consensus). The scan
+    # loop broadcasts the row live (insert at scan_s=0) and re-broadcasts the
+    # final state at end-of-loop, so we expect ≥ 1 timeline event and the
+    # last one carries the fully-extended run [0..45].
     assert len(timeline) >= 1
     last = timeline[-1]
-    assert last.start_s == 0.0 and last.end_s == 60.0
+    assert last.start_s == 0.0 and last.end_s == 45.0
     assert last.title == "Speedhouse Anthem"
 
 
@@ -378,9 +454,7 @@ def test_shazam_scan_endpoint_rejects_single_with_only_bpm_range(http_client: An
         options={"pitch_strategy": "single", "bpm_range": [120.0, 140.0]},
     )
     analyser_db.update_job_status("j-single-no-target", status="complete")
-    resp = http_client.post(
-        "/api/analyser/sets/j-single-no-target/shazam-scan", json={}
-    )
+    resp = http_client.post("/api/analyser/sets/j-single-no-target/shazam-scan", json={})
     assert resp.status_code == 400
     assert "target_bpm" in resp.json()["detail"]
 
@@ -416,9 +490,7 @@ async def test_cancel_shazam_scan_stops_at_next_point(monkeypatch: pytest.Monkey
         ],
     )
     job_id = await start_job(
-        options=AnalyserJobOptions(
-            window_s=30.0, hop_s=25.0, scan_cadence_s=60.0, scan_window_s=10.0
-        ),
+        options=AnalyserJobOptions(window_s=30.0, hop_s=25.0, scan_cadence_s=60.0, scan_window_s=10.0),
         soundcloud_id=42,
         fetch_audio=_fake_fetch_audio,
         shazam_client=FakeShazam(),
@@ -446,8 +518,7 @@ async def test_cancel_shazam_scan_stops_at_next_point(monkeypatch: pytest.Monkey
     rows = analyser_db.list_shazam_scans(job_id)
     distinct_points = {r.scan_s for r in rows}
     assert 0 < len(distinct_points) < 11, (
-        f"expected scan to bail early, got {len(distinct_points)} points "
-        "(grid would have 10 at 60s cadence × 600s)"
+        f"expected scan to bail early, got {len(distinct_points)} points (the full grid over 600 s has far more)"
     )
 
 
@@ -555,9 +626,7 @@ class TestGridMinusRanges:
         from backend.core.services.analyser.controller import _grid_minus_ranges
 
         # Range [50, 90] eats the 60-point (60..72 overlaps) but not 0 or 120.
-        kept = _grid_minus_ranges(
-            [0.0, 60.0, 120.0], [(50.0, 90.0)], window=12.0
-        )
+        kept = _grid_minus_ranges([0.0, 60.0, 120.0], [(50.0, 90.0)], window=12.0)
         assert kept == [0.0, 120.0]
 
     def test_partial_overlap_at_boundary_drops_the_point(self) -> None:
@@ -602,9 +671,10 @@ async def test_shazam_scan_tier_cadence_and_region(
 
     rows = analyser_db.list_shazam_scans(job_id)
     points = sorted({r.scan_s for r in rows})
-    # last_start = min(200, 80) - 8 = 72; pinpoint cadence 8s from 40
-    # → 40, 48, 56, 64, 72.
-    assert points == [40.0, 48.0, 56.0, 64.0, 72.0]
+    # No sections emitted → fallback cadence grid (cadence = probe spacing).
+    # last_start = min(200, 80) - 12 (pinpoint window) = 68; pinpoint spacing
+    # 10 s from 40 → 40, 50, 60.
+    assert points == [40.0, 50.0, 60.0]
     assert all(r.tier == "pinpoint" for r in rows)
 
 
@@ -650,9 +720,10 @@ async def test_shazam_scan_skips_confirmed_track_ranges(
     )
 
     points = sorted({r.scan_s for r in analyser_db.list_shazam_scans(job_id)})
-    # Sweep grid 60s cadence over 240s, last_start = 240 - 12 = 228 →
-    # full grid would be 0, 60, 120, 180. Confirmed [50,130] eats 60 + 120.
-    assert points == [0.0, 180.0]
+    # No sections → fallback grid: sweep spacing 45 s, window 16 s over 240 s,
+    # last_start = 240 - 16 = 224 → full grid 0, 45, 90, 135, 180. Confirmed
+    # [50,130] eats the 45 and 90 points (their 16 s windows overlap it).
+    assert points == [0.0, 135.0, 180.0]
 
 
 @pytest.mark.asyncio
@@ -693,11 +764,7 @@ async def test_finer_tier_reuses_coarser_cached_match(
     )
 
     client = FakeShazam(
-        responses={
-            0.0: ShazamMatch(
-                title="Fresh", artist="New", shazam_id="fresh-key", confidence=0.95
-            )
-        }
+        responses={0.0: ShazamMatch(title="Fresh", artist="New", shazam_id="fresh-key", confidence=0.95)}
     )
     await start_shazam_scan(
         job_id,
@@ -783,13 +850,9 @@ async def test_live_scan_events_carry_active_tier_even_on_cache_hits(
     # current run's progress; events before are the replay path
     # (legitimately carrying the historical sweep tier).
     started_idx = next(
-        i
-        for i, e in enumerate(received)
-        if isinstance(e, ShazamScanStartedEvent) and e.tier == "refine"
+        i for i, e in enumerate(received) if isinstance(e, ShazamScanStartedEvent) and e.tier == "refine"
     )
-    live_scans = [
-        e for e in received[started_idx + 1 :] if isinstance(e, ShazamScanEvent)
-    ]
+    live_scans = [e for e in received[started_idx + 1 :] if isinstance(e, ShazamScanEvent)]
     assert live_scans, "expected at least one live scan event after refine started"
     bad = [e for e in live_scans if e.tier != "refine"]
     assert not bad, (
@@ -867,9 +930,7 @@ async def test_sync_persists_set_bpm_and_pitch_offset(
     # Two consecutive matching scans → one run from 0..60. Use distinct
     # confidences so the aggregator picks the high-confidence row's
     # pitch_offset as representative.
-    same = ShazamMatch(
-        title="Pinned", artist="DJ Y", shazam_id="kkk", confidence=0.9
-    )
+    same = ShazamMatch(title="Pinned", artist="DJ Y", shazam_id="kkk", confidence=0.9)
     client = FakeShazam(responses={0.0: same, 60.0: same})
     await start_shazam_scan(
         job_id,

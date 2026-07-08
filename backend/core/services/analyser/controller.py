@@ -46,6 +46,7 @@ from backend.core.services.analyser.events import (
 )
 from backend.core.services.analyser.pipeline import (
     AnalyserBinaryOptions,
+    _summarise_section_for_shazam,
     run_analyser_subprocess,
     select_pitch_offsets,
 )
@@ -60,17 +61,23 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Tier configuration — Shazam scanning runs in user-driven passes, each
-# successively finer. Cadence is the grid step (s) between scan points;
-# window is the audio length (s) fed to one Shazam call. Tier ordering
+# successively finer. Scan points are placed inside detected sections
+# (``_build_section_grid``): ``spacing_s`` is how far apart probes sit within
+# a section's interior (one probe per that many seconds, floored at 2 so
+# consensus stays reachable), ``window`` is the audio length (s) fed to one
+# Shazam call. Tighter spacing → more independent windows, so more recall
+# *and* more shots at the agreement the consensus gate needs (see
+# ``sync_shazam_runs_to_tracks``). ``spacing_s`` doubles as the fallback grid
+# cadence when segmentation produced no sections. Tier ordering
 # (sweep < refine < pinpoint) drives cache-hit decisions: a finer-tier
 # request will overwrite a coarser cached row, but not vice versa.
 # ---------------------------------------------------------------------------
 
 
 SHAZAM_TIERS: dict[str, dict[str, float]] = {
-    "sweep": {"cadence_s": 60.0, "window_s": 12.0},
-    "refine": {"cadence_s": 20.0, "window_s": 12.0},
-    "pinpoint": {"cadence_s": 8.0, "window_s": 8.0},
+    "sweep": {"spacing_s": 45.0, "window_s": 16.0},
+    "refine": {"spacing_s": 20.0, "window_s": 16.0},
+    "pinpoint": {"spacing_s": 10.0, "window_s": 12.0},
 }
 
 _TIER_ORDER: dict[str, int] = {"sweep": 0, "refine": 1, "pinpoint": 2}
@@ -100,8 +107,10 @@ class AnalyserJobOptions(BaseModel):
     # the segmenter put boundaries.
     scan_cadence_s: float = Field(default=45.0, gt=0)
     # Length of audio fed to each Shazam call. shazamio's recogniser uses
-    # 10 s internally; 12 s gives it a small overlap to settle on.
-    scan_window_s: float = Field(default=12.0, gt=0)
+    # 10 s internally; 16 s gives it more landmarks to match, which matters
+    # on repetitive electronic content where short windows alias onto the
+    # wrong (generic) track.
+    scan_window_s: float = Field(default=16.0, gt=0)
 
     def to_binary_options(self, *, region: tuple[float, float] | None = None) -> AnalyserBinaryOptions:
         return AnalyserBinaryOptions(
@@ -806,7 +815,8 @@ async def _run_shazam_scan(
     audio_path = await fetch_audio()
 
     tier_params = SHAZAM_TIERS[tier]
-    cadence = max(float(cadence_s if cadence_s is not None else tier_params["cadence_s"]), 1.0)
+    # ``cadence_s`` override doubles as the probe spacing inside sections.
+    spacing = max(float(cadence_s if cadence_s is not None else tier_params["spacing_s"]), 1.0)
     window = max(float(window_s if window_s is not None else tier_params["window_s"]), 1.0)
 
     region_start = max(0.0, region[0]) if region else 0.0
@@ -815,9 +825,21 @@ async def _run_shazam_scan(
         logger.info("analyser: shazam scan got empty region for job %s", state.job_id)
         return
 
-    # Step from region_start to the latest start that still fits a full window.
-    last_start = max(region_start, region_end - window)
-    grid = _build_scan_grid(cadence=cadence, start=region_start, last_start=last_start)
+    # Place probes inside detected sections, away from the boundary zones
+    # where the DJ crossfades two tracks together (landmark fingerprinting
+    # fails there). Fall back to a uniform cadence grid only when no
+    # sections exist (segmentation disabled or too short to segment).
+    sections = db.list_sections(state.job_id) if state.options.sections_enabled else []
+    if sections:
+        grid = _build_section_grid(
+            sections,
+            region=(region_start, region_end),
+            window=window,
+            spacing_s=spacing,
+        )
+    else:
+        last_start = max(region_start, region_end - window)
+        grid = _build_scan_grid(cadence=spacing, start=region_start, last_start=last_start)
     confirmed_ranges = db.list_confirmed_ranges(state.job_id)
     grid_full = grid
     grid = _grid_minus_ranges(grid, confirmed_ranges, window=window)
@@ -830,14 +852,14 @@ async def _run_shazam_scan(
     state.shazam_tasks = []
     logger.info(
         "analyser: shazam scan starting for job %s tier=%s — %d points "
-        "(skipped %d confirmed) across %.1f-%.1fs (cadence %.1fs window %.1fs)",
+        "(skipped %d confirmed) across %.1f-%.1fs (spacing %.1fs window %.1fs)",
         state.job_id,
         tier,
         len(grid),
         skipped,
         region_start,
         region_end,
-        cadence,
+        spacing,
         window,
     )
     # Reset the frontend's per-run progress before any scan event lands.
@@ -1140,6 +1162,72 @@ async def _shazam_at(
     )
 
 
+def _build_section_grid(
+    sections: list[db.SectionRow],
+    *,
+    region: tuple[float, float],
+    window: float,
+    spacing_s: float,
+    min_probes: int = 2,
+    edge_guard_s: float = 20.0,
+) -> list[float]:
+    """Place Shazam probes in the stable interior of each detected section.
+
+    A section boundary is where the DJ crossfades the outgoing and incoming
+    track together — landmark fingerprinting fails in that overlap because
+    peaks from both tracks collide. We strip an ``edge_guard_s`` margin at
+    each end and sample the interior every ``spacing_s`` seconds (with a
+    floor of ``min_probes`` so even a short section can reach consensus).
+    Sampling by spacing — rather than a fixed count — keeps long sections
+    (which carry a full track) densely covered, so a real track gets several
+    recall chances and several shots at the agreement the consensus gate
+    needs, while a one-off generic match still lands on a single window.
+    Sections too short for a guarded interior get one centred probe. Every
+    point is clamped so its ``[p, p+window]`` clip stays inside ``region``.
+    """
+    region_start, region_end = region
+    last_admissible = max(region_start, region_end - window)
+    points: list[float] = []
+    for sec in sections:
+        sec_start = max(float(sec.start_s), region_start)
+        sec_end = min(float(sec.end_s), region_end)
+        if sec_end - sec_start <= 0.0:
+            continue
+        # Latest start that still fits a full window inside the section.
+        sec_last_start = sec_end - window
+        if sec_last_start <= sec_start:
+            # Too short to guard — centre one window as best we can.
+            offset, _ = _summarise_section_for_shazam(sec_start, sec_end, window)
+            points.append(_clamp(offset, region_start, last_admissible))
+            continue
+        guard = max(0.0, min(edge_guard_s, (sec_end - sec_start - window) / 2.0))
+        lo = sec_start + guard
+        hi = sec_last_start - guard
+        if hi < lo:
+            lo = hi = (sec_start + sec_last_start) / 2.0
+        # One probe per ``spacing_s`` of guarded interior, floored at
+        # ``min_probes`` so consensus stays reachable in short sections.
+        n = max(min_probes, int((hi - lo) / spacing_s) + 1)
+        if n <= 1:
+            fracs = [0.5]
+        else:
+            fracs = [i / (n - 1) for i in range(n)]
+        for f in fracs:
+            points.append(_clamp(lo + f * (hi - lo), region_start, last_admissible))
+    # Sort + de-dup (clamping can collapse points from overlapping/edge
+    # sections onto each other).
+    grid: list[float] = []
+    for p in sorted(points):
+        rp = round(p, 3)
+        if not grid or abs(rp - grid[-1]) > 1e-3:
+            grid.append(rp)
+    return grid
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
 def _build_scan_grid(*, cadence: float, last_start: float, start: float = 0.0) -> list[float]:
     grid: list[float] = []
     t = start
@@ -1346,6 +1434,11 @@ def sync_shazam_runs_to_tracks(job_id: str) -> int:
             # don't reach this code path anyway since misses get title=None
             # and aggregation drops them.)
             continue
+        # Every match is materialised, including single-window ones. The
+        # frontend marks tracks backed by < 2 agreeing windows as
+        # "tentative" rather than hiding them — visible recall, with a clear
+        # signal of which matches are corroborated. (See ``supportByShazamId``
+        # in tracklist-panel.tsx.)
         set_bpm = _median_bpm_in_range(windows, run.start_s, run.end_s)
         existing = db.get_track_by_shazam_id(job_id, run.shazam_id)
         if existing is None:

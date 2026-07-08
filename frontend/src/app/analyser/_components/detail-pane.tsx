@@ -163,7 +163,7 @@ export function AnalyserDetailPane({
       <header className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-baseline gap-2.5">
           <span className={FIELD_LABEL}>Range</span>
-          <h2 className="text-text font-mono text-sm font-semibold tabular-nums">
+          <h2 className="text-text text-sm font-semibold tabular-nums">
             {formatTimecode(start_s)} – {formatTimecode(end_s)}
           </h2>
           <span className="text-text-subtle text-xs tabular-nums">
@@ -205,7 +205,7 @@ export function AnalyserDetailPane({
                       <span className="text-text-muted"> — {t.artist}</span>
                     )}
                   </span>
-                  <span className="text-text-subtle font-mono tabular-nums">
+                  <span className="text-text-subtle tabular-nums">
                     {Math.round(t.confidence * 100)}%
                   </span>
                 </li>
@@ -339,7 +339,7 @@ function BpmFix({
         }}
         inputMode="decimal"
         placeholder="BPM"
-        className="h-8 w-20 font-mono text-sm tabular-nums"
+        className="h-8 w-20 text-sm tabular-nums"
         data-testid="detail-bpm-input"
       />
       <Button
@@ -359,7 +359,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className={FIELD_LABEL}>{label}</span>
-      <span className="text-text font-mono text-sm tabular-nums">{value}</span>
+      <span className="text-text text-sm tabular-nums">{value}</span>
     </div>
   );
 }

@@ -105,9 +105,7 @@ def test_update_track_marks_user_edited() -> None:
     )
     assert row.user_edited is False
 
-    analyser_db.update_track(
-        "job-1", row.id, start_s=10.0, mark_user_edited=True
-    )
+    analyser_db.update_track("job-1", row.id, start_s=10.0, mark_user_edited=True)
     after = analyser_db.list_tracks("job-1")[0]
     assert after.start_s == 10.0
     assert after.user_edited is True
@@ -143,6 +141,24 @@ def test_sync_materialises_shazam_runs() -> None:
     assert titles == ["First", "Second"]
 
 
+def test_single_scan_match_is_materialised() -> None:
+    """A lone match (one scan point) still becomes a track — single-window
+    hits are surfaced (the frontend marks them tentative), not dropped."""
+    _seed_job()
+    analyser_db.upsert_shazam_scan(
+        job_id="job-1",
+        scan_s=0.0,
+        pitch_offset=0.0,
+        title="Lonely",
+        artist="A",
+        shazam_id="shz-lonely",
+        confidence=0.95,
+    )
+    inserted = analyser_controller.sync_shazam_runs_to_tracks("job-1")
+    assert inserted == 1
+    assert [t.title for t in analyser_db.list_tracks("job-1")] == ["Lonely"]
+
+
 def test_sync_is_idempotent() -> None:
     _seed_job()
     _seed_shazam_run("job-1", 0.0, "First", "shz-1")
@@ -158,9 +174,7 @@ def test_sync_preserves_user_edits() -> None:
     _seed_shazam_run("job-1", 0.0, "Original", "shz-1")
     analyser_controller.sync_shazam_runs_to_tracks("job-1")
     row = analyser_db.list_tracks("job-1")[0]
-    analyser_db.update_track(
-        "job-1", row.id, start_s=99.0, title="My Edit", mark_user_edited=True
-    )
+    analyser_db.update_track("job-1", row.id, start_s=99.0, title="My Edit", mark_user_edited=True)
 
     # Re-sync — the existing (job_id, shazam_id) row should be untouched.
     analyser_controller.sync_shazam_runs_to_tracks("job-1")
@@ -258,15 +272,8 @@ def test_routes_404(http_client: TestClient) -> None:
         ).status_code
         == 404
     )
-    assert (
-        http_client.delete("/api/analyser/sets/nope/tracks/1").status_code == 404
-    )
-    assert (
-        http_client.patch(
-            "/api/analyser/sets/nope/tracks/1", json={"start_s": 5.0}
-        ).status_code
-        == 404
-    )
+    assert http_client.delete("/api/analyser/sets/nope/tracks/1").status_code == 404
+    assert http_client.patch("/api/analyser/sets/nope/tracks/1", json={"start_s": 5.0}).status_code == 404
 
 
 def test_reset_wipes_tracks_and_keeps_job_row(http_client: TestClient) -> None:

@@ -63,6 +63,10 @@ function AnalyserPageInner() {
   const handleFocusTrack = useCallback((key: string) => {
     setFocusedTrack((prev) => ({ key, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
+  // Minimum agreeing scan windows for a Shazam track to be listed. 1 shows
+  // every match (single-window hits flagged tentative); higher values hide
+  // weak/likely-generic matches from both the tracklist and the timeline.
+  const [minMatches, setMinMatches] = useState(1);
   // Remember which job the user asked to stop, so the Stop button can
   // show "Stopping…" until the run actually winds down.
   const [stopRequestedJob, setStopRequestedJob] = useState<string | null>(null);
@@ -404,6 +408,7 @@ function AnalyserPageInner() {
           onEditBounds={(track, bounds) =>
             void handleEditBounds(track as TrackTimelineEntry, bounds)
           }
+          minMatches={minMatches}
         />
         <div className="flex min-h-0 flex-1 gap-4">
           <div className="flex w-1/3 min-w-0 flex-col gap-4 overflow-y-auto pr-1">
@@ -471,6 +476,8 @@ function AnalyserPageInner() {
             confirmed={confirmed}
             onToggleConfirmed={toggleConfirmed}
             onTracklistChanged={refresh}
+            minMatches={minMatches}
+            onMinMatchesChange={setMinMatches}
           />
         </div>
       </div>

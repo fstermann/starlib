@@ -3,7 +3,11 @@
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { formatTimecode, type TrackTimelineEntry } from "@/lib/analyser";
+import {
+  formatTimecode,
+  windowSupport,
+  type TrackTimelineEntry,
+} from "@/lib/analyser";
 import { searchTracks } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
@@ -120,6 +124,9 @@ interface TimelineProps {
     track: DerivedRun,
     bounds: { start_s: number | null; end_s: number | null },
   ) => void;
+  /** Minimum agreeing scan windows for a Shazam track to render a band —
+   *  kept in sync with the tracklist's filter so the two views agree. */
+  minMatches?: number;
 }
 
 const ROW_HEIGHTS = {
@@ -162,6 +169,7 @@ export function AnalyserTimeline({
   onFocusTrack,
   confirmed,
   onEditBounds,
+  minMatches = 1,
 }: TimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ x0: number; x1: number } | null>(null);
@@ -331,6 +339,7 @@ export function AnalyserTimeline({
           onFocusTrack={onFocusTrack}
           confirmed={confirmed}
           onEditBounds={onEditBounds}
+          minMatches={minMatches}
         />
 
         {/* Confirmed-track columns over the lanes above the track lane, so
@@ -949,6 +958,7 @@ function TracksLane({
   onFocusTrack,
   confirmed,
   onEditBounds,
+  minMatches = 1,
 }: {
   scans: AnalyserUiState["scans"];
   timeline: AnalyserUiState["timeline"];
@@ -960,9 +970,25 @@ function TracksLane({
     track: DerivedRun,
     bounds: { start_s: number | null; end_s: number | null },
   ) => void;
+  minMatches?: number;
 }) {
   const derived = useMemo(() => aggregateScans(scans), [scans]);
-  const tracks: DerivedRun[] = timeline.length > 0 ? timeline : derived;
+  const allTracks: DerivedRun[] = timeline.length > 0 ? timeline : derived;
+  // Same min-matches filter as the tracklist so a hidden track doesn't
+  // leave an orphan band on the timeline. Scan-ticks below still show every
+  // probe, so the underlying matches remain visible.
+  const support = useMemo(() => windowSupport(scans), [scans]);
+  const tracks = useMemo(
+    () =>
+      minMatches <= 1
+        ? allTracks
+        : allTracks.filter((t) => {
+            if (t.shazam_id == null) return true;
+            if ("id" in t && confirmed?.has(String(t.id))) return true;
+            return (support.get(t.shazam_id) ?? 0) >= minMatches;
+          }),
+    [allTracks, minMatches, support, confirmed],
+  );
   const artworks = useTrackArtworks(tracks);
   const groups = useMemo(
     () => groupOverlappingTracks(tracks, duration),

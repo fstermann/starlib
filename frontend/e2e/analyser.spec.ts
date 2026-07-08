@@ -1460,6 +1460,11 @@ test.describe("Set Analyser", () => {
       "data-disabled",
       "",
     );
+    // The hint spells out the section-driven placement (probe spacing inside
+    // each section), not a flat across-the-whole-set cadence.
+    await expect(page.getByTestId("run-shazam-item-sweep")).toContainText(
+      "16 s clip every 45 s in each section",
+    );
   });
 
   test("trash button DELETEs the track and refreshes", async ({ page }) => {
@@ -1566,6 +1571,149 @@ test.describe("Set Analyser", () => {
     await expect.poll(() => deleteCalls).toBeGreaterThan(0);
     await expect.poll(() => snapshotCalls).toBeGreaterThan(1);
     await expect(page.getByTestId("tracklist-row")).toHaveCount(0);
+  });
+
+  test("single-window matches render tentative; min-matches slider hides them", async ({
+    page,
+  }) => {
+    const TENT_JOB = "test-tentative-job";
+
+    const snapshot = {
+      id: TENT_JOB,
+      soundcloud_id: 1,
+      source_url: null,
+      title: "Tentative Set",
+      artist: "Tester",
+      duration_s: 300.0,
+      status: "complete",
+      options: {
+        pitch_strategy: "none",
+        window_s: 30,
+        hop_s: 25,
+        min_section_gap_s: 90,
+        sections_enabled: true,
+        scan_cadence_s: 45,
+        scan_window_s: 16,
+      },
+      error: null,
+      created_at: 0,
+      updated_at: 0,
+      windows: [],
+      sections: [],
+      // "Solid Track" recognised at two windows → corroborated.
+      // "Maybe Track" recognised at one window → tentative.
+      scans: [
+        {
+          scan_s: 20,
+          title: "Solid Track",
+          artist: "A",
+          shazam_id: "shz-solid",
+          confidence: 0.9,
+          pitch_offset: 0,
+        },
+        {
+          scan_s: 80,
+          title: "Solid Track",
+          artist: "A",
+          shazam_id: "shz-solid",
+          confidence: 0.9,
+          pitch_offset: 0,
+        },
+        {
+          scan_s: 200,
+          title: "Maybe Track",
+          artist: "B",
+          shazam_id: "shz-maybe",
+          confidence: 0.9,
+          pitch_offset: 0,
+        },
+      ],
+      timeline: [
+        {
+          id: 1,
+          start_s: 20,
+          end_s: 80,
+          title: "Solid Track",
+          artist: "A",
+          shazam_id: "shz-solid",
+          confidence: 0.9,
+          source: "shazam",
+        },
+        {
+          id: 2,
+          start_s: 200,
+          end_s: 200,
+          title: "Maybe Track",
+          artist: "B",
+          shazam_id: "shz-maybe",
+          confidence: 0.9,
+          source: "shazam",
+        },
+      ],
+    };
+
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${TENT_JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(snapshot),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${TENT_JOB}/events$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: sseBody([
+            {
+              event: "job.complete",
+              data: { type: "job.complete", job_id: TENT_JOB },
+            },
+          ]),
+        }),
+    );
+
+    await page.goto(`/analyser?job=${TENT_JOB}`);
+    await expect(page.getByTestId("tracklist-row")).toHaveCount(2);
+
+    const solid = page
+      .getByTestId("tracklist-row")
+      .filter({ hasText: "Solid Track" });
+    const maybe = page
+      .getByTestId("tracklist-row")
+      .filter({ hasText: "Maybe Track" });
+
+    // The single-window match is surfaced (visible row) but flagged tentative.
+    await expect(maybe).toHaveAttribute("data-tentative", "true");
+    await expect(maybe.getByTestId("tracklist-tentative")).toBeVisible();
+    // The two-window match is shown without the caveat.
+    await expect(solid).toHaveAttribute("data-tentative", "false");
+    await expect(solid.getByTestId("tracklist-tentative")).toHaveCount(0);
+
+    // Raise the min-matches filter to 2: the single-window "Maybe Track" is
+    // hidden, the corroborated "Solid Track" stays.
+    const thumb = page.getByTestId("min-matches-slider").getByRole("slider");
+    await thumb.focus();
+    await thumb.press("ArrowRight");
+    await expect(page.getByTestId("min-matches-value")).toHaveText("2");
+    await expect(page.getByTestId("tracklist-row")).toHaveCount(1);
+    await expect(
+      page.getByTestId("tracklist-row").filter({ hasText: "Maybe Track" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByTestId("tracklist-row").filter({ hasText: "Solid Track" }),
+    ).toHaveCount(1);
+    // The hidden count surfaces in the header.
+    await expect(page.getByTestId("tracklist-panel")).toContainText("1 hidden");
   });
 
   test("add manual track flow POSTs and renders new row", async ({ page }) => {

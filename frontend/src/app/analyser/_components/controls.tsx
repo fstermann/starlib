@@ -324,8 +324,8 @@ const TIER_LABEL: Record<ShazamTier, string> = {
   pinpoint: "Pinpoint",
 };
 
-/** One-liner role per tier; the clip length + cadence are appended from
- *  ``SHAZAM_TIER_DEFAULTS`` so the "how long a snippet is" question the
+/** One-liner role per tier; the probe spacing + clip length are appended
+ *  from ``SHAZAM_TIER_DEFAULTS`` so the "how often, how long" question the
  *  buttons never answered is now spelled out — and stays in sync with the
  *  backend table. */
 const TIER_ROLE: Record<ShazamTier, string> = {
@@ -335,8 +335,8 @@ const TIER_ROLE: Record<ShazamTier, string> = {
 };
 
 function tierHint(tier: ShazamTier): string {
-  const { cadence_s, window_s } = SHAZAM_TIER_DEFAULTS[tier];
-  return `${TIER_ROLE[tier]} ${window_s} s clip every ${cadence_s} s.`;
+  const { spacing_s, window_s } = SHAZAM_TIER_DEFAULTS[tier];
+  return `${TIER_ROLE[tier]} ${window_s} s clip every ${spacing_s} s in each section.`;
 }
 
 const TIER_ORDER: ReadonlyArray<ShazamTier> = ["sweep", "refine", "pinpoint"];

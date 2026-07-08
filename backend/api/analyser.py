@@ -100,10 +100,12 @@ class ShazamScanRequest(BaseModel):
     Shazam quota. ``overrides`` lets the user adjust target_bpm, etc.
     without a separate PATCH endpoint.
 
-    ``tier`` selects the scan resolution: ``sweep`` (60 s), ``refine``
-    (20 s), or ``pinpoint`` (8 s). ``region`` restricts the scan to one
-    span (used for "rescan this part"); ``cadence_s`` / ``window_s``
-    override the tier defaults for custom-resolution rescans.
+    ``tier`` selects how many probes to place per detected section:
+    ``sweep`` (2), ``refine`` (3), or ``pinpoint`` (4) — more probes give
+    the consensus gate more independent windows to agree on. ``region``
+    restricts the scan to one span (used for "rescan this part");
+    ``cadence_s`` / ``window_s`` override the defaults for custom rescans
+    (``cadence_s`` only applies to the no-sections fallback grid).
     """
 
     tier: str = "sweep"

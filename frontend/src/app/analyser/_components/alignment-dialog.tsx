@@ -19,8 +19,8 @@ import {
   formatTimecode,
   jobAudioUrl,
   pitchSpeedRatio,
-  type TrackTimelineEntry,
   updateTrack,
+  type TrackTimelineEntry,
 } from "@/lib/analyser";
 import { getCachedSoundcloudStreamUrl } from "@/lib/soundcloud-cache";
 
@@ -279,10 +279,7 @@ export function AlignmentDialog({
     const scContainer = scContainerRef.current;
     if (setContainer && setReady) {
       const halfWidth = setContainer.clientWidth / 2;
-      setContainer.scrollLeft = Math.max(
-        0,
-        newStartS * PX_PER_S - halfWidth,
-      );
+      setContainer.scrollLeft = Math.max(0, newStartS * PX_PER_S - halfWidth);
     }
     if (scContainer && scReady) {
       const halfWidth = scContainer.clientWidth / 2;
@@ -327,13 +324,10 @@ export function AlignmentDialog({
     },
     [],
   );
-  const onScPointerUp = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      dragRef.current = null;
-      (e.target as HTMLDivElement).releasePointerCapture(e.pointerId);
-    },
-    [],
-  );
+  const onScPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null;
+    (e.target as HTMLDivElement).releasePointerCapture(e.pointerId);
+  }, []);
 
   // Stop both players when the dialog closes.
   useEffect(() => {
@@ -395,27 +389,23 @@ export function AlignmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-2xl"
-        data-testid="alignment-dialog"
-      >
+      <DialogContent className="max-w-2xl" data-testid="alignment-dialog">
         <DialogHeader>
           <DialogTitle>Align &ldquo;{track.title}&rdquo;</DialogTitle>
           <DialogDescription>
-            Line up the kicks: the mix on top, the original below. Drag
-            the original to nudge, or use the slider. Save when they
-            match.
+            Line up the kicks: the mix on top, the original below. Drag the
+            original to nudge, or use the slider. Save when they match.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
           <div className="border-border bg-surface-2 flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2">
             <div className="flex flex-col">
-              <span className="text-text-subtle text-2xs uppercase tracking-wider">
+              <span className="text-text-subtle text-2xs tracking-wider uppercase">
                 Mix start
               </span>
               <span
-                className="text-text font-mono text-xl tabular-nums"
+                className="text-text text-xl tabular-nums"
                 data-testid="alignment-new-start"
               >
                 {formatTimecode(newStartS)}
@@ -424,7 +414,8 @@ export function AlignmentDialog({
             <div className="text-text-subtle flex flex-col items-end text-xs">
               <span>
                 {offsetS >= 0 ? "+" : ""}
-                {offsetS.toFixed(2)} s vs. detected ({formatTimecode(track.start_s)})
+                {offsetS.toFixed(2)} s vs. detected (
+                {formatTimecode(track.start_s)})
               </span>
               <span>
                 {track.pitch_offset != null
@@ -440,7 +431,7 @@ export function AlignmentDialog({
 
           {/* Set waveform — top strip, centred on newStartS. */}
           <div className="flex flex-col gap-1">
-            <div className="text-text-muted text-2xs uppercase tracking-wider">
+            <div className="text-text-muted text-2xs tracking-wider uppercase">
               Mix
             </div>
             <WaveformStrip
@@ -453,7 +444,7 @@ export function AlignmentDialog({
           {/* SC waveform — bottom strip, drag to nudge. */}
           <div className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between">
-              <span className="text-text-muted text-2xs uppercase tracking-wider">
+              <span className="text-text-muted text-2xs tracking-wider uppercase">
                 Original
               </span>
               <span className="text-text-subtle text-2xs">
@@ -476,7 +467,7 @@ export function AlignmentDialog({
           <div className="flex flex-col gap-1">
             <label
               htmlFor="alignment-offset"
-              className="text-text-muted text-2xs uppercase tracking-wider"
+              className="text-text-muted text-2xs tracking-wider uppercase"
             >
               Nudge ±{NUDGE_RANGE_S} s
             </label>

@@ -76,15 +76,17 @@ export const SHAZAM_TIERS: ReadonlyArray<ShazamTier> = [
   "pinpoint",
 ];
 
-/** Default cadence/window per tier — kept in sync with the backend
- *  ``SHAZAM_TIERS`` table in ``services/analyser/controller.py``. */
+/** Probe spacing / window length per tier — kept in sync with the backend
+ *  ``SHAZAM_TIERS`` table in ``services/analyser/controller.py``. Scan
+ *  points are placed inside detected sections; ``spacing_s`` is how far
+ *  apart probes sit within a section's interior. */
 export const SHAZAM_TIER_DEFAULTS: Record<
   ShazamTier,
-  { cadence_s: number; window_s: number }
+  { spacing_s: number; window_s: number }
 > = {
-  sweep: { cadence_s: 60, window_s: 12 },
-  refine: { cadence_s: 20, window_s: 12 },
-  pinpoint: { cadence_s: 8, window_s: 8 },
+  sweep: { spacing_s: 45, window_s: 16 },
+  refine: { spacing_s: 20, window_s: 16 },
+  pinpoint: { spacing_s: 10, window_s: 12 },
 };
 
 export interface ShazamScan {
@@ -536,6 +538,25 @@ export function effectiveDurationInSet(
   if (durationOriginal == null || durationOriginal <= 0) return null;
   if (pitchOffset == null) return durationOriginal;
   return durationOriginal * pitchSpeedRatio(pitchOffset);
+}
+
+/** Number of distinct scan windows that recognised each ``shazam_id``
+ *  (any pitch attempt counts the window once). Few supporting windows →
+ *  more likely a generic false match. Drives both the "tentative" flag and
+ *  the min-matches filter in the tracklist/timeline. Mirrors the backend's
+ *  per-shazam_id support count. */
+export function windowSupport(scans: ShazamScan[]): Map<string, number> {
+  const points = new Map<string, Set<number>>();
+  for (const s of scans) {
+    if (s.title == null || s.shazam_id == null) continue;
+    let set = points.get(s.shazam_id);
+    if (!set) {
+      set = new Set();
+      points.set(s.shazam_id, set);
+    }
+    set.add(s.scan_s);
+  }
+  return new Map([...points].map(([id, set]) => [id, set.size]));
 }
 
 export function formatTimecode(seconds: number): string {

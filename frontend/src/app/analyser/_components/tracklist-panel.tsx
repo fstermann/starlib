@@ -15,11 +15,13 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import {
   deleteTrack,
   effectiveDurationInSet,
   formatTimecode,
   originalBpmFromSet,
+  windowSupport,
   type TrackTimelineEntry,
 } from "@/lib/analyser";
 import { searchTracks, type SCTrack } from "@/lib/soundcloud";
@@ -47,7 +49,16 @@ interface TracklistPanelProps {
   /** Reload the snapshot — called after a manual add / hide / unhide so
    *  the merged tracklist reflects the new override. */
   onTracklistChanged?: () => void;
+  /** Minimum number of agreeing scan windows a Shazam track needs before
+   *  it's listed. 1 = show everything (single-window hits flagged
+   *  tentative). Higher values hide weak/likely-generic matches. Manual
+   *  and confirmed rows are always shown regardless. */
+  minMatches?: number;
+  onMinMatchesChange?: (n: number) => void;
 }
+
+/** Upper bound for the min-matches filter slider. */
+const MAX_MIN_MATCHES = 4;
 
 interface DerivedRun {
   start_s: number;
@@ -174,12 +185,36 @@ export function TracklistPanel({
   confirmed,
   onToggleConfirmed,
   onTracklistChanged,
+  minMatches = 1,
+  onMinMatchesChange,
 }: TracklistPanelProps) {
   // Live runs while a scan is in flight; the backend's terminal
   // `track.timeline` overrides once it lands (same shape).
   const derived = useMemo(() => aggregateScans(state.scans), [state.scans]);
-  const tracks: (DerivedRun | TrackTimelineEntry)[] =
+  const allTracks: (DerivedRun | TrackTimelineEntry)[] =
     state.timeline.length > 0 ? state.timeline : derived;
+
+  const supportByShazamId = useMemo(
+    () => windowSupport(state.scans),
+    [state.scans],
+  );
+
+  // Apply the min-matches filter: hide Shazam tracks backed by fewer than
+  // ``minMatches`` agreeing windows. Manual rows (no shazam_id) and rows
+  // the user has confirmed are always kept — the filter only triages
+  // unreviewed Shazam guesses.
+  const tracks = useMemo(
+    () =>
+      minMatches <= 1
+        ? allTracks
+        : allTracks.filter((t) => {
+            if (t.shazam_id == null) return true;
+            if (confirmed?.has(rowKeyOf(t))) return true;
+            return (supportByShazamId.get(t.shazam_id) ?? 0) >= minMatches;
+          }),
+    [allTracks, minMatches, supportByShazamId, confirmed],
+  );
+  const hiddenCount = allTracks.length - tracks.length;
 
   // Track open in the alignment dialog (null = closed). We hold the
   // entry rather than just an id so the dialog content stays stable
@@ -382,9 +417,37 @@ export function TracklistPanel({
             {tracks.length === 0
               ? "no matches yet"
               : `${tracks.length} track${tracks.length === 1 ? "" : "s"}`}
+            {hiddenCount > 0 && (
+              <span className="text-text-subtle"> · {hiddenCount} hidden</span>
+            )}
           </span>
         </h2>
         <div className="flex items-center gap-3">
+          {allTracks.length > 0 && onMinMatchesChange && (
+            <label
+              className="text-text-subtle flex items-center gap-1.5 text-xs"
+              title="Hide tracks matched at fewer than this many scan windows. 1 shows everything (single-window hits flagged tentative)."
+              data-testid="min-matches-control"
+            >
+              <span className="whitespace-nowrap">min matches</span>
+              <Slider
+                value={[minMatches]}
+                min={1}
+                max={MAX_MIN_MATCHES}
+                step={1}
+                onValueChange={(v) => onMinMatchesChange(v[0] ?? 1)}
+                className="w-20"
+                data-testid="min-matches-slider"
+                aria-label="Minimum matches to show a track"
+              />
+              <span
+                className="w-3 tabular-nums"
+                data-testid="min-matches-value"
+              >
+                {minMatches}
+              </span>
+            </label>
+          )}
           {tracks.length > 0 && confirmed && (
             <span
               className="text-text-muted text-xs tabular-nums"
@@ -475,6 +538,12 @@ export function TracklistPanel({
                 ]
               : allAlts;
             const isConfirmed = confirmed?.has(rowKey) ?? false;
+            // Tentative = a Shazam match seen at < 2 windows and not yet
+            // user-confirmed. Manual rows (no shazam_id) are never tentative.
+            const isTentative =
+              !isConfirmed &&
+              display.shazam_id != null &&
+              (supportByShazamId.get(display.shazam_id) ?? 0) < 2;
             const displayKey =
               display.shazam_id ?? `${display.title}|${display.artist ?? ""}`;
             const scArtwork =
@@ -497,13 +566,15 @@ export function TracklistPanel({
                 className={cn(
                   "group -mx-4 grid grid-cols-[64px_40px_1fr_auto] items-center gap-3 px-4 py-2 transition-colors",
                   isPlaying && "bg-brand-soft/40 rounded",
+                  isTentative && "opacity-65",
                   flashKey === rowKey &&
                     "ring-brand/70 rounded ring-2 ring-inset",
                 )}
                 data-testid="tracklist-row"
                 data-confirmed={isConfirmed ? "true" : "false"}
+                data-tentative={isTentative ? "true" : "false"}
               >
-                <span className="text-text-muted font-mono text-xs tabular-nums">
+                <span className="text-text-muted text-xs tabular-nums">
                   {formatTimecode(t.start_s)}
                 </span>
                 {artworkUrl ? (
@@ -527,6 +598,15 @@ export function TracklistPanel({
                     title={display.title}
                   >
                     <span className="truncate">{display.title}</span>
+                    {isTentative && (
+                      <span
+                        className="border-border text-text-subtle shrink-0 rounded border px-1 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
+                        title="Matched at only one probe — likely but unconfirmed. Run Refine or Pinpoint to corroborate."
+                        data-testid="tracklist-tentative"
+                      >
+                        tentative
+                      </span>
+                    )}
                     {override && (
                       <span
                         className="bg-brand-soft text-text rounded px-1 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
@@ -1002,7 +1082,7 @@ function AlternativesList({
                 className="text-text-muted flex items-center gap-2 py-0.5"
                 data-testid="track-alternative"
               >
-                <span className="text-text-subtle w-6 shrink-0 font-mono text-[10px] tabular-nums">
+                <span className="text-text-subtle w-6 shrink-0 text-[10px] tabular-nums">
                   ×{a.matches}
                 </span>
                 <span className="min-w-0 flex-1 truncate">
@@ -1211,7 +1291,7 @@ function BpmChip({ track }: { track: TrackTimelineEntry | DerivedRun }) {
   const showArrow = original != null && Math.abs(setBpm - original) >= 0.5;
   return (
     <span
-      className="text-text-subtle font-mono tabular-nums"
+      className="text-text-subtle tabular-nums"
       data-testid="tracklist-bpm"
       title={
         showArrow
@@ -1235,7 +1315,7 @@ function DurationChip({ track }: { track: TrackTimelineEntry | DerivedRun }) {
   if (inSet == null) return null;
   return (
     <span
-      className="text-text-subtle font-mono tabular-nums"
+      className="text-text-subtle tabular-nums"
       data-testid="tracklist-effective-duration"
       title={
         track.pitch_offset != null && track.pitch_offset !== 0
