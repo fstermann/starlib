@@ -112,6 +112,93 @@ async def _http_get(url: str, *, token: str, follow_redirects: bool) -> httpx.Re
         return await client.get(url, headers=headers, follow_redirects=follow_redirects)
 
 
+async def _public_api_token() -> str:
+    """Acquire a Client-Credentials token usable against ``api.soundcloud.com``."""
+    settings = get_settings()
+    if not settings.has_oauth_credentials():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="SoundCloud OAuth credentials not configured",
+        )
+    try:
+        return sc_auth_cache.get_cached_access_token(settings, OAuthManager)
+    except Exception as exc:
+        logger.exception("Failed to acquire SoundCloud OAuth token")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="SoundCloud auth unavailable",
+        ) from exc
+
+
+async def _resolve_track_id(url: str) -> int | None:
+    """Resolve a soundcloud.com URL to a numeric track id via the public API.
+
+    Uses ``api.soundcloud.com/resolve`` rather than going through
+    ``soundcloud_tools.Client`` (which targets ``api-v2`` and requires the
+    web-session token). Returns ``None`` if the URL doesn't point at a
+    track resource.
+    """
+    token = await _public_api_token()
+    resolve_url = f"{_PUBLIC_API_BASE}/resolve"
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            response = await client.get(
+                resolve_url,
+                headers={
+                    "Authorization": f"OAuth {token}",
+                    "Accept": "application/json",
+                },
+                params={"url": url},
+                follow_redirects=True,
+            )
+    except Exception as exc:  # pragma: no cover - network transport
+        logger.exception("SoundCloud /resolve request failed for %s", url)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="SoundCloud upstream error",
+        ) from exc
+    if response.status_code == 404:
+        return None
+    if response.status_code != 200:
+        logger.warning("SoundCloud /resolve returned %s for %s", response.status_code, url)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"SoundCloud returned {response.status_code}",
+        )
+    data = response.json()
+    if not isinstance(data, dict) or data.get("kind") != "track":
+        return None
+    track_id = data.get("id")
+    return int(track_id) if isinstance(track_id, int) else None
+
+
+async def _fetch_track_meta(track_id: int) -> dict | None:
+    """Fetch ``/tracks/{id}`` from the public API. Returns the JSON dict or
+    ``None`` on 404. Errors raise an HTTPException so the caller surfaces a
+    consistent 502.
+    """
+    token = await _public_api_token()
+    track_url = f"{_PUBLIC_API_BASE}/tracks/{track_id}"
+    try:
+        response = await _http_get(track_url, token=token, follow_redirects=True)
+    except Exception as exc:  # pragma: no cover - network transport
+        logger.exception("SoundCloud /tracks/%s request failed", track_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="SoundCloud upstream error",
+        ) from exc
+    if response.status_code == 404:
+        return None
+    if response.status_code != 200:
+        logger.warning("SoundCloud /tracks/%s returned %s", track_id, response.status_code)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"SoundCloud returned {response.status_code}",
+        )
+    data = response.json()
+    return data if isinstance(data, dict) else None
+
+
 async def _fetch_stream_url(track_id: int) -> tuple[str, float]:
     """Fetch a fresh HLS stream URL for a track from the SoundCloud API.
 
