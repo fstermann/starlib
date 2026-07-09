@@ -28,6 +28,7 @@ from .base import (
     RekordboxTrack,
     RekordboxUnavailable,
     extract_soundcloud_id,
+    read_pwav,
     read_pwv4,
 )
 
@@ -243,3 +244,22 @@ class UsbExportSource(RekordboxSource):
         except OSError:
             return None
         return read_pwv4(str(ext), mtime_ns)
+
+    def get_track_waveform_blue(self, track_id: str) -> bytes | None:
+        """Return the raw PWAV monochrome preview bytes for a track, or ``None``.
+
+        The PWAV tag lives in the ``.DAT`` ANLZ file referenced by
+        ``analysisDataFilePath`` (the colour PWV4 is in the ``.EXT`` sidecar).
+        """
+        rows = self._query("SELECT analysisDataFilePath FROM content WHERE content_id = ?", (track_id,))
+        if not rows:
+            return None
+        rel = _clean(rows[0]["analysisDataFilePath"])
+        if not rel:
+            return None
+        dat = self._resolve(rel).with_suffix(".DAT")
+        try:
+            mtime_ns = dat.stat().st_mtime_ns
+        except OSError:
+            return None
+        return read_pwav(str(dat), mtime_ns)

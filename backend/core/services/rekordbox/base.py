@@ -98,6 +98,10 @@ class RekordboxSource(ABC):
     def get_track_waveform_preview(self, track_id: str) -> bytes | None:
         """Return the raw PWV4 color-preview entry bytes, or ``None``."""
 
+    @abstractmethod
+    def get_track_waveform_blue(self, track_id: str) -> bytes | None:
+        """Return the raw PWAV monochrome-preview entry bytes, or ``None``."""
+
 
 def extract_soundcloud_id(comment: str | None) -> int | None:
     """Extract a SoundCloud track id stored in the track comment.
@@ -179,5 +183,61 @@ def read_pwv4(path: str, mtime_ns: int) -> bytes | None:
     """
     try:
         return extract_pwv4(Path(path).read_bytes())
+    except OSError:
+        return None
+
+
+def extract_pwav(data: bytes) -> bytes | None:
+    """Extract the PWAV entry bytes from raw ANLZ file contents.
+
+    PWAV is the classic monochrome ("blue") preview waveform, stored in the
+    ``.DAT`` file (unlike the colour PWV4/PWV5, which live in ``.EXT``). It is
+    400 single-byte columns; each byte packs a 5-bit height (low bits, 0-31)
+    and a 3-bit whiteness (high bits, 0-7). Layout after the section header
+    (fourcc + len_header + len_tag, all big-endian u32): len_preview + unknown +
+    entries.
+
+    Args:
+        data: Full contents of an ANLZ ``.DAT`` file.
+
+    Returns:
+        The raw entry bytes (``len_preview`` of them, normally 400), or ``None``
+        if no PWAV section exists or the file is malformed.
+    """
+    if len(data) < 8 or data[:4] != b"PMAI":
+        return None
+    pos = int.from_bytes(data[4:8], "big")
+    while pos + 12 <= len(data):
+        fourcc = data[pos : pos + 4]
+        len_tag = int.from_bytes(data[pos + 8 : pos + 12], "big")
+        if len_tag <= 0:
+            return None
+        if fourcc == b"PWAV":
+            if pos + 20 > len(data):
+                return None
+            len_preview = int.from_bytes(data[pos + 12 : pos + 16], "big")
+            start = pos + 20
+            end = start + len_preview
+            if len_preview <= 0 or end > len(data):
+                return None
+            return data[start:end]
+        pos += len_tag
+    return None
+
+
+@lru_cache(maxsize=1024)
+def read_pwav(path: str, mtime_ns: int) -> bytes | None:
+    """Read and extract PWAV bytes from an ANLZ ``.DAT`` file, cached.
+
+    Args:
+        path: Absolute path to the ``.DAT`` ANLZ file.
+        mtime_ns: File modification time; part of the cache key so re-analysis
+            invalidates the entry.
+
+    Returns:
+        The raw PWAV entry bytes, or ``None`` if absent/unreadable.
+    """
+    try:
+        return extract_pwav(Path(path).read_bytes())
     except OSError:
         return None

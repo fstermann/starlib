@@ -45,6 +45,13 @@ def _anlz_ext_with_pwv4(entries: bytes) -> bytes:
     return header + tag
 
 
+def _anlz_dat_with_pwav(entries: bytes) -> bytes:
+    """Build a minimal ANLZ ``.DAT`` payload carrying one PWAV tag."""
+    tag = b"PWAV" + struct.pack(">III", 20, 20 + len(entries), len(entries)) + struct.pack(">I", 0) + entries
+    header = b"PMAI" + struct.pack(">II", 16, 16 + len(tag)) + struct.pack(">I", 0)
+    return header + tag
+
+
 @pytest.fixture
 def device(tmp_path: Path) -> Path:
     """Create a temp USB tree with an encrypted exportLibrary.db + assets."""
@@ -61,6 +68,8 @@ def device(tmp_path: Path) -> Path:
     anlz_dir.mkdir(parents=True)
     pwv4 = bytes(range(12))  # 2 entries x 6 bytes
     (anlz_dir / "ANLZ0000.EXT").write_bytes(_anlz_ext_with_pwv4(pwv4))
+    pwav = bytes(range(8))  # 8 single-byte columns
+    (anlz_dir / "ANLZ0000.DAT").write_bytes(_anlz_dat_with_pwav(pwav))
 
     # The audio file track 10 points at.
     audio_dir = root / "Contents" / "BoC" / "Music"
@@ -192,6 +201,8 @@ def test_artwork_and_waveform_bytes(device: Path) -> None:
     assert src.get_track_artwork("11") is None  # no image
     assert src.get_track_waveform_preview("10") == bytes(range(12))
     assert src.get_track_waveform_preview("11") is None  # no analysis path
+    assert src.get_track_waveform_blue("10") == bytes(range(8))
+    assert src.get_track_waveform_blue("11") is None  # no analysis path
 
 
 def test_audio_path_resolves_within_device(device: Path) -> None:

@@ -438,9 +438,16 @@ export const api = {
   },
 
   // Rekordbox PWV4 color preview entries (raw 1200 × 6 bytes)
-  getRekordboxWaveformUrl(trackId: string, device?: string): string {
-    const q = device ? `?device=${encodeURIComponent(device)}` : "";
-    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/waveform${q}`;
+  getRekordboxWaveformUrl(
+    trackId: string,
+    device?: string,
+    variant: "color" | "blue" = "color",
+  ): string {
+    const params = new URLSearchParams();
+    if (device) params.set("device", device);
+    if (variant !== "color") params.set("variant", variant);
+    const q = params.toString();
+    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/waveform${q ? `?${q}` : ""}`;
   },
 
   // Audio stream for a track on a mounted USB export.

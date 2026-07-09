@@ -36,21 +36,32 @@ const SOURCE_COLS = 1200;
 const cache = new Map<string, Uint8Array | null>();
 const inflight = new Map<string, Promise<Uint8Array | null>>();
 
-function cacheKey(trackId: string, device?: string): string {
-  return device ? `${device}:${trackId}` : trackId;
+/** Waveform byte variant: PWV4 colour preview or PWAV monochrome preview. */
+export type WaveformVariant = "color" | "blue";
+
+function cacheKey(
+  trackId: string,
+  device: string | undefined,
+  variant: WaveformVariant,
+): string {
+  const base = device ? `${device}:${trackId}` : trackId;
+  return variant === "color" ? base : `${variant}:${base}`;
 }
 
 export async function loadWaveform(
   trackId: string,
   device?: string,
+  variant: WaveformVariant = "color",
 ): Promise<Uint8Array | null> {
-  const key = cacheKey(trackId, device);
+  const key = cacheKey(trackId, device, variant);
   if (cache.has(key)) return cache.get(key) ?? null;
   let p = inflight.get(key);
   if (!p) {
     p = (async () => {
       try {
-        const res = await fetch(api.getRekordboxWaveformUrl(trackId, device));
+        const res = await fetch(
+          api.getRekordboxWaveformUrl(trackId, device, variant),
+        );
         if (!res.ok) return null;
         const buf = await res.arrayBuffer();
         return new Uint8Array(buf);

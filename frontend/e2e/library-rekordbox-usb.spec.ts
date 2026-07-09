@@ -141,6 +141,58 @@ test.describe("Library: Rekordbox USB export", () => {
       .toMatch(/\/api\/rekordbox\/tracks\/u-1\/audio\?device=/);
   });
 
+  test("waveform-style setting switches the player to the Rekordbox coloured waveform", async ({
+    page,
+  }) => {
+    const waveformVariants: string[] = [];
+    await mockLibrary(page);
+    await page.route(
+      /\/api\/rekordbox\/usb\/devices/,
+      jsonRoute({ devices: [DEVICE] }),
+    );
+    await page.route(/\/api\/rekordbox\/tracks\/[^/]+\/audio/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "audio/wav",
+        body: makeSilentWav(),
+      }),
+    );
+    // Re-route waveform to record the requested variant (color | blue).
+    await page.route(/\/api\/rekordbox\/tracks\/[^/]+\/waveform/, (route) => {
+      const v =
+        new URL(route.request().url()).searchParams.get("variant") ?? "color";
+      waveformVariants.push(v);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/octet-stream",
+        body: WAVEFORM_BYTES,
+      });
+    });
+
+    await page.goto("/library?source=rekordbox");
+    await selectDevice(page);
+    await page.getByText("USB Set").click();
+    const tracks = page.getByTestId("rekordbox-tracks");
+    await tracks.getByRole("button", { name: "Play On The Stick" }).click();
+    await expect(page.getByTestId("waveform-player")).toBeVisible();
+
+    // Default style: the Starlib (WaveSurfer) waveform, no Rekordbox overlay.
+    await expect(page.getByTestId("player-rekordbox-waveform")).toHaveCount(0);
+
+    // Switch to Rekordbox Blue via Settings → Library.
+    await page.locator('button[aria-label="Settings"]').click();
+    const dialog = page.locator('[data-slot="dialog-content"]');
+    await dialog.getByText("Library", { exact: true }).click();
+    await dialog.getByRole("radio", { name: "Rekordbox Blue" }).click();
+    await page.keyboard.press("Escape");
+
+    // The coloured overlay renders and the blue PWAV variant is fetched.
+    const overlay = page.getByTestId("player-rekordbox-waveform");
+    await expect(overlay).toBeVisible();
+    await expect(overlay).toHaveAttribute("data-variant", "blue");
+    await expect.poll(() => waveformVariants).toContain("blue");
+  });
+
   test("eject button unmounts the device and returns to the local install", async ({
     page,
   }) => {
