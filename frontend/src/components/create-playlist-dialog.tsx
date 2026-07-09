@@ -81,8 +81,7 @@ export function CreatePlaylistDialog({
         sharing: isPublic ? "public" : "private",
       });
       const url = (playlist as Record<string, unknown>).permalink_url as
-        | string
-        | undefined;
+        string | undefined;
       onCreated?.();
       setOpen(false);
       toast.success(`Playlist "${title.trim()}" created`, {

@@ -227,8 +227,7 @@ export default function WeeklyPage() {
       .filter((pl) => !feedPlaylistTitles.has((pl.title ?? "").trim()))
       .map((pl) => {
         const createdAt = (pl as Record<string, unknown>).created_at as
-          | string
-          | undefined;
+          string | undefined;
         const date = createdAt ? new Date(createdAt) : new Date(0);
         const key = `orphan-${(pl as Record<string, unknown>).urn ?? pl.title}`;
         const title = (pl.title ?? "").trim();

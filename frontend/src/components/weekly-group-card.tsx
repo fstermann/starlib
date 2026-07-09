@@ -262,14 +262,12 @@ export function WeeklyGroupCard({
   const totalDuration = getTotalDuration(displayTracks);
   const playlistUrl = existingPlaylist
     ? ((existingPlaylist as Record<string, unknown>).permalink_url as
-        | string
-        | undefined)
+        string | undefined)
     : undefined;
   const existingTrackCount =
     existingPlaylist?.tracks?.length ??
     ((existingPlaylist as Record<string, unknown> | undefined)?.track_count as
-      | number
-      | undefined) ??
+      number | undefined) ??
     0;
 
   // Show append button when: current week, playlist exists, and there are new tracks

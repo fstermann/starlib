@@ -19,8 +19,7 @@ type Phase = "travel" | "exit" | "done";
 function isReload(): boolean {
   if (typeof window === "undefined") return false;
   const nav = performance.getEntriesByType("navigation")[0] as
-    | PerformanceNavigationTiming
-    | undefined;
+    PerformanceNavigationTiming | undefined;
   return nav?.type === "reload";
 }
 
