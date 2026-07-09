@@ -1,7 +1,14 @@
 /**
- * User settings store.
- * Uses Tauri Store plugin when running inside the desktop app,
- * falls back to localStorage in browser/dev.
+ * Client/UI preferences store. Owns presentation-only state (window/UI prefs)
+ * that never needs to reach the Python backend and must survive the backend
+ * being down or still booting.
+ *
+ * Persists to its OWN file (`ui.json`) — the backend owns `settings.json` in the
+ * same config dir, so the two must never share a filename. Uses the Tauri Store
+ * plugin inside the desktop app, falls back to localStorage in browser/dev.
+ *
+ * Domain/path config (root music folder, rulesets, folders, output format, AI)
+ * is owned by the backend and read/written via `lib/api.ts`, not here.
  */
 
 import { isTauri } from "./tauri";
@@ -11,17 +18,19 @@ export type WaveformStyle = "starlib" | "rekordbox_rgb" | "rekordbox_blue";
 
 export interface Settings {
   autoUpdate: boolean;
-  preferredOutputFormat: "aiff" | "mp3";
   waveformStyle: WaveformStyle;
 }
 
 const DEFAULTS: Settings = {
   autoUpdate: true,
-  preferredOutputFormat: "aiff",
   waveformStyle: "starlib",
 };
 
-const STORAGE_KEY = "starlib_settings";
+const STORAGE_KEY = "starlib_ui";
+
+const UI_STORE_FILE = "ui.json";
+/** Legacy file the UI store shared with the backend — read once to migrate. */
+const LEGACY_STORE_FILE = "settings.json";
 
 let storeInstance: Awaited<
   ReturnType<(typeof import("@tauri-apps/plugin-store"))["load"]>
@@ -30,11 +39,45 @@ let storeInstance: Awaited<
 async function getTauriStore() {
   if (storeInstance) return storeInstance;
   const { load } = await import("@tauri-apps/plugin-store");
-  storeInstance = await load("settings.json", {
+  const store = await load(UI_STORE_FILE, {
     autoSave: true,
     defaults: { ...DEFAULTS } as Record<string, unknown>,
   });
+  await migrateFromLegacyStore(store);
+  storeInstance = store;
   return storeInstance;
+}
+
+/**
+ * One-time move of UI keys out of the legacy `settings.json` (which the backend
+ * also writes) into `ui.json`. Reads the old file but never writes to it, so the
+ * backend's keys are left untouched. Runs until the marker key is set.
+ */
+async function migrateFromLegacyStore(
+  store: Awaited<ReturnType<typeof getTauriStore>>,
+): Promise<void> {
+  const MARKER = "__ui_migrated";
+  if (await store.get(MARKER)) return;
+  try {
+    const { load } = await import("@tauri-apps/plugin-store");
+    const legacy = await load(LEGACY_STORE_FILE, {
+      autoSave: false,
+      defaults: {},
+    });
+    for (const key of await legacy.keys()) {
+      // Only carry over UI-owned keys; leave backend keys (app, rulesets, …).
+      const isUiKey =
+        key === "autoUpdate" ||
+        key === "waveformStyle" ||
+        key.startsWith("columns.");
+      if (isUiKey && (await store.get(key)) === undefined) {
+        await store.set(key, await legacy.get(key));
+      }
+    }
+  } catch {
+    // No legacy file / not in Tauri — nothing to migrate.
+  }
+  await store.set(MARKER, true);
 }
 
 export async function getSetting<K extends keyof Settings>(
