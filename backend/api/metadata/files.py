@@ -3,8 +3,10 @@
 import asyncio
 import base64
 import logging
+import os
 import shutil
 import time
+from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
 from typing import Annotated
@@ -233,6 +235,43 @@ def fetch_from_downloads(
     return FetchFromDownloadsResponse(moved=moved, skipped=skipped, errors=errors)
 
 
+def _folder_tree_dict(root_str: str, track_folders: Iterable[str]) -> dict:
+    """Build a nested folder-name dict from track folders and on-disk dirs.
+
+    Args:
+        root_str: Resolved root folder path as a string.
+        track_folders: Absolute paths of folders containing indexed tracks.
+
+    Returns:
+        Nested dict mapping folder name to its children dict.
+    """
+    tree: dict = {}
+
+    def _insert(fp: str) -> None:
+        # Make path relative to root; skip entries outside root
+        if not fp.startswith(root_str):
+            return
+        rel = fp[len(root_str) :]
+        if rel.startswith("/"):
+            rel = rel[1:]
+        parts = rel.split("/") if rel else []
+        node = tree
+        for part in parts:
+            node = node.setdefault(part, {})
+
+    for fp in track_folders:
+        _insert(fp)
+
+    # Also walk the filesystem so directories without indexed tracks (empty
+    # folders) appear in the tree.
+    for dirpath, dirnames, _ in os.walk(root_str):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for d in dirnames:
+            _insert(f"{dirpath}/{d}")
+
+    return tree
+
+
 @router.get("/folders/tree", response_model=TreeNode)
 def get_folder_tree(
     root_folder: Annotated[Path, Depends(get_root_folder)],
@@ -246,10 +285,10 @@ def get_folder_tree(
     size_min: int | None = Query(None, ge=0),
     size_max: int | None = Query(None, ge=0),
 ) -> TreeNode:
-    """Return the folder tree built from indexed tracks.
+    """Return the folder tree built from indexed tracks and on-disk directories.
 
-    Only folders that contain at least one track (directly or in a
-    descendant) are included — empty directories are omitted.
+    Every directory under the root is included — empty folders too. Hidden
+    (dot-prefixed) directories are skipped, matching the indexer.
 
     ``track_count`` is always the unfiltered recursive total, so the tree
     structure is stable. When any filter argument is supplied, each node's
@@ -281,18 +320,7 @@ def get_folder_tree(
 
     # Build nested dict from flat folder paths (always the unfiltered set, so
     # folders never disappear when a filter narrows the counts).
-    tree: dict = {}
-    for fp in folder_counts:
-        # Make path relative to root; skip entries outside root
-        if not fp.startswith(root_str):
-            continue
-        rel = fp[len(root_str) :]
-        if rel.startswith("/"):
-            rel = rel[1:]
-        parts = rel.split("/") if rel else []
-        node = tree
-        for part in parts:
-            node = node.setdefault(part, {})
+    tree = _folder_tree_dict(root_str, folder_counts)
 
     def _build(name: str, abs_path: str, children_dict: dict) -> TreeNode:
         children = [_build(k, f"{abs_path}/{k}", v) for k, v in sorted(children_dict.items())]
