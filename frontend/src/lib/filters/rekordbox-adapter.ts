@@ -85,8 +85,7 @@ export function applyRekordboxFilters(
   const genres = (state.genre as string[] | undefined) ?? [];
   const keys = (state.key as string[] | undefined) ?? [];
   const bpmRange = (state.bpm as
-    | [number | null, number | null]
-    | undefined) ?? [null, null];
+    [number | null, number | null] | undefined) ?? [null, null];
   const [bpmLo, bpmHi] = bpmRange;
 
   return tracks.filter((t) => {
