@@ -171,7 +171,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     if (!open) return;
     Promise.all([
       getSetting("autoUpdate"),
-      getSetting("preferredOutputFormat"),
+      api.getAppSettings(),
       getSetting("waveformStyle"),
       api.getRootMusicFolder(),
       api.getAiSettings(),
@@ -181,7 +181,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     ]).then(
       ([
         autoUpdate,
-        outputFormat,
+        appSettings,
         waveform,
         rootPath,
         settings,
@@ -190,7 +190,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         rulesetsData,
       ]) => {
         setAutoUpdate(autoUpdate);
-        setPreferredOutputFormat(outputFormat);
+        setPreferredOutputFormat(
+          appSettings.preferred_output_format === "mp3" ? "mp3" : "aiff",
+        );
         setWaveformStyleState(waveform);
         setRootFolder(rootPath);
         setRootFolderDraft(rootPath);
@@ -226,7 +228,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   async function handlePreferredOutputFormatChange(format: "aiff" | "mp3") {
     setPreferredOutputFormat(format);
-    await setSetting("preferredOutputFormat", format);
     await api.updateAppSettings({ preferred_output_format: format });
     window.dispatchEvent(
       new CustomEvent("preferred-format-changed", { detail: format }),

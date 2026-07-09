@@ -163,13 +163,19 @@ def load() -> Settings:
 
 
 def save(settings: Settings) -> Settings:
-    """Atomically persist settings to disk and return them."""
+    """Atomically persist settings to disk and return them.
+
+    Writes to a temp file in the same directory and ``os.replace``s it over the
+    target so a crash or concurrent write can never leave a truncated file.
+    """
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    _SETTINGS_FILE.write_text(settings.model_dump_json(indent=2))
+    tmp = _SETTINGS_FILE.with_name(f"{_SETTINGS_FILE.name}.{os.getpid()}.tmp")
+    tmp.write_text(settings.model_dump_json(indent=2))
     try:
-        os.chmod(_SETTINGS_FILE, stat.S_IRUSR | stat.S_IWUSR)  # 0o600 — owner-only
+        os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)  # 0o600 — owner-only
     except OSError:
         pass
+    os.replace(tmp, _SETTINGS_FILE)
     return settings
 
 
