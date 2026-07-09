@@ -236,16 +236,51 @@ def fetch_from_downloads(
 @router.get("/folders/tree", response_model=TreeNode)
 def get_folder_tree(
     root_folder: Annotated[Path, Depends(get_root_folder)],
+    search: str | None = Query(None),
+    genres: list[str] | None = Query(None),
+    keys: list[str] | None = Query(None),
+    bpm_min: int | None = Query(None, ge=0),
+    bpm_max: int | None = Query(None, ge=0),
+    has_soundcloud_id: bool | None = Query(None),
+    file_formats: list[str] | None = Query(None),
+    size_min: int | None = Query(None, ge=0),
+    size_max: int | None = Query(None, ge=0),
 ) -> TreeNode:
     """Return the folder tree built from indexed tracks.
 
     Only folders that contain at least one track (directly or in a
     descendant) are included — empty directories are omitted.
+
+    ``track_count`` is always the unfiltered recursive total, so the tree
+    structure is stable. When any filter argument is supplied, each node's
+    ``filtered_count`` carries the recursive count of tracks matching those
+    filters (``None`` otherwise).
     """
     root_str = str(root_folder.resolve())
     folder_counts = cache_db.get_folder_track_counts()
 
-    # Build nested dict from flat folder paths
+    has_filters = any(
+        v is not None
+        for v in (search, genres, keys, bpm_min, bpm_max, has_soundcloud_id, file_formats, size_min, size_max)
+    )
+    filtered_counts = (
+        cache_db.get_folder_track_counts(
+            search_query=search,
+            genres=genres,
+            keys=keys,
+            bpm_min=bpm_min,
+            bpm_max=bpm_max,
+            has_soundcloud_id=has_soundcloud_id,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
+        )
+        if has_filters
+        else None
+    )
+
+    # Build nested dict from flat folder paths (always the unfiltered set, so
+    # folders never disappear when a filter narrows the counts).
     tree: dict = {}
     for fp in folder_counts:
         # Make path relative to root; skip entries outside root
@@ -262,12 +297,18 @@ def get_folder_tree(
     def _build(name: str, abs_path: str, children_dict: dict) -> TreeNode:
         children = [_build(k, f"{abs_path}/{k}", v) for k, v in sorted(children_dict.items())]
         total = folder_counts.get(abs_path, 0) + sum(c.track_count for c in children)
-        return TreeNode(id=abs_path, name=name, children=children, track_count=total)
+        filtered = None
+        if filtered_counts is not None:
+            filtered = filtered_counts.get(abs_path, 0) + sum(c.filtered_count or 0 for c in children)
+        return TreeNode(id=abs_path, name=name, children=children, track_count=total, filtered_count=filtered)
 
     root_name = root_folder.name
     children = [_build(k, f"{root_str}/{k}", v) for k, v in sorted(tree.items())]
     total = folder_counts.get(root_str, 0) + sum(c.track_count for c in children)
-    return TreeNode(id=root_str, name=root_name, children=children, track_count=total)
+    filtered_root = None
+    if filtered_counts is not None:
+        filtered_root = filtered_counts.get(root_str, 0) + sum(c.filtered_count or 0 for c in children)
+    return TreeNode(id=root_str, name=root_name, children=children, track_count=total, filtered_count=filtered_root)
 
 
 @router.get("/folders/browse-path", response_model=Page[TrackBrowseResponse])

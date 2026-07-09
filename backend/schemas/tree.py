@@ -15,3 +15,5 @@ class TreeNode(BaseModel):
     children: list[TreeNode] = []
     track_count: int = 0
     """Recursive count of tracks in this folder and all descendants."""
+    filtered_count: int | None = None
+    """Recursive count under the active filters; ``None`` when no filter is applied."""

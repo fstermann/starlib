@@ -234,10 +234,38 @@ def get_distinct_folders() -> list[str]:
     return [r[0] for r in rows]
 
 
-def get_folder_track_counts() -> dict[str, int]:
-    """Return direct track count per folder (non-recursive)."""
+def get_folder_track_counts(
+    *,
+    search_query: str | None = None,
+    genres: list[str] | None = None,
+    keys: list[str] | None = None,
+    bpm_min: int | None = None,
+    bpm_max: int | None = None,
+    has_soundcloud_id: bool | None = None,
+    file_formats: list[str] | None = None,
+    size_min: int | None = None,
+    size_max: int | None = None,
+) -> dict[str, int]:
+    """Return direct track count per folder (non-recursive).
+
+    When filter arguments are supplied, counts reflect only tracks matching
+    those filters — mirroring the browse endpoints so tree badges can track
+    the filtered result set.
+    """
+    stmt = _apply_filters(
+        select(Track.folder, func.count()),
+        search_query=search_query,
+        genres=genres,
+        keys=keys,
+        bpm_min=bpm_min,
+        bpm_max=bpm_max,
+        has_soundcloud_id=has_soundcloud_id,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
+    ).group_by(Track.folder)
     with get_engine().connect() as conn:
-        rows = conn.execute(select(Track.folder, func.count()).group_by(Track.folder)).all()
+        rows = conn.execute(stmt).all()
     return {r[0]: int(r[1]) for r in rows}
 
 
