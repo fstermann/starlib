@@ -1506,7 +1506,7 @@ export function TrackEditor({
                           date ? format(date, "yyyy-MM-dd") : "",
                         )
                       }
-                      initialFocus
+                      autoFocus
                     />
                   </PopoverContent>
                 </Popover>
