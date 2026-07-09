@@ -68,7 +68,7 @@ type SortKey =
   | "duration"
   | "playback_count"
   | "uploaded"
-  | "added";
+  | "posted";
 type SortOrder = "asc" | "desc";
 
 /** A single source of truth for likes-table columns. Drives both the header
@@ -203,9 +203,9 @@ const LIKES_COLUMNS: LikesCol[] = [
     renderBody: ({ track }) => <>{formatDate(track.created_at)}</>,
   },
   {
-    id: "added",
-    header: "Added",
-    sortKey: "added",
+    id: "posted",
+    header: "Posted",
+    sortKey: "posted",
     defaultWidth: 96,
     cellClassName:
       "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
@@ -784,7 +784,7 @@ export function LikesTable({
         case "uploaded":
           cmp = dateValue(a.created_at) - dateValue(b.created_at);
           break;
-        case "added":
+        case "posted":
           cmp = dateValue(a.addedAt) - dateValue(b.addedAt);
           break;
       }

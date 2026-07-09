@@ -1,11 +1,11 @@
 import { expect, test } from "./fixtures";
 
 /**
- * SoundCloud table renders Uploaded and Added columns; Uploaded is sortable
- * by upload date (created_at), so toggling it puts the older liked track on
- * top. The Added column relies on `addedAt` (only set on feed-derived tracks),
- * which the likes endpoint does not provide — covering it here would require a
- * feed-sourced fixture.
+ * SoundCloud table renders Uploaded and Posted columns. Uploaded sorts by
+ * upload date (created_at); Posted sorts by the feed activity timestamp
+ * (addedAt) — when the track was posted/reposted into the feed. The fixture
+ * gives each track an addedAt that is inverted relative to created_at so the
+ * two sorts produce different orders, proving Posted keys off addedAt.
  */
 
 async function setup(page: import("@playwright/test").Page) {
@@ -38,7 +38,9 @@ async function setup(page: import("@playwright/test").Page) {
             title: "Older track",
             user: { id: 1, username: "me" },
             duration: 200_000,
+            // Uploaded first, posted to feed most recently.
             created_at: "2023-01-15T00:00:00Z",
+            addedAt: "2024-12-01T00:00:00Z",
             permalink_url: "https://soundcloud.com/me/older",
           },
           {
@@ -47,7 +49,9 @@ async function setup(page: import("@playwright/test").Page) {
             title: "Newer track",
             user: { id: 1, username: "me" },
             duration: 200_000,
+            // Uploaded most recently, posted to feed earliest.
             created_at: "2024-06-01T00:00:00Z",
+            addedAt: "2023-05-01T00:00:00Z",
             permalink_url: "https://soundcloud.com/me/newer",
           },
         ],
@@ -82,7 +86,7 @@ async function setup(page: import("@playwright/test").Page) {
 }
 
 test.describe("SoundCloud date columns", () => {
-  test("Uploaded and Added columns render and Uploaded sorts by date", async ({
+  test("Uploaded and Posted columns render and each sorts by its own date", async ({
     page,
   }) => {
     await setup(page);
@@ -94,7 +98,7 @@ test.describe("SoundCloud date columns", () => {
 
     const header = page.getByRole("row").first();
     await expect(header.getByText("Uploaded", { exact: true })).toBeVisible();
-    await expect(header.getByText("Added", { exact: true })).toBeVisible();
+    await expect(header.getByText("Posted", { exact: true })).toBeVisible();
 
     // Default order matches the API response: Older then Newer.
     await expect(page.locator('[data-index="0"]')).toContainText("Older track");
@@ -109,5 +113,17 @@ test.describe("SoundCloud date columns", () => {
     await header.locator("button", { hasText: "Uploaded" }).click();
     await expect(page.locator('[data-index="0"]')).toContainText("Newer track");
     await expect(page.locator('[data-index="1"]')).toContainText("Older track");
+
+    // Sort by Posted ascending → earliest addedAt first. "Newer track" was
+    // posted in 2023, "Older track" in 2024, so the order flips relative to
+    // Uploaded — proving Posted keys off addedAt, not created_at.
+    await header.locator("button", { hasText: "Posted" }).click();
+    await expect(page.locator('[data-index="0"]')).toContainText("Newer track");
+    await expect(page.locator('[data-index="1"]')).toContainText("Older track");
+
+    // Toggle Posted descending → latest addedAt first.
+    await header.locator("button", { hasText: "Posted" }).click();
+    await expect(page.locator('[data-index="0"]')).toContainText("Older track");
+    await expect(page.locator('[data-index="1"]')).toContainText("Newer track");
   });
 });
