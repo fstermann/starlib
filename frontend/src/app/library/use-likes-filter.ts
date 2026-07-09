@@ -27,8 +27,7 @@ export function filterStateToLikesOptions(
   state: FilterState,
 ): LikesFilterOptions {
   const duration = (state.duration as
-    | [number | null, number | null]
-    | undefined) ?? [null, null];
+    [number | null, number | null] | undefined) ?? [null, null];
   // track_type is modelled as a multi-select enum with options ["track",
   // "set"]. A single-item selection means "only this type"; picking both
   // (or neither) is equivalent to no filter and collapses to null.

@@ -2064,9 +2064,10 @@ export function TrackEditor({
                             scrolling="no"
                             frameBorder="no"
                             allow="autoplay"
-                            src={
-                              activeSource.getEmbedUrl(selectedScTrack, isDark)!
-                            }
+                            src={activeSource.getEmbedUrl(
+                              selectedScTrack,
+                              isDark,
+                            )!}
                             className="overflow-hidden rounded-lg"
                           />
                         )}

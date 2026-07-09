@@ -20,7 +20,10 @@ import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-men
 import { FetchFromDownloadsButton } from "@/components/fetch-from-downloads-button";
 import { FilesystemBatchAnalyzeButton } from "@/components/filesystem-batch-analyze-button";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
-import { useTopBar } from "@/components/layout/top-bar-context";
+import {
+  useReloadHandler,
+  useTopBar,
+} from "@/components/layout/top-bar-context";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -287,6 +290,8 @@ export function FilesystemView() {
       .then(setTree)
       .catch(() => {});
   }, [refreshToken]);
+
+  useReloadHandler(() => setRefreshToken((t) => t + 1));
 
   // Track items for next-track selection
   const tableItemsRef = useRef<TrackBrowse[]>([]);

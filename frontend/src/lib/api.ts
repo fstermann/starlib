@@ -425,6 +425,44 @@ export const api = {
     return `${API_BASE_URL}/api/metadata/files/${encoded}/artwork`;
   },
 
+  // Rekordbox artwork (cached JPEG). `device` selects a mounted USB export;
+  // omit for the local install.
+  getRekordboxArtworkUrl(
+    trackId: string,
+    small = true,
+    device?: string,
+  ): string {
+    const params = new URLSearchParams({ small: String(small) });
+    if (device) params.set("device", device);
+    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/artwork?${params}`;
+  },
+
+  // Rekordbox PWV4 color preview entries (raw 1200 × 6 bytes)
+  getRekordboxWaveformUrl(
+    trackId: string,
+    device?: string,
+    variant: "color" | "blue" = "color",
+  ): string {
+    const params = new URLSearchParams();
+    if (device) params.set("device", device);
+    if (variant !== "color") params.set("variant", variant);
+    const q = params.toString();
+    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/waveform${q ? `?${q}` : ""}`;
+  },
+
+  // Audio stream for a track on a mounted USB export.
+  getRekordboxUsbAudioUrl(trackId: string, device: string): string {
+    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/audio?device=${encodeURIComponent(device)}`;
+  },
+
+  // Safely eject a mounted USB export. Rejects (409) if the volume is busy.
+  async ejectRekordboxUsb(device: string): Promise<void> {
+    await fetchApi(
+      `/api/rekordbox/usb/eject?device=${encodeURIComponent(device)}`,
+      { method: "POST" },
+    );
+  },
+
   // Audio streaming
   getAudioUrl(filePath: string): string {
     const encoded = encodeURIComponent(filePath);

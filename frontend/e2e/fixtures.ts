@@ -183,6 +183,19 @@ async function mockBackendApi(page: Page) {
       body: JSON.stringify({ rulesets: [], active_ruleset_id: null }),
     }),
   );
+
+  // Rekordbox — default to "unavailable" so tests that don't opt in don't
+  // see a half-rendered Rekordbox view.
+  await page.route("**/api/rekordbox/status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        available: false,
+        reason: "Rekordbox not configured in tests",
+      }),
+    }),
+  );
 }
 
 export const test = base.extend<{ mockApi: void }>({

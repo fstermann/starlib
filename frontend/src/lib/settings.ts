@@ -6,14 +6,19 @@
 
 import { isTauri } from "./tauri";
 
+/** Which waveform the bottom player renders for Rekordbox tracks. */
+export type WaveformStyle = "starlib" | "rekordbox_rgb" | "rekordbox_blue";
+
 export interface Settings {
   autoUpdate: boolean;
   preferredOutputFormat: "aiff" | "mp3";
+  waveformStyle: WaveformStyle;
 }
 
 const DEFAULTS: Settings = {
   autoUpdate: true,
   preferredOutputFormat: "aiff",
+  waveformStyle: "starlib",
 };
 
 const STORAGE_KEY = "starlib_settings";

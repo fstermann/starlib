@@ -34,6 +34,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "nav:/library?source=soundcloud&tab=me",
   "nav:/library?source=soundcloud&tab=discover",
   "nav:/library?source=soundcloud&tab=search",
+  "nav:/library?source=rekordbox",
 ]);
 
 /** Allowed ID prefixes for dynamic providers (folder shortcuts, search hits). */
