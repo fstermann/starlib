@@ -9,6 +9,7 @@ import { CommandPaletteTrigger } from "@/components/command-palette";
 import { isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
+import { NavArrows } from "./nav-arrows";
 import { useReloadTrigger, useTopBarContent } from "./top-bar-context";
 
 function useIsFullscreen() {
@@ -84,6 +85,7 @@ export function TopBar() {
           }}
         />
       </Link>
+      <NavArrows />
       <div className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium">
         {title ?? null}
       </div>
