@@ -29,7 +29,7 @@ repos:
         exclude_types:
           - plain-text
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.16
+    rev: v0.15.18
     hooks:
       - id: ruff
         args:
@@ -44,7 +44,7 @@ repos:
           - "--install-types"
           - "--non-interactive"
   - repo: https://github.com/jsh9/pydoclint
-    rev: 0.8.6
+    rev: 0.8.7
     hooks:
       - id: pydoclint
         args:

@@ -20,6 +20,7 @@ from backend.api.bpm import router as bpm_router
 from backend.api.folder_config import router as folder_config_router
 from backend.api.metadata import router as metadata_router
 from backend.api.profile_groups import router as profile_groups_router
+from backend.api.rekordbox import router as rekordbox_router
 from backend.api.rulesets import router as rulesets_router
 from backend.api.setup import router as setup_router
 from backend.api.soundcloud import router as soundcloud_router
@@ -112,6 +113,7 @@ def create_app() -> FastAPI:
     app.include_router(system_playlists_router)
     app.include_router(bpm_router)
     app.include_router(suggestions_router)
+    app.include_router(rekordbox_router)
 
     add_pagination(app)
 

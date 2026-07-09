@@ -34,6 +34,7 @@ Pulled from `src/lib/nav-config.ts` (`NAV_LINKS` + `QUICK_JUMPS`). Add an entry 
 | `nav:/library?source=soundcloud&tab=me` | Go to Library: SoundCloud — My Library |
 | `nav:/library?source=soundcloud&tab=discover` | Go to Library: SoundCloud — Discover |
 | `nav:/library?source=soundcloud&tab=search` | Go to Library: SoundCloud — Search |
+| `nav:/library?source=rekordbox` | Go to Library: Rekordbox |
 
 ### Folders
 

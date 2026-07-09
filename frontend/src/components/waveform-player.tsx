@@ -7,8 +7,11 @@ import { useEffect, useRef, useState } from "react";
 import type WaveSurferType from "wavesurfer.js";
 
 import { BpmPitcher, computePlaybackRate } from "@/components/bpm-pitcher";
+import { PlayerRekordboxWaveform } from "@/components/player-rekordbox-waveform";
+import { loadWaveform, pwv4ToPeaks } from "@/components/rekordbox-waveform";
 import { api } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
+import { selectPeaksSource } from "@/lib/player-peaks";
 import { markScUnplayable } from "@/lib/sc-unplayable";
 import {
   getCachedSoundcloudPeaks,
@@ -16,6 +19,7 @@ import {
   invalidateSoundcloudStreamUrl,
 } from "@/lib/soundcloud-cache";
 import { useResizableWidth } from "@/lib/use-resizable";
+import { useWaveformStyle } from "@/lib/use-waveform-style";
 import { cn } from "@/lib/utils";
 
 /** Heuristic: URL is an HLS playlist (by extension). */
@@ -92,6 +96,7 @@ export function WaveformPlayer() {
   const [expanded, setExpanded] = useState(false);
 
   const treeWidth = useResizableWidth("tree-panel-width", 240);
+  const waveformStyle = useWaveformStyle();
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -225,12 +230,6 @@ export function WaveformPlayer() {
       // gaps between bars.
       const numPeaks = 2000;
 
-      // Skeleton SoundCloud entries from the queue have no `streamUrl` yet —
-      // `streamRefreshKey` is the durable marker that this is a SC track.
-      const isStream =
-        !!currentTrack!.streamUrl ||
-        currentTrack!.streamRefreshKey !== undefined;
-
       // Kick off all network-bound work in parallel:
       //   - WaveSurfer module imports (cached after first track)
       //   - peaks fetch (backend or SC CDN)
@@ -241,13 +240,29 @@ export function WaveformPlayer() {
       const wsImportPromise = import("wavesurfer.js");
       const hoverImportPromise =
         import("wavesurfer.js/dist/plugins/hover.esm.js");
-      const peaksPromise: Promise<number[]> = isStream
-        ? currentTrack!.waveformUrl
-          ? getCachedSoundcloudPeaks(currentTrack!.waveformUrl, numPeaks).then(
-              (p) => p ?? new Array<number>(numPeaks).fill(0.5),
+      const peaksSource = selectPeaksSource(currentTrack!);
+      const peaksPromise: Promise<number[]> =
+        peaksSource.kind === "rekordbox"
+          ? // Rekordbox already analyzed this track — its PWV4 preview is a
+            // ~2ms fetch vs an ~1s ffmpeg decode for backend peaks.
+            loadWaveform(peaksSource.id, peaksSource.device).then((data) =>
+              data
+                ? pwv4ToPeaks(data)
+                : // No PWV4 for this track: local-install tracks resolve to a
+                  // real file we can decode; USB tracks live off-root, so fall
+                  // back to a flat placeholder rather than a doomed ffmpeg call.
+                  peaksSource.device
+                  ? new Array<number>(numPeaks).fill(0.5)
+                  : api.getFilePeaks(currentTrack!.filePath, numPeaks),
             )
-          : Promise.resolve(new Array<number>(numPeaks).fill(0.5))
-        : api.getFilePeaks(currentTrack!.filePath, numPeaks);
+          : peaksSource.kind === "soundcloud"
+            ? peaksSource.waveformUrl
+              ? getCachedSoundcloudPeaks(
+                  peaksSource.waveformUrl,
+                  numPeaks,
+                ).then((p) => p ?? new Array<number>(numPeaks).fill(0.5))
+              : Promise.resolve(new Array<number>(numPeaks).fill(0.5))
+            : api.getFilePeaks(currentTrack!.filePath, numPeaks);
       const streamUrlPromise: Promise<string | undefined> = currentTrack!
         .streamUrl
         ? Promise.resolve(currentTrack!.streamUrl)
@@ -371,6 +386,17 @@ export function WaveformPlayer() {
 
       hls = attachAudioSource(audio, sourceUrl, { onExpired: onStreamExpired });
 
+      // Seeks only need the media element + a finite duration — register as
+      // soon as metadata lands instead of waiting for `ws.ready` (which
+      // blocks on the peaks fetch). Pending seeks (play-from-position via a
+      // row waveform click) apply the moment this registers.
+      const registerAudioSeek = () => {
+        if (cancelled) return;
+        registerSeek((ratio) => {
+          audio.currentTime = Math.max(0, Math.min(1, ratio)) * audio.duration;
+        });
+      };
+
       // Now await the remaining work in parallel: peaks, waveform module
       // imports, and a finite audio.duration. Audio playback has already
       // been kicked off via the `canplay` listener, so this path only
@@ -382,6 +408,7 @@ export function WaveformPlayer() {
           hoverImportPromise,
           new Promise<void>((resolve) => {
             if (isFinite(audio.duration) && audio.duration > 0) {
+              registerAudioSeek();
               resolve();
               return;
             }
@@ -392,6 +419,7 @@ export function WaveformPlayer() {
             };
             const check = () => {
               if (isFinite(audio.duration) && audio.duration > 0) {
+                registerAudioSeek();
                 // Kick off playback as soon as duration is known — earlier
                 // than `canplay`, which waits for more buffered data.
                 if (!cancelled && isPlayingRef.current) {
@@ -590,6 +618,18 @@ export function WaveformPlayer() {
       getCachedSoundcloudPeaks(nextTrack.waveformUrl, numPeaks).catch(() => {
         /* Prefetch is best-effort. */
       });
+    } else if (nextTrack.rekordboxId) {
+      loadWaveform(nextTrack.rekordboxId, nextTrack.rekordboxDevice).catch(
+        () => {
+          /* Prefetch is best-effort. */
+        },
+      );
+    } else if (nextTrack.streamRefreshKey == null) {
+      // Local file — warm the backend's peaks cache so the next track's
+      // ffmpeg decode (~1s) happens now instead of on skip.
+      api.getFilePeaks(nextTrack.filePath, numPeaks).catch(() => {
+        /* Prefetch is best-effort. */
+      });
     }
   }, [ready, hasNext, peekNext, currentTrack?.filePath]);
 
@@ -604,6 +644,14 @@ export function WaveformPlayer() {
   const titleText = currentTrack.title ?? currentTrack.fileName;
   const artistText = currentTrack.artist ?? "";
   const loadingProgress = duration > 0 ? currentTime / duration : 0;
+
+  // Colour the bottom waveform with Rekordbox's own analysis when the user
+  // picked a Rekordbox style and the current track carries one. Non-Rekordbox
+  // sources always fall through to the default WaveSurfer render.
+  const rekColored =
+    !!currentTrack.rekordboxId &&
+    (waveformStyle === "rekordbox_rgb" || waveformStyle === "rekordbox_blue");
+  const rekVariant = waveformStyle === "rekordbox_blue" ? "blue" : "color";
 
   const morphTransition = {
     type: "spring" as const,
@@ -873,9 +921,27 @@ export function WaveformPlayer() {
             <div className="relative flex min-w-0 flex-1 items-center px-3">
               <div
                 ref={containerRef}
-                className="min-w-0 flex-1"
+                className={cn("min-w-0 flex-1", rekColored && "opacity-0")}
                 style={{ cursor: "pointer" }}
               />
+              {/* Rekordbox RGB/Blue overlay — WaveSurfer stays mounted (hidden)
+                  to keep driving audio + progress; this canvas paints the
+                  coloured waveform and owns seek/hover. */}
+              {rekColored && currentTrack.rekordboxId && (
+                <div
+                  data-testid="player-rekordbox-waveform"
+                  data-variant={rekVariant}
+                  className="absolute inset-y-0 right-3 left-3 flex items-center"
+                >
+                  <PlayerRekordboxWaveform
+                    trackId={currentTrack.rekordboxId}
+                    device={currentTrack.rekordboxDevice}
+                    variant={rekVariant}
+                    durationSec={duration}
+                    className="h-8"
+                  />
+                </div>
+              )}
               {/* Loading-state fallback progress — fades out once waveform is ready. */}
               <div
                 className={cn(

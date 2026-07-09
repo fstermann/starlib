@@ -41,6 +41,14 @@ export interface PlayerTrack {
    * SoundCloud tracks, the CDN `artwork_url`. Surfaced to the OS media
    * widget via the Media Session API. */
   artworkUrl?: string;
+  /** Rekordbox track id with an analyzed waveform. When set, the player
+   * derives its peaks from the Rekordbox PWV4 preview (a ~2ms fetch)
+   * instead of decoding the audio file via ffmpeg. */
+  rekordboxId?: string;
+  /** Selected Rekordbox USB device id, if this track comes from a mounted
+   * export. Threads through to the PWV4 waveform fetch so it targets the
+   * device rather than the local install. */
+  rekordboxDevice?: string;
 }
 
 interface PlayerContextValue {
@@ -50,8 +58,14 @@ interface PlayerContextValue {
   load: (track: PlayerTrack) => void;
   /** Play a single track. Replaces the queue with [track]. */
   play: (track: PlayerTrack) => void;
-  /** Replace the queue with `tracks` and start playback at `index`. */
-  playQueue: (tracks: PlayerTrack[], index: number) => void;
+  /** Replace the queue with `tracks` and start playback at `index`. When
+   * `startRatio` is provided, playback begins at that offset (0–1) — applied
+   * as soon as the new track is decoded. */
+  playQueue: (
+    tracks: PlayerTrack[],
+    index: number,
+    startRatio?: number,
+  ) => void;
   pause: () => void;
   toggle: (track?: PlayerTrack) => void;
   stop: () => void;
@@ -146,6 +160,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const progressRef = useRef(0);
   const progressCallbacksRef = useRef<Set<(p: number) => void>>(new Set());
   const seekFnRef = useRef<((ratio: number) => void) | null>(null);
+  // Seek that was requested before the next track finished decoding. Applied
+  // by `registerSeek` once the player wires the real seek fn.
+  const pendingSeekRef = useRef<number | null>(null);
 
   const currentTrack = queueIndex >= 0 ? (queue[queueIndex] ?? null) : null;
 
@@ -193,8 +210,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const playQueue = useCallback(
-    (tracks: PlayerTrack[], index: number) => {
+    (tracks: PlayerTrack[], index: number, startRatio?: number) => {
       if (tracks.length === 0 || index < 0 || index >= tracks.length) return;
+      // The about-to-unmount player's seek fn isn't valid for the new track,
+      // so drop it here. The new fn lands via `registerSeek` once ready.
+      seekFnRef.current = null;
+      pendingSeekRef.current =
+        startRatio != null && startRatio > 0
+          ? Math.max(0, Math.min(1, startRatio))
+          : null;
       setQueueState(tracks, index);
       setIsPlaying(true);
     },
@@ -243,7 +267,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [setQueueState]);
 
   const seek = useCallback((ratio: number) => {
-    seekFnRef.current?.(ratio);
+    const clamped = Math.max(0, Math.min(1, ratio));
+    if (seekFnRef.current) {
+      seekFnRef.current(clamped);
+    } else {
+      // Defer until the next track's seek fn is wired by `registerSeek`.
+      pendingSeekRef.current = clamped;
+    }
   }, []);
 
   const next = useCallback(() => {
@@ -284,6 +314,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const registerSeek = useCallback((fn: ((ratio: number) => void) | null) => {
     seekFnRef.current = fn;
+    if (fn && pendingSeekRef.current != null) {
+      const ratio = pendingSeekRef.current;
+      pendingSeekRef.current = null;
+      fn(ratio);
+    }
   }, []);
 
   const reportDuration = useCallback((d: number) => {

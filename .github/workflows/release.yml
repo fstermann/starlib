@@ -35,7 +35,7 @@ jobs:
             tag: ${{ steps.bump.outputs.tag }}
             release_branch: ${{ steps.bump.outputs.release_branch }}
         steps:
-            - uses: actions/checkout@v6
+            - uses: actions/checkout@v7
 
             - name: Bump version
               id: bump
@@ -127,7 +127,7 @@ jobs:
         name: Sidecar (${{ matrix.arch }})
 
         steps:
-            - uses: actions/checkout@v6
+            - uses: actions/checkout@v7
               with:
                   ref: ${{ needs.bump-version.outputs.tag }}
 
@@ -209,7 +209,7 @@ jobs:
         name: Tauri (${{ matrix.arch }})
 
         steps:
-            - uses: actions/checkout@v6
+            - uses: actions/checkout@v7
               with:
                   ref: ${{ needs.bump-version.outputs.tag }}
 
@@ -261,7 +261,7 @@ jobs:
 
             # ── tauri-action: build, create release, upload artifacts + latest.json
             - name: Build and release
-              uses: tauri-apps/tauri-action@v0
+              uses: tauri-apps/tauri-action@v1
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -303,7 +303,7 @@ jobs:
             contents: write
 
         steps:
-            - uses: actions/checkout@v6
+            - uses: actions/checkout@v7
               with:
                   ref: ${{ github.ref_name }}
                   fetch-depth: 0
@@ -328,7 +328,7 @@ jobs:
         runs-on: ubuntu-latest
 
         steps:
-            - uses: actions/checkout@v6
+            - uses: actions/checkout@v7
               with:
                   ref: ${{ github.ref }}
                   fetch-depth: 0
