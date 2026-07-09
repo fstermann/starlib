@@ -8,7 +8,12 @@ import {
   Wand2,
   XCircle,
 } from "lucide-react";
-import { useQueryState } from "nuqs";
+import {
+  parseAsArrayOf,
+  parseAsInteger,
+  parseAsString,
+  useQueryState,
+} from "nuqs";
 import type * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -80,21 +85,10 @@ export function FilesystemView() {
   // All rulesets (for context menu)
   const [allRulesets, setAllRulesets] = useState<Ruleset[]>([]);
 
-  // Load tree, folder config, root folder, and rulesets on mount
+  // Load folder config, root folder, and rulesets on mount. The tree itself is
+  // loaded by a filter-aware effect below so its counts reflect active filters.
   useEffect(() => {
     let cancelled = false;
-    api
-      .getFolderTree()
-      .then((t) => {
-        if (cancelled) return;
-        setTree(t);
-        setRootFolder(t.id);
-        // Default to root if no node selected
-        if (!selectedNodeId) {
-          setSelectedNodeId(t.id);
-        }
-      })
-      .catch(() => {});
 
     function loadFolders() {
       api
@@ -134,7 +128,6 @@ export function FilesystemView() {
       window.removeEventListener("folders-config-changed", loadFolders);
       unsubscribeRulesets();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Resolve active ruleset for the selected node, walking ancestors for recursive bindings
@@ -281,15 +274,74 @@ export function FilesystemView() {
   // Table refresh signal
   const [refreshToken, setRefreshToken] = useState(0);
 
-  // Reload the folder tree whenever something changes (save, apply rules, etc.)
-  // so folder track counts stay in sync.
+  // Active filter state, read from the same URL params the table uses. Drives
+  // filtered tree counts so badges reflect what's visible after filtering.
+  const [treeSearch] = useQueryState("search", parseAsString.withDefault(""));
+  const [treeGenres] = useQueryState(
+    "genre",
+    parseAsArrayOf(parseAsString).withDefault([]),
+  );
+  const [treeKeys] = useQueryState(
+    "key",
+    parseAsArrayOf(parseAsString).withDefault([]),
+  );
+  const [treeBpmMin] = useQueryState("bpmMin", parseAsInteger);
+  const [treeBpmMax] = useQueryState("bpmMax", parseAsInteger);
+  const [treeFormats] = useQueryState(
+    "file_format",
+    parseAsArrayOf(parseAsString).withDefault([]),
+  );
+  const [treeSizeMin] = useQueryState("file_sizeMin", parseAsInteger);
+  const [treeSizeMax] = useQueryState("file_sizeMax", parseAsInteger);
+  const [treeScLinkedRaw] = useQueryState("soundcloud_linked", parseAsString);
+  const treeScLinked =
+    treeScLinkedRaw === "true"
+      ? true
+      : treeScLinkedRaw === "false"
+        ? false
+        : undefined;
+
+  // Stable key over the filter values (nuqs arrays are fresh each render).
+  const treeFiltersKey = `${treeSearch}|${treeGenres.join(",")}|${treeKeys.join(
+    ",",
+  )}|${treeBpmMin}|${treeBpmMax}|${treeFormats.join(",")}|${treeSizeMin}|${treeSizeMax}|${treeScLinkedRaw ?? ""}`;
+
+  // Whether the default node has been selected once (avoids resetting the
+  // user's selection every time the filtered tree reloads).
+  const treeInitializedRef = useRef(false);
+
+  // (Re)load the folder tree with the active filters. Also re-runs on
+  // refreshToken (save, apply rules, etc.) so counts stay in sync.
   useEffect(() => {
-    if (refreshToken === 0) return; // initial mount already loads the tree
+    let cancelled = false;
     api
-      .getFolderTree()
-      .then(setTree)
+      .getFolderTree({
+        search: treeSearch || undefined,
+        genres: treeGenres.length ? treeGenres : undefined,
+        keys: treeKeys.length ? treeKeys : undefined,
+        bpmMin: treeBpmMin ?? undefined,
+        bpmMax: treeBpmMax ?? undefined,
+        fileFormats: treeFormats.length ? treeFormats : undefined,
+        sizeMin: treeSizeMin ?? undefined,
+        sizeMax: treeSizeMax ?? undefined,
+        hasSoundcloudId: treeScLinked,
+      })
+      .then((t) => {
+        if (cancelled) return;
+        setTree(t);
+        setRootFolder(t.id);
+        // Default to root once, if no node selected yet.
+        if (!treeInitializedRef.current) {
+          treeInitializedRef.current = true;
+          setSelectedNodeId((cur) => cur || t.id);
+        }
+      })
       .catch(() => {});
-  }, [refreshToken]);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeFiltersKey, refreshToken]);
 
   useReloadHandler(() => setRefreshToken((t) => t + 1));
 

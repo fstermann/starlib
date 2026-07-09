@@ -291,6 +291,8 @@ export interface TreeNode {
   name: string;
   children: TreeNode[];
   track_count: number;
+  // Recursive count under the active filters; null/undefined when unfiltered.
+  filtered_count?: number | null;
 }
 
 export interface FolderRulesetBinding {
@@ -672,8 +674,32 @@ export const api = {
 
   // ==================== Folder Tree ====================
 
-  async getFolderTree(): Promise<TreeNode> {
-    return fetchApi("/api/metadata/folders/tree");
+  async getFolderTree(params?: {
+    search?: string;
+    genres?: string[];
+    keys?: string[];
+    bpmMin?: number;
+    bpmMax?: number;
+    fileFormats?: string[];
+    sizeMin?: number;
+    sizeMax?: number;
+    hasSoundcloudId?: boolean;
+  }): Promise<TreeNode> {
+    const qs = new URLSearchParams();
+    if (params?.search) qs.set("search", params.search);
+    params?.genres?.forEach((g) => qs.append("genres", g));
+    params?.keys?.forEach((k) => qs.append("keys", k));
+    if (params?.bpmMin !== undefined) qs.set("bpm_min", String(params.bpmMin));
+    if (params?.bpmMax !== undefined) qs.set("bpm_max", String(params.bpmMax));
+    params?.fileFormats?.forEach((f) => qs.append("file_formats", f));
+    if (params?.sizeMin !== undefined)
+      qs.set("size_min", String(params.sizeMin));
+    if (params?.sizeMax !== undefined)
+      qs.set("size_max", String(params.sizeMax));
+    if (params?.hasSoundcloudId !== undefined)
+      qs.set("has_soundcloud_id", String(params.hasSoundcloudId));
+    const q = qs.toString();
+    return fetchApi(`/api/metadata/folders/tree${q ? `?${q}` : ""}`);
   },
 
   async browsePath(
