@@ -49,6 +49,8 @@ export interface PlayerTrack {
    * export. Threads through to the PWV4 waveform fetch so it targets the
    * device rather than the local install. */
   rekordboxDevice?: string;
+  /** Musical key (e.g. "8A", "Fm"), when known. Shown next to the BPM. */
+  musicalKey?: string;
 }
 
 interface PlayerContextValue {

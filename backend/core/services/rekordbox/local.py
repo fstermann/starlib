@@ -235,6 +235,20 @@ class LocalMasterDbSource(RekordboxSource):
             return None
         return read_pwav(str(dat), mtime_ns)
 
+    def get_analysis_paths(self, track_id: str) -> tuple[Path | None, Path | None]:
+        """Return the ``(.DAT, .EXT)`` ANLZ sidecar paths for a track."""
+        db = self._open_db()
+        row = db.get_content(ID=track_id)
+        if row is None:
+            return None, None
+        rel = getattr(row, "AnalysisDataPath", None)
+        if not rel:
+            return None, None
+        base = self._resolve_relative(str(rel))
+        dat = base.with_suffix(".DAT")
+        ext = base.with_suffix(".EXT")
+        return (dat if dat.exists() else None, ext if ext.exists() else None)
+
     def list_all_tracks(self, limit: int | None = None) -> list[RekordboxTrack]:
         """Return all tracks in the collection."""
         db = self._open_db()

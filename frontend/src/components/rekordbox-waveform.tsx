@@ -36,8 +36,9 @@ const SOURCE_COLS = 1200;
 const cache = new Map<string, Uint8Array | null>();
 const inflight = new Map<string, Promise<Uint8Array | null>>();
 
-/** Waveform byte variant: PWV4 colour preview or PWAV monochrome preview. */
-export type WaveformVariant = "color" | "blue";
+/** Waveform byte variant: whole-track preview (`color`/`blue`) or
+ * ~150-column/second detail for zoom (`color_detail`/`blue_detail`). */
+export type WaveformVariant = "color" | "blue" | "color_detail" | "blue_detail";
 
 function cacheKey(
   trackId: string,

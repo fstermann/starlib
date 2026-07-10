@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from .analysis import TrackAnalysis, read_analysis
+
 logger = logging.getLogger(__name__)
 
 
@@ -101,6 +103,52 @@ class RekordboxSource(ABC):
     @abstractmethod
     def get_track_waveform_blue(self, track_id: str) -> bytes | None:
         """Return the raw PWAV monochrome-preview entry bytes, or ``None``."""
+
+    @abstractmethod
+    def get_analysis_paths(self, track_id: str) -> tuple[Path | None, Path | None]:
+        """Return the ``(.DAT, .EXT)`` ANLZ sidecar paths for a track.
+
+        Either element is ``None`` when the corresponding file is absent (a track
+        may have no analysis at all, or an older ``.DAT``-only analysis without
+        the ``.EXT`` colour/phrase data). Existence is checked here so callers can
+        assume a returned path is readable.
+        """
+
+    def get_track_waveform_color_detail(self, track_id: str) -> bytes | None:
+        """Return raw PWV5 colour-detail bytes (2 B/column, ~150/s), or ``None``.
+
+        This is the high-resolution waveform used for zoomed playback, decoded on
+        the frontend canvas. Lives in the ``.EXT`` sidecar.
+        """
+        _, ext = self.get_analysis_paths(track_id)
+        if ext is None:
+            return None
+        return read_pwv5(str(ext), ext.stat().st_mtime_ns)
+
+    def get_track_waveform_blue_detail(self, track_id: str) -> bytes | None:
+        """Return raw PWV3 monochrome-detail bytes (1 B/column, ~150/s), or ``None``.
+
+        Zoom fallback when no ``.EXT`` colour detail exists. Lives in the ``.DAT``.
+        """
+        dat, _ = self.get_analysis_paths(track_id)
+        if dat is None:
+            return None
+        return read_pwv3(str(dat), dat.stat().st_mtime_ns)
+
+    def get_track_analysis(self, track_id: str) -> TrackAnalysis:
+        """Return the beatgrid, phrase sections, and cues for a track.
+
+        Beatgrid and cues come from the ``.DAT``; phrase sections and extended
+        (nxs2) cues from the ``.EXT``. Missing files degrade to empty lists /
+        ``None`` sections rather than raising.
+        """
+        dat, ext = self.get_analysis_paths(track_id)
+        return read_analysis(
+            str(dat) if dat else None,
+            dat.stat().st_mtime_ns if dat else 0,
+            str(ext) if ext else None,
+            ext.stat().st_mtime_ns if ext else 0,
+        )
 
 
 def extract_soundcloud_id(comment: str | None) -> int | None:
@@ -239,5 +287,74 @@ def read_pwav(path: str, mtime_ns: int) -> bytes | None:
     """
     try:
         return extract_pwav(Path(path).read_bytes())
+    except OSError:
+        return None
+
+
+def _extract_detail_entries(data: bytes, fourcc: bytes, entry_bytes: int) -> bytes | None:
+    """Extract raw entry bytes of a fixed-width detail-waveform tag.
+
+    PWV5 (colour detail, ``.EXT``) and PWV3 (monochrome detail, ``.DAT``) share
+    the PWV4 tag layout: a 24-byte header (generic ``fourcc`` + len_header +
+    len_tag, then len_entry_bytes + len_entries + unknown) followed by
+    ``len_entries`` fixed-width columns. Both carry ~150 columns per second, so a
+    multi-minute track yields tens of thousands of columns — enough resolution to
+    zoom to a few bars. Walks the section list directly (see :func:`extract_pwv4`)
+    rather than construct-parsing the whole file.
+
+    Args:
+        data: Full contents of an ANLZ file.
+        fourcc: The tag identifier (``b"PWV5"`` or ``b"PWV3"``).
+        entry_bytes: Expected bytes per column (2 for PWV5, 1 for PWV3).
+
+    Returns:
+        The raw entry bytes, or ``None`` if the tag is absent or malformed.
+    """
+    if len(data) < 8 or data[:4] != b"PMAI":
+        return None
+    pos = int.from_bytes(data[4:8], "big")
+    while pos + 12 <= len(data):
+        tag = data[pos : pos + 4]
+        len_tag = int.from_bytes(data[pos + 8 : pos + 12], "big")
+        if len_tag <= 0:
+            return None
+        if tag == fourcc:
+            if pos + 24 > len(data):
+                return None
+            n_bytes = int.from_bytes(data[pos + 12 : pos + 16], "big")
+            n_entries = int.from_bytes(data[pos + 16 : pos + 20], "big")
+            start = pos + 24
+            end = start + n_bytes * n_entries
+            if n_bytes != entry_bytes or end > len(data):
+                return None
+            return data[start:end]
+        pos += len_tag
+    return None
+
+
+def extract_pwv5(data: bytes) -> bytes | None:
+    """Extract PWV5 colour-detail entry bytes (2 bytes/column) from a ``.EXT``."""
+    return _extract_detail_entries(data, b"PWV5", 2)
+
+
+def extract_pwv3(data: bytes) -> bytes | None:
+    """Extract PWV3 monochrome-detail entry bytes (1 byte/column) from a ``.DAT``."""
+    return _extract_detail_entries(data, b"PWV3", 1)
+
+
+@lru_cache(maxsize=256)
+def read_pwv5(path: str, mtime_ns: int) -> bytes | None:
+    """Read and extract PWV5 colour-detail bytes from an ANLZ ``.EXT``, cached."""
+    try:
+        return extract_pwv5(Path(path).read_bytes())
+    except OSError:
+        return None
+
+
+@lru_cache(maxsize=256)
+def read_pwv3(path: str, mtime_ns: int) -> bytes | None:
+    """Read and extract PWV3 monochrome-detail bytes from an ANLZ ``.DAT``, cached."""
+    try:
+        return extract_pwv3(Path(path).read_bytes())
     except OSError:
         return None

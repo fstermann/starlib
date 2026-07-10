@@ -439,17 +439,30 @@ export const api = {
     return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/artwork?${params}`;
   },
 
-  // Rekordbox PWV4 color preview entries (raw 1200 × 6 bytes)
+  // Rekordbox waveform bytes. Preview variants span the whole track (`color` =
+  // PWV4 1200×6, `blue` = PWAV 400×1); detail variants carry ~150 columns/second
+  // for zoom (`color_detail` = PWV5, `blue_detail` = PWV3).
   getRekordboxWaveformUrl(
     trackId: string,
     device?: string,
-    variant: "color" | "blue" = "color",
+    variant: "color" | "blue" | "color_detail" | "blue_detail" = "color",
   ): string {
     const params = new URLSearchParams();
     if (device) params.set("device", device);
     if (variant !== "color") params.set("variant", variant);
     const q = params.toString();
     return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/waveform${q ? `?${q}` : ""}`;
+  },
+
+  // Rekordbox beatgrid / phrase sections / cues as JSON.
+  async getRekordboxAnalysis(
+    trackId: string,
+    device?: string,
+  ): Promise<components["schemas"]["TrackAnalysisResponse"]> {
+    const q = device ? `?device=${encodeURIComponent(device)}` : "";
+    return fetchApi<components["schemas"]["TrackAnalysisResponse"]>(
+      `/api/rekordbox/tracks/${encodeURIComponent(trackId)}/analysis${q}`,
+    );
   },
 
   // Audio stream for a track on a mounted USB export.
