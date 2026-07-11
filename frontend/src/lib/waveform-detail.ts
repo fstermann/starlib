@@ -35,6 +35,25 @@ export function rgbCss(packed: number): string {
   return `rgb(${(packed >> 16) & 0xff}, ${(packed >> 8) & 0xff}, ${packed & 0xff})`;
 }
 
+/** Perceived luminance of a `#RRGGBB` colour (0–255). */
+export function hexLuminance(hex: string): number {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+/** Black or white text, whichever reads on `hex`. */
+export function textOn(hex: string): string {
+  return hexLuminance(hex) > 150 ? "#000" : "#fff";
+}
+
+/** Hot-cue slot (1-based) to its rekordbox letter: 1 → "A". */
+export function hotCueLetter(index: number | null | undefined): string {
+  return index != null ? String.fromCharCode(64 + index) : "H";
+}
+
 /**
  * Decode PWV5 colour-detail bytes (2 bytes/column, big-endian). Bit layout per
  * column: `rrr ggg bbb hhhhh 00` (3-bit R/G/B, 5-bit height).

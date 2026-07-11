@@ -1,8 +1,9 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import Hls from "hls.js";
 import {
+  ChevronLeft,
+  ChevronRight,
   Pause,
   Play,
   SkipBack,
@@ -31,18 +32,22 @@ import {
   getCachedSoundcloudStreamUrl,
   invalidateSoundcloudStreamUrl,
 } from "@/lib/soundcloud-cache";
-import { useResizableWidth } from "@/lib/use-resizable";
 import { useWaveformStyle } from "@/lib/use-waveform-style";
 import { cn } from "@/lib/utils";
 import {
   barBeatLabel,
   barSpanSeconds,
   buildDownbeatPrefix,
+  hotCueLetter,
+  textOn,
 } from "@/lib/waveform-detail";
 
 /** Zoom steps: `null` = whole-track overview only, then bars visible. */
 const ZOOM_LEVELS: (number | null)[] = [null, 128, 64, 32, 16, 8, 4];
 const ZOOM_KEY = "player.zoomBars";
+
+/** Selectable loop lengths, in beats. */
+const LOOP_BEAT_STEPS = [1, 2, 4, 8, 16, 32] as const;
 
 /** Phrase-kind → chart token (defined in globals.css). Colours the phrase band
  * drawn over the whole-track overview. */
@@ -121,11 +126,13 @@ export function WaveformPlayer() {
     reportProgress,
     registerSeek,
     reportDuration,
+    seek,
     currentBpm,
     targetBpm,
     pitchEnabled,
   } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurferType | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const isPlayingRef = useRef(isPlaying);
@@ -135,11 +142,18 @@ export function WaveformPlayer() {
   const [currentTime, setCurrentTime] = useState(0);
   const [ready, setReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
   const [zoomBars, setZoomBars] = useState<number | null>(null);
   const [analysis, setAnalysis] = useState<TrackAnalysis | null>(null);
 
-  const treeWidth = useResizableWidth("tree-panel-width", 240);
+  // Cue + loop (in-memory only; reset on track change). The temp cue point is a
+  // single settable/recallable marker; the loop is N beats from a start anchor,
+  // enforced in the audio driver below.
+  const [cueSec, setCueSec] = useState<number | null>(null);
+  const [loopActive, setLoopActive] = useState(false);
+  const [loopStartSec, setLoopStartSec] = useState(0);
+  const [loopBeats, setLoopBeats] = useState(8);
+  const loopRef = useRef<{ start: number; end: number } | null>(null);
+
   const waveformStyle = useWaveformStyle();
 
   // Hydrate the persisted zoom level once on mount.
@@ -179,6 +193,109 @@ export function WaveformPlayer() {
     () => buildDownbeatPrefix(analysis?.beatgrid ?? []),
     [analysis],
   );
+
+  // --- cue + loop ---
+  const loopEndSec = useMemo(() => {
+    if (!currentBpm || currentBpm <= 0) return null;
+    return loopStartSec + (loopBeats * 60) / currentBpm;
+  }, [currentBpm, loopStartSec, loopBeats]);
+
+  // Mirror the active loop into a ref the audioprocess handler reads, so it
+  // stays live without re-subscribing the WaveSurfer listener on every change.
+  useEffect(() => {
+    loopRef.current =
+      loopActive && loopEndSec != null
+        ? { start: loopStartSec, end: loopEndSec }
+        : null;
+  }, [loopActive, loopStartSec, loopEndSec]);
+
+  // Clear cue + loop when the track changes.
+  const trackKey = currentTrack?.rekordboxId ?? currentTrack?.filePath;
+  useEffect(() => {
+    setCueSec(null);
+    setLoopActive(false);
+  }, [trackKey]);
+
+  // Snap a time to the nearest beat when a beatgrid is available.
+  const snapToBeat = (sec: number): number => {
+    const grid = analysis?.beatgrid;
+    if (!grid || grid.length === 0) return sec;
+    let best = sec;
+    let bestDist = Infinity;
+    for (const b of grid) {
+      const bt = b.timeMs / 1000;
+      const d = Math.abs(bt - sec);
+      if (d < bestDist) {
+        bestDist = d;
+        best = bt;
+      }
+      if (bt > sec + 1) break; // grid is sorted ascending
+    }
+    return best;
+  };
+
+  // Rekordbox-style CUE: playing → tap jumps back to the cue and pauses.
+  // Paused → press sets the cue at the playhead and previews (plays while held);
+  // release stops and returns to the cue point. A quick tap therefore just sets
+  // the cue and leaves playback stopped there.
+  const cuePreviewRef = useRef<number | null>(null);
+  const handleCueDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    if (duration <= 0) return;
+    if (isPlaying) {
+      pause();
+      seek((cueSec ?? 0) / duration);
+    } else {
+      const cp = currentTime;
+      setCueSec(cp);
+      cuePreviewRef.current = cp;
+      toggle(); // resume → preview from the cue while held
+    }
+  };
+  const handleCueUp = () => {
+    if (cuePreviewRef.current != null && duration > 0) {
+      const cp = cuePreviewRef.current;
+      cuePreviewRef.current = null;
+      pause();
+      seek(cp / duration);
+    }
+  };
+
+  const toggleLoop = () => {
+    if (!currentBpm || currentBpm <= 0) return;
+    setLoopActive((active) => {
+      if (!active) setLoopStartSec(snapToBeat(currentTime));
+      return !active;
+    });
+  };
+
+  const changeLoopBeats = (dir: 1 | -1) => {
+    setLoopBeats((prev) => {
+      const i = LOOP_BEAT_STEPS.indexOf(
+        prev as (typeof LOOP_BEAT_STEPS)[number],
+      );
+      return LOOP_BEAT_STEPS[
+        Math.max(0, Math.min(LOOP_BEAT_STEPS.length - 1, i + dir))
+      ];
+    });
+  };
+
+  // Publish the player's actual height so the layout shell can reserve exactly
+  // that much bottom padding (the height varies with collapsed/expanded state).
+  useEffect(() => {
+    const el = rootRef.current;
+    const root = document.documentElement;
+    if (!el) {
+      root.style.setProperty("--player-height", "0px");
+      return;
+    }
+    const set = () =>
+      root.style.setProperty("--player-height", `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [currentTrack]);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -603,7 +720,12 @@ export function WaveformPlayer() {
       });
 
       ws.on("audioprocess", () => {
-        const t = ws!.getCurrentTime();
+        let t = ws!.getCurrentTime();
+        const lp = loopRef.current;
+        if (lp && t >= lp.end) {
+          ws!.setTime(lp.start);
+          t = lp.start;
+        }
         setCurrentTime(t);
         reportProgress(t / knownDuration);
       });
@@ -719,10 +841,6 @@ export function WaveformPlayer() {
 
   const artworkUrl =
     currentTrack.artworkUrl ?? api.getArtworkUrl(currentTrack.filePath);
-  // SoundCloud serves artwork at multiple sizes via suffix (`-large` is ~100px,
-  // `-t500x500` is 500px). Upgrade for the expanded preview so it doesn't look
-  // pixelated at tree-panel width. Non-SC URLs pass through unchanged.
-  const largeArtworkUrl = artworkUrl.replace("-large", "-t500x500");
   const titleText = currentTrack.title ?? currentTrack.fileName;
   const artistText = currentTrack.artist ?? "";
   const loadingProgress = duration > 0 ? currentTime / duration : 0;
@@ -756,461 +874,504 @@ export function WaveformPlayer() {
         })()
       : null;
 
-  const morphTransition = {
-    type: "spring" as const,
-    stiffness: 380,
-    damping: 34,
-  };
+  const remaining = Math.max(0, duration - currentTime);
 
   return (
-    <>
-      {/* Background panel — fades in/out behind the morphing artwork + title. */}
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            key="artwork-panel-bg"
-            className="border-border fixed bottom-0 left-14 z-50 border-t bg-[var(--surface-2)]"
-            style={{
-              // Leave the rightmost pixel uncovered so the tree view's own
-              // border-r (which the panel would otherwise paint over) stays
-              // visible, giving a continuous vertical separator line.
-              width: `${treeWidth - 1}px`,
-              height: `${treeWidth + 64}px`,
-            }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            onClick={() => setExpanded(false)}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Big artwork — mounted only when expanded; shares layoutId with the
-          small artwork so framer-motion animates the transform between them. */}
-      {expanded && (
-        <motion.button
-          layoutId="player-artwork"
-          layoutDependency={expanded}
-          type="button"
-          data-testid="player-artwork"
-          onClick={() => setExpanded(false)}
-          className="bg-muted fixed left-14 z-50 cursor-pointer overflow-hidden"
-          style={{
-            bottom: "4rem",
-            width: `${treeWidth - 1}px`,
-            height: `${treeWidth - 1}px`,
-          }}
-          title="Collapse artwork"
-          aria-label="Collapse artwork"
-          transition={morphTransition}
-        >
-          <img
-            src={largeArtworkUrl}
-            alt=""
-            className="size-full object-cover"
-            onError={(e) => {
-              // Fall back to the small artwork URL if the hi-res variant 404s
-              // (e.g., non-SC sources where `-large` isn't in the URL).
-              const img = e.currentTarget as HTMLImageElement;
-              if (img.src !== artworkUrl) {
-                img.src = artworkUrl;
-              } else {
-                img.style.display = "none";
-              }
-            }}
-          />
-        </motion.button>
-      )}
-
-      {/* Big title row — same layoutId dance as the artwork. */}
-      {expanded && (
-        <motion.div
-          layoutId="player-title"
-          layoutDependency={expanded}
-          className="fixed bottom-0 left-14 z-50 flex h-16 min-w-0 flex-col justify-center gap-0.5 px-3"
-          style={{ width: `${treeWidth - 1}px` }}
-          onClick={() => setExpanded(false)}
-          transition={morphTransition}
-        >
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-xs" title={titleText}>
-              {titleText}
-            </span>
-            {currentTrack.permalinkUrl && (
-              <a
-                href={currentTrack.permalinkUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
-                title="Open on SoundCloud"
-                aria-label="Open on SoundCloud"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <img
-                  src="/icons/soundcloud.svg"
-                  alt=""
-                  className="size-3 dark:invert"
-                />
-              </a>
-            )}
-          </div>
-          {artistText && (
-            <span
-              className="text-muted-foreground truncate text-xs"
-              title={artistText}
-            >
-              {artistText}
-            </span>
-          )}
-        </motion.div>
-      )}
-
-      <div
-        data-testid="waveform-player"
-        className="border-border fixed right-0 bottom-0 left-14 z-40 flex flex-col border-t bg-[var(--surface-2)] shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
-      >
-        {/* Zoomed detail strip — scrolls with playback, playhead centred.
-            Stacks above the transport row (which stays anchored at the bottom). */}
-        {zoomActive && (
+    <div
+      ref={rootRef}
+      data-testid="waveform-player"
+      className="border-border fixed right-0 bottom-0 left-14 z-40 flex border-t bg-[var(--surface-2)] shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
+    >
+      {/* ===== Side rail — all controls live here; the right side is waveforms
+          only. Rows drop from four (expanded) to two (collapsed). ===== */}
+      <div className="border-border flex w-[360px] shrink-0 flex-col justify-center gap-1 border-r px-3 py-1.5">
+        {/* Artwork + title / artist */}
+        <div className="flex min-w-0 items-center gap-2.5">
           <div
-            data-testid="player-detail-strip"
-            data-zoom-bars={zoomBars ?? undefined}
-            className="border-border h-16 border-b px-3 py-1"
-            onWheel={(e) => {
-              e.preventDefault();
-              changeZoom(e.deltaY < 0 ? 1 : -1);
-            }}
+            data-testid="player-artwork"
+            className="bg-muted size-9 shrink-0 overflow-hidden rounded-md"
           >
-            <PlayerDetailWaveform
-              track={currentTrack}
-              zoomBars={zoomBars!}
-              durationSec={duration}
-              bpm={currentBpm}
-              waveformStyle={waveformStyle}
+            <img
+              src={artworkUrl}
+              alt=""
+              className="size-full object-cover"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
             />
           </div>
-        )}
-        <div className="flex h-16 items-stretch">
-          {/* Mini block — fixed width matching the tree panel above */}
-          <div
-            className="border-border flex shrink-0 items-center gap-2 border-r pr-3 pl-2"
-            style={{ width: `${treeWidth}px` }}
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span
+                className="text-primary truncate text-sm font-semibold"
+                title={titleText}
+              >
+                {titleText}
+              </span>
+              {currentTrack.permalinkUrl && (
+                <a
+                  href={currentTrack.permalinkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+                  title="Open on SoundCloud"
+                  aria-label="Open on SoundCloud"
+                >
+                  <img
+                    src="/icons/soundcloud.svg"
+                    alt=""
+                    className="size-3 dark:invert"
+                  />
+                </a>
+              )}
+            </div>
+            {artistText && (
+              <span
+                className="text-muted-foreground truncate text-xs"
+                title={artistText}
+              >
+                {artistText}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Transport + time */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              previous();
+              e.currentTarget.blur();
+            }}
+            disabled={!hasPrevious && currentTime <= 3}
+            className={cn(
+              "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors",
+              !hasPrevious &&
+                currentTime <= 3 &&
+                "cursor-not-allowed opacity-40 hover:bg-transparent",
+            )}
+            title="Previous (←)"
+            aria-label="Previous track"
           >
-            {/* Artwork — click expands. When expanded, this unmounts and the
-            big artwork (same layoutId) takes over; framer-motion animates
-            the transform between the two positions. */}
-            {!expanded && (
-              <motion.button
-                layoutId="player-artwork"
-                layoutDependency={expanded}
-                type="button"
-                data-testid="player-artwork"
-                className="bg-muted relative flex size-10 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md"
-                onClick={() => setExpanded(true)}
-                title="Expand artwork"
-                aria-label="Expand artwork"
-                aria-expanded={false}
-                transition={morphTransition}
-              >
-                <img
-                  src={artworkUrl}
-                  alt=""
-                  className="size-full object-cover"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).style.display =
-                      "none";
-                  }}
-                />
-              </motion.button>
+            <SkipBack className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            data-testid="player-toggle"
+            onClick={(e) => {
+              toggle();
+              // Drop focus so a subsequent Space keypress isn't captured by
+              // the button's default activation behavior (which would
+              // re-toggle on top of the window-level keyboard handler).
+              e.currentTarget.blur();
+            }}
+            className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors"
+            title={isPlaying ? "Pause (Space)" : "Play (Space)"}
+            aria-label={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? (
+              <Pause className="size-3.5" />
+            ) : (
+              <Play className="size-3.5 translate-x-px" />
             )}
-
-            {/* Title + artist — morphs into the expanded panel's title row. */}
-            {!expanded && (
-              <motion.div
-                layoutId="player-title"
-                layoutDependency={expanded}
-                className="flex min-w-0 flex-1 flex-col gap-0.5"
-                transition={morphTransition}
-              >
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="truncate text-xs" title={titleText}>
-                    {titleText}
-                  </span>
-                  {currentTrack.permalinkUrl && (
-                    <a
-                      href={currentTrack.permalinkUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
-                      title="Open on SoundCloud"
-                      aria-label="Open on SoundCloud"
-                    >
-                      <img
-                        src="/icons/soundcloud.svg"
-                        alt=""
-                        className="size-3 dark:invert"
-                      />
-                    </a>
-                  )}
-                </div>
-                {artistText && (
-                  <div
-                    className="text-muted-foreground truncate text-xs"
-                    title={artistText}
-                  >
-                    {artistText}
-                  </div>
-                )}
-              </motion.div>
+          </button>
+          {/* CUE — round CDJ-style button: tap sets/recalls, hold previews. */}
+          <button
+            type="button"
+            data-testid="player-cue-btn"
+            onPointerDown={handleCueDown}
+            onPointerUp={handleCueUp}
+            onPointerCancel={handleCueUp}
+            className={cn(
+              "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border text-[10px] font-semibold transition-colors select-none",
+              cueSec != null
+                ? "border-amber-500 text-amber-500 hover:bg-amber-500/10"
+                : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
             )}
-          </div>
+            title="Cue — tap to set/recall, hold to preview"
+            aria-label="Cue"
+          >
+            CUE
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              next();
+              e.currentTarget.blur();
+            }}
+            disabled={!hasNext}
+            className={cn(
+              "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors",
+              !hasNext && "cursor-not-allowed opacity-40 hover:bg-transparent",
+            )}
+            title="Next (→)"
+            aria-label="Next track"
+          >
+            <SkipForward className="size-3.5" />
+          </button>
 
-          {/* Transport cluster — lifted out of the tree-width column so the
-          title block has room to breathe. */}
-          <div className="flex shrink-0 items-center gap-0.5 px-3">
-            <button
-              type="button"
-              onClick={(e) => {
-                previous();
-                e.currentTarget.blur();
-              }}
-              disabled={!hasPrevious && currentTime <= 3}
-              className={cn(
-                "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors",
-                !hasPrevious &&
-                  currentTime <= 3 &&
-                  "cursor-not-allowed opacity-40 hover:bg-transparent",
-              )}
-              title="Previous (←)"
-              aria-label="Previous track"
-            >
-              <SkipBack className="size-4" />
-            </button>
-            <button
-              type="button"
-              data-testid="player-toggle"
-              onClick={(e) => {
-                toggle();
-                // Drop focus so a subsequent Space keypress isn't captured by
-                // the button's default activation behavior (which would
-                // re-toggle on top of the window-level keyboard handler).
-                e.currentTarget.blur();
-              }}
-              className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-9 cursor-pointer items-center justify-center rounded-full transition-colors"
-              title={isPlaying ? "Pause (Space)" : "Play (Space)"}
-              aria-label={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying ? (
-                <Pause className="size-4" />
+          {/* Right of transport: time + remaining (expanded) or the pitcher +
+              key · bar.beat inline (collapsed, so the rail stays two rows). */}
+          <div className="ml-auto flex items-center gap-2">
+            {!zoomActive && <BpmPitcher />}
+            <div className="flex flex-col items-end leading-tight tabular-nums">
+              <span className="text-sm font-medium">
+                <span className="text-foreground">
+                  {formatTime(currentTime)}
+                </span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  / {formatTime(duration)}
+                </span>
+              </span>
+              {zoomActive ? (
+                <span className="text-muted-foreground text-xs">
+                  −{formatTime(remaining)} LEFT
+                </span>
               ) : (
-                <Play className="size-4 translate-x-px" />
+                <span className="text-muted-foreground flex items-center gap-1 text-xs">
+                  <span title="Key">{currentTrack.musicalKey ?? "—"}</span>
+                  {barBeat && (
+                    <>
+                      <span>·</span>
+                      <span title="Bar.beat">{barBeat}</span>
+                    </>
+                  )}
+                </span>
               )}
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                next();
-                e.currentTarget.blur();
-              }}
-              disabled={!hasNext}
-              className={cn(
-                "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors",
-                !hasNext &&
-                  "cursor-not-allowed opacity-40 hover:bg-transparent",
-              )}
-              title="Next (→)"
-              aria-label="Next track"
-            >
-              <SkipForward className="size-4" />
-            </button>
+            </div>
           </div>
+        </div>
 
-          {/* Target-BPM pitcher — displays current BPM and allows pitching
-          playback. Sits between transport and waveform. */}
-          <BpmPitcher />
-
-          {/* Musical key (Rekordbox analysis), when known. */}
-          {currentTrack.musicalKey && (
-            <div
-              className="text-muted-foreground flex shrink-0 items-center pr-1 text-xs font-medium tabular-nums"
-              title="Key"
-            >
-              {currentTrack.musicalKey}
-            </div>
-          )}
-
-          {errorMsg ? (
-            <div
-              role="alert"
-              className="text-destructive flex shrink-0 items-center px-3 text-xs"
-            >
-              {errorMsg}
-            </div>
-          ) : (
-            <>
-              {/* Current time (+ bar.beat when a beatgrid is available) */}
-              <div className="text-muted-foreground flex shrink-0 flex-col items-start justify-center pl-2 text-xs leading-tight tabular-nums">
-                <span>{formatTime(currentTime)}</span>
-                {barBeat && (
-                  <span className="text-[10px] opacity-70" title="Bar.beat">
-                    {barBeat}
-                  </span>
+        {/* Expanded only: loop row + BPM/KEY boxes. */}
+        {zoomActive && (
+          <>
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={(e) => {
+                  changeLoopBeats(-1);
+                  e.currentTarget.blur();
+                }}
+                disabled={loopBeats === LOOP_BEAT_STEPS[0]}
+                className={cn(
+                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 border-border flex size-7 cursor-pointer items-center justify-center rounded-md border transition-colors",
+                  loopBeats === LOOP_BEAT_STEPS[0] &&
+                    "cursor-not-allowed opacity-40 hover:bg-transparent",
                 )}
-              </div>
-
-              {/* Waveform (fills remaining width) */}
-              <div
-                className="relative flex min-w-0 flex-1 items-center px-3"
-                onWheel={
-                  zoomable
-                    ? (e) => {
-                        e.preventDefault();
-                        changeZoom(e.deltaY < 0 ? 1 : -1);
-                      }
-                    : undefined
-                }
+                title="Halve loop length"
+                aria-label="Halve loop length"
               >
-                <div
-                  ref={containerRef}
-                  className={cn("min-w-0 flex-1", rekColored && "opacity-0")}
-                  style={{ cursor: "pointer" }}
+                <ChevronLeft className="size-4" />
+              </button>
+              <span
+                className="text-foreground border-border w-9 rounded-md border py-1 text-center text-sm font-medium tabular-nums"
+                title="Loop length (beats)"
+              >
+                {loopBeats}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  changeLoopBeats(1);
+                  e.currentTarget.blur();
+                }}
+                disabled={
+                  loopBeats === LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1]
+                }
+                className={cn(
+                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 border-border flex size-7 cursor-pointer items-center justify-center rounded-md border transition-colors",
+                  loopBeats === LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1] &&
+                    "cursor-not-allowed opacity-40 hover:bg-transparent",
+                )}
+                title="Double loop length"
+                aria-label="Double loop length"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+              <button
+                type="button"
+                data-testid="player-loop-btn"
+                data-active={loopActive || undefined}
+                onClick={(e) => {
+                  toggleLoop();
+                  e.currentTarget.blur();
+                }}
+                disabled={!currentBpm}
+                className={cn(
+                  "ml-auto flex h-7 cursor-pointer items-center rounded-md border px-4 text-xs font-semibold transition-colors",
+                  loopActive
+                    ? "border-primary text-primary hover:bg-primary/10"
+                    : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
+                  !currentBpm && "cursor-not-allowed opacity-40",
+                )}
+                title={currentBpm ? "Toggle loop" : "Loop needs a known BPM"}
+                aria-label="Toggle loop"
+              >
+                LOOP
+              </button>
+            </div>
+            <div className="flex items-stretch gap-2">
+              <div className="border-border flex flex-1 items-center rounded-md border px-1">
+                <BpmPitcher />
+              </div>
+              <div className="border-border flex flex-1 items-center gap-1.5 rounded-md border px-3">
+                <span className="text-foreground text-sm font-semibold tabular-nums">
+                  {currentTrack.musicalKey ?? "—"}
+                </span>
+                <span className="text-2xs text-muted-foreground tracking-wider uppercase">
+                  Key
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ===== Waveform area — right side, waveforms only ===== */}
+      {errorMsg ? (
+        <div
+          role="alert"
+          className="text-destructive flex flex-1 items-center px-4 text-xs"
+        >
+          {errorMsg}
+        </div>
+      ) : (
+        <div className="flex min-w-0 flex-1">
+          <div className="relative flex min-w-0 flex-1 flex-col justify-center gap-1 py-2 pl-2">
+            {/* Zoom detail strip (expanded only) */}
+            {zoomActive && (
+              <div
+                data-testid="player-detail-strip"
+                data-zoom-bars={zoomBars ?? undefined}
+                className="h-20 px-1"
+                onWheel={(e) => {
+                  e.preventDefault();
+                  changeZoom(e.deltaY < 0 ? 1 : -1);
+                }}
+              >
+                <PlayerDetailWaveform
+                  track={currentTrack}
+                  zoomBars={zoomBars!}
+                  durationSec={duration}
+                  bpm={currentBpm}
+                  waveformStyle={waveformStyle}
+                  loop={
+                    loopActive && loopEndSec != null
+                      ? { startSec: loopStartSec, endSec: loopEndSec }
+                      : null
+                  }
+                  cueSec={cueSec}
                 />
-                {/* Phrase sections + cue markers + zoom-window indicator over
-                    the whole-track overview (rekordbox tracks with analysis). */}
-                {(viewport ||
-                  (duration > 0 &&
-                    (analysis?.cues.length || analysis?.sections?.length))) && (
-                  <div className="pointer-events-none absolute inset-y-2 right-3 left-3">
-                    {/* Phrase-section band along the top edge. */}
-                    {duration > 0 &&
-                      analysis?.sections?.map((s, i) => (
+              </div>
+            )}
+
+            {/* Overview waveform */}
+            <div
+              className="relative flex h-12 items-center px-1"
+              onWheel={
+                zoomable
+                  ? (e) => {
+                      e.preventDefault();
+                      changeZoom(e.deltaY < 0 ? 1 : -1);
+                    }
+                  : undefined
+              }
+            >
+              <div
+                ref={containerRef}
+                className={cn("min-w-0 flex-1", rekColored && "opacity-0")}
+                style={{ cursor: "pointer" }}
+              />
+              {/* Cue markers + loop region + zoom-window indicator over the
+                    whole-track overview. Phrase sections are a separate row. */}
+              {(viewport ||
+                (duration > 0 &&
+                  (analysis?.cues.length || loopActive || cueSec != null))) && (
+                <div className="pointer-events-none absolute inset-x-1 inset-y-0 z-10">
+                  {/* Loop region (drawn under the cue markers). */}
+                  {loopActive && loopEndSec != null && duration > 0 && (
+                    <div
+                      data-testid="player-loop-region"
+                      className="border-primary bg-primary/15 absolute inset-y-0 rounded-sm border"
+                      style={{
+                        left: `${(loopStartSec / duration) * 100}%`,
+                        width: `${((loopEndSec - loopStartSec) / duration) * 100}%`,
+                      }}
+                    />
+                  )}
+                  {/* Cue markers — numbered colour squares (rekordbox-style),
+                        click to seek. */}
+                  {duration > 0 &&
+                    analysis?.cues.map((c, i) => {
+                      const color =
+                        c.color ?? (c.type === "hot" ? "#f97316" : "#f43f5e");
+                      return (
                         <div
                           key={i}
-                          data-testid="player-section"
-                          className="absolute top-0 flex h-2.5 items-center overflow-hidden rounded-[1px] px-0.5"
-                          style={{
-                            left: `${(s.startMs / 1000 / duration) * 100}%`,
-                            width: `${((s.endMs - s.startMs) / 1000 / duration) * 100}%`,
-                            backgroundColor:
-                              SECTION_COLOR_VAR[s.kind] ??
-                              SECTION_COLOR_VAR.other,
-                          }}
-                        >
-                          <span className="truncate text-[8px] leading-none font-medium text-black/70">
-                            {s.label}
-                          </span>
-                        </div>
-                      ))}
-                    {duration > 0 &&
-                      analysis?.cues.map((c, i) => (
-                        <div
-                          key={i}
-                          className="absolute inset-y-0 w-px"
+                          className="absolute inset-y-0"
                           style={{
                             left: `${(c.timeMs / 1000 / duration) * 100}%`,
-                            backgroundColor:
-                              c.color ??
-                              (c.type === "hot" ? "#f97316" : "#f43f5e"),
                           }}
-                        />
-                      ))}
-                    {viewport && (
-                      <div
-                        className="border-primary/70 bg-primary/15 absolute inset-y-0 rounded-sm border"
-                        style={{
-                          left: `${viewport.left * 100}%`,
-                          width: `${viewport.width * 100}%`,
-                        }}
+                        >
+                          <div
+                            className="absolute inset-y-0 w-px -translate-x-1/2"
+                            style={{ backgroundColor: color }}
+                          />
+                          <button
+                            type="button"
+                            data-testid="player-cue"
+                            data-cue-type={c.type}
+                            onClick={() => seek(c.timeMs / 1000 / duration)}
+                            title={
+                              c.type === "hot"
+                                ? `Hot cue ${hotCueLetter(c.index)}`
+                                : "Memory cue"
+                            }
+                            className="pointer-events-auto absolute top-0 flex size-3 -translate-x-1/2 cursor-pointer items-center justify-center rounded-[2px] text-[8px] leading-none font-bold transition-transform hover:scale-110"
+                            style={{
+                              backgroundColor: color,
+                              color: textOn(color),
+                            }}
+                          >
+                            {i + 1}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  {/* In-memory cue point (amber flag), click to recall. */}
+                  {cueSec != null && duration > 0 && (
+                    <div
+                      className="absolute inset-y-0"
+                      style={{ left: `${(cueSec / duration) * 100}%` }}
+                    >
+                      <div className="absolute inset-y-0 w-px -translate-x-1/2 bg-amber-500" />
+                      <button
+                        type="button"
+                        data-testid="player-cue-point"
+                        onClick={() => seek(cueSec / duration)}
+                        title="Cue point"
+                        aria-label="Cue point"
+                        className="pointer-events-auto absolute top-0 block size-0 -translate-x-1/2 cursor-pointer border-t-[7px] border-r-[5px] border-l-[5px] border-t-amber-500 border-r-transparent border-l-transparent"
                       />
-                    )}
-                  </div>
-                )}
-                {/* Rekordbox RGB/Blue overlay — WaveSurfer stays mounted (hidden)
-                  to keep driving audio + progress; this canvas paints the
-                  coloured waveform and owns seek/hover. */}
-                {rekColored && currentTrack.rekordboxId && (
-                  <div
-                    data-testid="player-rekordbox-waveform"
-                    data-variant={rekVariant}
-                    className="absolute inset-y-0 right-3 left-3 flex items-center"
-                  >
-                    <PlayerRekordboxWaveform
-                      trackId={currentTrack.rekordboxId}
-                      device={currentTrack.rekordboxDevice}
-                      variant={rekVariant}
-                      durationSec={duration}
-                      className="h-8"
-                    />
-                  </div>
-                )}
-                {/* Loading-state fallback progress — fades out once waveform is ready. */}
-                <div
-                  className={cn(
-                    "bg-surface-3 pointer-events-none absolute right-3 bottom-2 left-0 h-0.5 overflow-hidden rounded-full transition-opacity duration-200",
-                    ready ? "opacity-0" : "opacity-100",
+                    </div>
                   )}
-                >
-                  <div
-                    className="bg-primary h-full"
-                    style={{
-                      width: `${Math.min(100, loadingProgress * 100)}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Zoom controls — hidden for SoundCloud streams. */}
-              {zoomable && (
-                <div className="flex shrink-0 flex-col items-center justify-center gap-0.5 pl-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      changeZoom(1);
-                      e.currentTarget.blur();
-                    }}
-                    disabled={zoomBars === 4}
-                    className={cn(
-                      "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
-                      zoomBars === 4 &&
-                        "cursor-not-allowed opacity-40 hover:bg-transparent",
-                    )}
-                    title="Zoom in"
-                    aria-label="Zoom in"
-                  >
-                    <ZoomIn className="size-3.5" />
-                  </button>
-                  <span className="text-muted-foreground text-[9px] tabular-nums">
-                    {zoomBars == null ? "—" : zoomBars}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      changeZoom(-1);
-                      e.currentTarget.blur();
-                    }}
-                    disabled={zoomBars == null}
-                    className={cn(
-                      "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
-                      zoomBars == null &&
-                        "cursor-not-allowed opacity-40 hover:bg-transparent",
-                    )}
-                    title="Zoom out"
-                    aria-label="Zoom out"
-                  >
-                    <ZoomOut className="size-3.5" />
-                  </button>
+                  {viewport && (
+                    <div
+                      className="border-primary/70 bg-primary/15 absolute inset-y-0 rounded-sm border"
+                      style={{
+                        left: `${viewport.left * 100}%`,
+                        width: `${viewport.width * 100}%`,
+                      }}
+                    />
+                  )}
                 </div>
               )}
-
-              {/* Total duration — right of waveform */}
-              <div className="text-muted-foreground flex shrink-0 items-center pr-4 text-xs tabular-nums">
-                {formatTime(duration)}
+              {/* Rekordbox RGB/Blue overlay — WaveSurfer stays mounted (hidden)
+                  to keep driving audio + progress; this canvas paints the
+                  coloured waveform and owns seek/hover. */}
+              {rekColored && currentTrack.rekordboxId && (
+                <div
+                  data-testid="player-rekordbox-waveform"
+                  data-variant={rekVariant}
+                  className="absolute inset-x-1 inset-y-0 flex items-center"
+                >
+                  <PlayerRekordboxWaveform
+                    trackId={currentTrack.rekordboxId}
+                    device={currentTrack.rekordboxDevice}
+                    variant={rekVariant}
+                    durationSec={duration}
+                    className="h-8"
+                  />
+                </div>
+              )}
+              {/* Loading-state fallback progress — fades out once waveform is ready. */}
+              <div
+                className={cn(
+                  "bg-surface-3 pointer-events-none absolute inset-x-1 bottom-0 h-0.5 overflow-hidden rounded-full transition-opacity duration-200",
+                  ready ? "opacity-0" : "opacity-100",
+                )}
+              >
+                <div
+                  className="bg-primary h-full"
+                  style={{
+                    width: `${Math.min(100, loadingProgress * 100)}%`,
+                  }}
+                />
               </div>
-            </>
+            </div>
+
+            {/* Phrase band — labelled song-structure sections. */}
+            {duration > 0 && analysis?.sections?.length ? (
+              <div className="relative h-3.5 px-1">
+                <div className="absolute inset-x-1 inset-y-0">
+                  {analysis.sections.map((s, i) => (
+                    <div
+                      key={i}
+                      data-testid="player-section"
+                      className="absolute inset-y-0 flex items-center overflow-hidden rounded-[1px] px-1"
+                      style={{
+                        left: `${(s.startMs / 1000 / duration) * 100}%`,
+                        width: `${((s.endMs - s.startMs) / 1000 / duration) * 100}%`,
+                        backgroundColor:
+                          SECTION_COLOR_VAR[s.kind] ?? SECTION_COLOR_VAR.other,
+                      }}
+                    >
+                      <span className="truncate text-[8px] leading-none font-semibold tracking-wide text-black/70 uppercase">
+                        {s.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Zoom controls — hidden for SoundCloud streams. */}
+          {zoomable && (
+            <div className="flex shrink-0 flex-col items-center justify-center gap-0.5 px-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  changeZoom(1);
+                  e.currentTarget.blur();
+                }}
+                disabled={zoomBars === 4}
+                className={cn(
+                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-6 cursor-pointer items-center justify-center rounded transition-colors",
+                  zoomBars === 4 &&
+                    "cursor-not-allowed opacity-40 hover:bg-transparent",
+                )}
+                title="Zoom in"
+                aria-label="Zoom in"
+              >
+                <ZoomIn className="size-4" />
+              </button>
+              <span className="text-muted-foreground text-[9px] tabular-nums">
+                {zoomBars == null ? "—" : zoomBars}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  changeZoom(-1);
+                  e.currentTarget.blur();
+                }}
+                disabled={zoomBars == null}
+                className={cn(
+                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-6 cursor-pointer items-center justify-center rounded transition-colors",
+                  zoomBars == null &&
+                    "cursor-not-allowed opacity-40 hover:bg-transparent",
+                )}
+                title="Zoom out"
+                aria-label="Zoom out"
+              >
+                <ZoomOut className="size-4" />
+              </button>
+            </div>
           )}
         </div>
-      </div>
-    </>
+      )}
+    </div>
   );
 }

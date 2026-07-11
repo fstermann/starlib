@@ -74,7 +74,10 @@ const ANALYSIS = {
     { beat: 4, bpm: 124.5, timeMs: 1446 },
   ],
   sections: [{ kind: "intro", label: "Intro", startMs: 0, endMs: 1446 }],
-  cues: [{ type: "hot", index: 1, timeMs: 0, color: "#ff8800", comment: null }],
+  cues: [
+    { type: "hot", index: 1, timeMs: 0, color: "#ff8800", comment: null },
+    { type: "memory", index: null, timeMs: 50, color: null, comment: null },
+  ],
 };
 
 test.describe("Player zoom — Rekordbox track", () => {
@@ -142,6 +145,61 @@ test.describe("Player zoom — Rekordbox track", () => {
     await expect(player.getByText("1.1", { exact: true })).toBeVisible();
     // Phrase sections are marked on the whole-track overview, not the zoom strip.
     await expect(player.getByTestId("player-section").first()).toBeVisible();
+  });
+
+  test("overview shows numbered, clickable cue markers", async ({ page }) => {
+    await playFoo(page);
+    const player = page.getByTestId("waveform-player");
+
+    // Cues render as numbered colour squares (1, 2… in time order), each
+    // clickable to seek — the two mocked cues become "1" (hot) and "2" (memory).
+    const cues = player.getByTestId("player-cue");
+    await expect(cues).toHaveCount(2);
+    await expect(cues.filter({ hasText: "1" })).toHaveAttribute(
+      "data-cue-type",
+      "hot",
+    );
+    await expect(cues.filter({ hasText: "2" })).toHaveAttribute(
+      "data-cue-type",
+      "memory",
+    );
+    await cues.first().click();
+  });
+
+  test("CUE sets and recalls an in-memory cue point", async ({ page }) => {
+    await playFoo(page);
+    const player = page.getByTestId("waveform-player");
+
+    // No cue point yet.
+    await expect(page.getByTestId("player-cue-point")).toHaveCount(0);
+
+    // Pause (wait for it to register so CUE takes the "set" branch, not
+    // "recall"), then CUE sets a cue point marker on the overview.
+    await player.getByTestId("player-toggle").click();
+    await expect(player.getByRole("button", { name: "Play" })).toBeVisible();
+    await player.getByTestId("player-cue-btn").click();
+    await expect(page.getByTestId("player-cue-point")).toBeVisible();
+  });
+
+  test("LOOP controls appear when zoomed and toggle an active loop", async ({
+    page,
+  }) => {
+    await playFoo(page);
+    const player = page.getByTestId("waveform-player");
+
+    // Loop controls are hidden in the collapsed overview.
+    await expect(player.getByTestId("player-loop-btn")).toHaveCount(0);
+
+    // Zoom in → expanded → loop controls present but idle.
+    await player.getByRole("button", { name: "Zoom in" }).click();
+    const loopBtn = player.getByTestId("player-loop-btn");
+    await expect(loopBtn).toBeVisible();
+    await expect(page.getByTestId("player-loop-region")).toHaveCount(0);
+
+    // Toggle → active loop draws a region on the overview.
+    await loopBtn.click();
+    await expect(loopBtn).toHaveAttribute("data-active", "true");
+    await expect(page.getByTestId("player-loop-region")).toBeVisible();
   });
 
   test("zoom in reveals the scrolling detail strip, zoom out hides it", async ({
