@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import {
   barSpanSeconds,
   buildDownbeatPrefix,
+  computeCueDisplays,
   decodeFloatPeaks,
   decodePwv3,
   decodePwv5,
@@ -179,10 +180,15 @@ export function PlayerDetailWaveform({
       ctx.clearRect(0, 0, cssW, cssH);
       const isDark = document.documentElement.classList.contains("dark");
 
+      // Pad only the *waveform* amplitude 5% top and bottom (markers still span
+      // the full height) so the ends of the beat tips / cue markers read clearly
+      // against the quieter waveform.
+      const padY = cssH * 0.05;
       const waveTop = 0;
       const waveH = cssH;
-      const mid = waveH / 2;
-      const halfH = waveH / 2;
+      const waveBottom = cssH;
+      const mid = cssH / 2;
+      const halfH = cssH / 2 - padY;
 
       const span = barSpanSeconds(zoomBars, bpm); // seconds across the strip
       const t = progress * durationSec; // playhead time (s)
@@ -247,7 +253,7 @@ export function PlayerDetailWaveform({
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(x + 0.5, waveTop);
-            ctx.lineTo(x + 0.5, cssH);
+            ctx.lineTo(x + 0.5, waveBottom);
             ctx.stroke();
             ctx.fillStyle = red;
             ctx.beginPath(); // top tip
@@ -257,16 +263,16 @@ export function PlayerDetailWaveform({
             ctx.closePath();
             ctx.fill();
             ctx.beginPath(); // bottom tip
-            ctx.moveTo(x - tipW, cssH);
-            ctx.lineTo(x + tipW, cssH);
-            ctx.lineTo(x, cssH - tipH);
+            ctx.moveTo(x - tipW, waveBottom);
+            ctx.lineTo(x + tipW, waveBottom);
+            ctx.lineTo(x, waveBottom - tipH);
             ctx.closePath();
             ctx.fill();
             if (showBarNums) {
               ctx.fillStyle = isDark
                 ? "rgba(255,255,255,0.5)"
                 : "rgba(0,0,0,0.45)";
-              ctx.fillText(String(downbeatPrefix[i]), x + 3, cssH - 10);
+              ctx.fillText(String(downbeatPrefix[i]), x + 3, waveBottom - 10);
             }
           } else if (showBeats) {
             ctx.strokeStyle = isDark
@@ -275,14 +281,15 @@ export function PlayerDetailWaveform({
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(x + 0.5, waveTop);
-            ctx.lineTo(x + 0.5, cssH);
+            ctx.lineTo(x + 0.5, waveBottom);
             ctx.stroke();
           }
         }
       }
 
-      // --- cue markers (numbered colour squares, matching the overview) ---
+      // --- cue markers (hot cues colour-coded w/ letter, memory numbered) ---
       if (analysis?.cues.length) {
+        const displays = computeCueDisplays(analysis.cues);
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.font = "bold 9px ui-sans-serif, system-ui, sans-serif";
@@ -290,7 +297,7 @@ export function PlayerDetailWaveform({
           const c = analysis.cues[i];
           const x = timeToX(c.timeMs / 1000);
           if (x < -12 || x > cssW + 12) continue;
-          const color = c.color ?? (c.type === "hot" ? "#f97316" : "#ff4d6d");
+          const { color, label } = displays[i];
           ctx.globalAlpha = 0.55; // guide line
           ctx.fillStyle = color;
           ctx.fillRect(x - 0.5, waveTop, 1, waveH);
@@ -300,7 +307,7 @@ export function PlayerDetailWaveform({
           ctx.fillStyle = color;
           ctx.fill();
           ctx.fillStyle = textOn(color);
-          ctx.fillText(String(i + 1), x + s / 2, waveTop + s / 2 + 0.5);
+          ctx.fillText(label, x + s / 2, waveTop + s / 2 + 0.5);
         }
         ctx.textAlign = "left";
         ctx.textBaseline = "top";

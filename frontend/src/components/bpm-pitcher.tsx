@@ -239,27 +239,39 @@ export function BpmPitcher() {
           <button
             type="button"
             data-testid="bpm-pitcher-trigger"
-            className={cn(
-              "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex h-10 cursor-pointer flex-col items-center justify-center rounded-md px-2 leading-none tabular-nums transition-colors",
-              pitchEnabled && "text-primary hover:text-primary",
-            )}
+            className="text-muted-foreground hover:bg-surface-3 flex h-10 cursor-pointer flex-col items-center justify-center rounded-md px-2 leading-none tabular-nums transition-colors"
             title="Target BPM"
             aria-label="Target BPM pitcher"
           >
             <span className="flex items-baseline gap-1">
-              <span className="text-xs font-medium">{bpmLabel}</span>
-              <span className="text-2xs opacity-70">BPM</span>
+              <span
+                className={cn(
+                  "text-xs font-semibold",
+                  pitchEnabled ? "text-primary" : "text-foreground",
+                )}
+              >
+                {bpmLabel}
+              </span>
+              {/* Label is never tinted — the value carries the pitch colour. */}
+              <span className="text-muted-foreground text-[8px] tracking-wider uppercase">
+                BPM
+              </span>
             </span>
             {pitchEnabled && currentBpm != null && (
               <span
                 data-testid="bpm-pitcher-rate-badge"
-                className={cn(
-                  "text-2xs mt-0.5 tabular-nums",
-                  ratePercent === 0 ? "opacity-60" : "text-primary",
-                )}
+                className="text-2xs mt-0.5 tabular-nums"
               >
-                {ratePercent > 0 ? "+" : ""}
-                {ratePercent.toFixed(1)}%
+                {/* Original BPM in gray; the delta carries the pitch colour. */}
+                <span className="text-muted-foreground">{currentBpm}</span>{" "}
+                <span
+                  className={
+                    ratePercent === 0 ? "text-muted-foreground" : "text-primary"
+                  }
+                >
+                  {ratePercent > 0 ? "+" : ""}
+                  {ratePercent.toFixed(1)}%
+                </span>
               </span>
             )}
           </button>

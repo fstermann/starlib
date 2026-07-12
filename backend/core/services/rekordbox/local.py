@@ -14,6 +14,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from .analysis import Cue, TrackAnalysis, cues_from_db_rows
 from .base import (
     RekordboxPlaylist,
     RekordboxSource,
@@ -248,6 +249,31 @@ class LocalMasterDbSource(RekordboxSource):
         dat = base.with_suffix(".DAT")
         ext = base.with_suffix(".EXT")
         return (dat if dat.exists() else None, ext if ext.exists() else None)
+
+    def get_track_analysis(self, track_id: str) -> TrackAnalysis:
+        """Beatgrid + sections from the ANLZ sidecars, cues from ``master.db``.
+
+        Rekordbox 6 stores cues in the ``djmdCue`` table, leaving the local
+        ANLZ ``PCOB``/``PCO2`` tags empty, so the base ANLZ parse returns no
+        cues here. We overlay the database cues instead.
+        """
+        analysis = super().get_track_analysis(track_id)
+        cues = self._read_db_cues(track_id)
+        if not cues:
+            return analysis
+        from dataclasses import replace
+
+        return replace(analysis, cues=cues)
+
+    def _read_db_cues(self, track_id: str) -> list[Cue]:
+        """Read a track's cues from the ``djmdCue`` table (empty on any error)."""
+        try:
+            db = self._open_db()
+            rows = list(db.get_cue(ContentID=track_id))
+        except Exception:
+            logger.debug("Failed to read cues for %s", track_id, exc_info=True)
+            return []
+        return cues_from_db_rows(rows)
 
     def list_all_tracks(self, limit: int | None = None) -> list[RekordboxTrack]:
         """Return all tracks in the collection."""

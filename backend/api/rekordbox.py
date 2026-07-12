@@ -205,6 +205,7 @@ class CueModel(BaseModel):
     timeMs: int
     color: str | None = None
     comment: str | None = None
+    outMs: int | None = None  # loop end (ms) for loop cues, else null
 
 
 class TrackAnalysisResponse(BaseModel):
@@ -233,7 +234,14 @@ def get_track_analysis(track_id: str, device: str | None = DeviceParam) -> Track
             else None
         ),
         cues=[
-            CueModel(type=c.type, index=c.index, timeMs=c.time_ms, color=c.color, comment=c.comment)
+            CueModel(
+                type=c.type,
+                index=c.index,
+                timeMs=c.time_ms,
+                color=c.color,
+                comment=c.comment,
+                outMs=c.out_ms,
+            )
             for c in analysis.cues
         ],
     )

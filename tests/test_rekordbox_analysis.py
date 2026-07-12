@@ -99,6 +99,33 @@ def test_parse_cues_prefers_pco2() -> None:
     assert cues[1] == A.Cue(type="memory", index=None, time_ms=5000, color=None, comment=None)
 
 
+class _CueRow:
+    """Minimal stand-in for a pyrekordbox ``djmdCue`` ORM row."""
+
+    def __init__(self, **kw: object) -> None:
+        self.__dict__.update(kw)
+
+
+def test_cues_from_db_rows_maps_kind_time_and_sorts() -> None:
+    rows = [
+        _CueRow(Kind=0, InMsec=25387, OutMsec=-1, Comment=None),
+        _CueRow(Kind=1, InMsec=124, OutMsec=12756, Comment=""),  # hot loop → slot A
+        _CueRow(Kind=2, InMsec=5000, OutMsec=-1, Comment="drop"),
+        _CueRow(Kind=0, InMsec=-1, OutMsec=-1, Comment=None),  # negative → dropped
+    ]
+    cues = A.cues_from_db_rows(rows)
+    assert [c.time_ms for c in cues] == [124, 5000, 25387]  # sorted, negative gone
+    # Loop hot cue carries its out-point; point cues have out_ms=None.
+    assert cues[0] == A.Cue(type="hot", index=1, time_ms=124, color=None, comment=None, out_ms=12756)
+    assert cues[1] == A.Cue(type="hot", index=2, time_ms=5000, color=None, comment="drop")
+    assert cues[1].out_ms is None
+    assert cues[2].type == "memory" and cues[2].index is None
+
+
+def test_cues_from_db_rows_empty() -> None:
+    assert A.cues_from_db_rows([]) == []
+
+
 def test_parse_sections_plain() -> None:
     ext = _anlz(_pssi(2, 33, [(1, 1, 1), (2, 17, 9)]))
     sections = A.parse_sections(ext, [A.Beat((i % 4) + 1, 128.0, i * 469) for i in range(40)])

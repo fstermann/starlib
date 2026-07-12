@@ -2,9 +2,10 @@ import type { Page, Route } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
 
-/** Minimal 100ms silent WAV (8kHz mono 8-bit PCM) so audio.duration resolves. */
+/** ~3s silent WAV (8kHz mono 8-bit PCM) so audio.duration resolves and the
+ * track doesn't end mid-test (which would race isPlaying-dependent flows). */
 function makeSilentWav(): Buffer {
-  const numSamples = 800;
+  const numSamples = 24000;
   const buf = Buffer.alloc(44 + numSamples);
   buf.write("RIFF", 0);
   buf.writeUInt32LE(36 + numSamples, 4);
@@ -75,7 +76,15 @@ const ANALYSIS = {
   ],
   sections: [{ kind: "intro", label: "Intro", startMs: 0, endMs: 1446 }],
   cues: [
-    { type: "hot", index: 1, timeMs: 0, color: "#ff8800", comment: null },
+    // Slot-A hot cue is a loop (has an out-point) → clicking re-arms the loop.
+    {
+      type: "hot",
+      index: 1,
+      timeMs: 0,
+      color: "#ff8800",
+      comment: null,
+      outMs: 2000,
+    },
     { type: "memory", index: null, timeMs: 50, color: null, comment: null },
   ],
 };
@@ -134,32 +143,52 @@ test.describe("Player zoom — Rekordbox track", () => {
     await expect(page.getByTestId("waveform-player")).toBeVisible();
   }
 
-  test("shows the analysed key and bar.beat readout in the player", async ({
-    page,
-  }) => {
+  test("shows the analysed key in the player", async ({ page }) => {
     await playFoo(page);
     const player = page.getByTestId("waveform-player");
     // Musical key from the Rekordbox analysis, shown next to the BPM.
     await expect(player.getByText("8A", { exact: true })).toBeVisible();
-    // bar.beat derived from the beatgrid (position 1.1 at the track start).
-    await expect(player.getByText("1.1", { exact: true })).toBeVisible();
     // Phrase sections are marked on the whole-track overview, not the zoom strip.
     await expect(player.getByTestId("player-section").first()).toBeVisible();
+  });
+
+  test("shows the pitched key, with the original + fractional shift below", async ({
+    page,
+  }) => {
+    await playFoo(page);
+    const player = page.getByTestId("waveform-player");
+    await expect(player.getByText("8A", { exact: true })).toBeVisible();
+
+    // Pitch 124.5 → 140 BPM: nearest whole semitone is +2 (8A → 10A), but the
+    // exact shift is fractional (+2.0 st).
+    await player.getByTestId("bpm-pitcher-trigger").click();
+    const input = page.getByTestId("bpm-pitcher-target-input");
+    await input.fill("140");
+    await input.press("Enter");
+    await page.getByTestId("bpm-pitcher-toggle").click();
+    await page.keyboard.press("Escape");
+
+    // Big label = pitched key, green.
+    const key = player.getByText("10A", { exact: true });
+    await expect(key).toBeVisible();
+    await expect(key).toHaveClass(/text-primary/);
+    // Below = original key + fractional semitone shift.
+    await expect(player.getByText("8A +2.0 st", { exact: true })).toBeVisible();
   });
 
   test("overview shows numbered, clickable cue markers", async ({ page }) => {
     await playFoo(page);
     const player = page.getByTestId("waveform-player");
 
-    // Cues render as numbered colour squares (1, 2… in time order), each
-    // clickable to seek — the two mocked cues become "1" (hot) and "2" (memory).
+    // Hot cues render colour-coded with their letter (slot 1 → "A"); memory
+    // cues are numbered from 1. Each is clickable to seek.
     const cues = player.getByTestId("player-cue");
     await expect(cues).toHaveCount(2);
-    await expect(cues.filter({ hasText: "1" })).toHaveAttribute(
+    await expect(cues.filter({ hasText: "A" })).toHaveAttribute(
       "data-cue-type",
       "hot",
     );
-    await expect(cues.filter({ hasText: "2" })).toHaveAttribute(
+    await expect(cues.filter({ hasText: "1" })).toHaveAttribute(
       "data-cue-type",
       "memory",
     );
@@ -181,17 +210,14 @@ test.describe("Player zoom — Rekordbox track", () => {
     await expect(page.getByTestId("player-cue-point")).toBeVisible();
   });
 
-  test("LOOP controls appear when zoomed and toggle an active loop", async ({
+  test("loop control lives in the top bar and toggles an active loop", async ({
     page,
   }) => {
     await playFoo(page);
     const player = page.getByTestId("waveform-player");
 
-    // Loop controls are hidden in the collapsed overview.
-    await expect(player.getByTestId("player-loop-btn")).toHaveCount(0);
-
-    // Zoom in → expanded → loop controls present but idle.
-    await player.getByRole("button", { name: "Zoom in" }).click();
+    // The merged loop control sits in the always-visible top utility bar — no
+    // need to zoom in first. Idle to start (no region drawn).
     const loopBtn = player.getByTestId("player-loop-btn");
     await expect(loopBtn).toBeVisible();
     await expect(page.getByTestId("player-loop-region")).toHaveCount(0);
@@ -202,31 +228,72 @@ test.describe("Player zoom — Rekordbox track", () => {
     await expect(page.getByTestId("player-loop-region")).toBeVisible();
   });
 
-  test("zoom in reveals the scrolling detail strip, zoom out hides it", async ({
+  test("top bar shows pressable hot cues", async ({ page }) => {
+    await playFoo(page);
+    const player = page.getByTestId("waveform-player");
+
+    // Both analysed cues (one hot, one memory) surface as pressable chips.
+    const hotcues = player.getByTestId("player-hotcue");
+    await expect(hotcues).toHaveCount(2);
+    await expect(hotcues.first()).toHaveAttribute("data-cue-type", "hot");
+    // Pressing one seeks — just assert it doesn't throw / stays mounted.
+    await hotcues.first().click();
+    await expect(player).toBeVisible();
+  });
+
+  test("loop hot cue re-arms its loop when clicked", async ({ page }) => {
+    await playFoo(page);
+    const player = page.getByTestId("waveform-player");
+
+    // No loop yet. The slot-A hot cue carries an out-point (it's a loop).
+    await expect(page.getByTestId("player-loop-region")).toHaveCount(0);
+    await player
+      .getByTestId("player-hotcue")
+      .filter({ hasText: "A" })
+      .first()
+      .click();
+    // Clicking it arms the loop region on the overview.
+    await expect(page.getByTestId("player-loop-region")).toBeVisible();
+  });
+
+  test("overview shows a play-position indicator", async ({ page }) => {
+    await playFoo(page);
+    const player = page.getByTestId("waveform-player");
+    await expect(player.getByTestId("player-overview-playhead")).toBeVisible();
+  });
+
+  test("detail toggle shows/hides the strip; +/- change the zoom level", async ({
     page,
   }) => {
     await playFoo(page);
     const player = page.getByTestId("waveform-player");
 
-    // Overview only to start — no detail strip.
+    // Overview only to start — no detail strip; the zoom stepper is hidden.
     await expect(page.getByTestId("player-detail-strip")).toHaveCount(0);
+    await expect(player.getByRole("button", { name: "Zoom in" })).toHaveCount(
+      0,
+    );
 
-    await player.getByRole("button", { name: "Zoom in" }).click();
+    // The dedicated toggle reveals the strip (and the zoom stepper) at the
+    // default zoom.
+    await player.getByTestId("player-detail-toggle").click();
     const strip = page.getByTestId("player-detail-strip");
     await expect(strip).toBeVisible();
-    await expect(strip).toHaveAttribute("data-zoom-bars", "128");
+    await expect(strip).toHaveAttribute("data-zoom-bars", "32");
     await expect(strip.locator("canvas")).toBeVisible();
 
-    // Zooming further in steps to a tighter window.
+    // +/- only change the zoom level — they never hide the strip.
     await player.getByRole("button", { name: "Zoom in" }).click();
-    await expect(strip).toHaveAttribute("data-zoom-bars", "64");
+    await expect(strip).toHaveAttribute("data-zoom-bars", "16");
+    await player.getByRole("button", { name: "Zoom out" }).click();
+    await expect(strip).toHaveAttribute("data-zoom-bars", "32");
 
-    // Collapse back to the overview (zoom out disables itself at the top level).
-    const zoomOut = player.getByRole("button", { name: "Zoom out" });
-    while (await zoomOut.isEnabled()) {
-      await zoomOut.click();
-    }
+    // The toggle hides both the strip and the stepper again.
+    await player.getByTestId("player-detail-toggle").click();
     await expect(page.getByTestId("player-detail-strip")).toHaveCount(0);
+    await expect(player.getByRole("button", { name: "Zoom in" })).toHaveCount(
+      0,
+    );
   });
 });
 
@@ -293,7 +360,7 @@ test.describe("Player zoom — local file", () => {
     const player = page.getByTestId("waveform-player");
     await expect(player).toBeVisible();
 
-    await player.getByRole("button", { name: "Zoom in" }).click();
+    await player.getByTestId("player-detail-toggle").click();
     await expect(page.getByTestId("player-detail-strip")).toBeVisible();
   });
 });

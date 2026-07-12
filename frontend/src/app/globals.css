@@ -60,6 +60,20 @@
   --chart-4: oklch(0.68 0.16 305);
   --chart-5: oklch(0.7 0.13 105);
 
+  /* ── Phrase-band section palette ─────────────────────────────────────────────
+     One distinct hue per song-structure kind (intro/up/down/verse/bridge/
+     chorus/outro/other). Light enough to carry black labels; spread around the
+     wheel and ordered roughly by energy so the band reads at a glance. Theme-
+     independent — the band paints its own colour under black text either way. */
+  --section-intro: oklch(0.78 0.1 195); /* teal — calm start */
+  --section-verse: oklch(0.74 0.12 245); /* blue */
+  --section-up: oklch(0.82 0.13 80); /* amber — build-up */
+  --section-chorus: oklch(0.72 0.15 15); /* red-pink — drop / hook */
+  --section-down: oklch(0.72 0.12 285); /* indigo — breakdown */
+  --section-bridge: oklch(0.74 0.14 330); /* magenta */
+  --section-outro: oklch(0.77 0.12 150); /* green — wind-down */
+  --section-other: oklch(0.72 0.02 260); /* neutral grey */
+
   /* ── Radii (DESIGN.md §5) ────────────────────────────────────────────────── */
   --radius: 0.5rem;
 

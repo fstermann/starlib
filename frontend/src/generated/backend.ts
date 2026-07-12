@@ -2218,6 +2218,8 @@ export interface components {
             color?: string | null;
             /** Comment */
             comment?: string | null;
+            /** Outms */
+            outMs?: number | null;
         };
         /** DevicesResponse */
         DevicesResponse: {

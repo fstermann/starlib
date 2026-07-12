@@ -55,6 +55,81 @@ export function hotCueLetter(index: number | null | undefined): string {
 }
 
 /**
+ * Rekordbox's "Colourful" hot-cue palette, per slot A–H (wrapping past H).
+ * Local-install cues store no colour — Rekordbox applies the scheme by slot —
+ * so we tint each hot cue by its slot; an explicit colour (e.g. a USB export's
+ * ANLZ RGB) always wins. Values sampled from Rekordbox's own hot-cue pads.
+ */
+const HOT_CUE_PALETTE = [
+  "#eb4b71", // A
+  "#62aad7", // B
+  "#8cbf52", // C
+  "#a274f7", // D
+  "#68cf78", // E
+  "#d16b32", // F
+  "#3a59f6", // G
+  "#c0b039", // H
+];
+/** Neutral marker colour for memory cues (they aren't colour-coded). */
+const MEMORY_CUE_COLOR = "#f43f5e";
+/** Rekordbox shows loops in a fixed orange, overriding the slot colour. */
+const LOOP_CUE_COLOR = "#f09235";
+
+export interface CueDisplayInput {
+  type: string;
+  index?: number | null;
+  color?: string | null;
+  timeMs?: number;
+  /** Loop out-point (ms); a cue with `outMs > timeMs` is a loop. */
+  outMs?: number | null;
+}
+
+export interface CueDisplay {
+  /** Resolved marker colour (`#RRGGBB`). */
+  color: string;
+  /** Marker glyph: a letter (A, B…) for hot cues, a number for memory cues. */
+  label: string;
+  /** True for hot cues (colour-coded), false for memory cues (numbered). */
+  isHot: boolean;
+  /** True when the cue is a loop (out-point set) → orange + loop glyph. */
+  isLoop: boolean;
+}
+
+/**
+ * Resolve how each cue renders: hot cues get a colour (from the cue, else its
+ * slot palette) and their letter; memory cues get a sequential number from 1
+ * (they carry no label in Rekordbox). Loops override the colour with Rekordbox's
+ * loop orange. Input order is assumed time-sorted, so memory numbering follows
+ * playback order.
+ */
+export function computeCueDisplays(
+  cues: readonly CueDisplayInput[],
+): CueDisplay[] {
+  let memoryNumber = 0;
+  return cues.map((c) => {
+    const isLoop = c.outMs != null && c.timeMs != null && c.outMs > c.timeMs;
+    if (c.type === "hot") {
+      const slot = c.index ?? 1;
+      const base =
+        c.color ?? HOT_CUE_PALETTE[(slot - 1) % HOT_CUE_PALETTE.length];
+      return {
+        color: isLoop ? LOOP_CUE_COLOR : base,
+        label: hotCueLetter(c.index),
+        isHot: true,
+        isLoop,
+      };
+    }
+    memoryNumber += 1;
+    return {
+      color: isLoop ? LOOP_CUE_COLOR : (c.color ?? MEMORY_CUE_COLOR),
+      label: String(memoryNumber),
+      isHot: false,
+      isLoop,
+    };
+  });
+}
+
+/**
  * Decode PWV5 colour-detail bytes (2 bytes/column, big-endian). Bit layout per
  * column: `rrr ggg bbb hhhhh 00` (3-bit R/G/B, 5-bit height).
  */
@@ -179,4 +254,81 @@ export function barBeatLabel(
   if (idx < 0) return "–";
   const bar = Math.max(1, downbeatPrefix[idx]);
   return `${bar}.${beatgrid[idx].beat}`;
+}
+
+/**
+ * Continuous (unrounded) semitone shift for a playback rate — a pitch of +12.5%
+ * is +2.04 semitones, landing *between* two keys. Use this for the numeric
+ * readout so the fraction is honest; use {@link keySemitonesForRate} to pick the
+ * nearest key label.
+ */
+export function semitonesFloatForRate(rate: number): number {
+  if (!Number.isFinite(rate) || rate <= 0) return 0;
+  return 12 * Math.log2(rate);
+}
+
+/** Whole semitones a playback rate shifts pitch (rate 1 → 0, up → positive). */
+export function keySemitonesForRate(rate: number): number {
+  return Math.round(semitonesFloatForRate(rate));
+}
+
+const CAMELOT_RE = /^\s*(\d{1,2})\s*([AB])\s*$/i;
+const CHROMATIC = [
+  "C",
+  "C#",
+  "D",
+  "D#",
+  "E",
+  "F",
+  "F#",
+  "G",
+  "G#",
+  "A",
+  "A#",
+  "B",
+];
+const ENHARMONIC: Record<string, string> = {
+  Db: "C#",
+  Eb: "D#",
+  Fb: "E",
+  Gb: "F#",
+  Ab: "G#",
+  Bb: "A#",
+  Cb: "B",
+  "E#": "F",
+  "B#": "C",
+};
+
+/**
+ * Transpose a musical key by `semitones`. Handles Camelot notation (`"8A"` →
+ * +1 semitone is +7 wheel positions, same letter) and standard note names
+ * (`"Am"`, `"C#"`, `"Db"`). Returns the input unchanged for 0 semitones or an
+ * unrecognised key.
+ */
+export function transposeKey(key: string, semitones: number): string {
+  if (!semitones) return key;
+
+  const cam = key.match(CAMELOT_RE);
+  if (cam) {
+    const n = Number(cam[1]);
+    if (n >= 1 && n <= 12) {
+      const shifted = ((((n - 1 + 7 * semitones) % 12) + 12) % 12) + 1;
+      return `${shifted}${cam[2].toUpperCase()}`;
+    }
+  }
+
+  const std = key.match(/^\s*([A-Ga-g][#b]?)\s*(m|min|maj|major|minor)?\s*$/);
+  if (std) {
+    const root = std[1][0].toUpperCase() + std[1].slice(1);
+    const canon = ENHARMONIC[root] ?? root;
+    const idx = CHROMATIC.indexOf(canon);
+    if (idx >= 0) {
+      const shifted = (((idx + semitones) % 12) + 12) % 12;
+      const quality = std[2]?.toLowerCase() ?? "";
+      const minor = quality === "m" || quality.startsWith("min") ? "m" : "";
+      return `${CHROMATIC[shifted]}${minor}`;
+    }
+  }
+
+  return key;
 }

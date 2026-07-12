@@ -18,7 +18,7 @@ Rekordbox applies to exported/USB ``PSSI`` tags.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -44,6 +44,7 @@ class Cue:
     time_ms: int
     color: str | None  # "#RRGGBB" when the cue carries a colour, else None
     comment: str | None
+    out_ms: int | None = None  # loop end (ms) when the cue is a loop, else None
 
 
 @dataclass(frozen=True)
@@ -345,3 +346,38 @@ def read_analysis(dat_path: str | None, dat_mtime: int, ext_path: str | None, ex
         The parsed :class:`TrackAnalysis`.
     """
     return _read_analysis_cached(dat_path, dat_mtime, ext_path, ext_mtime)
+
+
+def cues_from_db_rows(rows: Iterable[object]) -> list[Cue]:
+    """Map Rekordbox ``djmdCue`` rows to :class:`Cue`.
+
+    Rekordbox 6 keeps cues in ``master.db`` (the ``djmdCue`` table), not in the
+    local ANLZ sidecars — whose ``PCOB``/``PCO2`` tags stay empty until a USB
+    export writes them. ``Kind`` is ``0`` for a memory cue and the 1-based
+    hot-cue slot (``1`` = A) otherwise; ``InMsec`` is the cue time. ``OutMsec``
+    (when greater than the in-point) marks a loop's end, carried through so the
+    player can re-arm the loop.
+    """
+    cues: list[Cue] = []
+    for r in rows:
+        in_ms = getattr(r, "InMsec", None)
+        if in_ms is None or int(in_ms) < 0:
+            continue
+        in_ms = int(in_ms)
+        kind = int(getattr(r, "Kind", 0) or 0)
+        is_hot = kind >= 1
+        out_raw = getattr(r, "OutMsec", None)
+        out_ms = int(out_raw) if out_raw is not None and int(out_raw) > in_ms else None
+        comment = getattr(r, "Comment", None) or None
+        cues.append(
+            Cue(
+                type="hot" if is_hot else "memory",
+                index=kind if is_hot else None,
+                time_ms=in_ms,
+                color=None,
+                comment=comment,
+                out_ms=out_ms,
+            )
+        )
+    cues.sort(key=lambda c: c.time_ms)
+    return cues
