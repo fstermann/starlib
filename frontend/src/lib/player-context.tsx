@@ -14,7 +14,14 @@ import {
   SC_BPM_UPDATED_EVENT,
   type ScBpmUpdatedDetail,
 } from "@/components/soundcloud-batch-analyze-button";
+import {
+  DEFAULT_MIX_CONFIG,
+  MIX_CONFIG_KEY,
+  normalizeMixConfig,
+  type MixConfig,
+} from "@/lib/mix/config";
 import { useIsScUnplayable } from "@/lib/sc-unplayable";
+import { getRaw, setRaw } from "@/lib/settings";
 
 export interface PlayerTrack {
   filePath: string;
@@ -102,6 +109,9 @@ interface PlayerContextValue {
   /** When true, playback is pitched to `targetBpm / currentBpm`. Persisted. */
   pitchEnabled: boolean;
   setPitchEnabled: (enabled: boolean) => void;
+  /** Auto-mix (crossfade) configuration. Persisted to the UI store. */
+  mixConfig: MixConfig;
+  setMixConfig: (config: MixConfig) => void;
 }
 
 const PITCH_TARGET_KEY = "starlib.pitcher.targetBpm";
@@ -123,6 +133,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [currentBpm, setCurrentBpmState] = useState<number | null>(null);
   const [targetBpm, setTargetBpmState] = useState<number>(DEFAULT_TARGET_BPM);
   const [pitchEnabled, setPitchEnabledState] = useState<boolean>(false);
+  const [mixConfig, setMixConfigState] =
+    useState<MixConfig>(DEFAULT_MIX_CONFIG);
+
+  // Hydrate the auto-mix config from the UI store on mount.
+  useEffect(() => {
+    getRaw<MixConfig | null>(MIX_CONFIG_KEY, null)
+      .then((raw) => setMixConfigState(normalizeMixConfig(raw)))
+      .catch(() => {});
+  }, []);
+
+  const setMixConfig = useCallback((config: MixConfig) => {
+    const next = normalizeMixConfig(config);
+    setMixConfigState(next);
+    setRaw(MIX_CONFIG_KEY, next).catch(() => {});
+  }, []);
 
   // Hydrate pitcher prefs from localStorage. Done in an effect to keep SSR
   // safe — the initial server render gets the defaults and the client
@@ -381,6 +406,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setTargetBpm,
       pitchEnabled,
       setPitchEnabled,
+      mixConfig,
+      setMixConfig,
     }),
     [
       currentTrack,
@@ -408,6 +435,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setTargetBpm,
       pitchEnabled,
       setPitchEnabled,
+      mixConfig,
+      setMixConfig,
     ],
   );
 

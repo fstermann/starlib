@@ -13,16 +13,41 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type WaveSurferType from "wavesurfer.js";
 
 import { BpmPitcher, computePlaybackRate } from "@/components/bpm-pitcher";
+import { MixControls } from "@/components/mix-controls";
+import { MixOverviewSwipe } from "@/components/mix-overview-swipe";
+import { MixSplitWaveform } from "@/components/mix-split-waveform";
+import { PeaksWaveform } from "@/components/peaks-waveform";
 import { PlayerDetailWaveform } from "@/components/player-detail-waveform";
 import { PlayerRekordboxWaveform } from "@/components/player-rekordbox-waveform";
 import { loadWaveform, pwv4ToPeaks } from "@/components/rekordbox-waveform";
 import { api } from "@/lib/api";
-import { LoopingWebAudioPlayer } from "@/lib/looping-web-audio-player";
-import { usePlayer } from "@/lib/player-context";
+import {
+  getSharedAudioContext,
+  LoopingWebAudioPlayer,
+} from "@/lib/looping-web-audio-player";
+import {
+  clearHandoff,
+  createIncomingHtmlDeck,
+  createIncomingLocalDeck,
+  htmlDeck,
+  localDeck,
+  runTransition,
+  stashHandoff,
+  takeHandoff,
+  type Deck,
+  type TransitionHandle,
+} from "@/lib/mix/engine";
+import { routeElementThroughGain } from "@/lib/mix/html-deck";
+import {
+  planTransition,
+  type DeckInfo,
+  type TransitionPlan,
+} from "@/lib/mix/strategies";
+import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import { selectPeaksSource } from "@/lib/player-peaks";
 import {
   getCachedRekordboxAnalysis,
@@ -120,6 +145,88 @@ function formatTime(s: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
+/** Stable identity for the deck hand-off (matches the main effect's key). */
+function handoffKey(track: PlayerTrack): string {
+  return track.filePath;
+}
+
+/**
+ * Create the incoming deck B for `track`: a silent, cued Web Audio player for
+ * local tracks or a gain-routed HTML element for SoundCloud. Returns null when
+ * a SoundCloud stream URL can't be resolved.
+ */
+async function prepareDeckB(track: PlayerTrack): Promise<Deck | null> {
+  const isSc = selectPeaksSource(track).kind === "soundcloud";
+  const resolvedStream =
+    track.streamUrl ??
+    (track.streamRefreshKey != null
+      ? await getCachedSoundcloudStreamUrl(track.streamRefreshKey).catch(
+          () => undefined,
+        )
+      : undefined);
+  if (isSc) {
+    if (!resolvedStream) return null;
+    // Ensure the shared context is running — a pure-SoundCloud session may
+    // never have resumed it, and the fade rides its clock.
+    getSharedAudioContext()
+      .resume()
+      .catch(() => {});
+    return createIncomingHtmlDeck(resolvedStream);
+  }
+  const url = resolvedStream ?? api.getAudioUrl(track.filePath);
+  return createIncomingLocalDeck(url);
+}
+
+/** Best-effort peaks for the crossfade overlay (mirrors the init resolution,
+ * lower resolution). Falls back to a flat line on any failure. */
+async function resolveTrackPeaks(
+  track: PlayerTrack,
+  numPeaks: number,
+): Promise<number[]> {
+  const flat = () => new Array<number>(numPeaks).fill(0.4);
+  const src = selectPeaksSource(track);
+  try {
+    if (src.kind === "rekordbox") {
+      const data = await loadWaveform(src.id, src.device);
+      if (data) return pwv4ToPeaks(data);
+      return src.device ? flat() : api.getFilePeaks(track.filePath, numPeaks);
+    }
+    if (src.kind === "soundcloud") {
+      if (!src.waveformUrl) return flat();
+      const p = await getCachedSoundcloudPeaks(src.waveformUrl, numPeaks);
+      return p ?? flat();
+    }
+    return await api.getFilePeaks(track.filePath, numPeaks);
+  } catch {
+    return flat();
+  }
+}
+
+/** Build the strategy's DeckInfo from a track's BPM + rekordbox analysis. */
+function toDeckInfo(
+  bpm: number | null,
+  durationSec: number,
+  analysis: TrackAnalysis | null,
+): DeckInfo {
+  return {
+    bpm,
+    durationSec,
+    analysis: analysis
+      ? {
+          beats: analysis.beatgrid.map((b) => ({
+            timeSec: b.timeMs / 1000,
+            beat: b.beat,
+          })),
+          sections: (analysis.sections ?? []).map((s) => ({
+            startSec: s.startMs / 1000,
+            endSec: s.endMs / 1000,
+            kind: s.kind,
+          })),
+        }
+      : null,
+  };
+}
+
 export function WaveformPlayer() {
   const {
     currentTrack,
@@ -138,6 +245,8 @@ export function WaveformPlayer() {
     currentBpm,
     targetBpm,
     pitchEnabled,
+    setPitchEnabled,
+    mixConfig,
   } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -152,6 +261,11 @@ export function WaveformPlayer() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [ready, setReady] = useState(false);
+  // Auto-mix state: "idle" (no fade), "armed" (deck B prepared, waiting for the
+  // mix-out point), "transitioning" (crossfade running).
+  const [mixState, setMixState] = useState<"idle" | "armed" | "transitioning">(
+    "idle",
+  );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [zoomBars, setZoomBars] = useState<number>(DEFAULT_ZOOM);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -168,6 +282,36 @@ export function WaveformPlayer() {
   // null falls back to the beat-length calc. Cleared by the beat controls.
   const [loopEndOverride, setLoopEndOverride] = useState<number | null>(null);
   const loopRef = useRef<{ start: number; end: number } | null>(null);
+
+  // --- auto-mix refs (read inside the init effect's long-lived closures) ---
+  const mixConfigRef = useRef(mixConfig);
+  const mixPlanRef = useRef<TransitionPlan | null>(null);
+  // Deck B, prepared ahead of the mix-out point. Ownership moves to the
+  // hand-off store when the transition starts; nulled here so cleanup doesn't
+  // double-destroy it.
+  const mixDeckBRef = useRef<Deck | null>(null);
+  const transitionHandleRef = useRef<TransitionHandle | null>(null);
+  const transitionStartedRef = useRef(false);
+  const transitionCompletedRef = useRef(false);
+  const startTransitionRef = useRef<(() => void) | null>(null);
+  // Peaks for the crossfade overlay: the live deck A and the prepared deck B.
+  const currentPeaksRef = useRef<number[] | null>(null);
+  const [nextPeaks, setNextPeaks] = useState<number[] | null>(null);
+  // Deck B kept readable during the fade (for the incoming playhead); ownership
+  // still moves to the hand-off store.
+  const transitionDeckBRef = useRef<Deck | null>(null);
+  const transitionFadeRef = useRef(1);
+  // `overviewProg` holds each deck's playhead sampled at a low rate (the
+  // full-track overview is static — no need to redraw its heavy canvas every
+  // audio frame, which was the stutter).
+  const [overviewProg, setOverviewProg] = useState({ old: 0, new: 0 });
+  // True once the fade passes its midpoint (the swipe fires) — the side rail
+  // then shows the incoming track's info.
+  const [mixPastMid, setMixPastMid] = useState(false);
+
+  useEffect(() => {
+    mixConfigRef.current = mixConfig;
+  }, [mixConfig]);
 
   const waveformStyle = useWaveformStyle();
 
@@ -528,7 +672,60 @@ export function WaveformPlayer() {
       let hoverMod: typeof import("wavesurfer.js/dist/plugins/hover.esm.js");
       const isLocal = peaksSource.kind !== "soundcloud";
 
-      if (isLocal) {
+      // Auto-mix hand-off: if the previous track just crossfaded into this one,
+      // deck B is already decoded and playing at full gain. Adopt it and build
+      // the waveform view around it — no re-decode, no gap.
+      const adopted = takeHandoff(handoffKey(currentTrack!));
+
+      if (adopted) {
+        try {
+          const [p, ws1, hover1] = await Promise.all([
+            peaksPromise,
+            wsImportPromise,
+            hoverImportPromise,
+          ]);
+          peaks = p;
+          wsMod = ws1;
+          hoverMod = hover1;
+        } catch (err) {
+          if (cancelled) return;
+          console.error("[player] failed to load peaks for adopted deck:", err);
+          adopted.destroy();
+          setErrorMsg("Couldn't load the audio file.");
+          return;
+        }
+        if (cancelled || !containerRef.current) {
+          adopted.destroy();
+          return;
+        }
+        media = adopted.media;
+        knownDuration = adopted.duration;
+        if (adopted.kind === "local") {
+          const player = adopted.media as LoopingWebAudioPlayer;
+          webAudioRef.current = player;
+          player.addEventListener("pause", () => {
+            if (webAudioRef.current !== player) return;
+            if (transitionStartedRef.current) return;
+            if (isPlayingRef.current && player.paused) pause();
+          });
+          registerSeek((ratio) => {
+            player.currentTime =
+              Math.max(0, Math.min(1, ratio)) * player.duration;
+          });
+        } else {
+          const audio = adopted.media as HTMLAudioElement;
+          audioRef.current = audio;
+          audio.addEventListener("pause", () => {
+            if (audioRef.current !== audio) return;
+            if (transitionStartedRef.current) return;
+            if (isPlayingRef.current && audio.paused) pause();
+          });
+          registerSeek((ratio) => {
+            audio.currentTime =
+              Math.max(0, Math.min(1, ratio)) * audio.duration;
+          });
+        }
+      } else if (isLocal) {
         // Local file → Web Audio: fetch + decode the whole buffer, then play it
         // through a source node. Seeks reschedule the node (no HTMLMediaElement
         // seek stall), so cue points are instant and loops wrap gaplessly.
@@ -538,6 +735,7 @@ export function WaveformPlayer() {
         // Mirror the HTMLAudioElement's OS-pause sync (headphones unplugged).
         player.addEventListener("pause", () => {
           if (webAudioRef.current !== player) return;
+          if (transitionStartedRef.current) return;
           if (isPlayingRef.current && player.paused) pause();
         });
         // USB Rekordbox exports route audio through the device endpoint
@@ -588,6 +786,7 @@ export function WaveformPlayer() {
         // ref-equality check skips it.
         audio.addEventListener("pause", () => {
           if (audioRef.current !== audio) return;
+          if (transitionStartedRef.current) return;
           if (isPlayingRef.current && audio.paused) pause();
         });
 
@@ -745,6 +944,9 @@ export function WaveformPlayer() {
         media = audio;
       }
 
+      // Cache deck A's peaks for the crossfade overlay's out-going waveform.
+      currentPeaksRef.current = peaks;
+
       const WaveSurfer = wsMod.default;
       const HoverPlugin = hoverMod.default;
 
@@ -843,9 +1045,24 @@ export function WaveformPlayer() {
         }
         setCurrentTime(t);
         reportProgress(t / knownDuration);
+
+        // Auto-mix: fire the crossfade once we reach the planned mix-out point.
+        if (
+          mixConfigRef.current.enabled &&
+          !transitionStartedRef.current &&
+          mixPlanRef.current &&
+          mixDeckBRef.current &&
+          t >= mixPlanRef.current.deckAMixOutSec
+        ) {
+          startTransitionRef.current?.();
+        }
       });
 
       ws.on("finish", () => {
+        // A crossfade owns the advance — the out-going deck reaching its end
+        // mid-fade must not trigger a second next() (which would abort the fade
+        // and restart the incoming deck from 0).
+        if (transitionStartedRef.current) return;
         if (hasNextRef.current) {
           nextRef.current();
         } else {
@@ -870,6 +1087,27 @@ export function WaveformPlayer() {
 
     return () => {
       cancelled = true;
+      // --- auto-mix teardown ---
+      if (transitionCompletedRef.current) {
+        // Crossfade finished cleanly: deck B lives in the hand-off store for
+        // the incoming init to adopt. Just reset the flags.
+        transitionStartedRef.current = false;
+        transitionCompletedRef.current = false;
+      } else {
+        // No transition, or a manual skip mid-fade: abort and discard deck B.
+        if (transitionStartedRef.current) transitionHandleRef.current?.cancel();
+        transitionStartedRef.current = false;
+        if (mixDeckBRef.current) {
+          mixDeckBRef.current.destroy();
+          mixDeckBRef.current = null;
+        }
+        clearHandoff();
+        setMixState("idle");
+      }
+      transitionHandleRef.current = null;
+      transitionDeckBRef.current = null;
+      mixPlanRef.current = null;
+      setNextPeaks(null);
       registerSeek(null);
       reportProgress(0);
       reportDuration(0);
@@ -891,6 +1129,181 @@ export function WaveformPlayer() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack?.filePath, reportProgress, registerSeek, reportDuration]);
+
+  // Begin the crossfade: wrap the live deck A, start deck B, run the fade, and
+  // advance the queue on completion (the rebuilt player adopts deck B).
+  const startTransition = useCallback(() => {
+    const plan = mixPlanRef.current;
+    const deckB = mixDeckBRef.current;
+    if (!plan || !deckB || transitionStartedRef.current) return;
+
+    let deckA: Deck | null = null;
+    if (webAudioRef.current) {
+      deckA = localDeck(webAudioRef.current);
+    } else if (audioRef.current) {
+      // Route the out-going SoundCloud element through a gain node so it fades.
+      deckA = htmlDeck(
+        audioRef.current,
+        routeElementThroughGain(audioRef.current, 1),
+      );
+    }
+    if (!deckA) return;
+
+    transitionStartedRef.current = true;
+    transitionCompletedRef.current = false;
+    // Keep deck B readable for the incoming playhead during the fade, and record
+    // the fade length for the swipe's CSS transition.
+    transitionDeckBRef.current = deckB;
+    transitionFadeRef.current = Math.max(0.05, plan.fadeSeconds);
+    setOverviewProg({ old: deckA.currentTime / (deckA.duration || 1), new: 0 });
+    setMixState("transitioning");
+
+    // Ownership of deck B moves to the hand-off store for the rebuilt player.
+    const nextTrack = peekNext();
+    if (nextTrack) stashHandoff(handoffKey(nextTrack), deckB);
+    mixDeckBRef.current = null;
+
+    transitionHandleRef.current = runTransition({
+      deckA,
+      deckB,
+      plan,
+      onComplete: () => {
+        transitionCompletedRef.current = true;
+        // Ramp mode leaves the incoming deck at the target tempo; keep pitch on
+        // so the pitch effect holds it there after adoption.
+        if (plan.mode === "beatmatch-ramp") setPitchEnabled(true);
+        nextRef.current();
+      },
+    });
+  }, [peekNext, setPitchEnabled]);
+
+  useEffect(() => {
+    startTransitionRef.current = startTransition;
+  }, [startTransition]);
+
+  // Swap the side rail to the incoming track's info at the fade's midpoint.
+  useEffect(() => {
+    if (mixState !== "transitioning") {
+      setMixPastMid(false);
+      return;
+    }
+    const id = setTimeout(
+      () => setMixPastMid(true),
+      (transitionFadeRef.current / 2) * 1000,
+    );
+    return () => clearTimeout(id);
+  }, [mixState]);
+
+  // Sample each deck's playhead at ~8 Hz for the (static) overview. Far cheaper
+  // than redrawing its full-track canvas on every audio frame.
+  useEffect(() => {
+    if (mixState !== "transitioning") return;
+    const sample = () => {
+      const oldMedia = webAudioRef.current ?? audioRef.current;
+      const oldD = oldMedia?.duration ?? 0;
+      const oldT = oldMedia?.currentTime ?? 0;
+      const b = transitionDeckBRef.current;
+      setOverviewProg({
+        old: oldD > 0 ? Math.min(1, oldT / oldD) : 0,
+        new: b && b.duration > 0 ? Math.min(1, b.currentTime / b.duration) : 0,
+      });
+    };
+    sample();
+    const id = setInterval(sample, 120);
+    return () => clearInterval(id);
+  }, [mixState]);
+
+  // Prepare deck B (decode/attach the next track) and compute the transition
+  // plan while the current track plays, so the crossfade can start instantly at
+  // the mix-out point. Re-runs when the inputs to the plan change.
+  useEffect(() => {
+    const teardownPrepared = () => {
+      if (mixDeckBRef.current) {
+        mixDeckBRef.current.destroy();
+        mixDeckBRef.current = null;
+      }
+      mixPlanRef.current = null;
+      setNextPeaks(null);
+      if (!transitionStartedRef.current) setMixState("idle");
+    };
+
+    if (
+      !mixConfig.enabled ||
+      !ready ||
+      !hasNext ||
+      transitionStartedRef.current
+    ) {
+      teardownPrepared();
+      return;
+    }
+    const nextTrack = peekNext();
+    if (!nextTrack) return;
+
+    let cancelled = false;
+    (async () => {
+      const nextAnalysis = nextTrack.rekordboxId
+        ? await getCachedRekordboxAnalysis(
+            nextTrack.rekordboxId,
+            nextTrack.rekordboxDevice,
+          )
+        : null;
+      if (cancelled) return;
+
+      const deckACurrentRate = computePlaybackRate(
+        pitchEnabled,
+        currentBpm,
+        targetBpm,
+      );
+      const deckBDesiredRate = computePlaybackRate(
+        pitchEnabled,
+        nextTrack.bpm ?? null,
+        targetBpm,
+      );
+      // Beatmatch-sync requires the pitcher to be active ("bpm mode"); without
+      // it, fall back to a simple time fade.
+      const effectiveConfig =
+        mixConfig.mode === "beatmatch-sync" && !pitchEnabled
+          ? { ...mixConfig, mode: "simple" as const }
+          : mixConfig;
+      const plan = planTransition({
+        deckA: toDeckInfo(currentBpm, duration, analysis),
+        deckB: toDeckInfo(nextTrack.bpm ?? null, 0, nextAnalysis),
+        deckACurrentRate,
+        deckADesiredRate: deckACurrentRate,
+        deckBDesiredRate,
+        targetBpm,
+        config: effectiveConfig,
+      });
+
+      const [deck, peaksB] = await Promise.all([
+        prepareDeckB(nextTrack),
+        resolveTrackPeaks(nextTrack, 400),
+      ]);
+      if (cancelled || !deck) {
+        deck?.destroy();
+        return;
+      }
+      mixDeckBRef.current = deck;
+      mixPlanRef.current = plan;
+      setNextPeaks(peaksB);
+      setMixState("armed");
+    })();
+
+    return () => {
+      cancelled = true;
+      if (!transitionStartedRef.current) teardownPrepared();
+    };
+  }, [
+    mixConfig,
+    ready,
+    hasNext,
+    peekNext,
+    currentBpm,
+    targetBpm,
+    pitchEnabled,
+    duration,
+    analysis,
+  ]);
 
   useEffect(() => {
     const ws = wsRef.current;
@@ -972,11 +1385,34 @@ export function WaveformPlayer() {
     .sort((a, b) => (a.cue.index ?? 0) - (b.cue.index ?? 0));
   const memCueItems = cueItems.filter((x) => !x.display.isHot);
 
-  const artworkUrl =
-    currentTrack.artworkUrl ?? api.getArtworkUrl(currentTrack.filePath);
-  const titleText = currentTrack.title ?? currentTrack.fileName;
-  const artistText = currentTrack.artist ?? "";
   const loadingProgress = duration > 0 ? currentTime / duration : 0;
+
+  // --- crossfade overlay state ---
+  const isTransitioning = mixState === "transitioning";
+  // During the fade the queue hasn't advanced yet, so the incoming track is the
+  // next queue entry.
+  const nextTrack = isTransitioning ? peekNext() : null;
+  const deckAProgress = duration > 0 ? currentTime / duration : 0;
+  const deckBDuration = transitionDeckBRef.current?.duration ?? 0;
+  const deckBProgress =
+    deckBDuration > 0
+      ? Math.min(
+          1,
+          (transitionDeckBRef.current?.currentTime ?? 0) / deckBDuration,
+        )
+      : 0;
+  const nextTitleText = nextTrack
+    ? (nextTrack.title ?? nextTrack.fileName)
+    : "";
+
+  // Past the fade midpoint the rail shows the incoming track's info (synced
+  // with the waveform swipe).
+  const railTrack =
+    isTransitioning && mixPastMid && nextTrack ? nextTrack : currentTrack;
+  const artworkUrl =
+    railTrack.artworkUrl ?? api.getArtworkUrl(railTrack.filePath);
+  const titleText = railTrack.title ?? railTrack.fileName;
+  const artistText = railTrack.artist ?? "";
 
   // Colour the bottom waveform with Rekordbox's own analysis when the user
   // picked a Rekordbox style and the current track carries one. Non-Rekordbox
@@ -985,6 +1421,31 @@ export function WaveformPlayer() {
     !!currentTrack.rekordboxId &&
     (waveformStyle === "rekordbox_rgb" || waveformStyle === "rekordbox_blue");
   const rekVariant = waveformStyle === "rekordbox_blue" ? "blue" : "color";
+
+  // A full-track overview render for the crossfade swipe — Rekordbox-coloured
+  // when the style + track allow, else the default peaks bars.
+  const renderOverviewTrack = (
+    track: PlayerTrack,
+    peaks: number[],
+    progress: number,
+    durationSec: number,
+  ) => {
+    const colored =
+      !!track.rekordboxId &&
+      (waveformStyle === "rekordbox_rgb" || waveformStyle === "rekordbox_blue");
+    return colored && track.rekordboxId ? (
+      <PlayerRekordboxWaveform
+        trackId={track.rekordboxId}
+        device={track.rekordboxDevice}
+        variant={rekVariant}
+        durationSec={durationSec}
+        progressOverride={progress}
+        className="h-full"
+      />
+    ) : (
+      <PeaksWaveform peaks={peaks} progress={progress} className="h-full" />
+    );
+  };
 
   // Zoom is available for everything except SoundCloud streams (whose ~1800
   // pre-baked samples can't resolve a few bars).
@@ -1203,6 +1664,7 @@ export function WaveformPlayer() {
     <div
       ref={rootRef}
       data-testid="waveform-player"
+      data-mix-state={mixState}
       className="border-border fixed right-0 bottom-0 left-14 z-40 flex flex-col border-t bg-[var(--surface-2)] shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
     >
       {/* ===== Utility line — spans the whole player. Hot cues sit over the
@@ -1225,6 +1687,22 @@ export function WaveformPlayer() {
 
           {/* Loop control + detail/zoom controls, pinned to the far right. */}
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {/* Incoming-track preview — shown only while the crossfade runs. */}
+            {isTransitioning && nextTrack && (
+              <div
+                data-testid="player-next-chip"
+                className="border-primary/40 bg-primary/5 text-primary flex h-6 items-center gap-1 rounded-md border pr-1.5 pl-2"
+                title={`Next: ${nextTitleText}`}
+              >
+                <span className="text-2xs text-muted-foreground tracking-wide uppercase">
+                  Next
+                </span>
+                <span className="max-w-32 truncate text-xs font-medium">
+                  {nextTitleText}
+                </span>
+                <ChevronRight className="size-3" />
+              </div>
+            )}
             {/* Merged loop control: chevrons set the length, the icon+number
                 both shows it and toggles the loop. */}
             <div className="flex items-center gap-0.5">
@@ -1443,6 +1921,7 @@ export function WaveformPlayer() {
             {/* BPM + KEY on the same level, right-aligned. Labels are never
                 tinted; the value carries the pitch colour. */}
             <div className="ml-auto flex items-center gap-1">
+              <MixControls />
               <BpmPitcher />
               <div className="flex h-10 flex-col items-center justify-center px-2 leading-none">
                 <span className="flex items-baseline gap-1">
@@ -1493,25 +1972,54 @@ export function WaveformPlayer() {
                 <div
                   data-testid="player-detail-strip"
                   data-zoom-bars={zoomBars}
-                  className="h-20 px-1"
+                  className="relative h-20 px-1"
                   onWheel={(e) => {
                     e.preventDefault();
                     changeZoom(e.deltaY < 0 ? 1 : -1);
                   }}
                 >
-                  <PlayerDetailWaveform
-                    track={currentTrack}
-                    zoomBars={zoomBars}
-                    durationSec={duration}
-                    bpm={currentBpm}
-                    waveformStyle={waveformStyle}
-                    loop={
-                      loopActive && loopEndSec != null
-                        ? { startSec: loopStartSec, endSec: loopEndSec }
-                        : null
-                    }
-                    cueSec={cueSec}
-                  />
+                  {isTransitioning && nextTrack ? (
+                    // Split waveform during the fade: new track's top half over
+                    // the old track's bottom half. Each deck keeps scrolling on
+                    // its own playhead.
+                    <MixSplitWaveform
+                      testId="player-detail-split"
+                      oldContent={
+                        <PlayerDetailWaveform
+                          track={currentTrack}
+                          zoomBars={zoomBars}
+                          durationSec={duration}
+                          bpm={currentBpm}
+                          waveformStyle={waveformStyle}
+                          progressOverride={deckAProgress}
+                        />
+                      }
+                      newContent={
+                        <PlayerDetailWaveform
+                          track={nextTrack}
+                          zoomBars={zoomBars}
+                          durationSec={deckBDuration}
+                          bpm={nextTrack.bpm ?? null}
+                          waveformStyle={waveformStyle}
+                          progressOverride={deckBProgress}
+                        />
+                      }
+                    />
+                  ) : (
+                    <PlayerDetailWaveform
+                      track={currentTrack}
+                      zoomBars={zoomBars}
+                      durationSec={duration}
+                      bpm={currentBpm}
+                      waveformStyle={waveformStyle}
+                      loop={
+                        loopActive && loopEndSec != null
+                          ? { startSec: loopStartSec, endSec: loopEndSec }
+                          : null
+                      }
+                      cueSec={cueSec}
+                    />
+                  )}
                 </div>
               )}
 
@@ -1640,6 +2148,46 @@ export function WaveformPlayer() {
                       variant={rekVariant}
                       durationSec={duration}
                       className="h-8"
+                    />
+                  </div>
+                )}
+                {/* Crossfade overlay — aligned full-track overview: old on the
+                    left, new overlapping its tail on the right (split top/bottom
+                    across the overlap), swiping left at the fade's midpoint to
+                    reveal the rest of the incoming track. Reverts to the full
+                    incoming waveform once the fade ends. */}
+                {isTransitioning && nextTrack && (
+                  <div
+                    data-testid="player-crossfade-overview"
+                    data-style={
+                      rekColored ? `rekordbox_${rekVariant}` : "default"
+                    }
+                    className="animate-in fade-in-0 absolute inset-x-1 inset-y-0 z-20 overflow-hidden bg-[var(--surface-2)] duration-300"
+                  >
+                    <MixOverviewSwipe
+                      swipeArmed={mixPastMid}
+                      oldDurationSec={duration}
+                      newDurationSec={deckBDuration}
+                      mixOutSec={
+                        mixPlanRef.current?.deckAMixOutSec ??
+                        Math.max(0, duration - transitionFadeRef.current)
+                      }
+                      startOffsetSec={
+                        mixPlanRef.current?.deckBStartOffsetSec ?? 0
+                      }
+                      fadeSec={transitionFadeRef.current}
+                      oldContent={renderOverviewTrack(
+                        currentTrack,
+                        currentPeaksRef.current ?? [],
+                        overviewProg.old,
+                        duration,
+                      )}
+                      newContent={renderOverviewTrack(
+                        nextTrack,
+                        nextPeaks ?? [],
+                        overviewProg.new,
+                        deckBDuration,
+                      )}
                     />
                   </div>
                 )}

@@ -26,6 +26,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "sc:create-playlist-from-selection",
   "sc:reload",
   "pitcher.toggle",
+  "mix.toggle",
   "library.fetch-from-downloads",
   // Nav / Go to
   "nav:/library",

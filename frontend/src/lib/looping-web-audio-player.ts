@@ -20,7 +20,7 @@ export interface LoopRegion {
  * resume-after-gesture once.
  */
 let sharedContext: AudioContext | null = null;
-function getSharedAudioContext(): AudioContext {
+export function getSharedAudioContext(): AudioContext {
   if (!sharedContext || sharedContext.state === "closed") {
     sharedContext = new AudioContext();
   }
@@ -73,6 +73,27 @@ export class LoopingWebAudioPlayer extends WebAudioPlayer {
 
   private get context(): BaseAudioContext {
     return this.getGainNode().context;
+  }
+
+  /** The output gain's `AudioParam` — for sample-accurate crossfade ramps. */
+  getGainParam(): AudioParam {
+    return this.getGainNode().gain;
+  }
+
+  /**
+   * The live buffer node's `playbackRate` `AudioParam`, or null when no node
+   * is scheduled (paused/pre-play). Used to ramp tempo continuously in the
+   * beatmatch-ramp mix mode. Automating this bypasses the base player's scalar
+   * rate tracking, so `currentTime` reporting drifts cosmetically during a
+   * ramp — acceptable for the out-going deck.
+   */
+  getRateParam(): AudioParam | null {
+    return this.internals.bufferNode?.playbackRate ?? null;
+  }
+
+  /** The shared `AudioContext`, for scheduling ramps on its clock. */
+  getAudioContext(): AudioContext {
+    return this.context as AudioContext;
   }
 
   /**

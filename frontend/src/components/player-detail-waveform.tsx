@@ -55,6 +55,10 @@ interface PlayerDetailWaveformProps {
   loop?: { startSec: number; endSec: number } | null;
   /** In-memory cue point (seconds), or `null`. */
   cueSec?: number | null;
+  /** When set, drive the playhead from this progress (0–1) instead of the
+   * global player progress, and disable scrubbing. Used to stack a second,
+   * non-interactive deck (the incoming track) during a crossfade. */
+  progressOverride?: number;
   className?: string;
 }
 
@@ -74,6 +78,7 @@ export function PlayerDetailWaveform({
   waveformStyle,
   loop,
   cueSec,
+  progressOverride,
   className,
 }: PlayerDetailWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -350,14 +355,21 @@ export function PlayerDetailWaveform({
     ],
   );
 
-  // Redraw on data/size change and subscribe to live progress.
+  // Redraw on data/size change and subscribe to live progress. When a progress
+  // override is supplied (crossfade split), paint that deck instead of the
+  // global player progress.
   useEffect(() => {
+    if (progressOverride != null) {
+      progressRef.current = progressOverride;
+      draw(progressOverride);
+      return;
+    }
     draw(progressRef.current);
     return subscribeProgress((p) => {
       progressRef.current = p;
       draw(p);
     });
-  }, [draw, subscribeProgress]);
+  }, [draw, subscribeProgress, progressOverride]);
 
   // Grab-and-drag scrubbing: the press anchors the current position (no jump to
   // the cursor); dragging then scrubs relative to pointer movement.
@@ -389,14 +401,19 @@ export function PlayerDetailWaveform({
     draggingRef.current = false;
   }, []);
 
+  // Non-interactive when driven by an override (the incoming deck's preview).
+  const readOnly = progressOverride != null;
   return (
     <div ref={wrapRef} className={cn("size-full", className)}>
       <canvas
         ref={canvasRef}
-        className="block size-full cursor-ew-resize touch-none"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
+        className={cn(
+          "block size-full touch-none",
+          readOnly ? "pointer-events-none" : "cursor-ew-resize",
+        )}
+        onPointerDown={readOnly ? undefined : onPointerDown}
+        onPointerMove={readOnly ? undefined : onPointerMove}
+        onPointerUp={readOnly ? undefined : onPointerUp}
         aria-hidden
       />
     </div>

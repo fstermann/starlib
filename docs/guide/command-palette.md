@@ -20,6 +20,7 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 | `sc:create-playlist-from-selection` | Create playlist from N selected tracks | on `/library?source=soundcloud`, 1 ≤ selection ≤ 500 | `app/library/soundcloud-view.tsx` |
 | `sc:reload` | Reload SoundCloud library / Re-run search | on `/library?source=soundcloud` (search tab also requires a non-empty query) | `app/library/soundcloud-view.tsx` |
 | `pitcher.toggle` | Enable/Disable target-BPM pitching | a track is loaded in the player | `components/bpm-pitcher.tsx` |
+| `mix.toggle` | Enable/Disable auto-mix (crossfade into the next track) | a track is loaded in the player | `components/mix-controls.tsx` |
 | `library.fetch-from-downloads` | Fetch audio files from Downloads | a library folder is selected | `components/fetch-from-downloads-button.tsx` |
 
 ### Go to
