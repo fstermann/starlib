@@ -131,12 +131,13 @@ export function PlayerRekordboxWaveform({
         }
       }
 
-      // Played overlay up to the current position.
+      // Played overlay up to the current position — darkens the already-played
+      // region so the upcoming part stays the brighter, more legible one.
       if (progress > 0) {
         const playedX = Math.round(progress * cssW);
         ctx.save();
         ctx.globalCompositeOperation = "source-atop";
-        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
         ctx.fillRect(0, 0, playedX, cssH);
         ctx.restore();
       }

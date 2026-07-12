@@ -36,8 +36,9 @@ const SOURCE_COLS = 1200;
 const cache = new Map<string, Uint8Array | null>();
 const inflight = new Map<string, Promise<Uint8Array | null>>();
 
-/** Waveform byte variant: PWV4 colour preview or PWAV monochrome preview. */
-export type WaveformVariant = "color" | "blue";
+/** Waveform byte variant: whole-track preview (`color`/`blue`) or
+ * ~150-column/second detail for zoom (`color_detail`/`blue_detail`). */
+export type WaveformVariant = "color" | "blue" | "color_detail" | "blue_detail";
 
 function cacheKey(
   trackId: string,
@@ -177,14 +178,14 @@ export function RekordboxWaveform({
         }
       }
 
-      // Played overlay: tints columns up to current progress when the track is
-      // playing. Keeps the colour signature visible but desaturates the rest.
+      // Played overlay: darkens columns up to current progress when the track
+      // is playing, so the upcoming part reads as the brighter one.
       const active = isActiveRef.current;
       if (active && progress > 0) {
         const playedX = Math.round(progress * cssW);
         ctx.save();
         ctx.globalCompositeOperation = "source-atop";
-        ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
         ctx.fillRect(0, 0, playedX, cssH);
         ctx.restore();
       }

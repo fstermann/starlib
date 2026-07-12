@@ -56,7 +56,12 @@ _peaks_semaphore = asyncio.Semaphore(4)
 async def get_file_peaks(
     file_path: str,
     root_folder: Annotated[Path, Depends(get_root_folder)],
-    num_peaks: int = Query(200, ge=50, le=2000, description="Number of amplitude peaks to return"),
+    num_peaks: int = Query(
+        200,
+        ge=50,
+        le=50000,
+        description="Number of amplitude peaks to return (up to ~150/s for zoom).",
+    ),
 ) -> PeaksResponse:
     """Get waveform amplitude peak data for a file.
 

@@ -263,3 +263,16 @@ class UsbExportSource(RekordboxSource):
         except OSError:
             return None
         return read_pwav(str(dat), mtime_ns)
+
+    def get_analysis_paths(self, track_id: str) -> tuple[Path | None, Path | None]:
+        """Return the ``(.DAT, .EXT)`` ANLZ sidecar paths for a track."""
+        rows = self._query("SELECT analysisDataFilePath FROM content WHERE content_id = ?", (track_id,))
+        if not rows:
+            return None, None
+        rel = _clean(rows[0]["analysisDataFilePath"])
+        if not rel:
+            return None, None
+        base = self._resolve(rel)
+        dat = base.with_suffix(".DAT")
+        ext = base.with_suffix(".EXT")
+        return (dat if dat.exists() else None, ext if ext.exists() else None)

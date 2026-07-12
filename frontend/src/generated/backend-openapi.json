@@ -480,8 +480,167 @@
           "metadata"
         ],
         "summary": "Get Folder Tree",
-        "description": "Return the folder tree built from indexed tracks.\n\nOnly folders that contain at least one track (directly or in a\ndescendant) are included \u2014 empty directories are omitted.",
+        "description": "Return the folder tree built from indexed tracks and on-disk directories.\n\nEvery directory under the root is included \u2014 empty folders too. Hidden\n(dot-prefixed) directories are skipped, matching the indexer.\n\n``track_count`` is always the unfiltered recursive total, so the tree\nstructure is stable. When any filter argument is supplied, each node's\n``filtered_count`` carries the recursive count of tracks matching those\nfilters (``None`` otherwise).",
         "operationId": "get_folder_tree_api_metadata_folders_tree_get",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "genres",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Genres"
+            }
+          },
+          {
+            "name": "keys",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keys"
+            }
+          },
+          {
+            "name": "bpm_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bpm Min"
+            }
+          },
+          {
+            "name": "bpm_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bpm Max"
+            }
+          },
+          {
+            "name": "has_soundcloud_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Soundcloud Id"
+            }
+          },
+          {
+            "name": "file_formats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Formats"
+            }
+          },
+          {
+            "name": "size_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Min"
+            }
+          },
+          {
+            "name": "size_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Size Max"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -489,6 +648,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TreeNode"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -744,7 +913,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size|duration)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -1336,7 +1505,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size)$",
+              "pattern": "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size|duration)$",
               "default": "file_name",
               "title": "Sort By"
             }
@@ -2082,13 +2251,13 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 2000,
+              "maximum": 50000,
               "minimum": 50,
-              "description": "Number of amplitude peaks to return",
+              "description": "Number of amplitude peaks to return (up to ~150/s for zoom).",
               "default": 200,
               "title": "Num Peaks"
             },
-            "description": "Number of amplitude peaks to return"
+            "description": "Number of amplitude peaks to return (up to ~150/s for zoom)."
           }
         ],
         "responses": {
@@ -2121,7 +2290,7 @@
           "metadata"
         ],
         "summary": "Stream Audio",
-        "description": "Stream an audio file.\n\nFormats not natively supported by browsers (e.g. AIFF) are transcoded to\nWAV via ffmpeg and cached.  Transcoding is awaited before responding so\nthat the browser always receives a real file with Content-Length and range\nsupport, which is required for seeking to work.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFileResponse\n    Audio file bytes\n\nRaises\n------\nHTTPException\n    If the file doesn't exist or transcoding fails",
+        "description": "Stream an audio file.\n\nParameters\n----------\nfile_path : str\n    Relative or absolute path to audio file\nroot_folder : Path\n    Root music folder (injected)\n\nReturns\n-------\nFileResponse\n    Audio file bytes\n\nRaises\n------\nHTTPException\n    If the file doesn't exist or transcoding fails",
         "operationId": "stream_audio_api_metadata_files__file_path__audio_get",
         "parameters": [
           {
@@ -3803,6 +3972,557 @@
           }
         }
       }
+    },
+    "/api/rekordbox/usb/devices": {
+      "get": {
+        "tags": [
+          "rekordbox"
+        ],
+        "summary": "Get Usb Devices",
+        "description": "List mounted Rekordbox USB/SD exports that carry a readable library.",
+        "operationId": "get_usb_devices_api_rekordbox_usb_devices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevicesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rekordbox/usb/eject": {
+      "post": {
+        "tags": [
+          "rekordbox"
+        ],
+        "summary": "Eject Usb Device",
+        "description": "Safely eject a mounted Rekordbox USB/SD export.",
+        "operationId": "eject_usb_device_api_rekordbox_usb_eject_post",
+        "parameters": [
+          {
+            "name": "device",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "USB device id",
+              "title": "Device"
+            },
+            "description": "USB device id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EjectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rekordbox/status": {
+      "get": {
+        "tags": [
+          "rekordbox"
+        ],
+        "summary": "Get Status",
+        "description": "Report whether the selected Rekordbox source is reachable.",
+        "operationId": "get_status_api_rekordbox_status_get",
+        "parameters": [
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "USB device id; omit for the local install",
+              "title": "Device"
+            },
+            "description": "USB device id; omit for the local install"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RekordboxStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rekordbox/playlists": {
+      "get": {
+        "tags": [
+          "rekordbox"
+        ],
+        "summary": "Get Playlists",
+        "operationId": "get_playlists_api_rekordbox_playlists_get",
+        "parameters": [
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "USB device id; omit for the local install",
+              "title": "Device"
+            },
+            "description": "USB device id; omit for the local install"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rekordbox/playlists/{playlist_id}/tracks": {
+      "get": {
+        "tags": [
+          "rekordbox"
+        ],
+        "summary": "Get Playlist Tracks",
+        "operationId": "get_playlist_tracks_api_rekordbox_playlists__playlist_id__tracks_get",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Playlist Id"
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "USB device id; omit for the local install",
+              "title": "Device"
+            },
+            "description": "USB device id; omit for the local install"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TracksResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rekordbox/tracks/{track_id}/artwork": {
+      "get": {
+        "tags": [
+          "rekordbox"
+        ],
+        "summary": "Get Track Artwork",
+        "description": "Serve the cached artwork JPEG for a track.",
+        "operationId": "get_track_artwork_api_rekordbox_tracks__track_id__artwork_get",
+        "parameters": [
+          {
+            "name": "track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Track Id"
+            }
+          },
+          {
+            "name": "small",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Small"
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "USB device id; omit for the local install",
+              "title": "Device"
+            },
+            "description": "USB device id; omit for the local install"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rekordbox/tracks/{track_id}/waveform": {
+      "get": {
+        "tags": [
+          "rekordbox"
+        ],
+        "summary": "Get Track Waveform",
+        "description": "Serve a track's raw ANLZ waveform bytes for the frontend canvas.\n\nPreview variants span the whole track: ``color`` = PWV4 (1200 x 6 bytes),\n``blue`` = PWAV (400 x 1). Detail variants carry ~150 columns/second for\nzoomed playback: ``color_detail`` = PWV5 (2 bytes/column, ``.EXT``),\n``blue_detail`` = PWV3 (1 byte/column, ``.DAT``).",
+        "operationId": "get_track_waveform_api_rekordbox_tracks__track_id__waveform_get",
+        "parameters": [
+          {
+            "name": "track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Track Id"
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "USB device id; omit for the local install",
+              "title": "Device"
+            },
+            "description": "USB device id; omit for the local install"
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(color|blue|color_detail|blue_detail)$",
+              "default": "color",
+              "title": "Variant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rekordbox/tracks/{track_id}/analysis": {
+      "get": {
+        "tags": [
+          "rekordbox"
+        ],
+        "summary": "Get Track Analysis",
+        "description": "Return a track's beatgrid, phrase sections and cues as JSON.\n\nDrives the zoomed player overlay: beat ticks, the phrase band and cue\nmarkers. ``sections`` is ``null`` when the track has no phrase analysis;\nbeatgrid/cues degrade to empty lists rather than 404 when analysis is absent.",
+        "operationId": "get_track_analysis_api_rekordbox_tracks__track_id__analysis_get",
+        "parameters": [
+          {
+            "name": "track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Track Id"
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "USB device id; omit for the local install",
+              "title": "Device"
+            },
+            "description": "USB device id; omit for the local install"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackAnalysisResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rekordbox/tracks/{track_id}/audio": {
+      "get": {
+        "tags": [
+          "rekordbox"
+        ],
+        "summary": "Stream Track Audio",
+        "description": "Stream a track's audio file from a mounted USB export.\n\nLocal-install tracks play through the metadata audio endpoint by their\nabsolute path; USB tracks live on the device, so their device-relative path\nis resolved here (within the mount) and streamed with the same\ntranscode/range handling.",
+        "operationId": "stream_track_audio_api_rekordbox_tracks__track_id__audio_get",
+        "parameters": [
+          {
+            "name": "track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Track Id"
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "USB device id",
+              "title": "Device"
+            },
+            "description": "USB device id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rekordbox/tracks": {
+      "get": {
+        "tags": [
+          "rekordbox"
+        ],
+        "summary": "Get Tracks",
+        "operationId": "get_tracks_api_rekordbox_tracks_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10000,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "USB device id; omit for the local install",
+              "title": "Device"
+            },
+            "description": "USB device id; omit for the local install"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TracksResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4222,6 +4942,29 @@
         "title": "BatchUpdateResponse",
         "description": "Response from a batch update operation."
       },
+      "BeatModel": {
+        "properties": {
+          "beat": {
+            "type": "integer",
+            "title": "Beat"
+          },
+          "bpm": {
+            "type": "number",
+            "title": "Bpm"
+          },
+          "timeMs": {
+            "type": "integer",
+            "title": "Timems"
+          }
+        },
+        "type": "object",
+        "required": [
+          "beat",
+          "bpm",
+          "timeMs"
+        ],
+        "title": "BeatModel"
+      },
       "Body_update_file_artwork_api_metadata_files__file_path__artwork_post": {
         "properties": {
           "file": {
@@ -4454,6 +5197,86 @@
         ],
         "title": "CollectionStatsResponse",
         "description": "Response containing collection statistics."
+      },
+      "CueModel": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "timeMs": {
+            "type": "integer",
+            "title": "Timems"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "timeMs"
+        ],
+        "title": "CueModel"
+      },
+      "DevicesResponse": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/UsbDevice"
+            },
+            "type": "array",
+            "title": "Devices"
+          }
+        },
+        "type": "object",
+        "required": [
+          "devices"
+        ],
+        "title": "DevicesResponse"
+      },
+      "EjectResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "EjectResponse"
       },
       "FetchCandidate": {
         "properties": {
@@ -5188,6 +6011,22 @@
         "title": "PeaksResponse",
         "description": "Waveform amplitude peak data for visualization."
       },
+      "PlaylistsResponse": {
+        "properties": {
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/RekordboxPlaylist"
+            },
+            "type": "array",
+            "title": "Playlists"
+          }
+        },
+        "type": "object",
+        "required": [
+          "playlists"
+        ],
+        "title": "PlaylistsResponse"
+      },
       "ProfileGroup": {
         "properties": {
           "id": {
@@ -5383,6 +6222,223 @@
         ],
         "title": "RefreshResponse",
         "description": "Token refresh response."
+      },
+      "RekordboxPlaylist": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "is_folder": {
+            "type": "boolean",
+            "title": "Is Folder"
+          },
+          "is_smart": {
+            "type": "boolean",
+            "title": "Is Smart"
+          },
+          "track_count": {
+            "type": "integer",
+            "title": "Track Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "is_folder",
+          "is_smart",
+          "track_count"
+        ],
+        "title": "RekordboxPlaylist"
+      },
+      "RekordboxStatus": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "RekordboxStatus"
+      },
+      "RekordboxTrack": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "soundcloud_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Soundcloud Id"
+          },
+          "date_added": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Added"
+          },
+          "release_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Date"
+          },
+          "has_artwork": {
+            "type": "boolean",
+            "title": "Has Artwork",
+            "default": false
+          },
+          "has_waveform": {
+            "type": "boolean",
+            "title": "Has Waveform",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "RekordboxTrack"
       },
       "RootFolderRequest": {
         "properties": {
@@ -5816,6 +6872,34 @@
         "title": "SCUserPayload",
         "description": "Loose subset of the SC user object used during suggestion."
       },
+      "SectionModel": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "startMs": {
+            "type": "integer",
+            "title": "Startms"
+          },
+          "endMs": {
+            "type": "integer",
+            "title": "Endms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "label",
+          "startMs",
+          "endMs"
+        ],
+        "title": "SectionModel"
+      },
       "SessionCookieRequest": {
         "properties": {
           "oauth_token": {
@@ -6122,6 +7206,44 @@
           "playlists"
         ],
         "title": "SystemPlaylistsResponse"
+      },
+      "TrackAnalysisResponse": {
+        "properties": {
+          "beatgrid": {
+            "items": {
+              "$ref": "#/components/schemas/BeatModel"
+            },
+            "type": "array",
+            "title": "Beatgrid"
+          },
+          "sections": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SectionModel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections"
+          },
+          "cues": {
+            "items": {
+              "$ref": "#/components/schemas/CueModel"
+            },
+            "type": "array",
+            "title": "Cues"
+          }
+        },
+        "type": "object",
+        "required": [
+          "beatgrid",
+          "cues"
+        ],
+        "title": "TrackAnalysisResponse"
       },
       "TrackBrowseResponse": {
         "properties": {
@@ -6717,6 +7839,22 @@
         "title": "TrackInfoUpdateRequest",
         "description": "Request to update track metadata. All fields optional."
       },
+      "TracksResponse": {
+        "properties": {
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/RekordboxTrack"
+            },
+            "type": "array",
+            "title": "Tracks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tracks"
+        ],
+        "title": "TracksResponse"
+      },
       "TreeNode": {
         "properties": {
           "id": {
@@ -6739,6 +7877,17 @@
             "type": "integer",
             "title": "Track Count",
             "default": 0
+          },
+          "filtered_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filtered Count"
           }
         },
         "type": "object",
@@ -6748,6 +7897,29 @@
         ],
         "title": "TreeNode",
         "description": "A node in the folder tree."
+      },
+      "UsbDevice": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "mount_path": {
+            "type": "string",
+            "title": "Mount Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "mount_path"
+        ],
+        "title": "UsbDevice"
       },
       "UserInfo": {
         "properties": {
