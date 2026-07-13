@@ -83,7 +83,7 @@ export class LoopingWebAudioPlayer extends WebAudioPlayer {
   /**
    * The live buffer node's `playbackRate` `AudioParam`, or null when no node
    * is scheduled (paused/pre-play). Used to ramp tempo continuously in the
-   * beatmatch-ramp mix mode. Automating this bypasses the base player's scalar
+   * beatgrid mix mode's tempo ramp. Automating this bypasses the base player's scalar
    * rate tracking, so `currentTime` reporting drifts cosmetically during a
    * ramp — acceptable for the out-going deck.
    */

@@ -165,7 +165,7 @@ async function setup(page: import("@playwright/test").Page) {
   );
 }
 
-test.describe("Auto-mix crossfade — SoundCloud chain", () => {
+test.describe("Auto-mix crossfade — SoundCloud chain", { tag: "@slow" }, () => {
   test("crossfades twice in a row without re-sourcing the adopted element", async ({
     page,
   }) => {
@@ -199,7 +199,7 @@ test.describe("Auto-mix crossfade — SoundCloud chain", () => {
     await expect(player).toBeVisible();
     await expect(player).toContainText("Alpha");
 
-    // Enable auto-mix (simple time crossfade — the default mode).
+    // Enable auto-mix (time crossfade — the default mode).
     await player.getByTestId("mix-controls-trigger").click();
     await page.getByTestId("mix-enabled-toggle").click();
     await page.keyboard.press("Escape");
@@ -231,6 +231,36 @@ test.describe("Auto-mix crossfade — SoundCloud chain", () => {
     });
 
     expect(sourceNodeErrors).toEqual([]);
+  });
+
+  test("beatgrid mode warns that SoundCloud tracks fall back to crossfade", async ({
+    page,
+  }) => {
+    await setup(page);
+    await page.goto("/library?source=soundcloud");
+    await expect(page.locator("[data-index]")).toHaveCount(3, {
+      timeout: 5000,
+    });
+    await page
+      .locator('[data-index="0"]')
+      .getByRole("button", { name: /play/i })
+      .first()
+      .click()
+      .catch(async () => {
+        await page.locator('[data-index="0"]').click();
+      });
+    const player = page.getByTestId("waveform-player");
+    await expect(player).toBeVisible();
+
+    // SoundCloud streams have no Rekordbox beatgrid: selecting the beatgrid
+    // mode surfaces the crossfade-fallback warning inside its card.
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-mode-beatgrid").click();
+    await expect(
+      page
+        .getByTestId("mix-mode-beatgrid-card")
+        .getByTestId("mix-beatgrid-unavailable"),
+    ).toBeVisible();
   });
 
   test("crossfade overlay renders bars like the resting overview (bucket-max, normalized)", async ({

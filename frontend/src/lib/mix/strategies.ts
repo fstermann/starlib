@@ -6,7 +6,7 @@
  */
 
 import type { MixConfig, MixMode } from "./config";
-import { SIMPLE_SECONDS_MAX, SIMPLE_SECONDS_MIN } from "./config";
+import { CROSSFADE_SECONDS_MAX, CROSSFADE_SECONDS_MIN } from "./config";
 
 /** One beatgrid entry, in seconds, with its position in the bar (1–4). */
 export interface DeckBeat {
@@ -42,13 +42,18 @@ export interface TransitionContext {
   deckBDesiredRate: number;
   /** Global pitcher target BPM. */
   targetBpm: number;
+  /**
+   * Whether the BPM pitcher is active (beat-sync to a common BPM). Picks the
+   * beatgrid variant: locked to the target BPM when on, tempo ramp when off.
+   */
+  beatSync: boolean;
   config: MixConfig;
 }
 
 export interface TransitionPlan {
   /** Effective mode — may differ from `config.mode` after a no-grid fallback. */
   mode: MixMode;
-  /** Whether a requested beatmatch fell back to `simple` (no usable grid). */
+  /** Whether a requested beatgrid mix fell back to `crossfade` (no usable grid). */
   fellBack: boolean;
   fadeSeconds: number;
   /** Playback time on deck A at which the fade begins. */
@@ -58,8 +63,8 @@ export interface TransitionPlan {
   /** playbackRate deck B starts at. */
   deckBInitialRate: number;
   /**
-   * Continuous rate ramp over the fade (beatmatch-ramp only). Null means both
-   * decks hold a constant rate for the whole transition.
+   * Continuous rate ramp over the fade (beatgrid without beat-sync only).
+   * Null means both decks hold a constant rate for the whole transition.
    */
   rateRamp: {
     deckAFrom: number;
@@ -90,16 +95,19 @@ function hasGrid(info: DeckInfo): boolean {
   );
 }
 
-/** Simple time crossfade — always applicable. */
-function planSimple(ctx: TransitionContext, fellBack = false): TransitionPlan {
+/** Plain time crossfade — always applicable. */
+function planCrossfade(
+  ctx: TransitionContext,
+  fellBack = false,
+): TransitionPlan {
   const fade = Math.min(
-    SIMPLE_SECONDS_MAX,
-    Math.max(SIMPLE_SECONDS_MIN, ctx.config.simpleSeconds),
+    CROSSFADE_SECONDS_MAX,
+    Math.max(CROSSFADE_SECONDS_MIN, ctx.config.crossfadeSeconds),
   );
   // Fade must fit inside deck A; never start before 0.
   const fadeSeconds = Math.min(fade, ctx.deckA.durationSec);
   return {
-    mode: "simple",
+    mode: "crossfade",
     fellBack,
     fadeSeconds,
     deckAMixOutSec: Math.max(0, ctx.deckA.durationSec - fadeSeconds),
@@ -161,48 +169,51 @@ function deckBMixInAnchor(ctx: TransitionContext): number {
   return first ?? 0;
 }
 
-/** Beatmatch with both decks locked to the target BPM. */
-function planBeatmatchSync(ctx: TransitionContext): TransitionPlan {
-  if (!hasGrid(ctx.deckA) || !hasGrid(ctx.deckB)) return planSimple(ctx, true);
-  const win = deckAMixOutWindow(ctx);
-  if (win == null) return planSimple(ctx, true);
-  const rateA = ctx.targetBpm / ctx.deckA.bpm!;
-  const rateB = ctx.targetBpm / ctx.deckB.bpm!;
-  return {
-    mode: "beatmatch-sync",
-    fellBack: false,
-    // The window is measured on deck A's own grid; played at `rateA` it spans
-    // exactly `matchBars` bars at the target tempo.
-    fadeSeconds: win.fadeOnASec / rateA,
-    deckAMixOutSec: win.mixOutSec,
-    deckBStartOffsetSec: deckBMixInAnchor(ctx),
-    deckBInitialRate: rateB,
-    rateRamp: null,
-    gainCurve: "equalPower",
-  };
-}
-
 /**
- * Beatmatch with a continuous tempo ramp. Deck B enters matched to deck A's
- * current audible tempo, then both decks ramp to the target BPM over the fade.
- * Aligned at the start downbeat; the grids drift as the tempo ramps (a known
+ * Beatgrid mix. With `beatSync` (the BPM pitcher active) both decks are locked
+ * to the target BPM and the grids stay aligned for the whole fade. Without it,
+ * the pitcher target is ignored: deck B enters matched to deck A's current
+ * audible tempo, then both decks ramp continuously to deck B's own tempo over
+ * the fade (deck A bends to meet it; deck B ends at its natural rate) — aligned
+ * at the start downbeat; the grids drift as the tempo ramps (a known
  * limitation — see the engine).
  */
-function planBeatmatchRamp(ctx: TransitionContext): TransitionPlan {
-  if (!hasGrid(ctx.deckA) || !hasGrid(ctx.deckB)) return planSimple(ctx, true);
+function planBeatgrid(ctx: TransitionContext): TransitionPlan {
+  if (!hasGrid(ctx.deckA) || !hasGrid(ctx.deckB))
+    return planCrossfade(ctx, true);
   const win = deckAMixOutWindow(ctx);
-  if (win == null) return planSimple(ctx, true);
+  if (win == null) return planCrossfade(ctx, true);
+  if (ctx.beatSync) {
+    const rateA = ctx.targetBpm / ctx.deckA.bpm!;
+    const rateB = ctx.targetBpm / ctx.deckB.bpm!;
+    return {
+      mode: "beatgrid",
+      fellBack: false,
+      // The window is measured on deck A's own grid; played at `rateA` it
+      // spans exactly `matchBars` bars at the target tempo.
+      fadeSeconds: win.fadeOnASec / rateA,
+      deckAMixOutSec: win.mixOutSec,
+      deckBStartOffsetSec: deckBMixInAnchor(ctx),
+      deckBInitialRate: rateB,
+      rateRamp: null,
+      gainCurve: "equalPower",
+    };
+  }
   const audibleBpmA = ctx.deckA.bpm! * ctx.deckACurrentRate;
   const rateAFrom = ctx.deckACurrentRate;
-  const rateATo = ctx.targetBpm / ctx.deckA.bpm!;
+  // Beat-sync is off, so the pitcher target plays no role: the incoming track
+  // wins. Deck A bends to meet deck B's own tempo and deck B lands at its
+  // natural rate, so the fade ends with the pitcher untouched — no snap to the
+  // target BPM and no auto-enabling the pitcher after adoption.
+  const rateATo = ctx.deckB.bpm! / ctx.deckA.bpm!;
   // Deck A's rate ramps linearly from → to across the fade, so it consumes its
   // grid window at the average of the two rates.
   const fadeSeconds = win.fadeOnASec / ((rateAFrom + rateATo) / 2);
   // Deck B enters at whatever rate makes it audible at deck A's current tempo.
   const rateBFrom = audibleBpmA / ctx.deckB.bpm!;
-  const rateBTo = ctx.targetBpm / ctx.deckB.bpm!;
+  const rateBTo = 1;
   return {
-    mode: "beatmatch-ramp",
+    mode: "beatgrid",
     fellBack: false,
     fadeSeconds,
     deckAMixOutSec: win.mixOutSec,
@@ -220,9 +231,8 @@ function planBeatmatchRamp(ctx: TransitionContext): TransitionPlan {
 
 const STRATEGIES: Record<MixMode, (ctx: TransitionContext) => TransitionPlan> =
   {
-    simple: (ctx) => planSimple(ctx),
-    "beatmatch-sync": planBeatmatchSync,
-    "beatmatch-ramp": planBeatmatchRamp,
+    crossfade: (ctx) => planCrossfade(ctx),
+    beatgrid: planBeatgrid,
   };
 
 /** Build the transition plan for the configured mode (with no-grid fallback). */

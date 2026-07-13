@@ -132,74 +132,80 @@ async function setup(page: import("@playwright/test").Page) {
   );
 }
 
-test.describe("Auto-mix crossfade — SoundCloud volume fade", () => {
-  test("both elements' volumes crossfade (incoming does not start at full volume)", async ({
-    page,
-  }) => {
-    test.setTimeout(60_000);
-    await setup(page);
-    await page.goto("/library?source=soundcloud");
+test.describe(
+  "Auto-mix crossfade — SoundCloud volume fade",
+  { tag: "@slow" },
+  () => {
+    test("both elements' volumes crossfade (incoming does not start at full volume)", async ({
+      page,
+    }) => {
+      test.setTimeout(60_000);
+      await setup(page);
+      await page.goto("/library?source=soundcloud");
 
-    await expect(page.locator("[data-index]")).toHaveCount(2, {
-      timeout: 5000,
-    });
-    await page
-      .locator('[data-index="0"]')
-      .getByRole("button", { name: /play/i })
-      .first()
-      .click()
-      .catch(async () => {
-        await page.locator('[data-index="0"]').click();
+      await expect(page.locator("[data-index]")).toHaveCount(2, {
+        timeout: 5000,
+      });
+      await page
+        .locator('[data-index="0"]')
+        .getByRole("button", { name: /play/i })
+        .first()
+        .click()
+        .catch(async () => {
+          await page.locator('[data-index="0"]').click();
+        });
+
+      const player = page.getByTestId("waveform-player");
+      await expect(player).toBeVisible();
+      await player.getByTestId("mix-controls-trigger").click();
+      await page.getByTestId("mix-enabled-toggle").click();
+      await page.keyboard.press("Escape");
+
+      await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+        timeout: 20000,
       });
 
-    const player = page.getByTestId("waveform-player");
-    await expect(player).toBeVisible();
-    await player.getByTestId("mix-controls-trigger").click();
-    await page.getByTestId("mix-enabled-toggle").click();
-    await page.keyboard.press("Escape");
-
-    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
-      timeout: 20000,
-    });
-
-    // Sample element volumes through the fade. DOM order: [0] = out-going
-    // deck A (created at init), [1] = incoming deck B (created at arming).
-    // Require a mid-fade sample where BOTH are strictly between the endpoints
-    // — the old Web Audio path left them pinned at 1 and 0 for the whole fade.
-    let midFade: { a: number; b: number } | null = null;
-    const first = await page.evaluate(() =>
-      Array.from(document.querySelectorAll("audio")).map((a) => a.volume),
-    );
-    for (let i = 0; i < 20 && !midFade; i++) {
-      const vols = await page.evaluate(() =>
+      // Sample element volumes through the fade. DOM order: [0] = out-going
+      // deck A (created at init), [1] = incoming deck B (created at arming).
+      // Require a mid-fade sample where BOTH are strictly between the endpoints
+      // — the old Web Audio path left them pinned at 1 and 0 for the whole fade.
+      let midFade: { a: number; b: number } | null = null;
+      const first = await page.evaluate(() =>
         Array.from(document.querySelectorAll("audio")).map((a) => a.volume),
       );
-      if (
-        vols.length === 2 &&
-        vols[0]! > 0.1 &&
-        vols[0]! < 0.9 &&
-        vols[1]! > 0.1 &&
-        vols[1]! < 0.9
-      ) {
-        midFade = { a: vols[0]!, b: vols[1]! };
+      for (let i = 0; i < 20 && !midFade; i++) {
+        const vols = await page.evaluate(() =>
+          Array.from(document.querySelectorAll("audio")).map((a) => a.volume),
+        );
+        if (
+          vols.length === 2 &&
+          vols[0]! > 0.1 &&
+          vols[0]! < 0.9 &&
+          vols[1]! > 0.1 &&
+          vols[1]! < 0.9
+        ) {
+          midFade = { a: vols[0]!, b: vols[1]! };
+        }
+        if (!midFade) await page.waitForTimeout(250);
       }
-      if (!midFade) await page.waitForTimeout(250);
-    }
-    expect(first.length).toBe(2);
-    expect(midFade).not.toBeNull();
+      expect(first.length).toBe(2);
+      expect(midFade).not.toBeNull();
 
-    // The fade completes: Beta is adopted and its element sits at full volume.
-    await expect(player.getByTitle("Beta", { exact: true })).toBeVisible({
-      timeout: 20000,
+      // The fade completes: Beta is adopted and its element sits at full volume.
+      await expect(player.getByTitle("Beta", { exact: true })).toBeVisible({
+        timeout: 20000,
+      });
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() =>
+              Array.from(document.querySelectorAll("audio")).map(
+                (a) => a.volume,
+              ),
+            ),
+          { timeout: 15000 },
+        )
+        .toEqual([1]);
     });
-    await expect
-      .poll(
-        () =>
-          page.evaluate(() =>
-            Array.from(document.querySelectorAll("audio")).map((a) => a.volume),
-          ),
-        { timeout: 15000 },
-      )
-      .toEqual([1]);
-  });
-});
+  },
+);

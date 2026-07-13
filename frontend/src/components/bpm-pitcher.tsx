@@ -143,7 +143,17 @@ export async function resolveTrackBpm(
   }
 }
 
-export function BpmPitcher() {
+export function BpmPitcher({
+  currentBpmOverride,
+}: {
+  /**
+   * Overrides the BPM shown on the trigger (label + rate badge) only — used
+   * during an auto-mix swipe to preview the incoming deck's BPM before the
+   * queue advances. The popover control panel and BPM detection still act on
+   * the real current track. Undefined = no override.
+   */
+  currentBpmOverride?: number | null;
+} = {}) {
   const {
     currentTrack,
     currentBpm,
@@ -265,16 +275,23 @@ export function BpmPitcher() {
 
   const rate = computePlaybackRate(pitchEnabled, currentBpm, targetBpm);
   const ratePercent = (rate - 1) * 100;
+  // The trigger readout can preview the incoming deck during an auto-mix swipe.
+  const displayBpm =
+    currentBpmOverride !== undefined ? currentBpmOverride : currentBpm;
+  const displayRate = computePlaybackRate(pitchEnabled, displayBpm, targetBpm);
+  const displayRatePercent = (displayRate - 1) * 100;
   // When pitching is on, show the effective playback BPM (what you actually
   // hear). The rate is clamped to [0.5, 2.0], so this isn't always equal to
   // ``targetBpm`` — derive it from the rate so the readout stays honest.
   const effectiveBpm =
-    pitchEnabled && currentBpm != null ? Math.round(currentBpm * rate) : null;
+    pitchEnabled && displayBpm != null
+      ? Math.round(displayBpm * displayRate)
+      : null;
   const bpmLabel =
     effectiveBpm != null
       ? `${effectiveBpm}`
-      : currentBpm != null
-        ? `${currentBpm}`
+      : displayBpm != null
+        ? `${displayBpm}`
         : "—";
   const tauri = isTauri();
 
@@ -303,20 +320,22 @@ export function BpmPitcher() {
                 BPM
               </span>
             </span>
-            {pitchEnabled && currentBpm != null && (
+            {pitchEnabled && displayBpm != null && (
               <span
                 data-testid="bpm-pitcher-rate-badge"
                 className="text-2xs mt-0.5 tabular-nums"
               >
                 {/* Original BPM in gray; the delta carries the pitch colour. */}
-                <span className="text-muted-foreground">{currentBpm}</span>{" "}
+                <span className="text-muted-foreground">{displayBpm}</span>{" "}
                 <span
                   className={
-                    ratePercent === 0 ? "text-muted-foreground" : "text-primary"
+                    displayRatePercent === 0
+                      ? "text-muted-foreground"
+                      : "text-primary"
                   }
                 >
-                  {ratePercent > 0 ? "+" : ""}
-                  {ratePercent.toFixed(1)}%
+                  {displayRatePercent > 0 ? "+" : ""}
+                  {displayRatePercent.toFixed(1)}%
                 </span>
               </span>
             )}

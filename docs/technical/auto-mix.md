@@ -17,20 +17,19 @@ adding a strategy, not touching playback or UI.
 
 | Mode | What it does |
 |------|--------------|
-| `simple` | Time crossfade, 1–12 s. `mixOut = duration − fade`, `startOffset = 0`. |
-| `beatmatch-sync` | Both decks pitched to the same BPM (needs pitch/"BPM mode" on, else falls back to `simple`). Mix-out and mix-in land on **downbeats**, section-aware so the fade doesn't strand a stray couple of bars at the track ends. |
-| `beatmatch-ramp` | Deck A plays at its own tempo; deck B starts pitched to match, then both ramp to the target BPM across the fade. |
+| `crossfade` | Time crossfade, 1–12 s. `mixOut = duration − fade`, `startOffset = 0`. |
+| `beatgrid` | Bar-aligned blend on the beatgrids. Mix-out and mix-in land on **downbeats**, section-aware so the fade doesn't strand a stray couple of bars at the track ends. The variant is picked by the BPM pitcher (`beatSync` in the `TransitionContext`): with pitch/"BPM mode" **on**, both decks are locked to the target BPM for the whole fade; with it **off**, the pitcher target is ignored and the incoming track wins: deck B starts pitched to match deck A's current tempo, then both ramp to deck B's own tempo across the fade (deck A bends to meet it; deck B lands at its natural rate), leaving the pitcher untouched (`rateRamp` on the plan). |
 
 `TransitionPlan` fields that matter downstream:
 
 - `fadeSeconds` — fade length, in **deck A real-time seconds**.
 - `deckAMixOutSec` — where deck A starts fading (seconds into the old track).
 - `deckBStartOffsetSec` — where deck B starts playing (seconds into the new
-  track); its mix-in point. `0` for `simple`, a downbeat for the beatmatch modes.
+  track); its mix-in point. `0` for `crossfade`, a downbeat for `beatgrid`.
 
-If a track lacks a beatgrid, the beatmatch modes fall back to `simple`.
+If a track lacks a beatgrid, the `beatgrid` mode falls back to `crossfade`.
 
-The beatmatch mix-out window is anchored by **walking the grid**, not by
+The beatgrid mix-out window is anchored by **walking the grid**, not by
 arithmetic: take the downbeat at or before the end of musical content (last
 section end when section-aware, else the file end), then step `matchBars`
 downbeats back. Both ends are actual grid ticks, so the fade ends bar-perfect
@@ -44,8 +43,8 @@ The wall-clock `fadeSeconds` is that grid window divided by deck A's rate
 
 `src/lib/mix/engine.ts` runs a **dual-deck** crossfade. Deck B (the incoming
 track) is decoded/attached and cued *ahead* of the mix-out point, then
-`runTransition()` ramps the two gain nodes (equal-power) and, for `beatmatch-ramp`,
-the playback rates. The non-mix playback path is untouched, so there is no
+`runTransition()` ramps the two gain nodes (equal-power) and, when the plan
+carries a `rateRamp`, the playback rates. The non-mix playback path is untouched, so there is no
 regression risk for ordinary play.
 
 **Play/pause during the fade controls both decks.** The `TransitionHandle`

@@ -12,6 +12,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:fast": "playwright test --grep-invert @slow",
+    "test:e2e:slow": "playwright test --grep @slow",
+    "test:e2e:changed": "playwright test --only-changed",
     "generate": "npm run generate:soundcloud && npm run generate:backend",
     "generate:soundcloud": "npx openapi-typescript https://developers.soundcloud.com/docs/api/explorer/api.json -o src/generated/soundcloud.ts",
     "generate:backend": "npx openapi-typescript src/generated/backend-openapi.json -o src/generated/backend.ts"

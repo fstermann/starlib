@@ -84,7 +84,25 @@ const ANALYSIS = {
   cues: [],
 };
 
-test.describe("Auto-mix crossfade", () => {
+/**
+ * A multi-bar 4/4 beatgrid, one beat every `stepMs`, spanning `endMs`. The
+ * single-bar `ANALYSIS` above falls back to a plain crossfade (a beatgrid mix
+ * needs several downbeats), so the beatgrid specs override the analysis route
+ * with this to actually exercise the bar-aligned strategy.
+ */
+function denseGrid(stepMs: number, endMs: number, kind: string) {
+  const beatgrid = [];
+  for (let t = 0, beat = 1; t <= endMs; t += stepMs, beat = (beat % 4) + 1) {
+    beatgrid.push({ beat, bpm: 124, timeMs: t });
+  }
+  return {
+    beatgrid,
+    sections: [{ kind, label: kind, startMs: 0, endMs }],
+    cues: [],
+  };
+}
+
+test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
   test.beforeEach(async ({ page }) => {
     await page.route(
       "**/api/rekordbox/status",
@@ -159,7 +177,7 @@ test.describe("Auto-mix crossfade", () => {
     // Open the zoom detail strip so the split view is exercised during the fade.
     await player.getByTestId("player-detail-toggle").click();
 
-    // Enable auto-mix (simple time crossfade — the default mode).
+    // Enable auto-mix (time crossfade — the default mode).
     await player.getByTestId("mix-controls-trigger").click();
     await page.getByTestId("mix-enabled-toggle").click();
     await page.keyboard.press("Escape");
@@ -246,6 +264,29 @@ test.describe("Auto-mix crossfade", () => {
     );
     // Same canvas element, still in the DOM — the zoom strip did not remount.
     expect(await incomingCanvas!.evaluate((el) => el.isConnected)).toBe(true);
+  });
+
+  test("mode settings render inside the selected mode card", async ({
+    page,
+  }) => {
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+    await player.getByTestId("mix-controls-trigger").click();
+
+    // Crossfade is the default mode: its card holds the fade-length slider.
+    const crossfadeCard = page.getByTestId("mix-mode-crossfade-card");
+    await expect(
+      crossfadeCard.getByTestId("mix-crossfade-seconds"),
+    ).toBeVisible();
+
+    // Selecting Beatgrid moves the settings into its card.
+    await page.getByTestId("mix-mode-beatgrid").click();
+    const beatgridCard = page.getByTestId("mix-mode-beatgrid-card");
+    await expect(beatgridCard.getByTestId("mix-bars-16")).toBeVisible();
+    await expect(beatgridCard.getByTestId("mix-section-aware")).toBeVisible();
+    await expect(page.getByTestId("mix-crossfade-seconds")).toHaveCount(0);
+    // Rekordbox tracks carry a beatgrid — no fallback warning.
+    await expect(page.getByTestId("mix-beatgrid-unavailable")).toHaveCount(0);
   });
 
   test("crossfade overlay honors the selected Rekordbox waveform style", async ({
@@ -428,5 +469,111 @@ test.describe("Auto-mix crossfade", () => {
     // plays through the first few seconds.
     await page.waitForTimeout(3000);
     await expect(player).toHaveAttribute("data-mix-state", "idle");
+  });
+
+  test("time, BPM and key swap to the incoming track at the swipe", async ({
+    page,
+  }) => {
+    // Give Baz a distinct BPM, key, and length so the rail readouts visibly
+    // swap from Foo's (124 / 8A / 0:10) to Baz's.
+    await page.route(
+      "**/api/rekordbox/playlists/pl-1/tracks",
+      jsonRoute({ tracks: [TRACK_A, { ...TRACK_B, bpm: 128, key: "9A" }] }),
+    );
+    await page.route("**/api/metadata/files/*/audio", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "audio/wav",
+        body: makeSilentWav(route.request().url().includes("baz") ? 20 : 10),
+      }),
+    );
+
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+
+    // Baseline before any fade: the rail reads the current track (Foo).
+    await expect(player.getByTestId("bpm-pitcher-trigger")).toContainText(
+      "124",
+    );
+    await expect(player.getByTestId("player-key")).toContainText("8A");
+    await expect(player.getByTestId("player-time")).toContainText("0:10");
+
+    // Enable auto-mix (time crossfade — the default mode).
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    // Wait for the swipe (the rail title flips to the incoming track mid-fade),
+    // then freeze the fade so the queue can't advance — this proves the
+    // readouts swap AT THE SWIPE, not only after adoption.
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+    await player.getByTestId("player-toggle").click();
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning");
+
+    // Still transitioning (queue not advanced), yet the rail already reads Baz.
+    await expect(player.getByTestId("bpm-pitcher-trigger")).toContainText(
+      "128",
+    );
+    await expect(player.getByTestId("player-key")).toContainText("9A");
+    await expect(player.getByTestId("player-time")).toContainText("0:20");
+  });
+
+  test("beatgrid transition with the pitcher off leaves the pitcher off", async ({
+    page,
+  }) => {
+    // Regression: a beatgrid (beat-sync off) transition used to ramp the
+    // incoming deck to the pitcher's target BPM and force the pitcher on at
+    // adoption — so track B ended up pitched with beat-sync silently enabled.
+    // It must instead ramp to the incoming track's own tempo and never touch
+    // the pitcher.
+    const grid = denseGrid(250, 12000, "verse"); // downbeat every 1s → 12 bars
+    await page.route("**/api/rekordbox/tracks/*/analysis*", jsonRoute(grid));
+    await page.route("**/api/metadata/files/*/audio", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "audio/wav",
+        body: makeSilentWav(12),
+      }),
+    );
+
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+
+    // Baseline: the pitcher is off (no pitch rate badge on the trigger).
+    await expect(player.getByTestId("bpm-pitcher-rate-badge")).toHaveCount(0);
+
+    // Beatgrid mode, small overlap so the mix-out lands a few seconds in.
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.getByTestId("mix-mode-beatgrid").click();
+    await page.getByTestId("mix-bars-8").click();
+    await page.keyboard.press("Escape");
+
+    // The bar-aligned fade fires (not a crossfade fallback) and adopts "Baz".
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible({
+      timeout: 20000,
+    });
+    await expect(player).not.toHaveAttribute(
+      "data-mix-state",
+      "transitioning",
+      { timeout: 15000 },
+    );
+
+    // The pitcher was never auto-enabled: still no rate badge, and the toggle
+    // reads off.
+    await expect(player.getByTestId("bpm-pitcher-rate-badge")).toHaveCount(0);
+    await player.getByTestId("bpm-pitcher-trigger").click();
+    await expect(page.getByTestId("bpm-pitcher-toggle")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
   });
 });

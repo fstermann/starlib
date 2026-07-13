@@ -51,17 +51,22 @@ function ctx(
     deckADesiredRate: 1,
     deckBDesiredRate: 1,
     targetBpm: 128,
+    beatSync: true,
     config: { ...DEFAULT_MIX_CONFIG, ...config },
     ...extra,
   };
 }
 
-describe("planTransition — simple", () => {
+describe("planTransition — crossfade", () => {
   it("fades over the configured seconds, anchored to the file end", () => {
     const plan = planTransition(
-      ctx({ mode: "simple", simpleSeconds: 8 }, deck(120, 300), deck(120, 300)),
+      ctx(
+        { mode: "crossfade", crossfadeSeconds: 8 },
+        deck(120, 300),
+        deck(120, 300),
+      ),
     );
-    expect(plan.mode).toBe("simple");
+    expect(plan.mode).toBe("crossfade");
     expect(plan.fadeSeconds).toBe(8);
     expect(plan.deckAMixOutSec).toBe(292);
     expect(plan.deckBStartOffsetSec).toBe(0);
@@ -71,7 +76,7 @@ describe("planTransition — simple", () => {
   it("clamps the fade to the configured bounds", () => {
     const plan = planTransition(
       ctx(
-        { mode: "simple", simpleSeconds: 99 },
+        { mode: "crossfade", crossfadeSeconds: 99 },
         deck(120, 300),
         deck(120, 300),
       ),
@@ -81,7 +86,7 @@ describe("planTransition — simple", () => {
 
   it("passes deck B's desired (pitched) rate through", () => {
     const plan = planTransition(
-      ctx({ mode: "simple" }, deck(120, 300), deck(120, 300), {
+      ctx({ mode: "crossfade" }, deck(120, 300), deck(120, 300), {
         deckBDesiredRate: 1.05,
       }),
     );
@@ -89,17 +94,17 @@ describe("planTransition — simple", () => {
   });
 });
 
-describe("planTransition — beatmatch-sync", () => {
+describe("planTransition — beatgrid (beat-sync on)", () => {
   it("locks both decks to the target BPM and spans matchBars", () => {
     const plan = planTransition(
       ctx(
-        { mode: "beatmatch-sync", matchBars: 16, sectionAware: false },
+        { mode: "beatgrid", matchBars: 16, sectionAware: false },
         deck(124, 300),
         deck(130, 300),
         { targetBpm: 128 },
       ),
     );
-    expect(plan.mode).toBe("beatmatch-sync");
+    expect(plan.mode).toBe("beatgrid");
     expect(plan.fellBack).toBe(false);
     // Deck B pitched to 128 from 130.
     expect(plan.deckBInitialRate).toBeCloseTo(128 / 130, 5);
@@ -117,15 +122,15 @@ describe("planTransition — beatmatch-sync", () => {
     expect(plan.rateRamp).toBeNull();
   });
 
-  it("falls back to simple when a deck has no beatgrid", () => {
+  it("falls back to crossfade when a deck has no beatgrid", () => {
     const plan = planTransition(
       ctx(
-        { mode: "beatmatch-sync" },
+        { mode: "beatgrid" },
         deck(124, 300),
         deck(130, 300, { grid: false }),
       ),
     );
-    expect(plan.mode).toBe("simple");
+    expect(plan.mode).toBe("crossfade");
     expect(plan.fellBack).toBe(true);
   });
 
@@ -137,7 +142,7 @@ describe("planTransition — beatmatch-sync", () => {
     ];
     const plan = planTransition(
       ctx(
-        { mode: "beatmatch-sync", matchBars: 16, sectionAware: true },
+        { mode: "beatgrid", matchBars: 16, sectionAware: true },
         deck(128, 300, { sections }),
         deck(128, 300),
         { targetBpm: 128 },
@@ -175,7 +180,7 @@ describe("planTransition — beatmatch-sync", () => {
     };
     const plan = planTransition(
       ctx(
-        { mode: "beatmatch-sync", matchBars: 16, sectionAware: true },
+        { mode: "beatgrid", matchBars: 16, sectionAware: true },
         deckA,
         deck(128, 300),
         { targetBpm: 126 },
@@ -199,7 +204,7 @@ describe("planTransition — beatmatch-sync", () => {
     ];
     const plan = planTransition(
       ctx(
-        { mode: "beatmatch-sync", sectionAware: true },
+        { mode: "beatgrid", sectionAware: true },
         deck(128, 300),
         deck(128, 300, { sections }),
         { targetBpm: 128 },
@@ -211,35 +216,38 @@ describe("planTransition — beatmatch-sync", () => {
   });
 });
 
-describe("planTransition — beatmatch-ramp", () => {
-  it("enters at deck A's tempo and ramps both to the target", () => {
+describe("planTransition — beatgrid (beat-sync off)", () => {
+  it("ignores the pitcher target and ramps both to deck B's own tempo", () => {
+    // targetBpm (140) differs from both decks: beat-sync off must ignore it —
+    // the incoming track wins, deck B ends at its natural rate, pitcher stays off.
     const plan = planTransition(
       ctx(
-        { mode: "beatmatch-ramp", matchBars: 16, sectionAware: false },
+        { mode: "beatgrid", matchBars: 16, sectionAware: false },
         deck(126, 300),
         deck(130, 300),
-        { targetBpm: 130, deckACurrentRate: 1 },
+        { targetBpm: 140, deckACurrentRate: 1, beatSync: false },
       ),
     );
-    expect(plan.mode).toBe("beatmatch-ramp");
+    expect(plan.mode).toBe("beatgrid");
     expect(plan.rateRamp).not.toBeNull();
-    // Deck B enters matched to A's audible 126 BPM, then ramps to 130.
+    // Deck B enters matched to A's audible 126 BPM, then ramps to its natural rate.
     expect(plan.deckBInitialRate).toBeCloseTo(126 / 130, 5);
     expect(plan.rateRamp!.deckBTo).toBeCloseTo(1, 5);
-    // Deck A holds its own tempo (rate 1) then ramps up to 130/126.
+    // Deck A holds its own tempo (rate 1) then bends up to deck B's 130 BPM.
     expect(plan.rateRamp!.deckAFrom).toBeCloseTo(1, 5);
     expect(plan.rateRamp!.deckATo).toBeCloseTo(130 / 126, 5);
   });
 
-  it("falls back to simple without a grid", () => {
+  it("falls back to crossfade without a grid", () => {
     const plan = planTransition(
       ctx(
-        { mode: "beatmatch-ramp" },
+        { mode: "beatgrid" },
         deck(126, 300, { grid: false }),
         deck(130, 300),
+        { beatSync: false },
       ),
     );
-    expect(plan.mode).toBe("simple");
+    expect(plan.mode).toBe("crossfade");
     expect(plan.fellBack).toBe(true);
   });
 });

@@ -234,8 +234,8 @@ export function runTransition(opts: {
   rampGain(deckA.gainParam, ctx, aFrom, 0, left, plan.gainCurve);
   rampGain(deckB.gainParam, ctx, bGainNow, 1, left, plan.gainCurve);
 
-  // Tempo ramp (beatmatch-ramp): automate the buffer-source playbackRate on
-  // both decks. Element decks return null and simply hold their entry rate.
+  // Tempo ramp (beatgrid without beat-sync): automate the buffer-source
+  // playbackRate on both decks. Element decks return null and simply hold their entry rate.
   if (plan.rateRamp) {
     const aRate = deckA.rateParam();
     if (aRate) {

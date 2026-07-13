@@ -255,7 +255,6 @@ export function WaveformPlayer() {
     currentBpm,
     targetBpm,
     pitchEnabled,
-    setPitchEnabled,
     mixConfig,
   } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1249,9 +1248,6 @@ export function WaveformPlayer() {
         onMidpoint: () => setMixPastMid(true),
         onComplete: () => {
           transitionCompletedRef.current = true;
-          // Ramp mode leaves the incoming deck at the target tempo; keep pitch on
-          // so the pitch effect holds it there after adoption.
-          if (plan.mode === "beatmatch-ramp") setPitchEnabled(true);
           nextRef.current();
         },
       });
@@ -1271,7 +1267,7 @@ export function WaveformPlayer() {
       old: deckA.currentTime / (deckA.duration || 1),
       new: deckB.duration > 0 ? deckB.currentTime / deckB.duration : 0,
     });
-  }, [peekNext, setPitchEnabled]);
+  }, [peekNext]);
 
   useEffect(() => {
     startTransitionRef.current = startTransition;
@@ -1386,12 +1382,6 @@ export function WaveformPlayer() {
         nextBpm,
         targetBpm,
       );
-      // Beatmatch-sync requires the pitcher to be active ("bpm mode"); without
-      // it, fall back to a simple time fade.
-      const effectiveConfig =
-        mixConfig.mode === "beatmatch-sync" && !pitchEnabled
-          ? { ...mixConfig, mode: "simple" as const }
-          : mixConfig;
       const plan = planTransition({
         deckA: toDeckInfo(currentBpm, duration, analysis),
         deckB: toDeckInfo(nextBpm, 0, nextAnalysis),
@@ -1399,7 +1389,10 @@ export function WaveformPlayer() {
         deckADesiredRate: deckACurrentRate,
         deckBDesiredRate,
         targetBpm,
-        config: effectiveConfig,
+        // With the pitcher active the beatgrid mix locks both decks to the
+        // target BPM; without it, it ramps the tempo across the fade.
+        beatSync: pitchEnabled,
+        config: mixConfig,
       });
 
       const [deck, peaksB] = await Promise.all([
@@ -1582,12 +1575,23 @@ export function WaveformPlayer() {
 
   // Past the fade midpoint the rail shows the incoming track's info (synced
   // with the waveform swipe).
-  const railTrack =
-    isTransitioning && mixPastMid && nextTrack ? nextTrack : currentTrack;
+  const railSwapped = isTransitioning && mixPastMid && !!nextTrack;
+  const railTrack = railSwapped ? nextTrack! : currentTrack;
   const artworkUrl =
     railTrack.artworkUrl ?? api.getArtworkUrl(railTrack.filePath);
   const titleText = railTrack.title ?? railTrack.fileName;
   const artistText = railTrack.artist ?? "";
+  // The time/BPM/key readouts swap with the rail: once past the swipe they read
+  // from the incoming deck (deck B) instead of waiting for adoption.
+  const incomingBpm = nextTrack
+    ? (nextTrack.bpm ??
+      (mixNextBpmRef.current?.filePath === nextTrack.filePath
+        ? mixNextBpmRef.current.bpm
+        : null))
+    : null;
+  const railBpm = railSwapped ? incomingBpm : currentBpm;
+  const railElapsed = railSwapped ? deckBProgress * deckBDuration : currentTime;
+  const railDuration = railSwapped ? deckBDuration : duration;
 
   // Colour the bottom waveform with Rekordbox's own analysis when the user
   // picked a Rekordbox style and the current track carries one. Non-Rekordbox
@@ -1632,9 +1636,12 @@ export function WaveformPlayer() {
   // green while pitching; below it sits the original key + the exact (fractional)
   // semitone shift, since a pitch often lands between two keys.
   const playRate = computePlaybackRate(pitchEnabled, currentBpm, targetBpm);
-  const keySemitones = keySemitonesForRate(playRate);
-  const semitonesFloat = semitonesFloatForRate(playRate);
-  const baseKey = currentTrack.musicalKey ?? null;
+  // Key follows the rail track (the incoming deck past the swipe), so it swaps
+  // in step with the title/artist rather than after adoption.
+  const keyRate = computePlaybackRate(pitchEnabled, railBpm, targetBpm);
+  const keySemitones = keySemitonesForRate(keyRate);
+  const semitonesFloat = semitonesFloatForRate(keyRate);
+  const baseKey = railTrack.musicalKey ?? null;
   const displayKey = baseKey
     ? keySemitones
       ? transposeKey(baseKey, keySemitones)
@@ -2165,13 +2172,16 @@ export function WaveformPlayer() {
               )}
             </div>
             {/* Elapsed / total time — compact, up by the title. */}
-            <div className="shrink-0 text-right leading-none tabular-nums">
+            <div
+              data-testid="player-time"
+              className="shrink-0 text-right leading-none tabular-nums"
+            >
               <span className="text-foreground text-xs font-medium">
-                {formatTime(currentTime)}
+                {formatTime(railElapsed)}
               </span>
               <span className="text-muted-foreground text-2xs">
                 {" "}
-                / {formatTime(duration)}
+                / {formatTime(railDuration)}
               </span>
             </div>
           </div>
@@ -2256,8 +2266,13 @@ export function WaveformPlayer() {
                 tinted; the value carries the pitch colour. */}
             <div className="ml-auto flex items-center gap-1">
               <MixControls />
-              <BpmPitcher />
-              <div className="flex h-9 flex-col items-center justify-center px-2 leading-none">
+              <BpmPitcher
+                currentBpmOverride={railSwapped ? railBpm : undefined}
+              />
+              <div
+                data-testid="player-key"
+                className="flex h-9 flex-col items-center justify-center px-2 leading-none"
+              >
                 <span className="flex items-baseline gap-1">
                   <span
                     className={cn(
