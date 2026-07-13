@@ -214,27 +214,44 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return Number.isFinite(n) && n > 0 ? n : null;
   })();
 
-  // Keep `currentBpm` in sync with manual edits/reanalysis from the SC table
-  // cells. Without this the pitcher keeps using the stale value and the
-  // playback rate doesn't track the user's correction.
-  useEffect(() => {
-    if (currentScId == null) return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<ScBpmUpdatedDetail>).detail;
-      if (detail?.trackId === currentScId) {
-        setCurrentBpmState(detail.bpm);
-      }
-    };
-    window.addEventListener(SC_BPM_UPDATED_EVENT, handler);
-    return () => window.removeEventListener(SC_BPM_UPDATED_EVENT, handler);
-  }, [currentScId]);
-
   const setQueueState = useCallback((tracks: PlayerTrack[], index: number) => {
     queueRef.current = tracks;
     queueIndexRef.current = index;
     setQueue(tracks);
     setQueueIndex(index);
   }, []);
+
+  // Keep `currentBpm` AND queue-entry BPM hints in sync with edits/reanalysis
+  // from the SC table cells or the auto-mix arm step. Without the queue patch,
+  // a track whose BPM was resolved while queued (to pitch the incoming
+  // crossfade deck) would reseed to "unknown" when it becomes current — and
+  // the pitcher would audibly snap the rate to 1 before re-detecting.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<ScBpmUpdatedDetail>).detail;
+      if (!detail) return;
+      let changed = false;
+      const patched = queueRef.current.map((t) => {
+        const k = t.streamRefreshKey;
+        const n = typeof k === "number" ? k : Number(k);
+        if (
+          Number.isFinite(n) &&
+          n === detail.trackId &&
+          t.bpm !== detail.bpm
+        ) {
+          changed = true;
+          return { ...t, bpm: detail.bpm };
+        }
+        return t;
+      });
+      if (changed) setQueueState(patched, queueIndexRef.current);
+      if (currentScId != null && detail.trackId === currentScId) {
+        setCurrentBpmState(detail.bpm);
+      }
+    };
+    window.addEventListener(SC_BPM_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(SC_BPM_UPDATED_EVENT, handler);
+  }, [currentScId, setQueueState]);
 
   const playQueue = useCallback(
     (tracks: PlayerTrack[], index: number, startRatio?: number) => {

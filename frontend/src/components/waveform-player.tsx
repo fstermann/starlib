@@ -13,10 +13,21 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import type WaveSurferType from "wavesurfer.js";
 
-import { BpmPitcher, computePlaybackRate } from "@/components/bpm-pitcher";
+import {
+  BpmPitcher,
+  computePlaybackRate,
+  resolveTrackBpm,
+} from "@/components/bpm-pitcher";
 import { MixControls } from "@/components/mix-controls";
 import { MixOverviewSwipe } from "@/components/mix-overview-swipe";
 import { PeaksWaveform } from "@/components/peaks-waveform";
@@ -40,7 +51,7 @@ import {
   type Deck,
   type TransitionHandle,
 } from "@/lib/mix/engine";
-import { routeElementThroughGain } from "@/lib/mix/html-deck";
+import { createVolumeFade } from "@/lib/mix/html-deck";
 import {
   planTransition,
   type DeckInfo,
@@ -265,6 +276,15 @@ export function WaveformPlayer() {
   const [mixState, setMixState] = useState<"idle" | "armed" | "transitioning">(
     "idle",
   );
+  // Keep the crossfade overlay's last frame painted through the adoption seam:
+  // after the fade completes and the queue advances, the rebuilt player's
+  // waveform isn't ready for a few hundred ms — unmounting the overlay there
+  // flashes the stale/blank base row until WaveSurfer renders.
+  const [seamHold, setSeamHold] = useState(false);
+  const overlayFrameRef = useRef<{
+    dataStyle: string;
+    props: ComponentProps<typeof MixOverviewSwipe>;
+  } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [zoomBars, setZoomBars] = useState<number>(DEFAULT_ZOOM);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -289,6 +309,14 @@ export function WaveformPlayer() {
   // hand-off store when the transition starts; nulled here so cleanup doesn't
   // double-destroy it.
   const mixDeckBRef = useRef<Deck | null>(null);
+  // An adopted SoundCloud deck keeps the deck it was crossfaded in on, so the
+  // next transition fades the same volume driver instead of stacking a second
+  // one onto the element.
+  const htmlDeckRef = useRef<Deck | null>(null);
+  // Background-resolved BPM for the queued next track (keyed by identity so a
+  // stale value can't leak onto a different track). The arm effect reads it on
+  // the re-arm pass triggered when the resolution lands.
+  const mixNextBpmRef = useRef<{ filePath: string; bpm: number } | null>(null);
   const transitionHandleRef = useRef<TransitionHandle | null>(null);
   const transitionStartedRef = useRef(false);
   const transitionCompletedRef = useRef(false);
@@ -682,6 +710,8 @@ export function WaveformPlayer() {
       let wsMod: typeof import("wavesurfer.js");
       let hoverMod: typeof import("wavesurfer.js/dist/plugins/hover.esm.js");
       const isLocal = peaksSource.kind !== "soundcloud";
+      // Cleared here; only an adopted SoundCloud deck (below) re-populates it.
+      htmlDeckRef.current = null;
 
       // Auto-mix hand-off: if the previous track just crossfaded into this one,
       // deck B is already decoded and playing at full gain. Adopt it and build
@@ -726,6 +756,9 @@ export function WaveformPlayer() {
         } else {
           const audio = adopted.media as HTMLAudioElement;
           audioRef.current = audio;
+          // Keep the adopted deck so the next transition fades its existing
+          // volume driver.
+          htmlDeckRef.current = adopted;
           audio.addEventListener("pause", () => {
             if (audioRef.current !== audio) return;
             if (transitionStartedRef.current) return;
@@ -1036,6 +1069,8 @@ export function WaveformPlayer() {
         setDuration(knownDuration);
         reportDuration(knownDuration);
         setReady(true);
+        // The rebuilt waveform exists — drop the adoption-seam overlay hold.
+        setSeamHold(false);
         registerSeek((ratio) => {
           media.currentTime = Math.max(0, Math.min(1, ratio)) * media.duration;
         });
@@ -1102,9 +1137,11 @@ export function WaveformPlayer() {
       const adopted = transitionCompletedRef.current;
       if (adopted) {
         // Crossfade finished cleanly: deck B lives in the hand-off store for
-        // the incoming init to adopt. Just reset the flags.
+        // the incoming init to adopt. Just reset the flags — and keep the
+        // overlay's settled frame painted until the rebuilt waveform is ready.
         transitionStartedRef.current = false;
         transitionCompletedRef.current = false;
+        setSeamHold(true);
         setMixState("idle");
       } else {
         // No transition, or a manual skip mid-fade: abort and discard deck B.
@@ -1115,6 +1152,8 @@ export function WaveformPlayer() {
           mixDeckBRef.current = null;
         }
         clearHandoff();
+        setSeamHold(false);
+        overlayFrameRef.current = null;
         setMixState("idle");
       }
       transitionHandleRef.current = null;
@@ -1164,14 +1203,20 @@ export function WaveformPlayer() {
     let deckA: Deck | null = null;
     if (webAudioRef.current) {
       deckA = localDeck(webAudioRef.current);
+    } else if (htmlDeckRef.current) {
+      // Adopted SoundCloud deck: reuse its existing volume driver.
+      deckA = htmlDeckRef.current;
     } else if (audioRef.current) {
-      // Route the out-going SoundCloud element through a gain node so it fades.
-      deckA = htmlDeck(
-        audioRef.current,
-        routeElementThroughGain(audioRef.current, 1),
-      );
+      // First transition off a freshly-loaded SoundCloud element: fade it via
+      // a volume driver (element decks never touch the Web Audio graph — see
+      // html-deck.ts).
+      deckA = htmlDeck(audioRef.current, createVolumeFade(audioRef.current, 1));
     }
-    if (!deckA) return;
+    if (!deckA) {
+      console.warn("[mix] transition aborted: no out-going deck");
+      return;
+    }
+    console.debug("[mix] transition start");
 
     transitionStartedRef.current = true;
     transitionCompletedRef.current = false;
@@ -1238,6 +1283,15 @@ export function WaveformPlayer() {
     if (mixState !== "transitioning") setMixPastMid(false);
   }, [mixState]);
 
+  // Release the adoption-seam overlay hold when a load fails (the error view
+  // replaces the waveform area). The normal release happens in `ws.on("ready")`
+  // — an effect on `ready` can miss it: the adopted deck's ws often becomes
+  // ready within the same React batch as the seam's `setReady(false)`, so the
+  // committed `ready` value never changes.
+  useEffect(() => {
+    if (errorMsg) setSeamHold(false);
+  }, [errorMsg]);
+
   // Sample each deck's playhead at ~8 Hz for the (static) overview. Far cheaper
   // than redrawing its full-track canvas on every audio frame.
   useEffect(() => {
@@ -1278,6 +1332,9 @@ export function WaveformPlayer() {
       !hasNext ||
       transitionStartedRef.current
     ) {
+      if (mixConfig.enabled && !transitionStartedRef.current) {
+        console.debug("[mix] not arming:", { ready, hasNext });
+      }
       teardownPrepared();
       return;
     }
@@ -1294,6 +1351,31 @@ export function WaveformPlayer() {
         : null;
       if (cancelled) return;
 
+      // The incoming track's BPM: with the pitcher active, deck B should fade
+      // in already at the target tempo instead of snapping after adoption.
+      // Plan with the hint (or an earlier background resolution) and NEVER
+      // block arming on a fresh lookup — a cache miss falls through to full
+      // track analysis (Tauri), which can outlast the time to the mix-out
+      // point or hang, and the fade must still fire on schedule. When the
+      // background resolution lands it re-arms to fold the rate into a fresh
+      // plan; it also patches the queue hint (SC_BPM_UPDATED_EVENT) so the
+      // pitcher holds the rate seamlessly after adoption.
+      const nextBpm =
+        nextTrack.bpm ??
+        (mixNextBpmRef.current?.filePath === nextTrack.filePath
+          ? mixNextBpmRef.current.bpm
+          : null);
+      if (pitchEnabled && nextBpm == null) {
+        const track = nextTrack;
+        void resolveTrackBpm(track).then((bpm) => {
+          if (bpm == null) return;
+          // Stash even when this arm run is stale — the value stays true.
+          mixNextBpmRef.current = { filePath: track.filePath, bpm };
+          if (cancelled || transitionStartedRef.current) return;
+          setRearmTick((t) => t + 1);
+        });
+      }
+
       const deckACurrentRate = computePlaybackRate(
         pitchEnabled,
         currentBpm,
@@ -1301,7 +1383,7 @@ export function WaveformPlayer() {
       );
       const deckBDesiredRate = computePlaybackRate(
         pitchEnabled,
-        nextTrack.bpm ?? null,
+        nextBpm,
         targetBpm,
       );
       // Beatmatch-sync requires the pitcher to be active ("bpm mode"); without
@@ -1312,7 +1394,7 @@ export function WaveformPlayer() {
           : mixConfig;
       const plan = planTransition({
         deckA: toDeckInfo(currentBpm, duration, analysis),
-        deckB: toDeckInfo(nextTrack.bpm ?? null, 0, nextAnalysis),
+        deckB: toDeckInfo(nextBpm, 0, nextAnalysis),
         deckACurrentRate,
         deckADesiredRate: deckACurrentRate,
         deckBDesiredRate,
@@ -1324,8 +1406,23 @@ export function WaveformPlayer() {
         prepareDeckB(nextTrack),
         resolveTrackPeaks(nextTrack, 400),
       ]);
-      if (cancelled || !deck) {
+      if (cancelled) {
         deck?.destroy();
+        return;
+      }
+      if (!deck) {
+        // Deck B couldn't be built (usually a failed stream-URL resolve).
+        // Dying silently here means no crossfade for the rest of the track —
+        // retry on a short delay instead; the resolve isn't negative-cached.
+        console.warn(
+          "[mix] arm failed: deck B not ready (stream unresolved) — retrying in 5s",
+          nextTrack.fileName,
+        );
+        setTimeout(() => {
+          if (!cancelled && !transitionStartedRef.current) {
+            setRearmTick((t) => t + 1);
+          }
+        }, 5000);
         return;
       }
       mixDeckBRef.current = deck;
@@ -1333,7 +1430,13 @@ export function WaveformPlayer() {
       setNextPeaks(peaksB);
       setNextAnalysis(nextAnalysis);
       setMixState("armed");
-    })();
+      console.debug(
+        `[mix] armed: ${plan.mode}${plan.fellBack ? " (fallback)" : ""} mixOut=${plan.deckAMixOutSec.toFixed(1)}s fade=${plan.fadeSeconds.toFixed(1)}s deckBRate=${plan.deckBInitialRate.toFixed(3)}`,
+      );
+    })().catch((err) => {
+      // A throw anywhere above would otherwise kill arming invisibly.
+      console.error("[mix] arming crashed:", err);
+    });
 
     return () => {
       cancelled = true;
@@ -1651,6 +1754,51 @@ export function WaveformPlayer() {
       if (!isPlaying) transitionHandleRef.current?.pause();
     }
   };
+
+  // The crossfade overlay's frame. Rebuilt live during the fade and stashed,
+  // so through the adoption seam — fade done, queue advanced, but the rebuilt
+  // player's waveform not ready yet — the settled frame stays painted instead
+  // of flashing the stale/blank base row.
+  const liveOverlayFrame =
+    isTransitioning && nextTrack
+      ? {
+          dataStyle: rekColored ? `rekordbox_${rekVariant}` : "default",
+          props: {
+            testId: "player-overview-swipe",
+            oldProgress: overviewProg.old,
+            newProgress: overviewProg.new,
+            swipeArmed: mixPastMid,
+            oldDurationSec: duration,
+            newDurationSec: deckBDuration,
+            mixOutSec:
+              mixPlanRef.current?.deckAMixOutSec ??
+              Math.max(0, duration - transitionFadeRef.current),
+            startOffsetSec: mixPlanRef.current?.deckBStartOffsetSec ?? 0,
+            oldFadeSec: transitionFadeRef.current * mixRates.a,
+            newFadeSec: transitionFadeRef.current * mixRates.b,
+            oldContent: renderOverviewTrack(
+              currentTrack,
+              currentPeaksRef.current ?? [],
+              overviewProg.old,
+              duration,
+            ),
+            newContent: renderOverviewTrack(
+              nextTrack,
+              nextPeaks ?? [],
+              overviewProg.new,
+              deckBDuration,
+            ),
+          } satisfies ComponentProps<typeof MixOverviewSwipe>,
+        }
+      : null;
+  if (liveOverlayFrame) overlayFrameRef.current = liveOverlayFrame;
+  // The seam spans the pre-cleanup render (queue advanced, mixState not yet
+  // reset) and the rebuild (seamHold, released on `ready`).
+  const inAdoptionSeam =
+    (mixState === "transitioning" && transitionCompletedRef.current) ||
+    seamHold;
+  const overlayFrame =
+    liveOverlayFrame ?? (inAdoptionSeam ? overlayFrameRef.current : null);
 
   // Fraction of the track visible in the detail strip — drawn as an indicator
   // rectangle over the whole-track overview.
@@ -2400,58 +2548,34 @@ export function WaveformPlayer() {
                 {/* Crossfade overlay — aligned full-track overview: old on the
                     left, new overlapping its tail on the right (split top/bottom
                     across the overlap), swiping left at the fade's midpoint to
-                    reveal the rest of the incoming track. Reverts to the full
-                    incoming waveform once the fade ends. */}
-                {isTransitioning && nextTrack && (
+                    reveal the rest of the incoming track. The settled frame
+                    stays painted through the adoption seam until the rebuilt
+                    waveform is ready, then gives way to it. */}
+                {overlayFrame && (
                   <div
                     data-testid="player-crossfade-overview"
-                    data-style={
-                      rekColored ? `rekordbox_${rekVariant}` : "default"
-                    }
+                    data-overlay-mode={liveOverlayFrame ? "live" : "seam"}
+                    data-style={overlayFrame.dataStyle}
                     className="animate-in fade-in-0 absolute inset-x-1 inset-y-0 z-20 flex cursor-pointer items-center overflow-hidden bg-[var(--surface-2)] duration-300"
                     onClick={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect();
-                      handleTransitionSeek(
-                        Math.max(
-                          0,
-                          Math.min(1, (e.clientX - rect.left) / rect.width),
-                        ),
+                      const frac = Math.max(
+                        0,
+                        Math.min(1, (e.clientX - rect.left) / rect.width),
                       );
+                      // Through the seam the settled frame shows the adopted
+                      // track at identity — a click is a plain seek on it
+                      // (deferred by the provider until the rebuilt player
+                      // registers its seek fn).
+                      if (liveOverlayFrame) handleTransitionSeek(frac);
+                      else seek(frac);
                     }}
                   >
                     {/* The overlay covers the whole row (opaque, hides the base
                         waveform); the swipe itself renders at the same h-8 as
                         the resting overview waveform. */}
                     <div className="h-8 w-full">
-                      <MixOverviewSwipe
-                        testId="player-overview-swipe"
-                        oldProgress={overviewProg.old}
-                        newProgress={overviewProg.new}
-                        swipeArmed={mixPastMid}
-                        oldDurationSec={duration}
-                        newDurationSec={deckBDuration}
-                        mixOutSec={
-                          mixPlanRef.current?.deckAMixOutSec ??
-                          Math.max(0, duration - transitionFadeRef.current)
-                        }
-                        startOffsetSec={
-                          mixPlanRef.current?.deckBStartOffsetSec ?? 0
-                        }
-                        oldFadeSec={transitionFadeRef.current * mixRates.a}
-                        newFadeSec={transitionFadeRef.current * mixRates.b}
-                        oldContent={renderOverviewTrack(
-                          currentTrack,
-                          currentPeaksRef.current ?? [],
-                          overviewProg.old,
-                          duration,
-                        )}
-                        newContent={renderOverviewTrack(
-                          nextTrack,
-                          nextPeaks ?? [],
-                          overviewProg.new,
-                          deckBDuration,
-                        )}
-                      />
+                      <MixOverviewSwipe {...overlayFrame.props} />
                     </div>
                   </div>
                 )}

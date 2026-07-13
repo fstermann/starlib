@@ -64,10 +64,27 @@ export function PeaksWaveform({
     const mid = size.h / 2;
     const playedX = progress * size.w;
 
+    // Match the resting overview's WaveSurfer render: normalize to the tallest
+    // peak (`normalize: true`) and take the MAX over each bar's bucket of
+    // peaks. Point-sampling one peak per bar systematically undershoots
+    // (shorter, spikier bars) — the waveform would visibly shrink the moment
+    // this renderer replaces WaveSurfer at the start of a crossfade.
+    const maxPeak = peaks.reduce((m, p) => (p > m ? p : m), 0);
+    const norm = maxPeak > 0 ? 1 / maxPeak : 1;
+
     for (let i = 0; i < bars; i++) {
       const x = i * step;
-      const peakIdx = Math.floor((i / bars) * peaks.length);
-      const amp = Math.min(1, Math.max(0, peaks[peakIdx] ?? 0));
+      const start = Math.floor((i / bars) * peaks.length);
+      const end = Math.max(
+        start + 1,
+        Math.floor(((i + 1) / bars) * peaks.length),
+      );
+      let peak = 0;
+      for (let j = start; j < end; j++) {
+        const v = peaks[j] ?? 0;
+        if (v > peak) peak = v;
+      }
+      const amp = Math.min(1, Math.max(0, peak * norm));
       const h = Math.max(1, amp * (size.h - 2));
       ctx.fillStyle = x < playedX ? played : unplayed;
       ctx.fillRect(x, mid - h / 2, barW, h);

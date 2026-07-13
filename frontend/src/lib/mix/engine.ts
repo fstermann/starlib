@@ -15,7 +15,11 @@ import {
   LoopingWebAudioPlayer,
 } from "@/lib/looping-web-audio-player";
 
-import { createHtmlDeck, type HtmlGainRoute } from "./html-deck";
+import {
+  createHtmlDeck,
+  type GainParamLike,
+  type HtmlGainRoute,
+} from "./html-deck";
 import type { TransitionPlan } from "./strategies";
 
 /** A playable deck, unifying the local (Web Audio) and SoundCloud (element)
@@ -31,8 +35,9 @@ export interface Deck {
   pause(): void;
   setCurrentTime(sec: number): void;
   setRate(rate: number): void;
-  /** The gain `AudioParam` to crossfade. */
-  readonly gainParam: AudioParam;
+  /** The gain automation to crossfade — a real `AudioParam` for local decks,
+   * an `element.volume` driver for element decks. */
+  readonly gainParam: GainParamLike;
   /** The tempo `AudioParam` for ramp mode, or null (element decks can't ramp). */
   rateParam(): AudioParam | null;
   destroy(): void;
@@ -134,7 +139,7 @@ function equalPowerCurve(from: number, to: number): Float32Array {
 }
 
 function rampGain(
-  param: AudioParam,
+  param: GainParamLike,
   ctx: AudioContext,
   from: number,
   to: number,
@@ -285,7 +290,7 @@ export function runTransition(opts: {
   armTimers();
 
   /** Hold a param at its current value, dropping scheduled automation. */
-  const holdParam = (param: AudioParam) => {
+  const holdParam = (param: GainParamLike) => {
     const v = param.value;
     param.cancelScheduledValues(ctx.currentTime);
     param.setValueAtTime(v, ctx.currentTime);

@@ -204,6 +204,11 @@ test.describe("Auto-mix crossfade", () => {
     await expect(
       player.getByTestId("player-detail-split-divider"),
     ).toBeVisible();
+    // The overview swipe carries the same half-split divider across its
+    // overlap region.
+    await expect(
+      player.getByTestId("player-overview-split-divider"),
+    ).toBeVisible();
     // The incoming deck's zoom canvas must survive adoption in place (keyed
     // reconciliation) — a remount repaints from blank, which flickers.
     const incomingCanvas = await split

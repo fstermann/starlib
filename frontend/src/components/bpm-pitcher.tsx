@@ -97,6 +97,52 @@ async function detectBpmForTrack(
   return Math.round(result.bpm);
 }
 
+/**
+ * Resolve a track's BPM without user interaction: queue hint → backend cache
+ * → fresh analysis (Tauri only). Used by the auto-mix arm step so the incoming
+ * deck can fade in already pitched to the target BPM instead of snapping to it
+ * after adoption. Dispatches `SC_BPM_UPDATED_EVENT` on resolution so the queue
+ * hint (and table cells) pick the value up. Returns null when unknown.
+ */
+export async function resolveTrackBpm(
+  track: PlayerTrack,
+): Promise<number | null> {
+  if (track.bpm != null) return track.bpm;
+  const scId = getScTrackId(track);
+  const announce = (bpm: number) => {
+    if (scId === null) return;
+    window.dispatchEvent(
+      new CustomEvent<ScBpmUpdatedDetail>(SC_BPM_UPDATED_EVENT, {
+        detail: { trackId: scId, bpm: Math.round(bpm) },
+      }),
+    );
+  };
+  try {
+    if (!isTauri()) {
+      // No analysis bridge — the backend BPM cache is the best we can do.
+      if (scId === null) return null;
+      const cached = await api.getSoundcloudBpmsBulk([scId]);
+      const hit = cached.bpms[String(scId)];
+      if (typeof hit === "number" && hit > 0) {
+        announce(hit);
+        return Math.round(hit);
+      }
+      return null;
+    }
+    const bpm = await detectBpmForTrack(track);
+    // detectBpmForTrack only dispatches after fresh analysis; a cache hit must
+    // reach the queue hint too (re-dispatch is idempotent for listeners).
+    if (bpm != null) announce(bpm);
+    return bpm;
+  } catch (err) {
+    console.warn("[mix] BPM resolution failed for", track.fileName, err);
+    if (err instanceof TrackUnanalysableError && scId !== null) {
+      markScUnplayable(scId);
+    }
+    return null;
+  }
+}
+
 export function BpmPitcher() {
   const {
     currentTrack,

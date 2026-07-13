@@ -114,6 +114,13 @@ export function MixOverviewSwipe({
     ? `translateX(${(miLocal - anchor) * 100}%) scaleX(${(fadeB * oldDur) / (fadeA * newDur)})`
     : "translateX(0%) scaleX(1)";
 
+  // Half-split divider across the overlap (mirrors the zoom strip's): the two
+  // decks above/below it play separately. Pre-swipe the overlap sits on the
+  // old track's fade window; post-swipe on the new track's — the divider
+  // sweeps between them with the layers.
+  const dividerLeft = swipeArmed ? newTopStart : oldFullEnd;
+  const dividerRight = swipeArmed ? newFullStart : oldAudEnd;
+
   return (
     <div data-testid={testId} className="relative h-full overflow-hidden">
       {/* Old track — natural scale pre-swipe, tail squeezed onto the new
@@ -156,6 +163,17 @@ export function MixOverviewSwipe({
           />
         )}
       </div>
+      {dividerRight > dividerLeft && (
+        <div
+          data-testid="player-overview-split-divider"
+          className="bg-primary pointer-events-none absolute top-1/2 h-0.5 -translate-y-1/2"
+          style={{
+            left: `${dividerLeft}%`,
+            width: `${dividerRight - dividerLeft}%`,
+            transition: `left ${SWIPE_SEC}s ${EASE}, width ${SWIPE_SEC}s ${EASE}`,
+          }}
+        />
+      )}
     </div>
   );
 }
