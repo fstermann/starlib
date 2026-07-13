@@ -168,68 +168,209 @@ function rampRate(
 
 export interface TransitionHandle {
   cancel(): void;
+  /** Freeze the fade: pause both decks and hold the gain/rate automation. */
+  pause(): void;
+  /** Resume a paused fade over its remaining run time. */
+  resume(): void;
+  /** Complete the fade now: a quick ramp to the end states, then `onComplete`.
+   * Used when the user skips past the fade window — deck A must not play out. */
+  finish(): void;
 }
 
 /**
  * Start playing deck B and crossfade from deck A over `plan.fadeSeconds`,
  * calling `onComplete` when the fade finishes (the caller then advances the
  * queue; deck B is adopted by the rebuilt player via the hand-off store).
+ * `onMidpoint` fires once when half the fade has elapsed; both callbacks run
+ * on the fade's own clock, which `pause()`/`resume()` freeze together with the
+ * decks and the gain/rate automation.
+ *
+ * `elapsedSec` (wall-clock) joins the fade mid-flight — deck A was seeked past
+ * the mix-out point, so deck B cues that far past its own mix-in, the gains
+ * (and ramp rates) start at their mid-fade values, and the clocks run only the
+ * remainder. `onMidpoint` fires synchronously if the join is already past it.
  */
 export function runTransition(opts: {
   deckA: Deck;
   deckB: Deck;
   plan: TransitionPlan;
+  elapsedSec?: number;
+  onMidpoint?: () => void;
   onComplete: () => void;
 }): TransitionHandle {
-  const { deckA, deckB, plan, onComplete } = opts;
+  const { deckA, deckB, plan, onMidpoint, onComplete } = opts;
   const ctx = getSharedAudioContext();
 
-  // Cue deck B to its mix-in point, at its entry rate, then start it silent.
-  deckB.setCurrentTime(plan.deckBStartOffsetSec);
-  deckB.setRate(plan.deckBInitialRate);
+  const fade = Math.max(0.05, plan.fadeSeconds);
+  // Always leave a sliver of fade to ramp over, even on a seek past the end.
+  const elapsed = Math.min(Math.max(opts.elapsedSec ?? 0, 0), fade - 0.05);
+  const progress = elapsed / fade;
+  const left = fade - elapsed;
+
+  // Cue deck B `elapsed` into its own fade window, at the rate it would have
+  // reached by now (for a ramp, its track-time advance is the ramp's average
+  // rate over the elapsed stretch), then start it at its mid-fade gain.
+  const bRateNow = plan.rateRamp
+    ? plan.rateRamp.deckBFrom +
+      (plan.rateRamp.deckBTo - plan.rateRamp.deckBFrom) * progress
+    : plan.deckBInitialRate;
+  const bConsumed = plan.rateRamp
+    ? elapsed * ((plan.rateRamp.deckBFrom + bRateNow) / 2)
+    : elapsed * plan.deckBInitialRate;
+  deckB.setCurrentTime(plan.deckBStartOffsetSec + bConsumed);
+  deckB.setRate(bRateNow);
   deckB.play();
 
-  const fade = Math.max(0.05, plan.fadeSeconds);
-  const aFrom = deckA.gainParam.value;
-  rampGain(deckA.gainParam, ctx, aFrom, 0, fade, plan.gainCurve);
-  rampGain(deckB.gainParam, ctx, 0, 1, fade, plan.gainCurve);
+  const bGainNow =
+    plan.gainCurve === "equalPower"
+      ? Math.sin((progress * Math.PI) / 2)
+      : progress;
+  const aFrom = deckA.gainParam.value * (1 - bGainNow);
+  rampGain(deckA.gainParam, ctx, aFrom, 0, left, plan.gainCurve);
+  rampGain(deckB.gainParam, ctx, bGainNow, 1, left, plan.gainCurve);
 
   // Tempo ramp (beatmatch-ramp): automate the buffer-source playbackRate on
   // both decks. Element decks return null and simply hold their entry rate.
   if (plan.rateRamp) {
     const aRate = deckA.rateParam();
     if (aRate) {
-      rampRate(
-        aRate,
-        ctx,
-        plan.rateRamp.deckAFrom,
-        plan.rateRamp.deckATo,
-        fade,
-      );
+      const aRateNow =
+        plan.rateRamp.deckAFrom +
+        (plan.rateRamp.deckATo - plan.rateRamp.deckAFrom) * progress;
+      rampRate(aRate, ctx, aRateNow, plan.rateRamp.deckATo, left);
     }
     const bRate = deckB.rateParam();
     if (bRate) {
-      rampRate(
-        bRate,
-        ctx,
-        plan.rateRamp.deckBFrom,
-        plan.rateRamp.deckBTo,
-        fade,
-      );
+      rampRate(bRate, ctx, bRateNow, plan.rateRamp.deckBTo, left);
     }
   }
 
-  let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+  // Fade run-time bookkeeping: the completion/midpoint clocks must pause with
+  // the decks, so track how much of the fade is left explicitly.
+  let remaining = left;
+  let midRemaining = Math.max(0, fade / 2 - elapsed);
+  let midFired = false;
+  let ranAt = ctx.currentTime;
+  let paused = false;
+  let done = false;
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let midTimer: ReturnType<typeof setTimeout> | null = null;
+  const armTimers = () => {
+    if (onMidpoint && !midFired) {
+      if (midRemaining <= 0) {
+        midFired = true;
+        onMidpoint();
+      } else {
+        midTimer = setTimeout(() => {
+          midTimer = null;
+          midRemaining = 0;
+          midFired = true;
+          onMidpoint();
+        }, midRemaining * 1000);
+      }
+    }
+    timer = setTimeout(() => {
+      timer = null;
+      done = true;
+      onComplete();
+    }, remaining * 1000);
+  };
+  const clearTimers = () => {
+    if (timer) clearTimeout(timer);
+    if (midTimer) clearTimeout(midTimer);
     timer = null;
-    onComplete();
-  }, fade * 1000);
+    midTimer = null;
+  };
+  armTimers();
+
+  /** Hold a param at its current value, dropping scheduled automation. */
+  const holdParam = (param: AudioParam) => {
+    const v = param.value;
+    param.cancelScheduledValues(ctx.currentTime);
+    param.setValueAtTime(v, ctx.currentTime);
+  };
 
   return {
-    cancel: () => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
+    pause: () => {
+      if (paused || done) return;
+      paused = true;
+      clearTimers();
+      const elapsed = ctx.currentTime - ranAt;
+      remaining = Math.max(0.05, remaining - elapsed);
+      midRemaining = Math.max(0, midRemaining - elapsed);
+      holdParam(deckA.gainParam);
+      holdParam(deckB.gainParam);
+      if (plan.rateRamp) {
+        // Persist the ramped rate through the deck's scalar setter — a local
+        // deck rebuilds its buffer node on resume, which would otherwise snap
+        // back to the pre-ramp rate.
+        const aRate = deckA.rateParam();
+        if (aRate) deckA.setRate(aRate.value);
+        const bRate = deckB.rateParam();
+        if (bRate) deckB.setRate(bRate.value);
       }
+      deckA.pause();
+      deckB.pause();
+    },
+    resume: () => {
+      if (!paused || done) return;
+      paused = false;
+      ranAt = ctx.currentTime;
+      deckA.play();
+      deckB.play();
+      rampGain(
+        deckA.gainParam,
+        ctx,
+        deckA.gainParam.value,
+        0,
+        remaining,
+        plan.gainCurve,
+      );
+      rampGain(
+        deckB.gainParam,
+        ctx,
+        deckB.gainParam.value,
+        1,
+        remaining,
+        plan.gainCurve,
+      );
+      if (plan.rateRamp) {
+        const aRate = deckA.rateParam();
+        if (aRate) {
+          rampRate(aRate, ctx, aRate.value, plan.rateRamp.deckATo, remaining);
+        }
+        const bRate = deckB.rateParam();
+        if (bRate) {
+          rampRate(bRate, ctx, bRate.value, plan.rateRamp.deckBTo, remaining);
+        }
+      }
+      armTimers();
+    },
+    finish: () => {
+      if (done) return;
+      done = true;
+      clearTimers();
+      // Short linear ramp to the end states (no click/pop), then complete.
+      const quick = 0.15;
+      const now = ctx.currentTime;
+      deckA.gainParam.cancelScheduledValues(now);
+      deckA.gainParam.setValueAtTime(deckA.gainParam.value, now);
+      deckA.gainParam.linearRampToValueAtTime(0, now + quick);
+      deckB.gainParam.cancelScheduledValues(now);
+      deckB.gainParam.setValueAtTime(deckB.gainParam.value, now);
+      deckB.gainParam.linearRampToValueAtTime(1, now + quick);
+      if (plan.rateRamp) {
+        const bRate = deckB.rateParam();
+        if (bRate)
+          rampRate(bRate, ctx, bRate.value, plan.rateRamp.deckBTo, quick);
+        else deckB.setRate(plan.rateRamp.deckBTo);
+      }
+      setTimeout(() => onComplete(), quick * 1000);
+    },
+    cancel: () => {
+      done = true;
+      clearTimers();
       // Restore deck A to full, silence + stop deck B.
       const now = ctx.currentTime;
       deckA.gainParam.cancelScheduledValues(now);

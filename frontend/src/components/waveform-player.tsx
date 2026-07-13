@@ -19,7 +19,6 @@ import type WaveSurferType from "wavesurfer.js";
 import { BpmPitcher, computePlaybackRate } from "@/components/bpm-pitcher";
 import { MixControls } from "@/components/mix-controls";
 import { MixOverviewSwipe } from "@/components/mix-overview-swipe";
-import { MixSplitWaveform } from "@/components/mix-split-waveform";
 import { PeaksWaveform } from "@/components/peaks-waveform";
 import { PlayerDetailWaveform } from "@/components/player-detail-waveform";
 import { PlayerRekordboxWaveform } from "@/components/player-rekordbox-waveform";
@@ -297,10 +296,19 @@ export function WaveformPlayer() {
   // Peaks for the crossfade overlay: the live deck A and the prepared deck B.
   const currentPeaksRef = useRef<number[] | null>(null);
   const [nextPeaks, setNextPeaks] = useState<number[] | null>(null);
+  // Incoming track's analysis, for the phrase band once the swipe fires.
+  const [nextAnalysis, setNextAnalysis] = useState<TrackAnalysis | null>(null);
   // Deck B kept readable during the fade (for the incoming playhead); ownership
   // still moves to the hand-off store.
   const transitionDeckBRef = useRef<Deck | null>(null);
   const transitionFadeRef = useRef(1);
+  // Re-time context for a running fade: post-swipe clicks reposition deck A and
+  // relaunch the fade at a new elapsed point.
+  const transitionRetimeRef = useRef<{
+    plan: TransitionPlan;
+    deckA: Deck;
+    relaunch: (elapsedSec: number) => void;
+  } | null>(null);
   // `overviewProg` holds each deck's playhead sampled at a low rate (the
   // full-track overview is static — no need to redraw its heavy canvas every
   // audio frame, which was the stutter).
@@ -308,6 +316,9 @@ export function WaveformPlayer() {
   // True once the fade passes its midpoint (the swipe fires) — the side rail
   // then shows the incoming track's info.
   const [mixPastMid, setMixPastMid] = useState(false);
+  // Bumped when a running fade is cancelled (rescue-seek back into the old
+  // track) so the prepare effect re-arms deck B for the next pass.
+  const [rearmTick, setRearmTick] = useState(0);
 
   useEffect(() => {
     mixConfigRef.current = mixConfig;
@@ -1088,11 +1099,13 @@ export function WaveformPlayer() {
     return () => {
       cancelled = true;
       // --- auto-mix teardown ---
-      if (transitionCompletedRef.current) {
+      const adopted = transitionCompletedRef.current;
+      if (adopted) {
         // Crossfade finished cleanly: deck B lives in the hand-off store for
         // the incoming init to adopt. Just reset the flags.
         transitionStartedRef.current = false;
         transitionCompletedRef.current = false;
+        setMixState("idle");
       } else {
         // No transition, or a manual skip mid-fade: abort and discard deck B.
         if (transitionStartedRef.current) transitionHandleRef.current?.cancel();
@@ -1105,12 +1118,23 @@ export function WaveformPlayer() {
         setMixState("idle");
       }
       transitionHandleRef.current = null;
+      transitionRetimeRef.current = null;
+      const adoptedDeck = adopted ? transitionDeckBRef.current : null;
       transitionDeckBRef.current = null;
       mixPlanRef.current = null;
       setNextPeaks(null);
+      setNextAnalysis(null);
       registerSeek(null);
-      reportProgress(0);
-      reportDuration(0);
+      if (adoptedDeck && adoptedDeck.duration > 0) {
+        // The adopted deck keeps playing through the rebuild — hold its live
+        // position so progress subscribers (zoom strip, overview) don't flash
+        // back to zero before the incoming init reports.
+        reportProgress(adoptedDeck.currentTime / adoptedDeck.duration);
+        reportDuration(adoptedDeck.duration);
+      } else {
+        reportProgress(0);
+        reportDuration(0);
+      }
       ws?.destroy();
       wsRef.current = null;
       hls?.destroy();
@@ -1155,7 +1179,6 @@ export function WaveformPlayer() {
     // the fade length for the swipe's CSS transition.
     transitionDeckBRef.current = deckB;
     transitionFadeRef.current = Math.max(0.05, plan.fadeSeconds);
-    setOverviewProg({ old: deckA.currentTime / (deckA.duration || 1), new: 0 });
     setMixState("transitioning");
 
     // Ownership of deck B moves to the hand-off store for the rebuilt player.
@@ -1163,17 +1186,45 @@ export function WaveformPlayer() {
     if (nextTrack) stashHandoff(handoffKey(nextTrack), deckB);
     mixDeckBRef.current = null;
 
-    transitionHandleRef.current = runTransition({
-      deckA,
-      deckB,
+    // Deck A may sit past the mix-out point (the user seeked into the fade
+    // window): join the fade mid-flight instead of starting it from zero.
+    const mediaRate =
+      (webAudioRef.current ?? audioRef.current)?.playbackRate || 1;
+    const elapsedSec =
+      Math.max(0, deckA.currentTime - plan.deckAMixOutSec) / mediaRate;
+
+    const launch = (elapsed: number) =>
+      runTransition({
+        deckA: deckA!,
+        deckB,
+        plan,
+        elapsedSec: elapsed,
+        // Swap the side rail to the incoming track's info at the fade's midpoint
+        // (pause-aware — the engine's fade clock freezes with the decks).
+        onMidpoint: () => setMixPastMid(true),
+        onComplete: () => {
+          transitionCompletedRef.current = true;
+          // Ramp mode leaves the incoming deck at the target tempo; keep pitch on
+          // so the pitch effect holds it there after adoption.
+          if (plan.mode === "beatmatch-ramp") setPitchEnabled(true);
+          nextRef.current();
+        },
+      });
+    transitionHandleRef.current = launch(elapsedSec);
+    // Post-swipe clicks can re-time the running fade to a new elapsed point.
+    transitionRetimeRef.current = {
       plan,
-      onComplete: () => {
-        transitionCompletedRef.current = true;
-        // Ramp mode leaves the incoming deck at the target tempo; keep pitch on
-        // so the pitch effect holds it there after adoption.
-        if (plan.mode === "beatmatch-ramp") setPitchEnabled(true);
-        nextRef.current();
+      deckA,
+      relaunch: (elapsed: number) => {
+        transitionHandleRef.current?.cancel();
+        transitionHandleRef.current = launch(elapsed);
       },
+    };
+    // Seed the overview playheads from the decks' actual cue positions (deck B
+    // may have been cued mid-window by the elapsed join).
+    setOverviewProg({
+      old: deckA.currentTime / (deckA.duration || 1),
+      new: deckB.duration > 0 ? deckB.currentTime / deckB.duration : 0,
     });
   }, [peekNext, setPitchEnabled]);
 
@@ -1181,17 +1232,10 @@ export function WaveformPlayer() {
     startTransitionRef.current = startTransition;
   }, [startTransition]);
 
-  // Swap the side rail to the incoming track's info at the fade's midpoint.
+  // Reset the side-rail swap once the fade ends (the engine's midpoint
+  // callback sets it).
   useEffect(() => {
-    if (mixState !== "transitioning") {
-      setMixPastMid(false);
-      return;
-    }
-    const id = setTimeout(
-      () => setMixPastMid(true),
-      (transitionFadeRef.current / 2) * 1000,
-    );
-    return () => clearTimeout(id);
+    if (mixState !== "transitioning") setMixPastMid(false);
   }, [mixState]);
 
   // Sample each deck's playhead at ~8 Hz for the (static) overview. Far cheaper
@@ -1224,6 +1268,7 @@ export function WaveformPlayer() {
       }
       mixPlanRef.current = null;
       setNextPeaks(null);
+      setNextAnalysis(null);
       if (!transitionStartedRef.current) setMixState("idle");
     };
 
@@ -1286,6 +1331,7 @@ export function WaveformPlayer() {
       mixDeckBRef.current = deck;
       mixPlanRef.current = plan;
       setNextPeaks(peaksB);
+      setNextAnalysis(nextAnalysis);
       setMixState("armed");
     })();
 
@@ -1303,17 +1349,29 @@ export function WaveformPlayer() {
     pitchEnabled,
     duration,
     analysis,
+    rearmTick,
   ]);
 
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws || !ready) return;
+    // During a crossfade the transport owns BOTH decks: pause/resume the fade
+    // itself (decks + gain/rate automation + fade clock) instead of deck A only.
+    if (
+      mixState === "transitioning" &&
+      !transitionCompletedRef.current &&
+      transitionHandleRef.current
+    ) {
+      if (isPlaying) transitionHandleRef.current.resume();
+      else transitionHandleRef.current.pause();
+      return;
+    }
     if (isPlaying) {
       ws.play().catch(() => {});
     } else {
       ws.pause();
     }
-  }, [isPlaying, ready]);
+  }, [isPlaying, ready, mixState]);
 
   // Apply BPM-pitcher playback rate. `playbackRate` resets to 1 whenever the
   // audio element's `src` changes, so this effect re-fires after every track
@@ -1388,7 +1446,12 @@ export function WaveformPlayer() {
   const loadingProgress = duration > 0 ? currentTime / duration : 0;
 
   // --- crossfade overlay state ---
-  const isTransitioning = mixState === "transitioning";
+  // Gate on the completion ref too: when the fade completes and the queue
+  // advances, there is a seam render where `currentTrack` is already the
+  // adopted track but `mixState` hasn't reset yet — without the gate the
+  // overlay/split would flash a bogus "next" transition for a frame.
+  const isTransitioning =
+    mixState === "transitioning" && !transitionCompletedRef.current;
   // During the fade the queue hasn't advanced yet, so the incoming track is the
   // next queue entry.
   const nextTrack = isTransitioning ? peekNext() : null;
@@ -1404,6 +1467,15 @@ export function WaveformPlayer() {
   const nextTitleText = nextTrack
     ? (nextTrack.title ?? nextTrack.fileName)
     : "";
+
+  // The phrase band tracks what the overview shows: the old track until the
+  // swipe, the incoming track from the swipe on (and through the adoption
+  // seam, where the queue has advanced but this instance hasn't rebuilt yet).
+  const bandNext = isTransitioning
+    ? mixPastMid
+    : transitionCompletedRef.current;
+  const bandSections = bandNext ? nextAnalysis?.sections : analysis?.sections;
+  const bandDuration = bandNext ? deckBDuration : duration;
 
   // Past the fade midpoint the rail shows the incoming track's info (synced
   // with the waveform swipe).
@@ -1466,6 +1538,120 @@ export function WaveformPlayer() {
       : baseKey
     : null;
   const keyPitched = displayKey != null && displayKey !== baseKey;
+
+  // Each deck's effective rate across the fade (ramp modes average the ramp) —
+  // converts the wall-clock fade into each track's own seconds.
+  const mixRates = (() => {
+    const plan = mixPlanRef.current;
+    const ramp = plan?.rateRamp;
+    return {
+      a: ramp ? (ramp.deckAFrom + ramp.deckATo) / 2 : playRate,
+      b: ramp
+        ? (ramp.deckBFrom + ramp.deckBTo) / 2
+        : (plan?.deckBInitialRate ?? 1),
+    };
+  })();
+
+  // During a crossfade, where the detail strip's half-height split gives way to
+  // full height: left of deck B's mix-in point only the old track is audible
+  // (it keeps the full height), right of deck A's audible end only the new one
+  // is. Screen fractions of each deck's playhead-centred window.
+  const detailSplit = (() => {
+    if (!isTransitioning || !nextTrack) return null;
+    const plan = mixPlanRef.current;
+    const fadeSec = transitionFadeRef.current;
+    const mixInSec = plan?.deckBStartOffsetSec ?? 0;
+    const mixOutSec = plan?.deckAMixOutSec ?? Math.max(0, duration - fadeSec);
+    // The fade is wall-clock; deck A consumes it at its playback rate.
+    const oldEndSec = Math.min(duration, mixOutSec + fadeSec * mixRates.a);
+    const tA = deckAProgress * duration;
+    const tB = deckBProgress * deckBDuration;
+    // Over the fade's last stretch, sweep both boundaries to the left edge so
+    // the incoming track unfolds to full height *before* the split settles at
+    // adoption — otherwise the old track's remnant snaps away in one frame.
+    const sweepSec = Math.max(0.2, Math.min(1.5, (fadeSec * playRate) / 3));
+    const sweep = Math.min(1, Math.max(0, (oldEndSec - tA) / sweepSec));
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const inX =
+      clamp01(
+        (0.5 +
+          (mixInSec - tB) / barSpanSeconds(zoomBars, nextTrack.bpm ?? null)) *
+          sweep,
+      ) * 100;
+    const outX = Math.max(
+      clamp01(
+        (0.5 + (oldEndSec - tA) / barSpanSeconds(zoomBars, currentBpm)) * sweep,
+      ) * 100,
+      inX,
+    );
+    return {
+      // Old: full height until the new track is in, bottom half across the
+      // overlap, clipped away once its own audible content ends.
+      oldClip: `polygon(0 0, ${inX}% 0, ${inX}% 50%, ${outX}% 50%, ${outX}% 100%, 0 100%)`,
+      // New: hidden before its mix-in, top half across the overlap, full
+      // height once the old track has run out.
+      newClip: `polygon(${inX}% 0, 100% 0, 100% 100%, ${outX}% 100%, ${outX}% 50%, ${inX}% 50%)`,
+      // The overlap's screen extent, for the half-split divider line.
+      inX,
+      outX,
+    };
+  })();
+
+  // Abort a running fade and jump the old track to `sec`: restore deck A to
+  // full gain (and its pitched rate — ramp mode automates it away), discard
+  // deck B, and re-arm so the mix fires again on the next pass over the
+  // mix-out point.
+  const cancelTransitionAndSeek = (sec: number) => {
+    transitionHandleRef.current?.cancel();
+    transitionHandleRef.current = null;
+    transitionRetimeRef.current = null;
+    transitionStartedRef.current = false;
+    transitionCompletedRef.current = false;
+    transitionDeckBRef.current = null;
+    // Deck B's ownership moved to the hand-off store at fade start.
+    clearHandoff();
+    setMixState("idle");
+    setMixPastMid(false);
+    const media = webAudioRef.current ?? audioRef.current;
+    if (media) media.playbackRate = playRate;
+    if (duration > 0) seek(Math.max(0, Math.min(1, sec / duration)));
+    setRearmTick((t) => t + 1);
+  };
+
+  // Click-to-seek on the crossfade overview. Before the swipe the view is the
+  // old track at its natural scale: a click is a rescue — abort the fade and
+  // jump there. After the swipe the view is the incoming track at true scale:
+  // inside the fade window the whole fade is re-timed to the clicked moment
+  // (deck A repositioned to match); outside it the old track has no business
+  // playing on, so the fade finishes immediately and deck B cues there.
+  const handleTransitionSeek = (frac: number) => {
+    if (!mixPastMid) {
+      cancelTransitionAndSeek(frac * duration);
+      return;
+    }
+    const b = transitionDeckBRef.current;
+    if (!b || b.duration <= 0) return;
+    const tB = frac * b.duration;
+    const rt = transitionRetimeRef.current;
+    if (!rt) {
+      b.setCurrentTime(tB);
+      return;
+    }
+    const fadeSec = transitionFadeRef.current;
+    const startOff = rt.plan.deckBStartOffsetSec;
+    const elapsed = (tB - startOff) / mixRates.b; // wall-clock into the fade
+    if (elapsed < 0 || elapsed >= fadeSec) {
+      b.setCurrentTime(tB);
+      transitionHandleRef.current?.finish();
+    } else {
+      rt.deckA.setCurrentTime(rt.plan.deckAMixOutSec + elapsed * mixRates.a);
+      setMixPastMid(elapsed >= fadeSec / 2);
+      rt.relaunch(elapsed);
+      // Relaunching starts both decks — honor a paused transport.
+      if (!isPlaying) transitionHandleRef.current?.pause();
+    }
+  };
+
   // Fraction of the track visible in the detail strip — drawn as an indicator
   // rectangle over the whole-track overview.
   const viewport =
@@ -1780,7 +1966,7 @@ export function WaveformPlayer() {
       <div className="flex min-h-0">
         {/* ===== Side rail — transport + readouts; the right side is waveforms
             only. ===== */}
-        <div className="border-border flex w-[360px] shrink-0 flex-col justify-end gap-1 border-r px-3 py-1.5">
+        <div className="border-border flex w-[360px] shrink-0 flex-col justify-end gap-1 border-r px-3 py-1">
           {/* Artwork + title / artist */}
           <div className="flex min-w-0 items-center gap-2.5">
             <div
@@ -1796,7 +1982,7 @@ export function WaveformPlayer() {
                 }}
               />
             </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="flex min-w-0 flex-1 flex-col">
               <div className="flex min-w-0 items-center gap-1.5">
                 <span
                   className="text-primary truncate text-sm font-semibold"
@@ -1923,7 +2109,7 @@ export function WaveformPlayer() {
             <div className="ml-auto flex items-center gap-1">
               <MixControls />
               <BpmPitcher />
-              <div className="flex h-10 flex-col items-center justify-center px-2 leading-none">
+              <div className="flex h-9 flex-col items-center justify-center px-2 leading-none">
                 <span className="flex items-baseline gap-1">
                   <span
                     className={cn(
@@ -1978,48 +2164,108 @@ export function WaveformPlayer() {
                     changeZoom(e.deltaY < 0 ? 1 : -1);
                   }}
                 >
-                  {isTransitioning && nextTrack ? (
-                    // Split waveform during the fade: new track's top half over
-                    // the old track's bottom half. Each deck keeps scrolling on
-                    // its own playhead.
-                    <MixSplitWaveform
-                      testId="player-detail-split"
-                      oldContent={
-                        <PlayerDetailWaveform
-                          track={currentTrack}
-                          zoomBars={zoomBars}
-                          durationSec={duration}
-                          bpm={currentBpm}
-                          waveformStyle={waveformStyle}
-                          progressOverride={deckAProgress}
-                        />
-                      }
-                      newContent={
-                        <PlayerDetailWaveform
-                          track={nextTrack}
-                          zoomBars={zoomBars}
-                          durationSec={deckBDuration}
-                          bpm={nextTrack.bpm ?? null}
-                          waveformStyle={waveformStyle}
-                          progressOverride={deckBProgress}
-                        />
-                      }
-                    />
-                  ) : (
-                    <PlayerDetailWaveform
-                      track={currentTrack}
-                      zoomBars={zoomBars}
-                      durationSec={duration}
-                      bpm={currentBpm}
-                      waveformStyle={waveformStyle}
-                      loop={
-                        loopActive && loopEndSec != null
-                          ? { startSec: loopStartSec, endSec: loopEndSec }
-                          : null
-                      }
-                      cueSec={cueSec}
-                    />
-                  )}
+                  {/* The strip renders keyed deck layers so React reconciles
+                      them across the fade's seams: during a fade the split is
+                      two layers (new track's top half over the old track's
+                      bottom half, each scrolling on its own playhead); at
+                      adoption the incoming layer is KEPT in place (same key)
+                      instead of remounting — a remount flickers (blank canvas
+                      until its waveform/size state reload). */}
+                  <div
+                    data-testid={
+                      isTransitioning && nextTrack
+                        ? "player-detail-split"
+                        : undefined
+                    }
+                    className="relative h-full"
+                  >
+                    {(isTransitioning && nextTrack
+                      ? [
+                          {
+                            key:
+                              currentTrack.filePath === nextTrack.filePath
+                                ? `${currentTrack.filePath}#out`
+                                : currentTrack.filePath,
+                            clipPath: detailSplit?.oldClip,
+                            node: (
+                              <PlayerDetailWaveform
+                                track={currentTrack}
+                                zoomBars={zoomBars}
+                                durationSec={duration}
+                                bpm={currentBpm}
+                                waveformStyle={waveformStyle}
+                                progressOverride={deckAProgress}
+                              />
+                            ),
+                          },
+                          {
+                            key: nextTrack.filePath,
+                            clipPath: detailSplit?.newClip,
+                            node: (
+                              <PlayerDetailWaveform
+                                track={nextTrack}
+                                zoomBars={zoomBars}
+                                durationSec={deckBDuration}
+                                bpm={nextTrack.bpm ?? null}
+                                waveformStyle={waveformStyle}
+                                progressOverride={deckBProgress}
+                              />
+                            ),
+                          },
+                        ]
+                      : [
+                          {
+                            key: currentTrack.filePath,
+                            clipPath: undefined,
+                            node: (
+                              <PlayerDetailWaveform
+                                track={currentTrack}
+                                zoomBars={zoomBars}
+                                // Zero through the adoption seam: the stale old
+                                // duration would misplace the kept canvas; zero
+                                // freezes it on its last fade frame until the
+                                // rebuilt player reports real values.
+                                durationSec={
+                                  transitionCompletedRef.current ? 0 : duration
+                                }
+                                bpm={currentBpm}
+                                waveformStyle={waveformStyle}
+                                loop={
+                                  loopActive && loopEndSec != null
+                                    ? {
+                                        startSec: loopStartSec,
+                                        endSec: loopEndSec,
+                                      }
+                                    : null
+                                }
+                                cueSec={cueSec}
+                              />
+                            ),
+                          },
+                        ]
+                    ).map((d) => (
+                      <div
+                        key={d.key}
+                        className="absolute inset-0"
+                        style={{ clipPath: d.clipPath }}
+                      >
+                        {d.node}
+                      </div>
+                    ))}
+                    {/* Half-split divider across the overlap: the two decks
+                        above/below it are playing separately. Spans only the
+                        split region, so it sweeps out with the boundaries. */}
+                    {detailSplit && detailSplit.outX > detailSplit.inX && (
+                      <div
+                        data-testid="player-detail-split-divider"
+                        className="bg-primary pointer-events-none absolute top-1/2 h-0.5 -translate-y-1/2"
+                        style={{
+                          left: `${detailSplit.inX}%`,
+                          width: `${detailSplit.outX - detailSplit.inX}%`,
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -2162,33 +2408,51 @@ export function WaveformPlayer() {
                     data-style={
                       rekColored ? `rekordbox_${rekVariant}` : "default"
                     }
-                    className="animate-in fade-in-0 absolute inset-x-1 inset-y-0 z-20 overflow-hidden bg-[var(--surface-2)] duration-300"
+                    className="animate-in fade-in-0 absolute inset-x-1 inset-y-0 z-20 flex cursor-pointer items-center overflow-hidden bg-[var(--surface-2)] duration-300"
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      handleTransitionSeek(
+                        Math.max(
+                          0,
+                          Math.min(1, (e.clientX - rect.left) / rect.width),
+                        ),
+                      );
+                    }}
                   >
-                    <MixOverviewSwipe
-                      swipeArmed={mixPastMid}
-                      oldDurationSec={duration}
-                      newDurationSec={deckBDuration}
-                      mixOutSec={
-                        mixPlanRef.current?.deckAMixOutSec ??
-                        Math.max(0, duration - transitionFadeRef.current)
-                      }
-                      startOffsetSec={
-                        mixPlanRef.current?.deckBStartOffsetSec ?? 0
-                      }
-                      fadeSec={transitionFadeRef.current}
-                      oldContent={renderOverviewTrack(
-                        currentTrack,
-                        currentPeaksRef.current ?? [],
-                        overviewProg.old,
-                        duration,
-                      )}
-                      newContent={renderOverviewTrack(
-                        nextTrack,
-                        nextPeaks ?? [],
-                        overviewProg.new,
-                        deckBDuration,
-                      )}
-                    />
+                    {/* The overlay covers the whole row (opaque, hides the base
+                        waveform); the swipe itself renders at the same h-8 as
+                        the resting overview waveform. */}
+                    <div className="h-8 w-full">
+                      <MixOverviewSwipe
+                        testId="player-overview-swipe"
+                        oldProgress={overviewProg.old}
+                        newProgress={overviewProg.new}
+                        swipeArmed={mixPastMid}
+                        oldDurationSec={duration}
+                        newDurationSec={deckBDuration}
+                        mixOutSec={
+                          mixPlanRef.current?.deckAMixOutSec ??
+                          Math.max(0, duration - transitionFadeRef.current)
+                        }
+                        startOffsetSec={
+                          mixPlanRef.current?.deckBStartOffsetSec ?? 0
+                        }
+                        oldFadeSec={transitionFadeRef.current * mixRates.a}
+                        newFadeSec={transitionFadeRef.current * mixRates.b}
+                        oldContent={renderOverviewTrack(
+                          currentTrack,
+                          currentPeaksRef.current ?? [],
+                          overviewProg.old,
+                          duration,
+                        )}
+                        newContent={renderOverviewTrack(
+                          nextTrack,
+                          nextPeaks ?? [],
+                          overviewProg.new,
+                          deckBDuration,
+                        )}
+                      />
+                    </div>
                   </div>
                 )}
                 {/* Loading-state fallback progress — fades out once waveform is ready. */}
@@ -2207,11 +2471,13 @@ export function WaveformPlayer() {
                 </div>
               </div>
 
-              {/* Phrase band — labelled song-structure sections. */}
-              {duration > 0 && analysis?.sections?.length ? (
+              {/* Phrase band — labelled song-structure sections. From the
+                  swipe on (and through the adoption seam) the overview shows
+                  the incoming track, so the band flips with it. */}
+              {bandDuration > 0 && bandSections?.length ? (
                 <div className="relative h-3.5 px-1">
                   <div className="absolute inset-x-1 inset-y-0">
-                    {analysis.sections.map((s, i) => {
+                    {bandSections.map((s, i) => {
                       const color =
                         SECTION_COLOR_VAR[s.kind] ?? SECTION_COLOR_VAR.other;
                       return (
@@ -2220,8 +2486,8 @@ export function WaveformPlayer() {
                           data-testid="player-section"
                           className="absolute inset-y-0 flex items-center overflow-hidden rounded-[1px] px-1"
                           style={{
-                            left: `${(s.startMs / 1000 / duration) * 100}%`,
-                            width: `${((s.endMs - s.startMs) / 1000 / duration) * 100}%`,
+                            left: `${(s.startMs / 1000 / bandDuration) * 100}%`,
+                            width: `${((s.endMs - s.startMs) / 1000 / bandDuration) * 100}%`,
                             backgroundColor: color,
                             // Darker same-hue border separates adjacent sections.
                             boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${color} 55%, black)`,

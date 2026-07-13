@@ -239,7 +239,7 @@ export function BpmPitcher() {
           <button
             type="button"
             data-testid="bpm-pitcher-trigger"
-            className="text-muted-foreground hover:bg-surface-3 flex h-10 cursor-pointer flex-col items-center justify-center rounded-md px-2 leading-none tabular-nums transition-colors"
+            className="text-muted-foreground hover:bg-surface-3 flex h-9 cursor-pointer flex-col items-center justify-center rounded-md px-2 leading-none tabular-nums transition-colors"
             title="Target BPM"
             aria-label="Target BPM pitcher"
           >

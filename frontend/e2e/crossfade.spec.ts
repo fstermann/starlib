@@ -112,10 +112,21 @@ test.describe("Auto-mix crossfade", () => {
         body: Buffer.alloc(7200),
       }),
     );
-    await page.route(
-      "**/api/rekordbox/tracks/*/analysis*",
-      jsonRoute(ANALYSIS),
-    );
+    // Track B gets a distinct section label so specs can assert the phrase
+    // band flips to the incoming track at the swipe.
+    await page.route("**/api/rekordbox/tracks/*/analysis*", (route) => {
+      const isTrackB = route.request().url().includes("/t-2/");
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...ANALYSIS,
+          sections: isTrackB
+            ? [{ kind: "chorus", label: "Drop", startMs: 0, endMs: 1452 }]
+            : ANALYSIS.sections,
+        }),
+      });
+    });
     await page.route(
       "**/api/metadata/files/*/peaks*",
       jsonRoute({ peaks: Array(200).fill(0.3) }),
@@ -163,10 +174,61 @@ test.describe("Auto-mix crossfade", () => {
     await expect(player.getByTestId("player-next-chip")).toBeVisible();
     await expect(player.getByTestId("player-next-chip")).toContainText("Baz");
     await expect(player.getByTestId("player-crossfade-overview")).toBeVisible();
+    // Before the swipe the out-going track is the master: its layer renders at
+    // natural scale, untransformed — the waveform must not stretch or shift
+    // the moment the incoming track appears.
+    await expect(
+      player
+        .getByTestId("player-overview-swipe")
+        .locator(":scope > div")
+        .first(),
+    ).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+    // Each deck keeps a visible playhead in the overview through the fade.
+    await expect(
+      player.getByTestId("player-overview-playhead-old"),
+    ).toBeVisible();
+    await expect(
+      player.getByTestId("player-overview-playhead-new"),
+    ).toBeVisible();
     // The zoom detail strip splits into two stacked scrolling decks (incoming
-    // on top, out-going on bottom) during the fade.
-    await expect(player.getByTestId("player-detail-split")).toBeVisible();
-    await expect(player.getByText("Baz", { exact: true })).toBeVisible({
+    // on top, out-going on bottom) during the fade. Each deck is clipped by a
+    // dynamic polygon (half height across the overlap, full height outside it).
+    const split = player.getByTestId("player-detail-split");
+    await expect(split).toBeVisible();
+    await expect(split.locator(":scope > div").first()).toHaveCSS(
+      "clip-path",
+      /polygon/,
+    );
+    // A green divider marks the half split across the overlap — the two decks
+    // above/below it play separately.
+    await expect(
+      player.getByTestId("player-detail-split-divider"),
+    ).toBeVisible();
+    // The incoming deck's zoom canvas must survive adoption in place (keyed
+    // reconciliation) — a remount repaints from blank, which flickers.
+    const incomingCanvas = await split
+      .locator(":scope > div")
+      .nth(1)
+      .locator("canvas")
+      .elementHandle();
+    // Until the swipe, the phrase band shows the out-going track's sections.
+    await expect(player.getByTestId("player-section")).toContainText("Intro");
+    // At the fade midpoint the overview swipes: the incoming layer settles at
+    // its true scale (identity transform), i.e. the view is scaled to the new
+    // track.
+    const newLayer = player
+      .getByTestId("player-overview-swipe")
+      .locator(":scope > div")
+      .nth(1);
+    await expect(newLayer).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)", {
+      timeout: 15000,
+    });
+    // The phrase band flips with the swipe to the incoming track's sections —
+    // not only after the old track runs out.
+    await expect(player.getByTestId("player-section")).toContainText("Drop");
+    // Rail title flips to the incoming track (the next-chip also says "Baz"
+    // mid-fade, so target the title attribute).
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible({
       timeout: 15000,
     });
     // Deck B was adopted, so the fade settles back out of the transition state.
@@ -177,6 +239,8 @@ test.describe("Auto-mix crossfade", () => {
         timeout: 15000,
       },
     );
+    // Same canvas element, still in the DOM — the zoom strip did not remount.
+    expect(await incomingCanvas!.evaluate((el) => el.isConnected)).toBe(true);
   });
 
   test("crossfade overlay honors the selected Rekordbox waveform style", async ({
@@ -201,6 +265,155 @@ test.describe("Auto-mix crossfade", () => {
     const overview = player.getByTestId("player-crossfade-overview");
     await expect(overview).toBeVisible({ timeout: 15000 });
     await expect(overview).toHaveAttribute("data-style", "rekordbox_color");
+  });
+
+  test("pause during the transition freezes the whole fade", async ({
+    page,
+  }) => {
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    // Pause mid-fade: both decks and the fade clock must freeze. If only deck A
+    // paused (the old bug), the fade would complete on wall-clock and advance
+    // the queue to "Baz" while paused.
+    await player.getByTestId("player-toggle").click();
+    // Wait past the whole 6s fade window.
+    await page.waitForTimeout(8000);
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning");
+    await expect(player.getByTestId("player-next-chip")).toBeVisible();
+    await expect(player.getByText("Foo", { exact: true })).toBeVisible();
+
+    // Resume: the fade picks up where it left off and finishes into "Baz".
+    await player.getByTestId("player-toggle").click();
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(player).not.toHaveAttribute(
+      "data-mix-state",
+      "transitioning",
+      { timeout: 15000 },
+    );
+  });
+
+  test("clicking back in the overview mid-fade rescues the old track", async ({
+    page,
+  }) => {
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    // Click near the start of the overview before the swipe: the fade aborts,
+    // the old track jumps back and keeps playing.
+    await player
+      .getByTestId("player-crossfade-overview")
+      .click({ position: { x: 20, y: 10 } });
+    await expect(player).not.toHaveAttribute("data-mix-state", "transitioning");
+    await expect(player.getByTitle("Foo", { exact: true })).toBeVisible();
+
+    // The mix re-arms: the old track reaches the mix-out point again and the
+    // crossfade completes into the next track on the second pass.
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible({
+      timeout: 25000,
+    });
+  });
+
+  test("seeking deep into the fade window joins the crossfade mid-flight", async ({
+    page,
+  }) => {
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    // Seek to ~80% of the overview (~8s, 4s past the 4s mix-out point). The
+    // restarted fade must join mid-flight: deck B cues ~4s into its own track,
+    // not at its mix point (0s), so its playhead sits ≳40% — never at 0.
+    const overview = player.getByTestId("player-crossfade-overview");
+    const box = await overview.boundingBox();
+    await overview.click({
+      position: { x: Math.floor(box!.width * 0.8), y: 10 },
+    });
+    await expect(
+      player.getByTestId("player-overview-playhead-new"),
+    ).toHaveAttribute("style", /left: [4-9][0-9](\.[0-9]+)?%/, {
+      timeout: 10000,
+    });
+    // The shortened remainder of the fade completes into "Baz".
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(player).not.toHaveAttribute(
+      "data-mix-state",
+      "transitioning",
+      { timeout: 15000 },
+    );
+  });
+
+  test("post-swipe clicks re-time the fade or finish it past the window", async ({
+    page,
+  }) => {
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    // Wait for the swipe to settle: the incoming layer at identity transform.
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    const newLayer = player
+      .getByTestId("player-overview-swipe")
+      .locator(":scope > div")
+      .nth(1);
+    await expect(newLayer).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)", {
+      timeout: 15000,
+    });
+
+    // Click at 30% of the incoming track (~3s) — inside the 6s fade window.
+    // The whole fade re-times: deck A must move to the matching position
+    // (mix-out 4s + 3s elapsed = 7s → its playhead near 70%), not stay put.
+    const overview = player.getByTestId("player-crossfade-overview");
+    const box = await overview.boundingBox();
+    await overview.click({
+      position: { x: Math.floor(box!.width * 0.3), y: 10 },
+    });
+    await expect(
+      player.getByTestId("player-overview-playhead-old"),
+    ).toHaveAttribute("style", /left: (6[8-9]|7[0-9]|8[0-5])(\.[0-9]+)?%/, {
+      timeout: 5000,
+    });
+
+    // Click at 95% (~9.5s) — past the fade window. The old track must not
+    // play out: the fade finishes immediately and deck B is adopted there.
+    await overview.click({
+      position: { x: Math.floor(box!.width * 0.95), y: 10 },
+    });
+    await expect(player).not.toHaveAttribute(
+      "data-mix-state",
+      "transitioning",
+      { timeout: 5000 },
+    );
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible();
   });
 
   test("no crossfade when auto-mix is off (control)", async ({ page }) => {

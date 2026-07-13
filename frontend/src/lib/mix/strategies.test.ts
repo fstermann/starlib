@@ -106,9 +106,14 @@ describe("planTransition — beatmatch-sync", () => {
     // 16 bars at 128 BPM = 30s of program; anchored to a downbeat near the end.
     expect(plan.deckAMixOutSec).toBeGreaterThan(260);
     expect(plan.deckAMixOutSec).toBeLessThan(300);
-    // Mix-out must land on a deck-A downbeat.
-    const spb = 60 / 124;
-    expect(plan.deckAMixOutSec % (spb * 4) < 1e-6 || true).toBe(true);
+    // Mix-out is an actual deck-A grid downbeat.
+    const downbeats = makeGrid(124, 300)
+      .filter((b) => b.beat === 1)
+      .map((b) => b.timeSec);
+    expect(downbeats).toContain(plan.deckAMixOutSec);
+    // The overlap is 16 bars of deck-A grid played at the target tempo → the
+    // wall-clock fade is 16 bars at 128 BPM = 30s.
+    expect(plan.fadeSeconds).toBeCloseTo(30, 5);
     expect(plan.rateRamp).toBeNull();
   });
 
@@ -142,6 +147,49 @@ describe("planTransition — beatmatch-sync", () => {
     // well before the 280s content end (not measured from the 300s file end).
     expect(plan.deckAMixOutSec).toBeLessThanOrEqual(251);
     expect(plan.deckAMixOutSec).toBeGreaterThan(245);
+  });
+
+  it("ends the fade exactly on the content-end downbeat of a ms-rounded grid", () => {
+    // Real rekordbox grids carry per-tick ms rounding, so "content end minus a
+    // computed fade length" almost never lands exactly on a tick — the old
+    // subtract-then-snap anchoring then snapped a whole bar early. Walking the
+    // grid must end the fade on the section-end downbeat itself.
+    const bpm = 126;
+    const spb = 60 / bpm; // 0.47619… — every tick rounds to whole ms
+    const beats: DeckBeat[] = [];
+    for (let i = 0; i * spb <= 300; i++) {
+      beats.push({
+        timeSec: Math.round(i * spb * 1000) / 1000,
+        beat: (i % 4) + 1,
+      });
+    }
+    const downbeats = beats.filter((b) => b.beat === 1);
+    const endDownbeat = downbeats[downbeats.length - 4]; // content ends here
+    const deckA: DeckInfo = {
+      bpm,
+      durationSec: 300,
+      analysis: {
+        beats,
+        sections: [{ startSec: 0, endSec: endDownbeat.timeSec, kind: "verse" }],
+      },
+    };
+    const plan = planTransition(
+      ctx(
+        { mode: "beatmatch-sync", matchBars: 16, sectionAware: true },
+        deckA,
+        deck(128, 300),
+        { targetBpm: 126 },
+      ),
+    );
+    // Mix-out is exactly 16 downbeats before the content end…
+    expect(plan.deckAMixOutSec).toBe(
+      downbeats[downbeats.length - 4 - 16].timeSec,
+    );
+    // …and the fade (at rate 1 here) ends exactly on the content-end downbeat.
+    expect(plan.deckAMixOutSec + plan.fadeSeconds).toBeCloseTo(
+      endDownbeat.timeSec,
+      6,
+    );
   });
 
   it("section-aware skips deck B's intro", () => {

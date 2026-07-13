@@ -53,7 +53,7 @@ export function MixControls() {
             data-testid="mix-controls-trigger"
             data-active={enabled || undefined}
             className={cn(
-              "hover:bg-surface-3 flex h-10 cursor-pointer flex-col items-center justify-center rounded-md px-2 leading-none transition-colors",
+              "hover:bg-surface-3 flex h-9 cursor-pointer flex-col items-center justify-center rounded-md px-2 leading-none transition-colors",
               enabled ? "text-primary" : "text-muted-foreground",
             )}
             title="Auto-mix"

@@ -70,19 +70,6 @@ export interface TransitionPlan {
   gainCurve: "linear" | "equalPower";
 }
 
-/** Downbeat (bar start) at or before `timeSec`, else the first downbeat, else null. */
-function downbeatAtOrBefore(beats: DeckBeat[], timeSec: number): number | null {
-  let best: number | null = null;
-  for (const b of beats) {
-    if (b.beat !== 1) continue;
-    if (b.timeSec <= timeSec) best = b.timeSec;
-    else break;
-  }
-  if (best != null) return best;
-  const first = beats.find((b) => b.beat === 1);
-  return first ? first.timeSec : null;
-}
-
 /** First downbeat at or after `timeSec`, else the last downbeat, else null. */
 function downbeatAtOrAfter(beats: DeckBeat[], timeSec: number): number | null {
   for (const b of beats) {
@@ -124,22 +111,36 @@ function planSimple(ctx: TransitionContext, fellBack = false): TransitionPlan {
 }
 
 /**
- * Where deck A's mix-out should anchor: `matchBars` bars back from the end of
- * musical content. With `sectionAware`, "end of content" is the last section's
- * end (trims stray trailing bars); otherwise it's the file end. Snapped to a
- * downbeat so the overlap starts on a bar.
+ * Deck A's mix-out window: `matchBars` bars back from the end of musical
+ * content. With `sectionAware`, "end of content" is the last section's end
+ * (trims stray trailing bars); otherwise it's the file end.
+ *
+ * Anchored by walking deck A's own beatgrid: take the downbeat at or before
+ * the content end, then step `matchBars` downbeats back through the grid. Both
+ * ends land exactly on grid ticks, so the fade finishes bar-perfect at the
+ * content end even when tick times are ms-rounded or the grid drifts —
+ * deriving the start by subtracting a computed fade length and re-snapping to
+ * a downbeat was reliably a bar early.
  */
-function deckAMixOutAnchor(
+function deckAMixOutWindow(
   ctx: TransitionContext,
-  fadeSeconds: number,
-): number | null {
-  const beats = ctx.deckA.analysis!.beats;
-  const sections = ctx.deckA.analysis!.sections;
+): { mixOutSec: number; fadeOnASec: number } | null {
+  const { beats, sections } = ctx.deckA.analysis!;
   let endRef = ctx.deckA.durationSec;
   if (ctx.config.sectionAware && sections.length > 0) {
     endRef = sections[sections.length - 1].endSec;
   }
-  return downbeatAtOrBefore(beats, endRef - fadeSeconds);
+  const downbeats = beats.filter((b) => b.beat === 1);
+  let endIdx = -1;
+  for (let i = 0; i < downbeats.length; i++) {
+    if (downbeats[i].timeSec <= endRef) endIdx = i;
+    else break;
+  }
+  if (endIdx <= 0) return null;
+  const startIdx = Math.max(0, endIdx - ctx.config.matchBars);
+  const fadeOnASec = downbeats[endIdx].timeSec - downbeats[startIdx].timeSec;
+  if (fadeOnASec <= 0) return null;
+  return { mixOutSec: downbeats[startIdx].timeSec, fadeOnASec };
 }
 
 /**
@@ -160,26 +161,20 @@ function deckBMixInAnchor(ctx: TransitionContext): number {
   return first ?? 0;
 }
 
-/** Bars → seconds at a given BPM. */
-function barsToSeconds(bars: number, bpm: number): number {
-  return (bars * 4 * 60) / bpm;
-}
-
 /** Beatmatch with both decks locked to the target BPM. */
 function planBeatmatchSync(ctx: TransitionContext): TransitionPlan {
   if (!hasGrid(ctx.deckA) || !hasGrid(ctx.deckB)) return planSimple(ctx, true);
-  // Overlap length measured at the target tempo (what both decks play at).
-  const fadeSeconds = barsToSeconds(ctx.config.matchBars, ctx.targetBpm);
-  const mixOut = deckAMixOutAnchor(ctx, fadeSeconds);
-  if (mixOut == null) return planSimple(ctx, true);
+  const win = deckAMixOutWindow(ctx);
+  if (win == null) return planSimple(ctx, true);
   const rateA = ctx.targetBpm / ctx.deckA.bpm!;
   const rateB = ctx.targetBpm / ctx.deckB.bpm!;
   return {
     mode: "beatmatch-sync",
     fellBack: false,
-    // The fade plays at the target tempo, so scale the on-A duration by A's rate.
-    fadeSeconds: fadeSeconds / rateA,
-    deckAMixOutSec: mixOut,
+    // The window is measured on deck A's own grid; played at `rateA` it spans
+    // exactly `matchBars` bars at the target tempo.
+    fadeSeconds: win.fadeOnASec / rateA,
+    deckAMixOutSec: win.mixOutSec,
     deckBStartOffsetSec: deckBMixInAnchor(ctx),
     deckBInitialRate: rateB,
     rateRamp: null,
@@ -195,14 +190,14 @@ function planBeatmatchSync(ctx: TransitionContext): TransitionPlan {
  */
 function planBeatmatchRamp(ctx: TransitionContext): TransitionPlan {
   if (!hasGrid(ctx.deckA) || !hasGrid(ctx.deckB)) return planSimple(ctx, true);
+  const win = deckAMixOutWindow(ctx);
+  if (win == null) return planSimple(ctx, true);
   const audibleBpmA = ctx.deckA.bpm! * ctx.deckACurrentRate;
-  // Fade length measured at deck A's current audible tempo.
-  const fadeAtTempo = barsToSeconds(ctx.config.matchBars, audibleBpmA);
-  const fadeSeconds = fadeAtTempo / ctx.deckACurrentRate;
-  const mixOut = deckAMixOutAnchor(ctx, fadeSeconds);
-  if (mixOut == null) return planSimple(ctx, true);
   const rateAFrom = ctx.deckACurrentRate;
   const rateATo = ctx.targetBpm / ctx.deckA.bpm!;
+  // Deck A's rate ramps linearly from → to across the fade, so it consumes its
+  // grid window at the average of the two rates.
+  const fadeSeconds = win.fadeOnASec / ((rateAFrom + rateATo) / 2);
   // Deck B enters at whatever rate makes it audible at deck A's current tempo.
   const rateBFrom = audibleBpmA / ctx.deckB.bpm!;
   const rateBTo = ctx.targetBpm / ctx.deckB.bpm!;
@@ -210,7 +205,7 @@ function planBeatmatchRamp(ctx: TransitionContext): TransitionPlan {
     mode: "beatmatch-ramp",
     fellBack: false,
     fadeSeconds,
-    deckAMixOutSec: mixOut,
+    deckAMixOutSec: win.mixOutSec,
     deckBStartOffsetSec: deckBMixInAnchor(ctx),
     deckBInitialRate: rateBFrom,
     rateRamp: {
