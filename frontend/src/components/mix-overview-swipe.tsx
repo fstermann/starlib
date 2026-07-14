@@ -24,6 +24,13 @@ interface MixOverviewSwipeProps {
   oldFadeSec: number;
   /** Fade length in the NEW track's own seconds (wall-clock × deck B rate). */
   newFadeSec: number;
+  /**
+   * `loop-eq` mode: the split window (`[mixOut, mixOut + oldFade]`) is deck A's
+   * loop region rather than a fade; the swipe still fires at the transition
+   * point. Highlights the loop region with the loop box and dims the old layer
+   * once past the transition point (`dimOld`).
+   */
+  loopEq?: { dimOld: boolean } | null;
   testId?: string;
 }
 
@@ -72,6 +79,7 @@ export function MixOverviewSwipe({
   startOffsetSec,
   oldFadeSec,
   newFadeSec,
+  loopEq,
   testId,
 }: MixOverviewSwipeProps) {
   const oldDur = Math.max(oldDurationSec, 0.001);
@@ -131,10 +139,22 @@ export function MixOverviewSwipe({
           clipPath: oldClip,
           transformOrigin: `${oldFullEnd}% 50%`,
           transform: oldTransform,
-          transition: `transform ${SWIPE_SEC}s ${EASE}, clip-path ${SWIPE_SEC}s ${EASE}`,
+          // Loop-eq: dim the out-going track once it starts fading out.
+          opacity: loopEq && loopEq.dimOld ? 0.45 : 1,
+          transition: `transform ${SWIPE_SEC}s ${EASE}, clip-path ${SWIPE_SEC}s ${EASE}, opacity ${SWIPE_SEC}s ${EASE}`,
         }}
       >
         {oldContent}
+        {loopEq && (
+          <div
+            data-testid="player-overview-loop-region"
+            className="bg-primary/15 border-primary/50 pointer-events-none absolute inset-y-0 border-x"
+            style={{
+              left: `${oldFullEnd}%`,
+              width: `${Math.max(0, oldAudEnd - oldFullEnd)}%`,
+            }}
+          />
+        )}
         {oldProgress != null && (
           <div
             data-testid="player-overview-playhead-old"

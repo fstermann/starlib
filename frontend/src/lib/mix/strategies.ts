@@ -73,7 +73,58 @@ export interface TransitionPlan {
     deckBTo: number;
   } | null;
   gainCurve: "linear" | "equalPower";
+  /**
+   * DJ-style bass EQ schedule (the `beatgrid-eq` mode only; null otherwise).
+   * Both times are fade-relative, in deck A real-time seconds. The incoming
+   * deck's bass is killed from the start of the fade and the outgoing deck keeps
+   * it; then:
+   * - at `deckAKillSec` (2 bars before the end) the outgoing deck's bass kills too;
+   * - at `deckBRestoreSec` (1 beat before the end) the incoming deck's bass
+   *   returns full — a small lead so the final downbeat's kick already punches.
+   *
+   * So the last ~2 bars run with no bass on either deck, then the incoming
+   * bassline lands just before the final downbeat.
+   */
+  eqSwap: { deckAKillSec: number; deckBRestoreSec: number } | null;
+  /**
+   * DJ-mixer loop + 3-band EQ blend (the `loop-eq` mode only; null otherwise).
+   * The transition runs in two phases of `phaseNSec` each (Phase 1 blends B in,
+   * Phase 2 fades A out); deck A loops `loopRegion` throughout. All schedule
+   * times are seconds from the transition start (deck A real-time), within
+   * Phase 1. See {@link planLoopEq} and the engine's loop-EQ runner.
+   */
+  loopEq: {
+    phase1Sec: number;
+    phase2Sec: number;
+    loopRegion: { start: number; end: number };
+    /** Highs/mids ramp A 0 dB→`cutDb` and B `cutDb`→0 dB over these windows. */
+    highsRamp: { startSec: number; endSec: number };
+    midsRamp: { startSec: number; endSec: number };
+    /** Deck A bass hard-kills here; deck B bass hard-slams to full here. */
+    bassKillSec: number;
+    bassSlamSec: number;
+    /** dB targets: `cutDb` = 10 o'clock cut, `killDb` = bass kill. */
+    cutDb: number;
+    killDb: number;
+  } | null;
 }
+
+/** Loop length (bars) for deck A in `loop-eq`. */
+const LOOP_EQ_BARS = 4;
+/** Mid/high cut depth (dB) ≈ 10 o'clock on a mixer EQ. */
+const EQ_CUT_DB = -9;
+/** Bass kill depth (dB) for the hard swap. */
+const EQ_KILL_DB = -40;
+
+/** Bars before the fade end at which the out-going deck's bass kills. */
+const EQ_KILL_BARS = 2;
+/**
+ * Beats before the final downbeat at which the incoming deck's bass lands full.
+ * A small lead so the downbeat kick already has full low end (landing exactly on
+ * the downbeat reads as late) and the drop clears the adoption seam.
+ */
+const EQ_RESTORE_LEAD_BEATS = 1;
+const BEATS_PER_BAR = 4;
 
 /** First downbeat at or after `timeSec`, else the last downbeat, else null. */
 function downbeatAtOrAfter(beats: DeckBeat[], timeSec: number): number | null {
@@ -115,6 +166,8 @@ function planCrossfade(
     deckBInitialRate: ctx.deckBDesiredRate,
     rateRamp: null,
     gainCurve: "equalPower",
+    eqSwap: null,
+    loopEq: null,
   };
 }
 
@@ -132,7 +185,7 @@ function planCrossfade(
  */
 function deckAMixOutWindow(
   ctx: TransitionContext,
-): { mixOutSec: number; fadeOnASec: number } | null {
+): { mixOutSec: number; fadeOnASec: number; bars: number } | null {
   const { beats, sections } = ctx.deckA.analysis!;
   let endRef = ctx.deckA.durationSec;
   if (ctx.config.sectionAware && sections.length > 0) {
@@ -148,7 +201,11 @@ function deckAMixOutWindow(
   const startIdx = Math.max(0, endIdx - ctx.config.matchBars);
   const fadeOnASec = downbeats[endIdx].timeSec - downbeats[startIdx].timeSec;
   if (fadeOnASec <= 0) return null;
-  return { mixOutSec: downbeats[startIdx].timeSec, fadeOnASec };
+  return {
+    mixOutSec: downbeats[startIdx].timeSec,
+    fadeOnASec,
+    bars: endIdx - startIdx,
+  };
 }
 
 /**
@@ -197,6 +254,8 @@ function planBeatgrid(ctx: TransitionContext): TransitionPlan {
       deckBInitialRate: rateB,
       rateRamp: null,
       gainCurve: "equalPower",
+      eqSwap: null,
+      loopEq: null,
     };
   }
   const audibleBpmA = ctx.deckA.bpm! * ctx.deckACurrentRate;
@@ -226,6 +285,97 @@ function planBeatgrid(ctx: TransitionContext): TransitionPlan {
       deckBTo: rateBTo,
     },
     gainCurve: "equalPower",
+    eqSwap: null,
+    loopEq: null,
+  };
+}
+
+/**
+ * Beatgrid mix plus a DJ-style bass EQ handover. Identical planning to {@link
+ * planBeatgrid} (and the same no-grid fallback — the EQ needs a grid). The
+ * incoming deck's bass is held down for the whole fade; the out-going deck's
+ * bass kills `EQ_KILL_BARS` bars before the end, then the incoming bass drops in
+ * on the final downbeat, so the last 2 bars run bass-free.
+ */
+function planBeatgridEq(ctx: TransitionContext): TransitionPlan {
+  const base = planBeatgrid(ctx);
+  // No grid → beatgrid already fell back to a plain crossfade; no EQ.
+  if (base.mode !== "beatgrid") return base;
+  const win = deckAMixOutWindow(ctx)!;
+  const killBars = Math.min(EQ_KILL_BARS, win.bars);
+  // The out-going deck owns the bass for (bars − killBars) of the fade. The fade
+  // spans `win.bars` bars, so scale by the bar fraction (exact under beat-sync's
+  // constant tempo; a hair off during a rate ramp, like the rest of the ramp
+  // variant's grid drift).
+  const deckAKillSec = (base.fadeSeconds * (win.bars - killBars)) / win.bars;
+  // The incoming bass lands `EQ_RESTORE_LEAD_BEATS` beat(s) before the final
+  // downbeat. The fade spans `win.bars` bars, so a beat is that fraction of it.
+  const beatSec = base.fadeSeconds / (win.bars * BEATS_PER_BAR);
+  const deckBRestoreSec = Math.max(
+    deckAKillSec,
+    base.fadeSeconds - EQ_RESTORE_LEAD_BEATS * beatSec,
+  );
+  return {
+    ...base,
+    mode: "beatgrid-eq",
+    eqSwap: { deckAKillSec, deckBRestoreSec },
+  };
+}
+
+/**
+ * DJ-mixer loop + 3-band EQ blend. Deck A loops its first {@link LOOP_EQ_BARS}
+ * bars and holds full volume while deck B blends in band-by-band (highs → mids →
+ * a bass hard-swap) over Phase 1 (`matchBars` bars); then deck A fades out
+ * underneath over Phase 2 (another `matchBars` bars). Both decks hold a constant
+ * rate matched to deck A's current audible tempo (no rate ramp — a ramp would
+ * misalign the loop). Falls back to `crossfade` with no grid.
+ */
+function planLoopEq(ctx: TransitionContext): TransitionPlan {
+  if (!hasGrid(ctx.deckA) || !hasGrid(ctx.deckB))
+    return planCrossfade(ctx, true);
+  const win = deckAMixOutWindow(ctx);
+  if (win == null) return planCrossfade(ctx, true);
+
+  const rateA = ctx.deckACurrentRate;
+  const audibleBpmA = ctx.deckA.bpm! * rateA;
+  // Deck B enters matched to deck A's current audible tempo, then holds it.
+  const deckBInitialRate = audibleBpmA / ctx.deckB.bpm!;
+
+  const barSecA = win.fadeOnASec / win.bars; // deck A track-seconds per bar
+  const phaseNSec = win.fadeOnASec / rateA; // wall seconds for `bars` bars
+  const barSecWall = phaseNSec / win.bars;
+  const beatSecWall = barSecWall / BEATS_PER_BAR;
+  const third = phaseNSec / 3;
+  const killBars = Math.min(EQ_KILL_BARS, win.bars);
+  const loopBars = Math.min(LOOP_EQ_BARS, win.bars);
+
+  return {
+    mode: "loop-eq",
+    fellBack: false,
+    // Total event = Phase 1 (blend in) + Phase 2 (fade out).
+    fadeSeconds: phaseNSec * 2,
+    deckAMixOutSec: win.mixOutSec,
+    deckBStartOffsetSec: deckBMixInAnchor(ctx),
+    deckBInitialRate,
+    rateRamp: null,
+    gainCurve: "equalPower",
+    eqSwap: null,
+    loopEq: {
+      phase1Sec: phaseNSec,
+      phase2Sec: phaseNSec,
+      loopRegion: {
+        start: win.mixOutSec,
+        end: win.mixOutSec + loopBars * barSecA,
+      },
+      highsRamp: { startSec: 0, endSec: third },
+      midsRamp: { startSec: third, endSec: 2 * third },
+      // Bass owns deck A until 2 bars before the transition point, then kills;
+      // deck B's bass slams in 1 beat before it (a small lead — see planBeatgridEq).
+      bassKillSec: Math.max(0, phaseNSec - killBars * barSecWall),
+      bassSlamSec: Math.max(0, phaseNSec - EQ_RESTORE_LEAD_BEATS * beatSecWall),
+      cutDb: EQ_CUT_DB,
+      killDb: EQ_KILL_DB,
+    },
   };
 }
 
@@ -233,6 +383,8 @@ const STRATEGIES: Record<MixMode, (ctx: TransitionContext) => TransitionPlan> =
   {
     crossfade: (ctx) => planCrossfade(ctx),
     beatgrid: planBeatgrid,
+    "beatgrid-eq": planBeatgridEq,
+    "loop-eq": planLoopEq,
   };
 
 /** Build the transition plan for the configured mode (with no-grid fallback). */

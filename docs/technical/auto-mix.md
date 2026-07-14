@@ -19,6 +19,8 @@ adding a strategy, not touching playback or UI.
 |------|--------------|
 | `crossfade` | Time crossfade, 1–12 s. `mixOut = duration − fade`, `startOffset = 0`. |
 | `beatgrid` | Bar-aligned blend on the beatgrids. Mix-out and mix-in land on **downbeats**, section-aware so the fade doesn't strand a stray couple of bars at the track ends. The variant is picked by the BPM pitcher (`beatSync` in the `TransitionContext`): with pitch/"BPM mode" **on**, both decks are locked to the target BPM for the whole fade; with it **off**, the pitcher target is ignored and the incoming track wins: deck B starts pitched to match deck A's current tempo, then both ramp to deck B's own tempo across the fade (deck A bends to meet it; deck B lands at its natural rate), leaving the pitcher untouched (`rateRamp` on the plan). |
+| `beatgrid-eq` | The `beatgrid` blend plus a DJ-style **bass swap** (`eqSwap` on the plan). Identical planning (same downbeat anchoring, section-awareness, and `beatSync` variants), with an extra low-shelf automation so the two basslines never clash. See below. |
+| `loop-eq` | A full DJ-mixer transition (`loopEq` on the plan): **loop** deck A's first 4 bars, blend deck B in **band-by-band** with a 3-band EQ (highs → mids → bass hard-swap) over `matchBars` bars, then **fade deck A out** underneath over another `matchBars` bars. Local decks only. See below. |
 
 `TransitionPlan` fields that matter downstream:
 
@@ -27,7 +29,86 @@ adding a strategy, not touching playback or UI.
 - `deckBStartOffsetSec` — where deck B starts playing (seconds into the new
   track); its mix-in point. `0` for `crossfade`, a downbeat for `beatgrid`.
 
-If a track lacks a beatgrid, the `beatgrid` mode falls back to `crossfade`.
+If a track lacks a beatgrid, the `beatgrid` (and `beatgrid-eq`) mode falls back
+to `crossfade`.
+
+### Bass EQ handover (`beatgrid-eq`)
+
+`beatgrid-eq` mirrors a mixer's EQ kill so the outgoing and incoming basslines
+never play over each other. Each local deck carries a neutral (0 dB) low-shelf
+(`BiquadFilterNode` at 250 Hz) spliced after its output gain in
+`LoopingWebAudioPlayer` — flat during ordinary play, exposed as
+`getBassParam()`. The plan adds `eqSwap` with two fade-relative times (deck A
+real-time seconds):
+
+- `deckAKillSec` — the out-going deck's bass kills `EQ_KILL_BARS` (2) bars
+  before the fade ends;
+- `deckBRestoreSec` — the incoming deck's bass returns `EQ_RESTORE_LEAD_BEATS`
+  (1) beat before the fade ends.
+
+Both are computed from the actual bar count of the mix-out window (exact under
+beat-sync's constant tempo; approximate during a rate ramp, like the rest of the
+ramp variant's grid drift). So the sequence is: the incoming deck's bass is held
+down (−40 dB) for the **whole** fade while the out-going deck keeps its bass; 2
+bars before the end the out-going bass kills too (~2 bars run **bass-free**);
+then the incoming bassline slams in **1 beat before** the final downbeat. The
+lead matters: landing the bass exactly on the downbeat makes that kick land
+bass-light (reads as late) and puts the drop on the same instant as the adoption
+seam (the queue-advance + player rebuild) — a beat early makes the downbeat kick
+punch and clears the rebuild.
+
+The engine (`runTransition`) slams each step over a ~30 ms ramp that *finishes*
+on its target time (not starts there, so the bass is full **on** the beat) and
+bookkeeps them like the fade clock — `pause()`/`resume()` freeze and re-schedule both,
+`finish()` (skip) lands on the end state (out-going killed, incoming full) so
+deck B is adopted with full bass, and a rescue `cancel()` restores deck A's bass.
+**Element (SoundCloud) decks bypass the Web Audio graph** (see `html-deck.ts`),
+so their `bassParam()` is null and the EQ is a no-op on that deck — the gain
+crossfade still runs.
+
+### Loop + EQ blend (`loop-eq`)
+
+`loop-eq` mimics a full mixer transition. It is a **single long transition** of
+`2 × matchBars` bars in two phases, run by a dedicated `runLoopEqTransition` in
+`engine.ts` (the other modes share `runTransition`); deck B is adopted at the
+very end, so deck A stays engine-owned — looping and fading — through the whole
+event without any teardown rework.
+
+Each local deck carries a 3-band EQ in `LoopingWebAudioPlayer` (low-shelf 250 Hz
+→ peaking 1 kHz → high-shelf 4 kHz, all neutral in normal play; `getBassParam`
+/`getMidParam`/`getHighParam`), plus the existing `setLoop`. The `loopEq` plan
+field carries the two phase lengths, deck A's 4-bar `loopRegion`, the per-band
+ramp windows, and the bass swap times.
+
+- **Phase 1 — transition (`matchBars` bars):** deck A holds full volume and
+  **loops its first 4 bars**; deck B fades in. The bands blend staggered
+  (12 o'clock = 0 dB, 10 o'clock ≈ −9 dB): highs then mids dip on A / open on B
+  over the first two thirds; the **bass hard-swaps** near the end (A kills 2 bars
+  before the point, B slams in 1 beat before it — the finish-on-the-beat ramp
+  from `beatgrid-eq`). At the transition point deck B is full (12 o'clock,
+  100%) across all bands — the drop.
+- **Phase 2 — outro (`matchBars` bars):** deck A **fades its volume out**
+  underneath (still looping) while deck B plays full.
+
+`onMidpoint` fires at the transition point (`mixPastMid` → the rail info and
+phrase band swap to deck B). `pause/resume/finish/cancel` re-schedule the whole
+two-phase automation off a single `elapsedTotal`; `cancel` (rescue) clears deck
+A's loop and restores it. A **mid-flight join is not supported** (the overlay
+click is rescue-only for this mode).
+
+**Visualization** is mode-aware (branch on `plan.loopEq`) — the swipe/collapse
+model doesn't fit a deck A that plays the whole time. Both surfaces localise the
+split + green divider to **deck A's loop region** (the incoming track fills the
+rest full height), and the looping deck draws the standard green **loop box**
+(`PlayerDetailWaveform`'s `loop` prop) over that region:
+
+- **Zoom strip**: the split window is deck A's loop region, playhead-centred on
+  deck A (old bottom half + new top half + divider only there); the loop box is
+  passed to the old layer.
+- **Overview**: reuses the crossfade squeeze layout with the *loop region* as the
+  window. Pre-swipe deck A is full-scale with its loop region bracketed and deck
+  B squeezed into it; the **swipe still fires at the transition point** (deck B
+  becomes master, deck A collapses to a dimmed looping tail).
 
 The beatgrid mix-out window is anchored by **walking the grid**, not by
 arithmetic: take the downbeat at or before the end of musical content (last

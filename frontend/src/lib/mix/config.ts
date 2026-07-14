@@ -16,8 +16,16 @@
  *   with it off, the incoming deck enters at the current tempo and both decks
  *   ramp to the incoming track's own tempo over the fade (the pitcher target
  *   is ignored and the pitcher stays off).
+ * - `beatgrid-eq` — the beatgrid blend plus a DJ-style bass swap: the incoming
+ *   deck's bass is killed for most of the fade, then in the last 2 bars the
+ *   bass swaps (outgoing deck's bass kills, incoming deck's returns full) so the
+ *   two basslines never clash. Local decks only (SoundCloud can't be EQ'd).
+ * - `loop-eq` — a full DJ-mixer transition: loop the outgoing deck's first 4
+ *   bars, blend the incoming deck in band-by-band with a 3-band EQ (highs → mids
+ *   → bass hard-swap) over `matchBars` bars, then fade the outgoing deck out
+ *   underneath over another `matchBars` bars. Local decks only.
  */
-export type MixMode = "crossfade" | "beatgrid";
+export type MixMode = "crossfade" | "beatgrid" | "beatgrid-eq" | "loop-eq";
 
 export interface MixConfig {
   /** Auto-mix into the next queued track near the end of the current one. */
@@ -53,12 +61,18 @@ export const MIX_CONFIG_KEY = "player.mixConfig";
 export const MIX_MODE_LABELS: Record<MixMode, string> = {
   crossfade: "Crossfade",
   beatgrid: "Beatgrid",
+  "beatgrid-eq": "Beatgrid + EQ",
+  "loop-eq": "Loop + EQ",
 };
 
 export const MIX_MODE_DESCRIPTIONS: Record<MixMode, string> = {
   crossfade: "Fade between tracks over a fixed time. Works for any track.",
   beatgrid:
     "Align beatgrids for a bar-exact blend. Syncs both tracks to the target BPM when pitching is on, otherwise ramps the tempo across the fade. Needs a beatgrid.",
+  "beatgrid-eq":
+    "Beatgrid blend with a DJ bass swap: the incoming bass stays cut until the last 2 bars, then the bass kills on the outgoing track and swings in full on the incoming one. Local tracks only.",
+  "loop-eq":
+    "Full DJ-mixer blend: loop the outgoing track and mix the incoming one in band-by-band (highs, mids, then a bass drop), then fade the outgoing track out underneath. Local tracks only.",
 };
 
 /** Clamp a raw config into valid ranges (defensive against stale persistence). */
@@ -69,7 +83,10 @@ export function normalizeMixConfig(raw: Partial<MixConfig> | null): MixConfig {
   return {
     enabled: !!raw.enabled,
     mode:
-      raw.mode === "crossfade" || raw.mode === "beatgrid"
+      raw.mode === "crossfade" ||
+      raw.mode === "beatgrid" ||
+      raw.mode === "beatgrid-eq" ||
+      raw.mode === "loop-eq"
         ? raw.mode
         : DEFAULT_MIX_CONFIG.mode,
     crossfadeSeconds: Number.isFinite(seconds)

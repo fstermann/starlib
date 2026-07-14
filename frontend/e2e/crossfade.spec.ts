@@ -287,6 +287,18 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     await expect(page.getByTestId("mix-crossfade-seconds")).toHaveCount(0);
     // Rekordbox tracks carry a beatgrid — no fallback warning.
     await expect(page.getByTestId("mix-beatgrid-unavailable")).toHaveCount(0);
+
+    // Beatgrid + EQ reuses the same bar-aligned settings.
+    await page.getByTestId("mix-mode-beatgrid-eq").click();
+    const eqCard = page.getByTestId("mix-mode-beatgrid-eq-card");
+    await expect(eqCard.getByTestId("mix-bars-16")).toBeVisible();
+    await expect(eqCard.getByTestId("mix-section-aware")).toBeVisible();
+
+    // Loop + EQ reuses them too.
+    await page.getByTestId("mix-mode-loop-eq").click();
+    const loopCard = page.getByTestId("mix-mode-loop-eq-card");
+    await expect(loopCard.getByTestId("mix-bars-16")).toBeVisible();
+    await expect(loopCard.getByTestId("mix-section-aware")).toBeVisible();
   });
 
   test("crossfade overlay honors the selected Rekordbox waveform style", async ({
@@ -574,6 +586,100 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     await expect(page.getByTestId("bpm-pitcher-toggle")).toHaveAttribute(
       "aria-checked",
       "false",
+    );
+  });
+
+  test("beatgrid + EQ runs the bar-aligned bass-swap fade and adopts", async ({
+    page,
+  }) => {
+    // Needs several downbeats for the bar-aligned strategy (and the EQ swap) to
+    // engage instead of falling back to a plain crossfade.
+    const grid = denseGrid(250, 12000, "verse"); // downbeat every 1s → 12 bars
+    await page.route("**/api/rekordbox/tracks/*/analysis*", jsonRoute(grid));
+    await page.route("**/api/metadata/files/*/audio", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "audio/wav",
+        body: makeSilentWav(12),
+      }),
+    );
+
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.getByTestId("mix-mode-beatgrid-eq").click();
+    await page.getByTestId("mix-bars-8").click();
+    await page.keyboard.press("Escape");
+
+    // The bass-swap fade fires (not a crossfade fallback) and adopts "Baz"
+    // without the engine's EQ automation stalling the transition.
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible({
+      timeout: 20000,
+    });
+    await expect(player).not.toHaveAttribute(
+      "data-mix-state",
+      "transitioning",
+      { timeout: 15000 },
+    );
+  });
+
+  test("loop + EQ loops deck A, blends deck B in over two phases, and adopts", async ({
+    page,
+  }) => {
+    // Dense grid so the bar-aligned loop-eq strategy engages; the section ends
+    // early (10s) so the mix-out point is a couple bars in, but the track is
+    // long (24s) so deck B has content for the full 2×overlap window.
+    const beatgrid = [];
+    for (let t = 0, beat = 1; t <= 24000; t += 250, beat = (beat % 4) + 1) {
+      beatgrid.push({ beat, bpm: 124, timeMs: t });
+    }
+    const grid = {
+      beatgrid,
+      sections: [{ kind: "verse", label: "verse", startMs: 0, endMs: 10000 }],
+      cues: [],
+    };
+    await page.route("**/api/rekordbox/tracks/*/analysis*", jsonRoute(grid));
+    await page.route("**/api/metadata/files/*/audio", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "audio/wav",
+        body: makeSilentWav(24),
+      }),
+    );
+
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.getByTestId("mix-mode-loop-eq").click();
+    await page.getByTestId("mix-bars-8").click();
+    await page.keyboard.press("Escape");
+
+    // The two-phase loop-eq transition fires and its overview shows the loop
+    // region highlight (proof the loop-eq overlay branch rendered, not the
+    // crossfade swipe).
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    await expect(
+      player.getByTestId("player-overview-loop-region"),
+    ).toBeVisible();
+
+    // Deck B ("Baz") is adopted at the end of Phase 2 (the outro fade) without
+    // the loop/EQ automation stalling the transition.
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible({
+      timeout: 30000,
+    });
+    await expect(player).not.toHaveAttribute(
+      "data-mix-state",
+      "transitioning",
+      { timeout: 15000 },
     );
   });
 });

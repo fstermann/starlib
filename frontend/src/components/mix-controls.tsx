@@ -19,7 +19,7 @@ import {
 import { usePlayer } from "@/lib/player-context";
 import { cn } from "@/lib/utils";
 
-const MODES: MixMode[] = ["crossfade", "beatgrid"];
+const MODES: MixMode[] = ["crossfade", "beatgrid", "beatgrid-eq", "loop-eq"];
 
 /**
  * Player-rail control for auto-mix (crossfade). Mirrors the BpmPitcher popover:
@@ -164,88 +164,94 @@ export function MixControls() {
                     </div>
                   )}
 
-                  {mode === m && m === "beatgrid" && (
-                    <div className="border-border mx-2 flex flex-col gap-2 border-t pt-1.5 pb-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground text-xs">
-                          Overlap
-                        </span>
-                        <div className="flex items-center gap-0.5">
-                          {MATCH_BARS_STEPS.map((bars) => (
-                            <button
-                              key={bars}
-                              type="button"
-                              data-testid={`mix-bars-${bars}`}
-                              data-active={
-                                mixConfig.matchBars === bars || undefined
-                              }
-                              onClick={() =>
-                                setMixConfig({ ...mixConfig, matchBars: bars })
-                              }
-                              className={cn(
-                                "flex h-6 w-9 cursor-pointer items-center justify-center rounded-md border text-xs font-semibold tabular-nums transition-colors",
-                                mixConfig.matchBars === bars
-                                  ? "border-primary text-primary"
-                                  : "border-border text-muted-foreground hover:bg-surface-3",
-                              )}
-                            >
-                              {bars}
-                            </button>
-                          ))}
-                          <span className="text-muted-foreground ml-1 text-xs">
-                            bars
+                  {mode === m &&
+                    (m === "beatgrid" ||
+                      m === "beatgrid-eq" ||
+                      m === "loop-eq") && (
+                      <div className="border-border mx-2 flex flex-col gap-2 border-t pt-1.5 pb-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground text-xs">
+                            Overlap
                           </span>
+                          <div className="flex items-center gap-0.5">
+                            {MATCH_BARS_STEPS.map((bars) => (
+                              <button
+                                key={bars}
+                                type="button"
+                                data-testid={`mix-bars-${bars}`}
+                                data-active={
+                                  mixConfig.matchBars === bars || undefined
+                                }
+                                onClick={() =>
+                                  setMixConfig({
+                                    ...mixConfig,
+                                    matchBars: bars,
+                                  })
+                                }
+                                className={cn(
+                                  "flex h-6 w-9 cursor-pointer items-center justify-center rounded-md border text-xs font-semibold tabular-nums transition-colors",
+                                  mixConfig.matchBars === bars
+                                    ? "border-primary text-primary"
+                                    : "border-border text-muted-foreground hover:bg-surface-3",
+                                )}
+                              >
+                                {bars}
+                              </button>
+                            ))}
+                            <span className="text-muted-foreground ml-1 text-xs">
+                              bars
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground text-xs">
-                          Section-aware
-                        </span>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={mixConfig.sectionAware}
-                          data-testid="mix-section-aware"
-                          onClick={() =>
-                            setMixConfig({
-                              ...mixConfig,
-                              sectionAware: !mixConfig.sectionAware,
-                            })
-                          }
-                          className={cn(
-                            "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                            mixConfig.sectionAware
-                              ? "bg-primary"
-                              : "bg-surface-3",
-                          )}
-                          title="Snap mix to section boundaries"
-                        >
-                          <span
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground text-xs">
+                            Section-aware
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={mixConfig.sectionAware}
+                            data-testid="mix-section-aware"
+                            onClick={() =>
+                              setMixConfig({
+                                ...mixConfig,
+                                sectionAware: !mixConfig.sectionAware,
+                              })
+                            }
                             className={cn(
-                              "bg-background inline-block size-4 transform rounded-full shadow transition-transform",
+                              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
                               mixConfig.sectionAware
-                                ? "translate-x-4"
-                                : "translate-x-0.5",
+                                ? "bg-primary"
+                                : "bg-surface-3",
                             )}
-                          />
-                        </button>
+                            title="Snap mix to section boundaries"
+                          >
+                            <span
+                              className={cn(
+                                "bg-background inline-block size-4 transform rounded-full shadow transition-transform",
+                                mixConfig.sectionAware
+                                  ? "translate-x-4"
+                                  : "translate-x-0.5",
+                              )}
+                            />
+                          </button>
+                        </div>
+                        {hasBeatgrid ? (
+                          <p className="text-muted-foreground text-xs leading-snug">
+                            Needs a beatgrid on both tracks; without one this
+                            transition falls back to a plain crossfade.
+                          </p>
+                        ) : (
+                          <p
+                            className="text-warning text-xs leading-snug"
+                            data-testid="mix-beatgrid-unavailable"
+                          >
+                            This track has no beatgrid — a plain crossfade is
+                            used instead.
+                          </p>
+                        )}
                       </div>
-                      {hasBeatgrid ? (
-                        <p className="text-muted-foreground text-xs leading-snug">
-                          Needs a beatgrid on both tracks; without one this
-                          transition falls back to a plain crossfade.
-                        </p>
-                      ) : (
-                        <p
-                          className="text-warning text-xs leading-snug"
-                          data-testid="mix-beatgrid-unavailable"
-                        >
-                          This track has no beatgrid — a plain crossfade is used
-                          instead.
-                        </p>
-                      )}
-                    </div>
-                  )}
+                    )}
                 </div>
               ))}
             </div>

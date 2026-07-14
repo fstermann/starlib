@@ -7,6 +7,12 @@ export interface LoopRegion {
   end: number;
 }
 
+/** 3-band EQ corners for the mix-engine EQ modes (`beatgrid-eq`, `loop-eq`). */
+const BASS_SHELF_HZ = 250;
+const MID_PEAK_HZ = 1000;
+const MID_PEAK_Q = 1;
+const HIGH_SHELF_HZ = 4000;
+
 /**
  * One AudioContext for the whole app, reused across every track.
  *
@@ -61,10 +67,43 @@ interface WebAudioInternals {
  */
 export class LoopingWebAudioPlayer extends WebAudioPlayer {
   private loopRegion: LoopRegion | null = null;
+  /**
+   * A 3-band EQ (low-shelf → peaking mid → high-shelf) inserted after the output
+   * gain, all flat (0 dB) during normal play. The mix engine automates the band
+   * gains to cut/kill/restore frequencies for the EQ mix modes (`beatgrid-eq`
+   * bass swap, `loop-eq` band-by-band blend).
+   */
+  private readonly bassFilter: BiquadFilterNode;
+  private readonly midFilter: BiquadFilterNode;
+  private readonly highFilter: BiquadFilterNode;
 
   constructor() {
     // Reuse the app-wide context instead of minting one per track.
     super(getSharedAudioContext());
+    // Reroute the output through a neutral 3-band EQ: the base wires
+    // `gainNode → destination`; we splice in `gainNode → bass → mid → high →
+    // destination`. `.muted`/`setSinkId` (which rewire the gain node) are never
+    // used on these decks, so the splice holds.
+    const gain = this.getGainNode();
+    const audioCtx = gain.context;
+    this.bassFilter = audioCtx.createBiquadFilter();
+    this.bassFilter.type = "lowshelf";
+    this.bassFilter.frequency.value = BASS_SHELF_HZ;
+    this.bassFilter.gain.value = 0;
+    this.midFilter = audioCtx.createBiquadFilter();
+    this.midFilter.type = "peaking";
+    this.midFilter.frequency.value = MID_PEAK_HZ;
+    this.midFilter.Q.value = MID_PEAK_Q;
+    this.midFilter.gain.value = 0;
+    this.highFilter = audioCtx.createBiquadFilter();
+    this.highFilter.type = "highshelf";
+    this.highFilter.frequency.value = HIGH_SHELF_HZ;
+    this.highFilter.gain.value = 0;
+    gain.disconnect();
+    gain.connect(this.bassFilter);
+    this.bassFilter.connect(this.midFilter);
+    this.midFilter.connect(this.highFilter);
+    this.highFilter.connect(audioCtx.destination);
   }
 
   private get internals(): WebAudioInternals {
@@ -89,6 +128,25 @@ export class LoopingWebAudioPlayer extends WebAudioPlayer {
    */
   getRateParam(): AudioParam | null {
     return this.internals.bufferNode?.playbackRate ?? null;
+  }
+
+  /**
+   * The low-shelf gain `AudioParam` (dB), for the bass-EQ swap. 0 dB is flat;
+   * the engine ramps it negative to kill bass. Always available (the filter is
+   * part of the graph), unlike element decks which can't be EQ'd.
+   */
+  getBassParam(): AudioParam {
+    return this.bassFilter.gain;
+  }
+
+  /** The mid peaking-filter gain `AudioParam` (dB); 0 dB is flat. */
+  getMidParam(): AudioParam {
+    return this.midFilter.gain;
+  }
+
+  /** The high-shelf gain `AudioParam` (dB); 0 dB is flat. */
+  getHighParam(): AudioParam {
+    return this.highFilter.gain;
   }
 
   /** The shared `AudioContext`, for scheduling ramps on its clock. */
@@ -213,6 +271,9 @@ export class LoopingWebAudioPlayer extends WebAudioPlayer {
       it.bufferNode = null;
     }
     this.getGainNode().disconnect();
+    this.bassFilter.disconnect();
+    this.midFilter.disconnect();
+    this.highFilter.disconnect();
     it.buffer = null;
     it.unAll();
   }

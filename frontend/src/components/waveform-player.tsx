@@ -45,6 +45,7 @@ import {
   createIncomingLocalDeck,
   htmlDeck,
   localDeck,
+  runLoopEqTransition,
   runTransition,
   stashHandoff,
   takeHandoff,
@@ -1237,20 +1238,34 @@ export function WaveformPlayer() {
     const elapsedSec =
       Math.max(0, deckA.currentTime - plan.deckAMixOutSec) / mediaRate;
 
-    const launch = (elapsed: number) =>
-      runTransition({
+    const launch = (elapsed: number) => {
+      const onMidpoint = () => setMixPastMid(true);
+      const onComplete = () => {
+        transitionCompletedRef.current = true;
+        nextRef.current();
+      };
+      // Loop-eq runs its own two-phase automation (loop + 3-band EQ + long outro
+      // fade) and doesn't support a mid-flight join — always starts from the top.
+      if (plan.loopEq) {
+        return runLoopEqTransition({
+          deckA: deckA!,
+          deckB,
+          plan,
+          onMidpoint,
+          onComplete,
+        });
+      }
+      return runTransition({
         deckA: deckA!,
         deckB,
         plan,
         elapsedSec: elapsed,
         // Swap the side rail to the incoming track's info at the fade's midpoint
         // (pause-aware — the engine's fade clock freezes with the decks).
-        onMidpoint: () => setMixPastMid(true),
-        onComplete: () => {
-          transitionCompletedRef.current = true;
-          nextRef.current();
-        },
+        onMidpoint,
+        onComplete,
       });
+    };
     transitionHandleRef.current = launch(elapsedSec);
     // Post-swipe clicks can re-time the running fade to a new elapsed point.
     transitionRetimeRef.current = {
@@ -1669,6 +1684,24 @@ export function WaveformPlayer() {
   const detailSplit = (() => {
     if (!isTransitioning || !nextTrack) return null;
     const plan = mixPlanRef.current;
+    // Loop-eq: the split (old bottom / new top) + divider cover only deck A's
+    // loop region, playhead-centred on deck A; the incoming track fills the rest
+    // full height. The loop box is drawn on the old layer over the same region.
+    if (plan?.loopEq) {
+      const le = plan.loopEq;
+      const tA = deckAProgress * duration;
+      const span = barSpanSeconds(zoomBars, currentBpm);
+      const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+      const inX = clamp01(0.5 + (le.loopRegion.start - tA) / span) * 100;
+      const outX = clamp01(0.5 + (le.loopRegion.end - tA) / span) * 100;
+      return {
+        oldClip: `polygon(${inX}% 50%, ${outX}% 50%, ${outX}% 100%, ${inX}% 100%)`,
+        newClip: `polygon(0 0, 100% 0, 100% 100%, ${outX}% 100%, ${outX}% 50%, ${inX}% 50%, ${inX}% 100%, 0 100%)`,
+        inX,
+        outX,
+        oldLoop: { startSec: le.loopRegion.start, endSec: le.loopRegion.end },
+      };
+    }
     const fadeSec = transitionFadeRef.current;
     const mixInSec = plan?.deckBStartOffsetSec ?? 0;
     const mixOutSec = plan?.deckAMixOutSec ?? Math.max(0, duration - fadeSec);
@@ -1704,6 +1737,7 @@ export function WaveformPlayer() {
       // The overlap's screen extent, for the half-split divider line.
       inX,
       outX,
+      oldLoop: null,
     };
   })();
 
@@ -1735,7 +1769,9 @@ export function WaveformPlayer() {
   // (deck A repositioned to match); outside it the old track has no business
   // playing on, so the fade finishes immediately and deck B cues there.
   const handleTransitionSeek = (frac: number) => {
-    if (!mixPastMid) {
+    // Loop-eq has no re-timable fade window (deck A loops the whole time), so a
+    // click is always a rescue.
+    if (!mixPastMid || mixPlanRef.current?.loopEq) {
       cancelTransitionAndSeek(frac * duration);
       return;
     }
@@ -1766,6 +1802,13 @@ export function WaveformPlayer() {
   // so through the adoption seam — fade done, queue advanced, but the rebuilt
   // player's waveform not ready yet — the settled frame stays painted instead
   // of flashing the stale/blank base row.
+  const overviewLoopEq = mixPlanRef.current?.loopEq ?? null;
+  // Loop-eq: the overview split window is deck A's loop region (not a fade). The
+  // swipe still fires at the transition point — deck B takes over as master and
+  // deck A collapses to a (dimmed) looping tail.
+  const loopLenA = overviewLoopEq
+    ? overviewLoopEq.loopRegion.end - overviewLoopEq.loopRegion.start
+    : 0;
   const liveOverlayFrame =
     isTransitioning && nextTrack
       ? {
@@ -1777,12 +1820,18 @@ export function WaveformPlayer() {
             swipeArmed: mixPastMid,
             oldDurationSec: duration,
             newDurationSec: deckBDuration,
-            mixOutSec:
-              mixPlanRef.current?.deckAMixOutSec ??
-              Math.max(0, duration - transitionFadeRef.current),
+            mixOutSec: overviewLoopEq
+              ? overviewLoopEq.loopRegion.start
+              : (mixPlanRef.current?.deckAMixOutSec ??
+                Math.max(0, duration - transitionFadeRef.current)),
             startOffsetSec: mixPlanRef.current?.deckBStartOffsetSec ?? 0,
-            oldFadeSec: transitionFadeRef.current * mixRates.a,
-            newFadeSec: transitionFadeRef.current * mixRates.b,
+            oldFadeSec: overviewLoopEq
+              ? loopLenA
+              : transitionFadeRef.current * mixRates.a,
+            newFadeSec: overviewLoopEq
+              ? loopLenA * (mixRates.b / Math.max(1e-6, mixRates.a))
+              : transitionFadeRef.current * mixRates.b,
+            loopEq: overviewLoopEq ? { dimOld: mixPastMid } : null,
             oldContent: renderOverviewTrack(
               currentTrack,
               currentPeaksRef.current ?? [],
@@ -2358,6 +2407,9 @@ export function WaveformPlayer() {
                                 bpm={currentBpm}
                                 waveformStyle={waveformStyle}
                                 progressOverride={deckAProgress}
+                                // Loop-eq: show the loop bracket on the looping
+                                // out-going deck.
+                                loop={detailSplit?.oldLoop ?? null}
                               />
                             ),
                           },

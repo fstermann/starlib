@@ -251,3 +251,129 @@ describe("planTransition — beatgrid (beat-sync off)", () => {
     expect(plan.fellBack).toBe(true);
   });
 });
+
+describe("planTransition — beatgrid-eq (bass swap)", () => {
+  it("kills deck A's bass 2 bars early and restores deck B's at the end", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid-eq", matchBars: 16, sectionAware: false },
+        deck(128, 300),
+        deck(128, 300),
+        { targetBpm: 128 },
+      ),
+    );
+    expect(plan.mode).toBe("beatgrid-eq");
+    expect(plan.fellBack).toBe(false);
+    // 16 bars @128 = 30s fade.
+    expect(plan.fadeSeconds).toBeCloseTo(30, 5);
+    expect(plan.eqSwap).not.toBeNull();
+    // Deck A's bass kills 2 bars (3.75s) before the end.
+    expect(plan.eqSwap!.deckAKillSec).toBeCloseTo((30 * 14) / 16, 5);
+    expect(plan.fadeSeconds - plan.eqSwap!.deckAKillSec).toBeCloseTo(3.75, 5);
+    // Deck B's bass lands 1 beat (30/64s) before the final downbeat — a small
+    // lead so the downbeat kick punches.
+    const beatSec = 30 / (16 * 4);
+    expect(plan.eqSwap!.deckBRestoreSec).toBeCloseTo(30 - beatSec, 5);
+    // …still well after deck A's bass kills (last ~2 bars run bass-free).
+    expect(plan.eqSwap!.deckBRestoreSec).toBeGreaterThan(
+      plan.eqSwap!.deckAKillSec,
+    );
+  });
+
+  it("falls back to a plain crossfade with no swap when a deck has no grid", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid-eq" },
+        deck(128, 300),
+        deck(128, 300, { grid: false }),
+      ),
+    );
+    expect(plan.mode).toBe("crossfade");
+    expect(plan.fellBack).toBe(true);
+    expect(plan.eqSwap).toBeNull();
+  });
+
+  it("carries the tempo ramp when beat-sync is off", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid-eq", matchBars: 16, sectionAware: false },
+        deck(126, 300),
+        deck(130, 300),
+        { targetBpm: 140, deckACurrentRate: 1, beatSync: false },
+      ),
+    );
+    expect(plan.mode).toBe("beatgrid-eq");
+    expect(plan.rateRamp).not.toBeNull();
+    expect(plan.eqSwap).not.toBeNull();
+    expect(plan.eqSwap!.deckAKillSec).toBeGreaterThan(0);
+    expect(plan.eqSwap!.deckAKillSec).toBeLessThan(plan.fadeSeconds);
+    // Restores just before the end (1-beat lead), after deck A's kill.
+    expect(plan.eqSwap!.deckBRestoreSec).toBeGreaterThan(
+      plan.eqSwap!.deckAKillSec,
+    );
+    expect(plan.eqSwap!.deckBRestoreSec).toBeLessThan(plan.fadeSeconds);
+  });
+});
+
+describe("planTransition — loop-eq (loop + 3-band EQ blend)", () => {
+  it("plans two equal phases, a 4-bar loop, and the band schedule", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "loop-eq", matchBars: 16, sectionAware: false },
+        deck(128, 300),
+        deck(128, 300),
+        { targetBpm: 128, deckACurrentRate: 1 },
+      ),
+    );
+    expect(plan.mode).toBe("loop-eq");
+    expect(plan.fellBack).toBe(false);
+    expect(plan.rateRamp).toBeNull();
+    expect(plan.eqSwap).toBeNull();
+    // Deck B matched to deck A's audible tempo (both 128 → rate 1).
+    expect(plan.deckBInitialRate).toBeCloseTo(1, 5);
+
+    const le = plan.loopEq!;
+    expect(le).not.toBeNull();
+    // 16 bars @128 = 30s each phase; total fade = 60s.
+    expect(le.phase1Sec).toBeCloseTo(30, 5);
+    expect(le.phase2Sec).toBeCloseTo(30, 5);
+    expect(plan.fadeSeconds).toBeCloseTo(60, 5);
+    // Loop = first 4 bars (7.5s @128) from the mix-out point.
+    expect(le.loopRegion.start).toBe(plan.deckAMixOutSec);
+    expect(le.loopRegion.end - le.loopRegion.start).toBeCloseTo(7.5, 5);
+    // Highs then mids ramp over the first two thirds of Phase 1.
+    expect(le.highsRamp).toEqual({ startSec: 0, endSec: 10 });
+    expect(le.midsRamp).toEqual({ startSec: 10, endSec: 20 });
+    // Deck A bass kills 2 bars before the point; deck B slams 1 beat before it.
+    expect(le.bassKillSec).toBeCloseTo(30 - 2 * 1.875, 5);
+    expect(le.bassSlamSec).toBeCloseTo(30 - 0.46875, 5);
+    expect(le.killDb).toBeLessThan(le.cutDb); // kill is a deeper cut
+  });
+
+  it("falls back to a plain crossfade with no loopEq when a deck has no grid", () => {
+    const plan = planTransition(
+      ctx({ mode: "loop-eq" }, deck(128, 300), deck(128, 300, { grid: false })),
+    );
+    expect(plan.mode).toBe("crossfade");
+    expect(plan.fellBack).toBe(true);
+    expect(plan.loopEq).toBeNull();
+  });
+});
+
+describe("plans without an EQ swap", () => {
+  it("crossfade and beatgrid carry no eqSwap", () => {
+    const cross = planTransition(
+      ctx({ mode: "crossfade" }, deck(128, 300), deck(128, 300)),
+    );
+    expect(cross.eqSwap).toBeNull();
+    const beat = planTransition(
+      ctx(
+        { mode: "beatgrid", sectionAware: false },
+        deck(128, 300),
+        deck(128, 300),
+        { targetBpm: 128 },
+      ),
+    );
+    expect(beat.eqSwap).toBeNull();
+  });
+});

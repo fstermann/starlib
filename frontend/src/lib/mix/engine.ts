@@ -13,6 +13,7 @@
 import {
   getSharedAudioContext,
   LoopingWebAudioPlayer,
+  type LoopRegion,
 } from "@/lib/looping-web-audio-player";
 
 import {
@@ -40,6 +41,14 @@ export interface Deck {
   readonly gainParam: GainParamLike;
   /** The tempo `AudioParam` for ramp mode, or null (element decks can't ramp). */
   rateParam(): AudioParam | null;
+  /** The 3-band EQ gain `AudioParam`s (dB) for the EQ mix modes, or null
+   * (element decks bypass the Web Audio graph and can't be EQ'd). */
+  bassParam(): AudioParam | null;
+  midParam(): AudioParam | null;
+  highParam(): AudioParam | null;
+  /** Set (or clear) a playback loop — used to loop deck A in the loop-eq mode.
+   * No-op for element decks. */
+  setLoop(region: LoopRegion | null): void;
   destroy(): void;
 }
 
@@ -66,6 +75,10 @@ export function localDeck(player: LoopingWebAudioPlayer): Deck {
       return player.getGainParam();
     },
     rateParam: () => player.getRateParam(),
+    bassParam: () => player.getBassParam(),
+    midParam: () => player.getMidParam(),
+    highParam: () => player.getHighParam(),
+    setLoop: (region) => player.setLoop(region),
     destroy: () => player.destroy(),
   };
 }
@@ -99,6 +112,11 @@ export function htmlDeck(audio: HTMLAudioElement, route: HtmlGainRoute): Deck {
     },
     // Element playbackRate is not an AudioParam — no sample-accurate ramp.
     rateParam: () => null,
+    // Element decks bypass the Web Audio graph — no filters, no native loop.
+    bassParam: () => null,
+    midParam: () => null,
+    highParam: () => null,
+    setLoop: () => {},
     destroy: () => {
       audio.pause();
       route.dispose();
@@ -122,6 +140,14 @@ export async function createIncomingLocalDeck(url: string): Promise<Deck> {
   player.getGainParam().value = 0;
   return localDeck(player);
 }
+
+// --- bass EQ swap --------------------------------------------------------
+
+/** Low-shelf gain (dB) that effectively mutes bass (−40 dB ≈ 1% amplitude). */
+const BASS_KILL_DB = -40;
+/** Ramp time (s) for the bass kill/restore — a hard slam (crisp EQ-kill-switch
+ * flip), just long enough to avoid a click. */
+const BASS_SWAP_SEC = 0.03;
 
 // --- gain curves ---------------------------------------------------------
 
@@ -250,6 +276,46 @@ export function runTransition(opts: {
     }
   }
 
+  // Bass EQ handover (beatgrid-eq): the out-going deck owns the bass while the
+  // incoming deck's is killed; the out-going bass kills 2 bars before the end,
+  // then the incoming bass drops in at the fade end (last 2 bars run bass-free).
+  // Element decks return a null bassParam and simply keep full-range audio.
+  const eq = plan.eqSwap;
+  const aBass = deckA.bassParam();
+  const bBass = deckB.bassParam();
+  // Time until each event, tracked explicitly so a paused fade re-schedules it.
+  let aKillRemaining = eq ? Math.max(0, eq.deckAKillSec - elapsed) : 0;
+  let bRestoreRemaining = eq ? Math.max(0, eq.deckBRestoreSec - elapsed) : 0;
+  /** Schedule `p`'s step from `pre` to `post` so it *lands* `remaining` s from
+   * now (on the downbeat) — the ramp finishes on the target, it doesn't start
+   * there, so the incoming bass is full on the beat, not a ramp-width late.
+   * `<= 0` → already due (finish/deep join): ramp straight there. */
+  const scheduleBassStep = (
+    p: AudioParam | null,
+    pre: number,
+    post: number,
+    remaining: number,
+  ) => {
+    if (!p) return;
+    const now = ctx.currentTime;
+    p.cancelScheduledValues(now);
+    if (remaining <= 0) {
+      p.setValueAtTime(p.value, now);
+      p.linearRampToValueAtTime(post, now + BASS_SWAP_SEC);
+      return;
+    }
+    const rampEnd = now + remaining;
+    const rampStart = Math.max(now, rampEnd - BASS_SWAP_SEC);
+    p.setValueAtTime(pre, now);
+    p.setValueAtTime(pre, rampStart);
+    p.linearRampToValueAtTime(post, rampEnd);
+  };
+  const armBassSwap = () => {
+    scheduleBassStep(aBass, 0, BASS_KILL_DB, aKillRemaining); // A: full → killed
+    scheduleBassStep(bBass, BASS_KILL_DB, 0, bRestoreRemaining); // B: killed → full
+  };
+  if (eq) armBassSwap();
+
   // Fade run-time bookkeeping: the completion/midpoint clocks must pause with
   // the decks, so track how much of the fade is left explicitly.
   let remaining = left;
@@ -306,6 +372,14 @@ export function runTransition(opts: {
       midRemaining = Math.max(0, midRemaining - elapsed);
       holdParam(deckA.gainParam);
       holdParam(deckB.gainParam);
+      if (eq) {
+        // Hold the bass filters and freeze the EQ clocks (the scheduled steps
+        // run on the audio thread, which keeps ticking while decks are paused).
+        aKillRemaining = Math.max(0, aKillRemaining - elapsed);
+        bRestoreRemaining = Math.max(0, bRestoreRemaining - elapsed);
+        if (aBass) holdParam(aBass);
+        if (bBass) holdParam(bBass);
+      }
       if (plan.rateRamp) {
         // Persist the ramped rate through the deck's scalar setter — a local
         // deck rebuilds its buffer node on resume, which would otherwise snap
@@ -350,6 +424,7 @@ export function runTransition(opts: {
           rampRate(bRate, ctx, bRate.value, plan.rateRamp.deckBTo, remaining);
         }
       }
+      if (eq) armBassSwap();
       armTimers();
     },
     finish: () => {
@@ -371,6 +446,13 @@ export function runTransition(opts: {
           rampRate(bRate, ctx, bRate.value, plan.rateRamp.deckBTo, quick);
         else deckB.setRate(plan.rateRamp.deckBTo);
       }
+      // Land on the end state (out-going bass killed, incoming bass full) so
+      // the adopted deck B keeps full bass.
+      if (eq) {
+        aKillRemaining = 0;
+        bRestoreRemaining = 0;
+        armBassSwap();
+      }
       setTimeout(() => onComplete(), quick * 1000);
     },
     cancel: () => {
@@ -382,6 +464,266 @@ export function runTransition(opts: {
       deckA.gainParam.setValueAtTime(1, now);
       deckB.gainParam.cancelScheduledValues(now);
       deckB.gainParam.setValueAtTime(0, now);
+      // Restore deck A's bass — it keeps playing after a rescue.
+      if (eq && aBass) {
+        aBass.cancelScheduledValues(now);
+        aBass.setValueAtTime(0, now);
+      }
+      deckB.pause();
+    },
+  };
+}
+
+/**
+ * The loop-EQ transition (the `loop-eq` mode). Deck A holds full volume and
+ * loops its first bars while deck B blends in band-by-band with a 3-band EQ over
+ * Phase 1; then deck A fades out underneath over Phase 2. Deck B is adopted at
+ * the very end (Phase 2's end). Same {@link TransitionHandle} contract as
+ * {@link runTransition}, so orchestration is identical — only the automation
+ * differs. `onMidpoint` fires at the transition point (Phase 1's end), where the
+ * rail info swaps to deck B.
+ *
+ * Mid-flight join isn't supported here (the overlay click is rescue-only for
+ * this mode), so the fade always starts from the top; pause/resume still freeze
+ * and re-schedule the whole schedule via `elapsedTotal`.
+ */
+export function runLoopEqTransition(opts: {
+  deckA: Deck;
+  deckB: Deck;
+  plan: TransitionPlan;
+  onMidpoint?: () => void;
+  onComplete: () => void;
+}): TransitionHandle {
+  const { deckA, deckB, plan, onMidpoint, onComplete } = opts;
+  const le = plan.loopEq!;
+  const ctx = getSharedAudioContext();
+  const total = Math.max(0.05, plan.fadeSeconds);
+  const phase1 = le.phase1Sec;
+
+  const aGain = deckA.gainParam;
+  const bGain = deckB.gainParam;
+  const aBass = deckA.bassParam();
+  const aMid = deckA.midParam();
+  const aHigh = deckA.highParam();
+  const bBass = deckB.bassParam();
+  const bMid = deckB.midParam();
+  const bHigh = deckB.highParam();
+
+  // Cue deck B at its mix-in, loop deck A's first bars, and start B (A already
+  // plays). Deck A keeps its current rate; B matches A's audible tempo.
+  deckB.setCurrentTime(plan.deckBStartOffsetSec);
+  deckB.setRate(plan.deckBInitialRate);
+  deckB.play();
+  deckA.setLoop(le.loopRegion);
+
+  /** Ramp `p` from `from` (held until `startSec`) to `to` (reached at `endSec`),
+   * all in transition-time, offset by `elapsed`. */
+  const rampSeg = (
+    p: GainParamLike | null,
+    from: number,
+    to: number,
+    startSec: number,
+    endSec: number,
+    elapsed: number,
+  ) => {
+    if (!p) return;
+    const now = ctx.currentTime;
+    p.cancelScheduledValues(now);
+    const lStart = startSec - elapsed;
+    const lEnd = endSec - elapsed;
+    if (lEnd <= 0) {
+      p.setValueAtTime(to, now);
+      return;
+    }
+    if (lStart <= 0) {
+      const frac = Math.min(
+        1,
+        Math.max(0, (elapsed - startSec) / (endSec - startSec)),
+      );
+      p.setValueAtTime(from + (to - from) * frac, now);
+      p.linearRampToValueAtTime(to, now + lEnd);
+      return;
+    }
+    p.setValueAtTime(from, now);
+    p.setValueAtTime(from, now + lStart);
+    p.linearRampToValueAtTime(to, now + lEnd);
+  };
+
+  /** Hard swap `p` from `pre` to `post`, the ramp *finishing* at `atSec`
+   * (transition-time), offset by `elapsed`. Mirrors the bass swap. */
+  const stepSeg = (
+    p: GainParamLike | null,
+    pre: number,
+    post: number,
+    atSec: number,
+    elapsed: number,
+  ) => {
+    if (!p) return;
+    const now = ctx.currentTime;
+    p.cancelScheduledValues(now);
+    const lAt = atSec - elapsed;
+    if (lAt <= 0) {
+      p.setValueAtTime(post, now);
+      return;
+    }
+    const rampEnd = now + lAt;
+    const rampStart = Math.max(now, rampEnd - BASS_SWAP_SEC);
+    p.setValueAtTime(pre, now);
+    p.setValueAtTime(pre, rampStart);
+    p.linearRampToValueAtTime(post, rampEnd);
+  };
+
+  const armParams = (elapsed: number) => {
+    // Volumes: A full through Phase 1 then fades out over Phase 2; B fades in.
+    rampSeg(aGain, 1, 0, phase1, total, elapsed);
+    rampSeg(bGain, 0, 1, 0, phase1, elapsed);
+    // A EQ: highs then mids dip to the cut; bass hard-kills near the point.
+    rampSeg(
+      aHigh,
+      0,
+      le.cutDb,
+      le.highsRamp.startSec,
+      le.highsRamp.endSec,
+      elapsed,
+    );
+    rampSeg(
+      aMid,
+      0,
+      le.cutDb,
+      le.midsRamp.startSec,
+      le.midsRamp.endSec,
+      elapsed,
+    );
+    stepSeg(aBass, 0, le.killDb, le.bassKillSec, elapsed);
+    // B EQ: highs then mids open to neutral; bass hard-slams in near the point.
+    rampSeg(
+      bHigh,
+      le.cutDb,
+      0,
+      le.highsRamp.startSec,
+      le.highsRamp.endSec,
+      elapsed,
+    );
+    rampSeg(
+      bMid,
+      le.cutDb,
+      0,
+      le.midsRamp.startSec,
+      le.midsRamp.endSec,
+      elapsed,
+    );
+    stepSeg(bBass, le.killDb, 0, le.bassSlamSec, elapsed);
+  };
+
+  const hold = (p: GainParamLike | null) => {
+    if (!p) return;
+    const v = p.value;
+    p.cancelScheduledValues(ctx.currentTime);
+    p.setValueAtTime(v, ctx.currentTime);
+  };
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let midTimer: ReturnType<typeof setTimeout> | null = null;
+  let midFired = false;
+  let elapsedTotal = 0;
+  let ranAt = ctx.currentTime;
+  let paused = false;
+  let done = false;
+
+  const clearTimers = () => {
+    if (timer) clearTimeout(timer);
+    if (midTimer) clearTimeout(midTimer);
+    timer = null;
+    midTimer = null;
+  };
+  const armTimers = (elapsed: number) => {
+    if (onMidpoint && !midFired) {
+      const midRemain = phase1 - elapsed;
+      if (midRemain <= 0) {
+        midFired = true;
+        onMidpoint();
+      } else {
+        midTimer = setTimeout(() => {
+          midTimer = null;
+          midFired = true;
+          onMidpoint();
+        }, midRemain * 1000);
+      }
+    }
+    timer = setTimeout(
+      () => {
+        timer = null;
+        done = true;
+        onComplete();
+      },
+      Math.max(0, total - elapsed) * 1000,
+    );
+  };
+
+  armParams(0);
+  armTimers(0);
+
+  const allParams = [aGain, bGain, aBass, aMid, aHigh, bBass, bMid, bHigh];
+
+  return {
+    pause: () => {
+      if (paused || done) return;
+      paused = true;
+      clearTimers();
+      elapsedTotal += ctx.currentTime - ranAt;
+      allParams.forEach(hold);
+      deckA.pause();
+      deckB.pause();
+    },
+    resume: () => {
+      if (!paused || done) return;
+      paused = false;
+      ranAt = ctx.currentTime;
+      deckA.play();
+      deckB.play();
+      armParams(elapsedTotal);
+      armTimers(elapsedTotal);
+    },
+    finish: () => {
+      if (done) return;
+      done = true;
+      clearTimers();
+      const now = ctx.currentTime;
+      const quick = 0.15;
+      const quickRamp = (p: GainParamLike | null, to: number) => {
+        if (!p) return;
+        p.cancelScheduledValues(now);
+        p.setValueAtTime(p.value, now);
+        p.linearRampToValueAtTime(to, now + quick);
+      };
+      // Land the end state: A silent, B full and neutral.
+      quickRamp(aGain, 0);
+      quickRamp(bGain, 1);
+      quickRamp(bBass, 0);
+      quickRamp(bMid, 0);
+      quickRamp(bHigh, 0);
+      if (onMidpoint && !midFired) {
+        midFired = true;
+        onMidpoint();
+      }
+      setTimeout(() => onComplete(), quick * 1000);
+    },
+    cancel: () => {
+      done = true;
+      clearTimers();
+      const now = ctx.currentTime;
+      // Restore deck A (keeps playing after a rescue): full gain, flat EQ, no loop.
+      aGain.cancelScheduledValues(now);
+      aGain.setValueAtTime(1, now);
+      [aBass, aMid, aHigh].forEach((p) => {
+        if (!p) return;
+        p.cancelScheduledValues(now);
+        p.setValueAtTime(0, now);
+      });
+      deckA.setLoop(null);
+      // Silence + stop deck B (discarded).
+      bGain.cancelScheduledValues(now);
+      bGain.setValueAtTime(0, now);
       deckB.pause();
     },
   };
