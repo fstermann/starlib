@@ -28,6 +28,7 @@ import {
   computePlaybackRate,
   resolveTrackBpm,
 } from "@/components/bpm-pitcher";
+import { MarqueeText } from "@/components/marquee-text";
 import { MixControls } from "@/components/mix-controls";
 import { MixOverviewSwipe } from "@/components/mix-overview-swipe";
 import { PeaksWaveform } from "@/components/peaks-waveform";
@@ -1561,6 +1562,10 @@ export function WaveformPlayer() {
 
   const loadingProgress = duration > 0 ? currentTime / duration : 0;
 
+  // SoundCloud tracks don't carry cues/beatgrid, and loop/cue transport isn't
+  // meaningful for HLS decks — hide the whole utility bar in SC view.
+  const isSoundCloud = selectPeaksSource(currentTrack).kind === "soundcloud";
+
   // --- crossfade overlay state ---
   // Gate on the completion ref too: when the fade completes and the queue
   // advances, there is a seam render where `currentTrack` is already the
@@ -2115,112 +2120,114 @@ export function WaveformPlayer() {
     >
       {/* ===== Utility line — spans the whole player. Hot cues sit over the
           rail column; memory cues start at the waveform's left edge; the merged
-          loop control stays far right. ===== */}
-      <div
-        data-testid="player-utility-bar"
-        className="border-border flex h-8 shrink-0 items-center border-b"
-      >
-        {/* Hot cues — over the rail column (matches its 360px width). */}
-        <div className="flex w-[360px] shrink-0 items-center gap-1 overflow-hidden px-3">
-          {hotCueChips}
-        </div>
-
-        {/* Memory cues start where the waveform starts; loop control far right. */}
-        <div className="flex flex-1 items-center gap-2 pr-3 pl-2">
-          <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-            {memCueChips}
+          loop control stays far right. Hidden in SoundCloud view. ===== */}
+      {!isSoundCloud && (
+        <div
+          data-testid="player-utility-bar"
+          className="border-border flex h-8 shrink-0 items-center border-b"
+        >
+          {/* Hot cues — over the rail column (matches its 360px width). */}
+          <div className="flex w-[360px] shrink-0 items-center gap-1 overflow-hidden px-3">
+            {hotCueChips}
           </div>
 
-          {/* Loop control + detail/zoom controls, pinned to the far right. */}
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            {/* Incoming-track preview — shown only while the crossfade runs. */}
-            {isTransitioning && nextTrack && (
-              <div
-                data-testid="player-next-chip"
-                className="border-primary/40 bg-primary/5 text-primary flex h-6 items-center gap-1 rounded-md border pr-1.5 pl-2"
-                title={`Next: ${nextTitleText}`}
-              >
-                <span className="text-2xs text-muted-foreground tracking-wide uppercase">
-                  Next
-                </span>
-                <span className="max-w-32 truncate text-xs font-medium">
-                  {nextTitleText}
-                </span>
-                <ChevronRight className="size-3" />
-              </div>
-            )}
-            {/* Merged loop control: chevrons set the length, the icon+number
-                both shows it and toggles the loop. */}
-            <div className="flex items-center gap-0.5">
-              <button
-                type="button"
-                onClick={(e) => {
-                  changeLoopBeats(-1);
-                  e.currentTarget.blur();
-                }}
-                disabled={loopBeats === LOOP_BEAT_STEPS[0]}
-                className={cn(
-                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
-                  loopBeats === LOOP_BEAT_STEPS[0] &&
-                    "cursor-not-allowed opacity-40 hover:bg-transparent",
-                )}
-                title="Halve loop length"
-                aria-label="Halve loop length"
-              >
-                <ChevronLeft className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                data-testid="player-loop-btn"
-                data-active={loopActive || undefined}
-                onClick={(e) => {
-                  toggleLoop();
-                  e.currentTarget.blur();
-                }}
-                disabled={!currentBpm}
-                className={cn(
-                  "flex h-6 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs font-semibold tabular-nums transition-colors",
-                  loopActive
-                    ? "border-primary text-primary hover:bg-primary/10"
-                    : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
-                  !currentBpm &&
-                    "cursor-not-allowed opacity-40 hover:bg-transparent",
-                )}
-                title={currentBpm ? "Toggle loop" : "Loop needs a known BPM"}
-                aria-label="Toggle loop"
-              >
-                <Repeat className="size-3.5" />
-                {loopBeats}
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  changeLoopBeats(1);
-                  e.currentTarget.blur();
-                }}
-                disabled={
-                  loopBeats === LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1]
-                }
-                className={cn(
-                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
-                  loopBeats === LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1] &&
-                    "cursor-not-allowed opacity-40 hover:bg-transparent",
-                )}
-                title="Double loop length"
-                aria-label="Double loop length"
-              >
-                <ChevronRight className="size-3.5" />
-              </button>
+          {/* Memory cues start where the waveform starts; loop control far right. */}
+          <div className="flex flex-1 items-center gap-2 pr-3 pl-2">
+            <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+              {memCueChips}
             </div>
-            {zoomControls && (
-              <>
-                <div className="bg-border h-4 w-px" />
-                {zoomControls}
-              </>
-            )}
+
+            {/* Loop control + detail/zoom controls, pinned to the far right. */}
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              {/* Incoming-track preview — shown only while the crossfade runs. */}
+              {isTransitioning && nextTrack && (
+                <div
+                  data-testid="player-next-chip"
+                  className="border-primary/40 bg-primary/5 text-primary flex h-6 items-center gap-1 rounded-md border pr-1.5 pl-2"
+                  title={`Next: ${nextTitleText}`}
+                >
+                  <span className="text-2xs text-muted-foreground tracking-wide uppercase">
+                    Next
+                  </span>
+                  <span className="max-w-32 truncate text-xs font-medium">
+                    {nextTitleText}
+                  </span>
+                  <ChevronRight className="size-3" />
+                </div>
+              )}
+              {/* Merged loop control: chevrons set the length, the icon+number
+                both shows it and toggles the loop. */}
+              <div className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    changeLoopBeats(-1);
+                    e.currentTarget.blur();
+                  }}
+                  disabled={loopBeats === LOOP_BEAT_STEPS[0]}
+                  className={cn(
+                    "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
+                    loopBeats === LOOP_BEAT_STEPS[0] &&
+                      "cursor-not-allowed opacity-40 hover:bg-transparent",
+                  )}
+                  title="Halve loop length"
+                  aria-label="Halve loop length"
+                >
+                  <ChevronLeft className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  data-testid="player-loop-btn"
+                  data-active={loopActive || undefined}
+                  onClick={(e) => {
+                    toggleLoop();
+                    e.currentTarget.blur();
+                  }}
+                  disabled={!currentBpm}
+                  className={cn(
+                    "flex h-6 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs font-semibold tabular-nums transition-colors",
+                    loopActive
+                      ? "border-primary text-primary hover:bg-primary/10"
+                      : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
+                    !currentBpm &&
+                      "cursor-not-allowed opacity-40 hover:bg-transparent",
+                  )}
+                  title={currentBpm ? "Toggle loop" : "Loop needs a known BPM"}
+                  aria-label="Toggle loop"
+                >
+                  <Repeat className="size-3.5" />
+                  {loopBeats}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    changeLoopBeats(1);
+                    e.currentTarget.blur();
+                  }}
+                  disabled={
+                    loopBeats === LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1]
+                  }
+                  className={cn(
+                    "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
+                    loopBeats === LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1] &&
+                      "cursor-not-allowed opacity-40 hover:bg-transparent",
+                  )}
+                  title="Double loop length"
+                  aria-label="Double loop length"
+                >
+                  <ChevronRight className="size-3.5" />
+                </button>
+              </div>
+              {zoomControls && (
+                <>
+                  <div className="bg-border h-4 w-px" />
+                  {zoomControls}
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ===== Body: side rail + waveforms ===== */}
       <div className="flex min-h-0">
@@ -2244,12 +2251,11 @@ export function WaveformPlayer() {
             </div>
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="flex min-w-0 items-center gap-1.5">
-                <span
-                  className="text-primary truncate text-sm font-semibold"
+                <MarqueeText
+                  text={titleText}
                   title={titleText}
-                >
-                  {titleText}
-                </span>
+                  className="text-primary text-xs font-semibold"
+                />
                 {currentTrack.permalinkUrl && (
                   <a
                     href={currentTrack.permalinkUrl}
@@ -2269,7 +2275,7 @@ export function WaveformPlayer() {
               </div>
               {artistText && (
                 <span
-                  className="text-muted-foreground truncate text-xs"
+                  className="text-muted-foreground text-2xs truncate"
                   title={artistText}
                 >
                   {artistText}
