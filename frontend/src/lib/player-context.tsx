@@ -62,6 +62,10 @@ export interface PlayerTrack {
 
 interface PlayerContextValue {
   currentTrack: PlayerTrack | null;
+  /** Position of `currentTrack` in the queue (-1 when nothing is loaded).
+   * Queues can hold the same file twice in a row, so per-entry identity is
+   * `${queueIndex}:${filePath}` — filePath alone is not unique. */
+  queueIndex: number;
   isPlaying: boolean;
   /** Load a single track without playing. Replaces the queue with [track]. */
   load: (track: PlayerTrack) => void;
@@ -399,6 +403,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<PlayerContextValue>(
     () => ({
       currentTrack,
+      queueIndex,
       isPlaying,
       load,
       play,
@@ -428,6 +433,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       currentTrack,
+      queueIndex,
       isPlaying,
       load,
       play,

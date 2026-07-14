@@ -266,6 +266,87 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     expect(await incomingCanvas!.evaluate((el) => el.isConnected)).toBe(true);
   });
 
+  test("advances past a same-file queue entry after the crossfade", async ({
+    page,
+  }) => {
+    // Queues are built verbatim from listings, so the same file can sit twice
+    // in a row. The crossfade into the duplicate must still adopt and settle
+    // (regression: the player keyed its init effect on filePath alone, so the
+    // advance never re-initialized and the player wedged in "transitioning").
+    await page.route(
+      "**/api/rekordbox/playlists/pl-1/tracks",
+      jsonRoute({
+        tracks: [TRACK_A, rekTrack("t-2", "Foo", "/music/foo.flac")],
+      }),
+    );
+
+    await page.goto("/library?source=rekordbox");
+    await page.getByText("Sunday Mix").click();
+    const tracks = page.getByTestId("rekordbox-tracks");
+    await tracks.getByRole("button", { name: "Play Foo" }).first().click();
+    const player = page.getByTestId("waveform-player");
+    await expect(player).toBeVisible();
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    // The fade completes into the duplicate entry: the player must leave the
+    // transitioning state and settle back to idle (no further queue entries).
+    await expect(player).toHaveAttribute("data-mix-state", "idle", {
+      timeout: 15000,
+    });
+    // The adopted duplicate keeps playing.
+    await expect(player.getByTitle("Foo", { exact: true })).toBeVisible();
+    await expect(player.getByRole("button", { name: "Pause" })).toBeVisible();
+  });
+
+  test("changing the fade length after arming does not re-download the next track", async ({
+    page,
+  }) => {
+    // Regression: every knob change re-ran the whole arming effect, tearing
+    // down deck B and re-fetching + re-decoding the entire next track per
+    // fade-length slider step. The prepared deck must survive replanning.
+    let bazAudioFetches = 0;
+    // Long track so the mix-out point stays comfortably ahead while the
+    // slider is stepped.
+    await page.route("**/api/metadata/files/*/audio", (route) => {
+      if (route.request().url().includes("baz")) bazAudioFetches += 1;
+      return route.fulfill({
+        status: 200,
+        contentType: "audio/wav",
+        body: makeSilentWav(60),
+      });
+    });
+
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await expect(player).toHaveAttribute("data-mix-state", "armed", {
+      timeout: 15000,
+    });
+    expect(bazAudioFetches).toBe(1);
+
+    // Step the fade length 6s → 11s; each step updates the mix config and
+    // recomputes the plan.
+    const slider = page.getByTestId("mix-crossfade-seconds");
+    await slider.focus();
+    for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
+    await expect(
+      page.getByTestId("mix-crossfade-seconds-readout"),
+    ).toContainText("11s");
+
+    // The plan recomputed, but deck B was not torn down and re-decoded.
+    await page.waitForTimeout(1000);
+    await expect(player).toHaveAttribute("data-mix-state", "armed");
+    expect(bazAudioFetches).toBe(1);
+  });
+
   test("mode settings render inside the selected mode card", async ({
     page,
   }) => {

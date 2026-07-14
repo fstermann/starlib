@@ -10,6 +10,8 @@
  * primitive layer in between.
  */
 
+import type Hls from "hls.js";
+
 import {
   getSharedAudioContext,
   LoopingWebAudioPlayer,
@@ -29,6 +31,10 @@ export interface Deck {
   readonly kind: "local" | "html";
   /** The media WaveSurfer binds to after adoption. */
   readonly media: HTMLAudioElement | LoopingWebAudioPlayer;
+  /** The hls.js instance feeding an HLS element deck, or null. Travels with
+   * the deck through the hand-off store so the adopting player can attach an
+   * error handler and destroy it on teardown; `destroy()` destroys it too. */
+  readonly hls: Hls | null;
   readonly duration: number;
   /** Current playback position in seconds (for the incoming playhead). */
   readonly currentTime: number;
@@ -57,6 +63,7 @@ export function localDeck(player: LoopingWebAudioPlayer): Deck {
   return {
     kind: "local",
     media: player,
+    hls: null,
     get duration() {
       return player.duration;
     },
@@ -83,11 +90,17 @@ export function localDeck(player: LoopingWebAudioPlayer): Deck {
   };
 }
 
-/** Wrap a SoundCloud element (+ its gain route) as a deck. */
-export function htmlDeck(audio: HTMLAudioElement, route: HtmlGainRoute): Deck {
+/** Wrap a SoundCloud element (+ its gain route, + its hls.js instance for HLS
+ * streams) as a deck. */
+export function htmlDeck(
+  audio: HTMLAudioElement,
+  route: HtmlGainRoute,
+  hls: Hls | null = null,
+): Deck {
   return {
     kind: "html",
     media: audio,
+    hls,
     get duration() {
       return isFinite(audio.duration) ? audio.duration : 0;
     },
@@ -120,6 +133,7 @@ export function htmlDeck(audio: HTMLAudioElement, route: HtmlGainRoute): Deck {
     destroy: () => {
       audio.pause();
       route.dispose();
+      hls?.destroy();
       audio.src = "";
       audio.remove();
     },
@@ -129,7 +143,7 @@ export function htmlDeck(audio: HTMLAudioElement, route: HtmlGainRoute): Deck {
 /** Build an incoming SoundCloud deck B from a resolved stream URL (starts silent). */
 export async function createIncomingHtmlDeck(url: string): Promise<Deck> {
   const src = await createHtmlDeck(url, 0);
-  return htmlDeck(src.audio, src.route);
+  return htmlDeck(src.audio, src.route, src.hls);
 }
 
 /** Build an incoming local deck B from a source URL (decodes the buffer). */
@@ -153,13 +167,25 @@ const BASS_SWAP_SEC = 0.03;
 
 const CURVE_STEPS = 64;
 
-/** Equal-power fade curve (constant perceived loudness through the mix). */
-function equalPowerCurve(from: number, to: number): Float32Array {
+/**
+ * Equal-power fade curve (constant perceived loudness through the mix): sweep
+ * a quarter-circle angle linearly and take sin (fading up) or cos (fading
+ * down), so a complementary up/down pair holds a² + b² = 1 through the whole
+ * fade. Using the sin shape for both directions dips the summed power to
+ * ~0.59 mid-fade — an audible ~2.3 dB hole in every crossfade.
+ */
+export function equalPowerCurve(from: number, to: number): Float32Array {
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+  const up = to >= from;
+  const angleOf = (v: number) =>
+    up ? Math.asin(clamp01(v)) : Math.acos(clamp01(v));
+  const a0 = angleOf(from);
+  const a1 = angleOf(to);
   const c = new Float32Array(CURVE_STEPS);
   for (let i = 0; i < CURVE_STEPS; i++) {
     const t = i / (CURVE_STEPS - 1);
-    // cos/sin quarter-turn between the endpoints.
-    c[i] = from + (to - from) * Math.sin((t * Math.PI) / 2);
+    const angle = a0 + (a1 - a0) * t;
+    c[i] = up ? Math.sin(angle) : Math.cos(angle);
   }
   return c;
 }
@@ -193,6 +219,46 @@ function rampRate(
   param.cancelScheduledValues(now);
   param.setValueAtTime(from, now);
   param.linearRampToValueAtTime(to, now + seconds);
+}
+
+/** A piecewise-linear playback-rate schedule: hold `fromRate` until
+ * `startSec`, ramp linearly to `toRate` over `durationSec`, hold after. */
+export interface RateRampSegment {
+  fromRate: number;
+  toRate: number;
+  /** Wall-clock seconds before the ramp starts (default 0). */
+  startSec?: number;
+  /** Ramp length in wall-clock seconds. */
+  durationSec: number;
+}
+
+/**
+ * Audio-time a deck advances over `elapsedSec` of wall clock while its
+ * playback rate follows `ramp` — the integral of the piecewise-linear rate.
+ * Automating the rate `AudioParam` bypasses the player's scalar rate
+ * bookkeeping, which folds wall-clock elapsed at the stale scalar rate on
+ * pause; the pause paths use this to place the deck where the ramp actually
+ * took it.
+ */
+export function rampedElapsedAudioTime(
+  ramp: RateRampSegment,
+  elapsedSec: number,
+): number {
+  const e = Math.max(0, elapsedSec);
+  const start = Math.max(0, ramp.startSec ?? 0);
+  const d = Math.max(0, ramp.durationSec);
+  const pre = Math.min(e, start);
+  const inRamp = Math.min(Math.max(0, e - start), d);
+  const post = Math.max(0, e - start - d);
+  const rateAtRampEnd =
+    d > 0
+      ? ramp.fromRate + (ramp.toRate - ramp.fromRate) * (inRamp / d)
+      : ramp.toRate;
+  return (
+    pre * ramp.fromRate +
+    (inRamp * (ramp.fromRate + rateAtRampEnd)) / 2 +
+    post * ramp.toRate
+  );
 }
 
 // --- transition runner ---------------------------------------------------
@@ -256,12 +322,23 @@ export function runTransition(opts: {
     plan.gainCurve === "equalPower"
       ? Math.sin((progress * Math.PI) / 2)
       : progress;
-  const aFrom = deckA.gainParam.value * (1 - bGainNow);
+  // Deck A joins at the complement of deck B's gain — for equal power that's
+  // the circle complement (a² + b² = 1), not the linear one.
+  const aComplement =
+    plan.gainCurve === "equalPower"
+      ? Math.sqrt(Math.max(0, 1 - bGainNow * bGainNow))
+      : 1 - bGainNow;
+  const aFrom = deckA.gainParam.value * aComplement;
   rampGain(deckA.gainParam, ctx, aFrom, 0, left, plan.gainCurve);
   rampGain(deckB.gainParam, ctx, bGainNow, 1, left, plan.gainCurve);
 
   // Tempo ramp (beatgrid without beat-sync): automate the buffer-source
   // playbackRate on both decks. Element decks return null and simply hold their entry rate.
+  // For each ramping deck, remember its position and rate schedule at arm time:
+  // the automation bypasses the player's scalar rate bookkeeping, so pause must
+  // recompute the true position from the ramp (see rampedElapsedAudioTime).
+  let aRampState: (RateRampSegment & { posAtArm: number }) | null = null;
+  let bRampState: (RateRampSegment & { posAtArm: number }) | null = null;
   if (plan.rateRamp) {
     const aRate = deckA.rateParam();
     if (aRate) {
@@ -269,10 +346,22 @@ export function runTransition(opts: {
         plan.rateRamp.deckAFrom +
         (plan.rateRamp.deckATo - plan.rateRamp.deckAFrom) * progress;
       rampRate(aRate, ctx, aRateNow, plan.rateRamp.deckATo, left);
+      aRampState = {
+        posAtArm: deckA.currentTime,
+        fromRate: aRateNow,
+        toRate: plan.rateRamp.deckATo,
+        durationSec: left,
+      };
     }
     const bRate = deckB.rateParam();
     if (bRate) {
       rampRate(bRate, ctx, bRateNow, plan.rateRamp.deckBTo, left);
+      bRampState = {
+        posAtArm: deckB.currentTime,
+        fromRate: bRateNow,
+        toRate: plan.rateRamp.deckBTo,
+        durationSec: left,
+      };
     }
   }
 
@@ -391,6 +480,18 @@ export function runTransition(opts: {
       }
       deckA.pause();
       deckB.pause();
+      // setRate/pause folded the wall-clock elapsed at the stale scalar rate —
+      // place each ramping deck at the position the ramp actually reached.
+      if (aRampState) {
+        deckA.setCurrentTime(
+          aRampState.posAtArm + rampedElapsedAudioTime(aRampState, elapsed),
+        );
+      }
+      if (bRampState) {
+        deckB.setCurrentTime(
+          bRampState.posAtArm + rampedElapsedAudioTime(bRampState, elapsed),
+        );
+      }
     },
     resume: () => {
       if (!paused || done) return;
@@ -418,10 +519,22 @@ export function runTransition(opts: {
         const aRate = deckA.rateParam();
         if (aRate) {
           rampRate(aRate, ctx, aRate.value, plan.rateRamp.deckATo, remaining);
+          aRampState = {
+            posAtArm: deckA.currentTime,
+            fromRate: aRate.value,
+            toRate: plan.rateRamp.deckATo,
+            durationSec: remaining,
+          };
         }
         const bRate = deckB.rateParam();
         if (bRate) {
           rampRate(bRate, ctx, bRate.value, plan.rateRamp.deckBTo, remaining);
+          bRampState = {
+            posAtArm: deckB.currentTime,
+            fromRate: bRate.value,
+            toRate: plan.rateRamp.deckBTo,
+            durationSec: remaining,
+          };
         }
       }
       if (eq) armBassSwap();
@@ -516,13 +629,27 @@ export function runLoopEqTransition(opts: {
   const bMid = deckB.midParam();
   const bHigh = deckB.highParam();
 
-  // Cue deck B `elapsed` into the transition (constant rate — loop-eq never
-  // ramps), loop deck A's first bars, and start B (A already plays). Deck A
-  // keeps its current rate; B matches A's audible tempo.
+  // Deck B's rate schedule: the matched entry rate through Phase 1, then
+  // (non-beat-sync only) a ramp to `deckBEndRate` over Phase 2 so the rebuilt
+  // player adopts it at a rate it will keep (see planLoopEq).
+  const bRateSeg: RateRampSegment = {
+    fromRate: plan.deckBInitialRate,
+    toRate: le.deckBEndRate ?? plan.deckBInitialRate,
+    startSec: phase1,
+    durationSec: le.phase2Sec,
+  };
+
+  // Cue deck B `elapsed` into the transition (at the audio-time its rate
+  // schedule consumed by now), loop deck A's first bars, and start B (A
+  // already plays). Deck A keeps its current rate; B matches A's audible tempo.
   deckB.setCurrentTime(
-    plan.deckBStartOffsetSec + elapsed * plan.deckBInitialRate,
+    plan.deckBStartOffsetSec + rampedElapsedAudioTime(bRateSeg, elapsed),
   );
-  deckB.setRate(plan.deckBInitialRate);
+  deckB.setRate(
+    bRateSeg.fromRate +
+      (bRateSeg.toRate - bRateSeg.fromRate) *
+        Math.min(1, Math.max(0, (elapsed - phase1) / le.phase2Sec)),
+  );
   deckB.play();
   // Mid-flight join: place deck A at the matching phase inside its loop so its
   // beats stay locked to deck B — a seek may have left it anywhere in the
@@ -633,6 +760,19 @@ export function runLoopEqTransition(opts: {
       elapsed,
     );
     stepSeg(bBass, le.killDb, 0, le.bassSlamSec, elapsed);
+    // Deck B tempo: hold the entry rate through Phase 1, then ramp to the end
+    // rate over Phase 2 (skipped for a constant-rate plan). Re-fetched every
+    // arm — a local deck rebuilds its buffer node (and rate param) on resume.
+    if (le.deckBEndRate != null) {
+      rampSeg(
+        deckB.rateParam(),
+        plan.deckBInitialRate,
+        le.deckBEndRate,
+        phase1,
+        total,
+        elapsed,
+      );
+    }
   };
 
   const hold = (p: GainParamLike | null) => {
@@ -692,8 +832,20 @@ export function runLoopEqTransition(opts: {
       clearTimers();
       elapsedTotal += ctx.currentTime - ranAt;
       allParams.forEach(hold);
+      const bRate = le.deckBEndRate != null ? deckB.rateParam() : null;
+      // Persist the ramped rate through the scalar setter — the buffer node is
+      // rebuilt on resume, which would otherwise snap back to the entry rate.
+      if (bRate) deckB.setRate(bRate.value);
       deckA.pause();
       deckB.pause();
+      // setRate/pause folded the wall-clock elapsed at the stale scalar rate —
+      // place deck B at the position its rate schedule actually reached.
+      if (bRate) {
+        deckB.setCurrentTime(
+          plan.deckBStartOffsetSec +
+            rampedElapsedAudioTime(bRateSeg, elapsedTotal),
+        );
+      }
     },
     resume: () => {
       if (!paused || done) return;
@@ -716,12 +868,17 @@ export function runLoopEqTransition(opts: {
         p.setValueAtTime(p.value, now);
         p.linearRampToValueAtTime(to, now + quick);
       };
-      // Land the end state: A silent, B full and neutral.
+      // Land the end state: A silent, B full and neutral, at its end rate.
       quickRamp(aGain, 0);
       quickRamp(bGain, 1);
       quickRamp(bBass, 0);
       quickRamp(bMid, 0);
       quickRamp(bHigh, 0);
+      if (le.deckBEndRate != null) {
+        const bRate = deckB.rateParam();
+        if (bRate) quickRamp(bRate, le.deckBEndRate);
+        else deckB.setRate(le.deckBEndRate);
+      }
       if (onMidpoint && !midFired) {
         midFired = true;
         onMidpoint();

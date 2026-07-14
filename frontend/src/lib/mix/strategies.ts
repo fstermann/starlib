@@ -106,6 +106,15 @@ export interface TransitionPlan {
     /** dB targets: `cutDb` = 10 o'clock cut, `killDb` = bass kill. */
     cutDb: number;
     killDb: number;
+    /**
+     * Rate deck B ramps to over Phase 2, or null to hold `deckBInitialRate`
+     * throughout. Set (to deck B's natural rate, 1) when beat-sync is off: the
+     * pitcher won't hold the matched entry rate after adoption, so without the
+     * ramp deck B would snap to its own tempo at the seam. Phase 1 (the loop
+     * blend) always runs tempo-matched; during the ramp deck A's fading loop
+     * drifts out of lock — the same known limitation as the beatgrid ramp.
+     */
+    deckBEndRate: number | null;
   } | null;
 }
 
@@ -241,8 +250,11 @@ function planBeatgrid(ctx: TransitionContext): TransitionPlan {
   const win = deckAMixOutWindow(ctx);
   if (win == null) return planCrossfade(ctx, true);
   if (ctx.beatSync) {
-    const rateA = ctx.targetBpm / ctx.deckA.bpm!;
-    const rateB = ctx.targetBpm / ctx.deckB.bpm!;
+    // The pitcher-clamped rates from ctx, not raw targetBpm/bpm: past the
+    // pitcher's clamp the raw ratio diverges the fade timer from real playback
+    // and enters deck B at a rate the pitcher won't keep after adoption.
+    const rateA = ctx.deckADesiredRate;
+    const rateB = ctx.deckBDesiredRate;
     return {
       mode: "beatgrid",
       fellBack: false,
@@ -326,9 +338,10 @@ function planBeatgridEq(ctx: TransitionContext): TransitionPlan {
  * DJ-mixer loop + 3-band EQ blend. Deck A loops its first {@link LOOP_EQ_BARS}
  * bars and holds full volume while deck B blends in band-by-band (highs → mids →
  * a bass hard-swap) over Phase 1 (`matchBars` bars); then deck A fades out
- * underneath over Phase 2 (another `matchBars` bars). Both decks hold a constant
- * rate matched to deck A's current audible tempo (no rate ramp — a ramp would
- * misalign the loop). Falls back to `crossfade` with no grid.
+ * underneath over Phase 2 (another `matchBars` bars). Deck B enters tempo-
+ * matched and Phase 1 runs at constant rates (a ramp would misalign the loop);
+ * with beat-sync off deck B ramps to its natural rate over Phase 2 so the
+ * adoption doesn't snap its tempo. Falls back to `crossfade` with no grid.
  */
 function planLoopEq(ctx: TransitionContext): TransitionPlan {
   if (!hasGrid(ctx.deckA) || !hasGrid(ctx.deckB))
@@ -338,8 +351,15 @@ function planLoopEq(ctx: TransitionContext): TransitionPlan {
 
   const rateA = ctx.deckACurrentRate;
   const audibleBpmA = ctx.deckA.bpm! * rateA;
-  // Deck B enters matched to deck A's current audible tempo, then holds it.
-  const deckBInitialRate = audibleBpmA / ctx.deckB.bpm!;
+  // Deck B enters tempo-matched. With beat-sync the pitcher holds its clamped
+  // desired rate after adoption, so enter at that (equal to the audible match
+  // whenever the clamp isn't engaged); without it, enter matched to deck A's
+  // audible tempo and ramp to the natural rate over Phase 2 — the pitcher is
+  // off, so the rebuilt player would otherwise snap deck B to rate 1 at the
+  // adoption seam (mirrors planBeatgrid's non-sync ramp).
+  const deckBInitialRate = ctx.beatSync
+    ? ctx.deckBDesiredRate
+    : audibleBpmA / ctx.deckB.bpm!;
 
   const barSecA = win.fadeOnASec / win.bars; // deck A track-seconds per bar
   const phaseNSec = win.fadeOnASec / rateA; // wall seconds for `bars` bars
@@ -375,6 +395,7 @@ function planLoopEq(ctx: TransitionContext): TransitionPlan {
       bassSlamSec: Math.max(0, phaseNSec - EQ_RESTORE_LEAD_BEATS * beatSecWall),
       cutDb: EQ_CUT_DB,
       killDb: EQ_KILL_DB,
+      deckBEndRate: ctx.beatSync ? null : 1,
     },
   };
 }

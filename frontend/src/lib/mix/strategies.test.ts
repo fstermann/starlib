@@ -38,19 +38,24 @@ function deck(
   };
 }
 
+/** The pitcher's playback-rate clamp (see computePlaybackRate in bpm-pitcher.tsx). */
+const clampRate = (raw: number) => Math.min(2, Math.max(0.5, raw));
+
 function ctx(
   config: Partial<MixConfig>,
   deckA: DeckInfo,
   deckB: DeckInfo,
   extra: Partial<TransitionContext> = {},
 ): TransitionContext {
+  // Desired rates mirror what the app passes: the pitcher-clamped target/bpm.
+  const targetBpm = extra.targetBpm ?? 128;
   return {
     deckA,
     deckB,
     deckACurrentRate: 1,
-    deckADesiredRate: 1,
-    deckBDesiredRate: 1,
-    targetBpm: 128,
+    deckADesiredRate: deckA.bpm ? clampRate(targetBpm / deckA.bpm) : 1,
+    deckBDesiredRate: deckB.bpm ? clampRate(targetBpm / deckB.bpm) : 1,
+    targetBpm,
     beatSync: true,
     config: { ...DEFAULT_MIX_CONFIG, ...config },
     ...extra,
@@ -195,6 +200,24 @@ describe("planTransition — beatgrid (beat-sync on)", () => {
       endDownbeat.timeSec,
       6,
     );
+  });
+
+  it("uses the pitcher-clamped rates when the raw ratio exceeds the clamp", () => {
+    // target 200 over 90 BPM decks → raw rate 2.22, but the pitcher clamps to
+    // 2.0 — the plan must use the clamped rate for both the fade timer and
+    // deck B's entry rate, or they diverge from real playback.
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid", matchBars: 16, sectionAware: false },
+        deck(90, 300),
+        deck(90, 300),
+        { targetBpm: 200 },
+      ),
+    );
+    expect(plan.mode).toBe("beatgrid");
+    expect(plan.deckBInitialRate).toBeCloseTo(2, 5);
+    // 16 bars of deck-A grid @90 BPM played at the clamped rate 2.0.
+    expect(plan.fadeSeconds).toBeCloseTo((16 * 4 * (60 / 90)) / 2, 3);
   });
 
   it("section-aware skips deck B's intro", () => {
@@ -348,6 +371,35 @@ describe("planTransition — loop-eq (loop + 3-band EQ blend)", () => {
     expect(le.bassKillSec).toBeCloseTo(30 - 2 * 1.875, 5);
     expect(le.bassSlamSec).toBeCloseTo(30 - 0.46875, 5);
     expect(le.killDb).toBeLessThan(le.cutDb); // kill is a deeper cut
+  });
+
+  it("beat-sync on holds the pitcher's constant matched rate (no end ramp)", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "loop-eq", matchBars: 16, sectionAware: false },
+        deck(128, 300),
+        deck(130, 300),
+        { targetBpm: 128 },
+      ),
+    );
+    expect(plan.deckBInitialRate).toBeCloseTo(128 / 130, 5);
+    expect(plan.loopEq!.deckBEndRate).toBeNull();
+  });
+
+  it("beat-sync off enters matched, then ramps deck B to its natural rate", () => {
+    // 140 → 126: with the pitcher off, deck B enters pitched to deck A's
+    // audible tempo but must end at rate 1 — the rebuilt player won't hold the
+    // matched rate after adoption, so without the ramp the tempo snaps there.
+    const plan = planTransition(
+      ctx(
+        { mode: "loop-eq", matchBars: 16, sectionAware: false },
+        deck(140, 300),
+        deck(126, 300),
+        { targetBpm: 128, deckACurrentRate: 1, beatSync: false },
+      ),
+    );
+    expect(plan.deckBInitialRate).toBeCloseTo(140 / 126, 5);
+    expect(plan.loopEq!.deckBEndRate).toBe(1);
   });
 
   it("falls back to a plain crossfade with no loopEq when a deck has no grid", () => {

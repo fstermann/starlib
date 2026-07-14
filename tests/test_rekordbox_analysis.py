@@ -32,10 +32,10 @@ def _detail(fourcc: bytes, entry_bytes: int, entries: bytes) -> bytes:
     return fourcc + struct.pack(">II", 24, 12 + len(body)) + body
 
 
-def _pcp2(hot_cue: int, time_ms: int, rgb: tuple[int, int, int]) -> bytes:
+def _pcp2(hot_cue: int, time_ms: int, rgb: tuple[int, int, int], *, cue_type: int = 1, loop_time: int = -1) -> bytes:
     r, g, b = rgb
-    e = b"PCP2" + struct.pack(">III", 16, 48, hot_cue) + struct.pack(">B", 1) + b"\x00" * 3
-    e += struct.pack(">i", time_ms) + struct.pack(">i", -1) + struct.pack(">B", 0) + b"\x00" * 7
+    e = b"PCP2" + struct.pack(">III", 16, 48, hot_cue) + struct.pack(">B", cue_type) + b"\x00" * 3
+    e += struct.pack(">i", time_ms) + struct.pack(">i", loop_time) + struct.pack(">B", 0) + b"\x00" * 7
     e += struct.pack(">HH", 0, 0) + struct.pack(">I", 0) + struct.pack(">BBBB", 0, r, g, b)
     return e
 
@@ -43,6 +43,18 @@ def _pcp2(hot_cue: int, time_ms: int, rgb: tuple[int, int, int]) -> bytes:
 def _pco2(cue_type: int, entries: list[bytes]) -> bytes:
     content = struct.pack(">I", cue_type) + struct.pack(">HH", len(entries), 0) + b"".join(entries)
     return b"PCO2" + struct.pack(">II", 20, 12 + len(content)) + content
+
+
+def _pcpt(hot_cue: int, time_ms: int, *, cue_type: int = 1, loop_time: int = -1) -> bytes:
+    e = b"PCPT" + struct.pack(">III", 28, 56, hot_cue) + struct.pack(">II", 4, 0x10000)
+    e += struct.pack(">HH", 0xFFFF, 0xFFFF) + struct.pack(">B", cue_type) + b"\x00" + struct.pack(">H", 1000)
+    e += struct.pack(">I", time_ms) + struct.pack(">i", loop_time) + b"\x00" * 16
+    return e
+
+
+def _pcob(cue_type: int, entries: list[bytes]) -> bytes:
+    content = struct.pack(">IHHi", cue_type, 0, len(entries), -1) + b"".join(entries)
+    return b"PCOB" + struct.pack(">II", 24, 12 + len(content)) + content
 
 
 def _pssi(mood: int, end_beat: int, entries: list[tuple[int, int, int]], *, garble: bool = False) -> bytes:
@@ -97,6 +109,36 @@ def test_parse_cues_prefers_pco2() -> None:
     cues = A.parse_cues(None, ext)
     assert cues[0] == A.Cue(type="hot", index=1, time_ms=1406, color="#ff8800", comment=None)
     assert cues[1] == A.Cue(type="memory", index=None, time_ms=5000, color=None, comment=None)
+
+
+def test_parse_pco2_loop_cue_carries_out_ms() -> None:
+    ext = _anlz(
+        _pco2(
+            1,
+            [
+                _pcp2(1, 1000, (0, 0, 0), cue_type=2, loop_time=9000),  # loop → out_ms
+                _pcp2(2, 5000, (0, 0, 0), cue_type=2, loop_time=-1),  # loop type, unset end
+                _pcp2(3, 7000, (0, 0, 0), cue_type=1, loop_time=9999),  # point → ignored
+            ],
+        )
+    )
+    cues = A.parse_cues(None, ext)
+    assert [c.out_ms for c in cues] == [9000, None, None]
+
+
+def test_parse_pcob_loop_cue_carries_out_ms() -> None:
+    dat = _anlz(
+        _pcob(
+            0,
+            [
+                _pcpt(0, 2000, cue_type=2, loop_time=6000),  # memory loop → out_ms
+                _pcpt(0, 8000, cue_type=2, loop_time=-1),  # loop type, unset end
+                _pcpt(0, 9000),  # plain memory point
+            ],
+        )
+    )
+    cues = A.parse_cues(dat, None)
+    assert [c.out_ms for c in cues] == [6000, None, None]
 
 
 class _CueRow:

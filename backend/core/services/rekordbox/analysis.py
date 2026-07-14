@@ -165,6 +165,25 @@ def _beat_to_ms(beat_number: int, beatgrid: list[Beat]) -> int:
 
 # -- Cues (PCO2 preferred, PCOB fallback) ---------------------------------------
 
+_NO_LOOP = 0xFFFFFFFF  # loop_time when a cue carries no loop (unsigned -1)
+
+
+def _loop_out_ms(is_loop: bool, loop_time: int, time_ms: int) -> int | None:
+    """Resolve a loop cue's end in ms, mirroring :func:`cues_from_db_rows`.
+
+    Args:
+        is_loop: Whether the ANLZ cue type byte marks a loop.
+        loop_time: The raw ``loop_time`` field (unsigned; ``0xFFFFFFFF`` = unset).
+        time_ms: The cue's in-point in ms.
+
+    Returns:
+        The loop end in ms, or ``None`` when the cue is not a valid loop.
+    """
+    if not is_loop:
+        return None
+    out = int(loop_time)
+    return out if out != _NO_LOOP and out > time_ms else None
+
 
 def _parse_pco2(tag: bytes) -> list[Cue]:
     """Parse an extended (nxs2) PCO2 cue tag via pyrekordbox's construct struct."""
@@ -178,13 +197,15 @@ def _parse_pco2(tag: bytes) -> list[Cue]:
         if e.color_red or e.color_green or e.color_blue:
             color = f"#{e.color_red:02x}{e.color_green:02x}{e.color_blue:02x}"
         comment = str(e.comment) if e.comment else None
+        time_ms = int(e.time)
         cues.append(
             Cue(
                 type="hot" if hot else "memory",
                 index=hot or None,
-                time_ms=int(e.time),
+                time_ms=time_ms,
                 color=color,
                 comment=comment,
+                out_ms=_loop_out_ms(int(e.type) == 2, e.loop_time, time_ms),
             )
         )
     return cues
@@ -198,13 +219,15 @@ def _parse_pcob(tag: bytes) -> list[Cue]:
     cues: list[Cue] = []
     for e in parsed.content.entries:
         hot = int(e.hot_cue)
+        time_ms = int(e.time)
         cues.append(
             Cue(
                 type="hot" if hot else "memory",
                 index=hot or None,
-                time_ms=int(e.time),
+                time_ms=time_ms,
                 color=None,
                 comment=None,
+                out_ms=_loop_out_ms(str(e.type) == "loop", e.loop_time, time_ms),
             )
         )
     return cues
