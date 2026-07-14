@@ -483,14 +483,19 @@ export function runTransition(opts: {
  * differs. `onMidpoint` fires at the transition point (Phase 1's end), where the
  * rail info swaps to deck B.
  *
- * Mid-flight join isn't supported here (the overlay click is rescue-only for
- * this mode), so the fade always starts from the top; pause/resume still freeze
- * and re-schedule the whole schedule via `elapsedTotal`.
+ * `elapsedSec` (wall-clock) joins the transition mid-flight — a seek landed
+ * past the mix-out point, or a post-swipe click re-timed the fade: deck B cues
+ * that far past its own mix-in, deck A is placed at the matching phase inside
+ * its loop (so the beats stay locked), the band/gain automation starts at its
+ * mid-schedule values, and the clocks run only the remainder. `onMidpoint`
+ * fires synchronously if the join is already past the transition point.
+ * Pause/resume freeze and re-schedule the whole schedule via `elapsedTotal`.
  */
 export function runLoopEqTransition(opts: {
   deckA: Deck;
   deckB: Deck;
   plan: TransitionPlan;
+  elapsedSec?: number;
   onMidpoint?: () => void;
   onComplete: () => void;
 }): TransitionHandle {
@@ -498,6 +503,8 @@ export function runLoopEqTransition(opts: {
   const le = plan.loopEq!;
   const ctx = getSharedAudioContext();
   const total = Math.max(0.05, plan.fadeSeconds);
+  // Always leave a sliver of transition to run, even on a seek past the end.
+  const elapsed = Math.min(Math.max(opts.elapsedSec ?? 0, 0), total - 0.05);
   const phase1 = le.phase1Sec;
 
   const aGain = deckA.gainParam;
@@ -509,11 +516,24 @@ export function runLoopEqTransition(opts: {
   const bMid = deckB.midParam();
   const bHigh = deckB.highParam();
 
-  // Cue deck B at its mix-in, loop deck A's first bars, and start B (A already
-  // plays). Deck A keeps its current rate; B matches A's audible tempo.
-  deckB.setCurrentTime(plan.deckBStartOffsetSec);
+  // Cue deck B `elapsed` into the transition (constant rate — loop-eq never
+  // ramps), loop deck A's first bars, and start B (A already plays). Deck A
+  // keeps its current rate; B matches A's audible tempo.
+  deckB.setCurrentTime(
+    plan.deckBStartOffsetSec + elapsed * plan.deckBInitialRate,
+  );
   deckB.setRate(plan.deckBInitialRate);
   deckB.play();
+  // Mid-flight join: place deck A at the matching phase inside its loop so its
+  // beats stay locked to deck B — a seek may have left it anywhere in the
+  // window (even past the loop end, where the native loop never engages). The
+  // natural trigger lands at the loop start, where this is a no-op.
+  const loopLen = le.loopRegion.end - le.loopRegion.start;
+  const rateA = deckA.media.playbackRate || 1;
+  const aTarget = le.loopRegion.start + ((elapsed * rateA) % loopLen);
+  if (Math.abs(aTarget - deckA.currentTime) > 0.05) {
+    deckA.setCurrentTime(aTarget);
+  }
   deckA.setLoop(le.loopRegion);
 
   /** Ramp `p` from `from` (held until `startSec`) to `to` (reached at `endSec`),
@@ -625,7 +645,7 @@ export function runLoopEqTransition(opts: {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let midTimer: ReturnType<typeof setTimeout> | null = null;
   let midFired = false;
-  let elapsedTotal = 0;
+  let elapsedTotal = elapsed;
   let ranAt = ctx.currentTime;
   let paused = false;
   let done = false;
@@ -660,8 +680,8 @@ export function runLoopEqTransition(opts: {
     );
   };
 
-  armParams(0);
-  armTimers(0);
+  armParams(elapsed);
+  armTimers(elapsed);
 
   const allParams = [aGain, bGain, aBass, aMid, aHigh, bBass, bMid, bHigh];
 

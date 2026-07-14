@@ -93,8 +93,12 @@ ramp windows, and the bass swap times.
 `onMidpoint` fires at the transition point (`mixPastMid` → the rail info and
 phrase band swap to deck B). `pause/resume/finish/cancel` re-schedule the whole
 two-phase automation off a single `elapsedTotal`; `cancel` (rescue) clears deck
-A's loop and restores it. A **mid-flight join is not supported** (the overlay
-click is rescue-only for this mode).
+A's loop and restores it. A **mid-flight join** (`elapsedSec`) works like
+`runTransition`'s: deck B cues that far past its mix-in and deck A is placed at
+the **matching phase inside its loop** (a seek can leave it anywhere in the
+window — even past the loop end, where the native loop never engages), so the
+beats stay locked; the band/gain automation and the clocks run only the
+remainder.
 
 **Visualization** is mode-aware (branch on `plan.loopEq`) — the swipe/collapse
 model doesn't fit a deck A that plays the whole time. Both surfaces localise the
@@ -268,23 +272,28 @@ centred) as the resting overview waveform, so entering/leaving a transition
 never changes the waveform's size — the overlay's full-row opaque box exists
 only to hide the base waveform and markers beneath it.
 
-**Playheads + navigation during the fade.** Each layer draws its own deck's
-playhead line *inside* the transformed layer (a `left: progress%` element), so
-the clip and swipe transforms place it correctly in both phases. The overlay is
-clickable: **before the swipe** the view is the old track at its natural scale
-and a click is a rescue — the fade is cancelled (deck A restored to full
-gain and its pitched rate, deck B discarded), the old track jumps to the
-clicked time, and the prepare effect re-arms (via a `rearmTick` bump) so the
-mix fires again on the next pass over the mix-out point. **After the swipe**
-the view is the incoming track at its true scale, and the click maps to a
-deck-B time. Inside the fade window the whole fade is **re-timed** to that
-moment: deck A is repositioned to the matching point (`mixOut + elapsed ×
-rateA`), the running handle is cancelled and relaunched with the new
-`elapsedSec`, and `mixPastMid` is recomputed (a click back into the first half
-reverses the swipe and re-fires it at the new midpoint). Outside the window
-(deck B's body, or its never-played intro) the old track has no business
-playing on — deck B cues there and the handle **finishes** immediately: a
-quick 0.15 s ramp to the end states, then the normal completion/adoption path.
+**Playheads, cues + navigation during the fade.** Each layer draws its own
+deck's playhead line *inside* the transformed layer (a `left: progress%`
+element), so the clip and swipe transforms place it correctly in both phases.
+Each layer also draws its own track's **hot/memory cue pips** the same way
+(display-only — the overlay's click handler owns navigation); without them the
+opaque overlay would hide the base overview's markers for the whole fade. The
+overlay is clickable: **before the swipe** the view is the old track at its
+natural scale and a click is a rescue — the fade is cancelled (deck A restored
+to full gain and its pitched rate, deck B discarded), the old track jumps to
+the clicked time, and the prepare effect re-arms (via a `rearmTick` bump) so
+the mix fires again on the next pass over the mix-out point. **After the
+swipe** the view is the incoming track at its true scale, and the click maps
+to a deck-B time. Inside the fade window the whole fade is **re-timed** to
+that moment: deck A is repositioned to the matching point (`mixOut + elapsed ×
+rateA` — or, for loop-eq, the matching phase inside its loop, handled by the
+relaunched runner), the running handle is cancelled and relaunched with the
+new `elapsedSec`, and `mixPastMid` is recomputed (a click back into the first
+half reverses the swipe and re-fires it at the new midpoint). Outside the
+window (deck B's body, or its never-played intro) the old track has no
+business playing on — deck B cues there and the handle **finishes**
+immediately: a quick 0.15 s ramp to the end states, then the normal
+completion/adoption path.
 
 The **phrase band** (section labels under the overview) tracks what the
 overview shows: the old track's sections until the swipe, the incoming track's

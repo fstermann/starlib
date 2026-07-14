@@ -628,12 +628,14 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     );
   });
 
-  test("loop + EQ loops deck A, blends deck B in over two phases, and adopts", async ({
-    page,
-  }) => {
-    // Dense grid so the bar-aligned loop-eq strategy engages; the section ends
-    // early (10s) so the mix-out point is a couple bars in, but the track is
-    // long (24s) so deck B has content for the full 2×overlap window.
+  /**
+   * Route setup + mode selection for the loop-eq specs. Dense grid so the
+   * bar-aligned strategy engages; the section ends early (10s) so the mix-out
+   * point is a couple bars in (2s with 8 bars), but the track is long (24s) so
+   * deck B has content for the full 2×overlap window. Timeline: mix-out 2s,
+   * loop 2–6s, Phase 1 ends 10s in (the swipe), adoption 18s in.
+   */
+  async function startLoopEq(page: Page) {
     const beatgrid = [];
     for (let t = 0, beat = 1; t <= 24000; t += 250, beat = (beat % 4) + 1) {
       beatgrid.push({ beat, bpm: 124, timeMs: t });
@@ -655,11 +657,21 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     await playFirst(page);
     const player = page.getByTestId("waveform-player");
 
+    // Configure the mode/bars BEFORE enabling: with 16 bars (the default) the
+    // mix-out point sits at 0s, so enabling first fires the transition before
+    // the remaining clicks apply.
     await player.getByTestId("mix-controls-trigger").click();
-    await page.getByTestId("mix-enabled-toggle").click();
     await page.getByTestId("mix-mode-loop-eq").click();
     await page.getByTestId("mix-bars-8").click();
+    await page.getByTestId("mix-enabled-toggle").click();
     await page.keyboard.press("Escape");
+    return player;
+  }
+
+  test("loop + EQ loops deck A, blends deck B in over two phases, and adopts", async ({
+    page,
+  }) => {
+    const player = await startLoopEq(page);
 
     // The two-phase loop-eq transition fires and its overview shows the loop
     // region highlight (proof the loop-eq overlay branch rendered, not the
@@ -681,5 +693,106 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
       "transitioning",
       { timeout: 15000 },
     );
+  });
+
+  test("loop + EQ: post-swipe clicks skip into the incoming track", async ({
+    page,
+  }) => {
+    const player = await startLoopEq(page);
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    // Wait for the swipe (Phase 1's end): the incoming layer settles at
+    // identity — the view is now track B at its true scale.
+    const newLayer = player
+      .getByTestId("player-overview-swipe")
+      .locator(":scope > div")
+      .nth(1);
+    await expect(newLayer).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)", {
+      timeout: 20000,
+    });
+
+    // Click deep into the incoming track's body (past the transition window):
+    // the fade must finish there and adopt deck B — NOT rescue back into the
+    // old track (the old behavior treated every loop-eq click as a rescue).
+    const overview = player.getByTestId("player-crossfade-overview");
+    const box = await overview.boundingBox();
+    await overview.click({
+      position: { x: Math.floor(box!.width * 0.95), y: 10 },
+    });
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible({
+      timeout: 5000,
+    });
+    await expect(player).not.toHaveAttribute(
+      "data-mix-state",
+      "transitioning",
+      { timeout: 5000 },
+    );
+  });
+
+  test("loop + EQ: seeking into the transition window rejoins mid-flight", async ({
+    page,
+  }) => {
+    const player = await startLoopEq(page);
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    // Pre-swipe click at 50% of the old track (~12s, 10s past the 2s mix-out):
+    // a rescue + seek, after which the re-armed transition must JOIN at that
+    // point — deck B cues ~10s into its own track (~42% of 24s), never back at
+    // its mix-in (the old behavior restarted the whole schedule from the top
+    // with deck B at 0 and deck A stranded outside its loop).
+    const overview = player.getByTestId("player-crossfade-overview");
+    const box = await overview.boundingBox();
+    await overview.click({
+      position: { x: Math.floor(box!.width * 0.5), y: 10 },
+    });
+    await expect(
+      player.getByTestId("player-overview-playhead-new"),
+    ).toHaveAttribute("style", /left: (4[0-9]|5[0-9])(\.[0-9]+)?%/, {
+      timeout: 6000,
+    });
+    // The join lands past Phase 1, so the remainder completes into "Baz".
+    await expect(player.getByTitle("Baz", { exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+  });
+
+  test("cue markers stay visible in the crossfade overlay", async ({
+    page,
+  }) => {
+    // Both tracks carry a hot cue and a memory cue; the overlay must render
+    // them inside each deck's layer (regression: the opaque overlay hid the
+    // base overview's markers for the whole fade).
+    await page.route(
+      "**/api/rekordbox/tracks/*/analysis*",
+      jsonRoute({
+        ...ANALYSIS,
+        cues: [
+          { type: "hot", index: 1, timeMs: 1000, outMs: null },
+          { type: "memory", index: null, timeMs: 2000, outMs: null },
+        ],
+      }),
+    );
+
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    const markers = player
+      .getByTestId("player-crossfade-overview")
+      .getByTestId("player-overview-cue");
+    // Old layer + incoming layer each carry both cues.
+    await expect(markers).toHaveCount(4);
+    // The wrapper is a zero-width anchor; the labelled pip is the visible bit.
+    await expect(markers.first().locator("span")).toBeVisible();
   });
 });

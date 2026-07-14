@@ -1244,13 +1244,14 @@ export function WaveformPlayer() {
         transitionCompletedRef.current = true;
         nextRef.current();
       };
-      // Loop-eq runs its own two-phase automation (loop + 3-band EQ + long outro
-      // fade) and doesn't support a mid-flight join — always starts from the top.
+      // Loop-eq runs its own two-phase automation (loop + 3-band EQ + long
+      // outro fade); it joins mid-flight like the swipe modes.
       if (plan.loopEq) {
         return runLoopEqTransition({
           deckA: deckA!,
           deckB,
           plan,
+          elapsedSec: elapsed,
           onMidpoint,
           onComplete,
         });
@@ -1343,10 +1344,14 @@ export function WaveformPlayer() {
       !hasNext ||
       transitionStartedRef.current
     ) {
-      if (mixConfig.enabled && !transitionStartedRef.current) {
-        console.debug("[mix] not arming:", { ready, hasNext });
+      // A running transition owns the live plan (the overlay and re-time read
+      // it) — a config change re-running this effect mid-fade must not clear it.
+      if (!transitionStartedRef.current) {
+        if (mixConfig.enabled) {
+          console.debug("[mix] not arming:", { ready, hasNext });
+        }
+        teardownPrepared();
       }
-      teardownPrepared();
       return;
     }
     const nextTrack = peekNext();
@@ -1616,28 +1621,75 @@ export function WaveformPlayer() {
     (waveformStyle === "rekordbox_rgb" || waveformStyle === "rekordbox_blue");
   const rekVariant = waveformStyle === "rekordbox_blue" ? "blue" : "color";
 
+  // Hot/memory cue pips for the crossfade overlay, drawn inside each deck's
+  // layer so the swipe's clip + transforms place them with their waveform.
+  // Display-only — the overlay's click handler owns navigation.
+  const renderOverviewCues = (
+    cueAnalysis: TrackAnalysis | null,
+    durationSec: number,
+  ) => {
+    if (!cueAnalysis || cueAnalysis.cues.length === 0 || durationSec <= 0) {
+      return null;
+    }
+    const displays = computeCueDisplays(cueAnalysis.cues);
+    return (
+      <div className="pointer-events-none absolute inset-0">
+        {cueAnalysis.cues.map((c, i) => (
+          <div
+            key={i}
+            data-testid="player-overview-cue"
+            data-cue-type={c.type}
+            className="absolute inset-y-0"
+            style={{ left: `${(c.timeMs / 1000 / durationSec) * 100}%` }}
+          >
+            <div
+              className="absolute inset-y-0 w-px -translate-x-1/2"
+              style={{ backgroundColor: displays[i].color }}
+            />
+            <span
+              className="absolute top-0 flex size-3 -translate-x-1/2 items-center justify-center rounded-[2px] text-[8px] leading-none font-bold"
+              style={{
+                backgroundColor: displays[i].color,
+                color: textOn(displays[i].color),
+              }}
+            >
+              {displays[i].label}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   // A full-track overview render for the crossfade swipe — Rekordbox-coloured
-  // when the style + track allow, else the default peaks bars.
+  // when the style + track allow, else the default peaks bars — plus the
+  // track's cue markers.
   const renderOverviewTrack = (
     track: PlayerTrack,
     peaks: number[],
     progress: number,
     durationSec: number,
+    cueAnalysis: TrackAnalysis | null,
   ) => {
     const colored =
       !!track.rekordboxId &&
       (waveformStyle === "rekordbox_rgb" || waveformStyle === "rekordbox_blue");
-    return colored && track.rekordboxId ? (
-      <PlayerRekordboxWaveform
-        trackId={track.rekordboxId}
-        device={track.rekordboxDevice}
-        variant={rekVariant}
-        durationSec={durationSec}
-        progressOverride={progress}
-        className="h-full"
-      />
-    ) : (
-      <PeaksWaveform peaks={peaks} progress={progress} className="h-full" />
+    return (
+      <div className="relative h-full">
+        {colored && track.rekordboxId ? (
+          <PlayerRekordboxWaveform
+            trackId={track.rekordboxId}
+            device={track.rekordboxDevice}
+            variant={rekVariant}
+            durationSec={durationSec}
+            progressOverride={progress}
+            className="h-full"
+          />
+        ) : (
+          <PeaksWaveform peaks={peaks} progress={progress} className="h-full" />
+        )}
+        {renderOverviewCues(cueAnalysis, durationSec)}
+      </div>
     );
   };
 
@@ -1769,9 +1821,7 @@ export function WaveformPlayer() {
   // (deck A repositioned to match); outside it the old track has no business
   // playing on, so the fade finishes immediately and deck B cues there.
   const handleTransitionSeek = (frac: number) => {
-    // Loop-eq has no re-timable fade window (deck A loops the whole time), so a
-    // click is always a rescue.
-    if (!mixPastMid || mixPlanRef.current?.loopEq) {
+    if (!mixPastMid) {
       cancelTransitionAndSeek(frac * duration);
       return;
     }
@@ -1790,7 +1840,11 @@ export function WaveformPlayer() {
       b.setCurrentTime(tB);
       transitionHandleRef.current?.finish();
     } else {
-      rt.deckA.setCurrentTime(rt.plan.deckAMixOutSec + elapsed * mixRates.a);
+      // Loop-eq re-times via the relaunch alone — deck A loops, and the
+      // relaunched runner places it at the matching loop phase.
+      if (!rt.plan.loopEq) {
+        rt.deckA.setCurrentTime(rt.plan.deckAMixOutSec + elapsed * mixRates.a);
+      }
       setMixPastMid(elapsed >= fadeSec / 2);
       rt.relaunch(elapsed);
       // Relaunching starts both decks — honor a paused transport.
@@ -1837,12 +1891,14 @@ export function WaveformPlayer() {
               currentPeaksRef.current ?? [],
               overviewProg.old,
               duration,
+              analysis,
             ),
             newContent: renderOverviewTrack(
               nextTrack,
               nextPeaks ?? [],
               overviewProg.new,
               deckBDuration,
+              nextAnalysis,
             ),
           } satisfies ComponentProps<typeof MixOverviewSwipe>,
         }
