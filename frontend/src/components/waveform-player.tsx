@@ -2435,7 +2435,7 @@ export function WaveformPlayer() {
                 }}
                 disabled={!hasPrevious && currentTime <= 3}
                 className={cn(
-                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors",
+                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-6 cursor-pointer items-center justify-center rounded-full transition-colors",
                   !hasPrevious &&
                     currentTime <= 3 &&
                     "cursor-not-allowed opacity-40 hover:bg-transparent",
@@ -2443,7 +2443,7 @@ export function WaveformPlayer() {
                 title="Previous (←)"
                 aria-label="Previous track"
               >
-                <SkipBack className="size-3.5" />
+                <SkipBack className="size-3" />
               </button>
               <button
                 type="button"
@@ -2455,14 +2455,14 @@ export function WaveformPlayer() {
                   // re-toggle on top of the window-level keyboard handler).
                   e.currentTarget.blur();
                 }}
-                className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors"
+                className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors"
                 title={isPlaying ? "Pause (Space)" : "Play (Space)"}
                 aria-label={isPlaying ? "Pause" : "Play"}
               >
                 {isPlaying ? (
-                  <Pause className="size-3.5" />
+                  <Pause className="size-3" />
                 ) : (
-                  <Play className="size-3.5 translate-x-px" />
+                  <Play className="size-3 translate-x-px" />
                 )}
               </button>
               {/* CUE — round CDJ-style button: tap sets/recalls, hold previews. */}
@@ -2473,7 +2473,7 @@ export function WaveformPlayer() {
                 onPointerUp={handleCueUp}
                 onPointerCancel={handleCueUp}
                 className={cn(
-                  "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border text-[10px] font-semibold transition-colors select-none",
+                  "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full border text-[9px] font-semibold transition-colors select-none",
                   cueSec != null
                     ? "border-amber-500 text-amber-500 hover:bg-amber-500/10"
                     : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
@@ -2491,14 +2491,14 @@ export function WaveformPlayer() {
                 }}
                 disabled={!hasNext}
                 className={cn(
-                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors",
+                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-6 cursor-pointer items-center justify-center rounded-full transition-colors",
                   !hasNext &&
                     "cursor-not-allowed opacity-40 hover:bg-transparent",
                 )}
                 title="Next (→)"
                 aria-label="Next track"
               >
-                <SkipForward className="size-3.5" />
+                <SkipForward className="size-3" />
               </button>
 
               {/* BPM + KEY on the same level, right-aligned. Labels are never

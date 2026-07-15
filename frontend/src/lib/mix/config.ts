@@ -4,6 +4,9 @@
  * popover writes it.
  */
 
+import { ArrowRightLeft, Grid2x2, Repeat, SlidersVertical } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
 /**
  * Mix modes. Each maps to a pure strategy in `strategies.ts`. The list is a
  * registry — adding a future mode means adding a strategy + an entry here, with
@@ -63,6 +66,13 @@ export const MIX_MODE_LABELS: Record<MixMode, string> = {
   beatgrid: "Beatgrid",
   "beatgrid-eq": "Beatgrid + EQ",
   "loop-eq": "Loop + EQ",
+};
+
+export const MIX_MODE_ICONS: Record<MixMode, LucideIcon> = {
+  crossfade: ArrowRightLeft,
+  beatgrid: Grid2x2,
+  "beatgrid-eq": SlidersVertical,
+  "loop-eq": Repeat,
 };
 
 export const MIX_MODE_DESCRIPTIONS: Record<MixMode, string> = {

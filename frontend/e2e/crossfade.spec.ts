@@ -360,6 +360,13 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
       crossfadeCard.getByTestId("mix-crossfade-seconds"),
     ).toBeVisible();
 
+    // The mode description is not inline; it lives behind a hover info icon.
+    await expect(page.getByText("Fade between tracks")).toHaveCount(0);
+    await crossfadeCard.getByTestId("mix-mode-crossfade-info").hover();
+    await expect(page.getByRole("tooltip")).toContainText(
+      "Fade between tracks",
+    );
+
     // Selecting Beatgrid moves the settings into its card.
     await page.getByTestId("mix-mode-beatgrid").click();
     const beatgridCard = page.getByTestId("mix-mode-beatgrid-card");

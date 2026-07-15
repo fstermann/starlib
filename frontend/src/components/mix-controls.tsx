@@ -1,6 +1,6 @@
 "use client";
 
-import { Blend } from "lucide-react";
+import { Blend, Info } from "lucide-react";
 
 import { useCommand } from "@/components/command-palette/use-command";
 import {
@@ -9,10 +9,16 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   CROSSFADE_SECONDS_MAX,
   CROSSFADE_SECONDS_MIN,
   MATCH_BARS_STEPS,
   MIX_MODE_DESCRIPTIONS,
+  MIX_MODE_ICONS,
   MIX_MODE_LABELS,
   type MixMode,
 } from "@/lib/mix/config";
@@ -102,158 +108,183 @@ export function MixControls() {
 
             {/* Mode selector — the selected card expands with its settings */}
             <div className="flex flex-col gap-1">
-              {MODES.map((m) => (
-                <div
-                  key={m}
-                  data-testid={`mix-mode-${m}-card`}
-                  className={cn(
-                    "rounded-md border transition-colors",
-                    mode === m
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:bg-surface-3",
-                  )}
-                >
-                  <button
-                    type="button"
-                    data-testid={`mix-mode-${m}`}
-                    data-active={mode === m || undefined}
-                    onClick={() => setMixConfig({ ...mixConfig, mode: m })}
-                    className="flex w-full cursor-pointer flex-col items-start gap-0.5 px-2 py-1.5 text-left"
+              {MODES.map((m) => {
+                const Icon = MIX_MODE_ICONS[m];
+                return (
+                  <div
+                    key={m}
+                    data-testid={`mix-mode-${m}-card`}
+                    className={cn(
+                      "rounded-md border transition-colors",
+                      mode === m
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-surface-3",
+                    )}
                   >
-                    <span
-                      className={cn(
-                        "text-sm font-medium",
-                        mode === m ? "text-primary" : "text-foreground",
-                      )}
-                    >
-                      {MIX_MODE_LABELS[m]}
-                    </span>
-                    <span className="text-muted-foreground text-xs leading-snug">
-                      {MIX_MODE_DESCRIPTIONS[m]}
-                    </span>
-                  </button>
-
-                  {mode === m && m === "crossfade" && (
-                    <div className="border-border mx-2 flex flex-col gap-1.5 border-t pt-1.5 pb-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">
-                          Fade length
-                        </span>
+                    <div className="flex items-center">
+                      <button
+                        type="button"
+                        data-testid={`mix-mode-${m}`}
+                        data-active={mode === m || undefined}
+                        onClick={() => setMixConfig({ ...mixConfig, mode: m })}
+                        className="flex flex-1 cursor-pointer items-center gap-2 px-2 py-1.5 text-left"
+                      >
+                        <Icon
+                          className={cn(
+                            "size-4 shrink-0",
+                            mode === m
+                              ? "text-primary"
+                              : "text-muted-foreground",
+                          )}
+                        />
                         <span
-                          className="tabular-nums"
-                          data-testid="mix-crossfade-seconds-readout"
+                          className={cn(
+                            "text-sm font-medium",
+                            mode === m ? "text-primary" : "text-foreground",
+                          )}
                         >
-                          {mixConfig.crossfadeSeconds}s
+                          {MIX_MODE_LABELS[m]}
                         </span>
-                      </div>
-                      <input
-                        type="range"
-                        min={CROSSFADE_SECONDS_MIN}
-                        max={CROSSFADE_SECONDS_MAX}
-                        step={1}
-                        value={mixConfig.crossfadeSeconds}
-                        data-testid="mix-crossfade-seconds"
-                        onChange={(e) =>
-                          setMixConfig({
-                            ...mixConfig,
-                            crossfadeSeconds: Number(e.target.value),
-                          })
-                        }
-                        className="accent-primary h-1 w-full cursor-pointer"
-                      />
-                    </div>
-                  )}
-
-                  {mode === m &&
-                    (m === "beatgrid" ||
-                      m === "beatgrid-eq" ||
-                      m === "loop-eq") && (
-                      <div className="border-border mx-2 flex flex-col gap-2 border-t pt-1.5 pb-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground text-xs">
-                            Overlap
-                          </span>
-                          <div className="flex items-center gap-0.5">
-                            {MATCH_BARS_STEPS.map((bars) => (
-                              <button
-                                key={bars}
-                                type="button"
-                                data-testid={`mix-bars-${bars}`}
-                                data-active={
-                                  mixConfig.matchBars === bars || undefined
-                                }
-                                onClick={() =>
-                                  setMixConfig({
-                                    ...mixConfig,
-                                    matchBars: bars,
-                                  })
-                                }
-                                className={cn(
-                                  "flex h-6 w-9 cursor-pointer items-center justify-center rounded-md border text-xs font-semibold tabular-nums transition-colors",
-                                  mixConfig.matchBars === bars
-                                    ? "border-primary text-primary"
-                                    : "border-border text-muted-foreground hover:bg-surface-3",
-                                )}
-                              >
-                                {bars}
-                              </button>
-                            ))}
-                            <span className="text-muted-foreground ml-1 text-xs">
-                              bars
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground text-xs">
-                            Section-aware
-                          </span>
+                      </button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
                           <button
                             type="button"
-                            role="switch"
-                            aria-checked={mixConfig.sectionAware}
-                            data-testid="mix-section-aware"
-                            onClick={() =>
-                              setMixConfig({
-                                ...mixConfig,
-                                sectionAware: !mixConfig.sectionAware,
-                              })
-                            }
-                            className={cn(
-                              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                              mixConfig.sectionAware
-                                ? "bg-primary"
-                                : "bg-surface-3",
-                            )}
-                            title="Snap mix to section boundaries"
+                            data-testid={`mix-mode-${m}-info`}
+                            aria-label={`About ${MIX_MODE_LABELS[m]}`}
+                            className="text-muted-foreground hover:text-foreground flex size-8 shrink-0 cursor-help items-center justify-center"
                           >
-                            <span
-                              className={cn(
-                                "bg-background inline-block size-4 transform rounded-full shadow transition-transform",
-                                mixConfig.sectionAware
-                                  ? "translate-x-4"
-                                  : "translate-x-0.5",
-                              )}
-                            />
+                            <Info className="size-3.5" />
                           </button>
-                        </div>
-                        {hasBeatgrid ? (
-                          <p className="text-muted-foreground text-xs leading-snug">
-                            Needs a beatgrid on both tracks; without one this
-                            transition falls back to a plain crossfade.
-                          </p>
-                        ) : (
-                          <p
-                            className="text-warning text-xs leading-snug"
-                            data-testid="mix-beatgrid-unavailable"
+                        </TooltipTrigger>
+                        <TooltipContent side="left" className="max-w-56">
+                          {MIX_MODE_DESCRIPTIONS[m]}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+
+                    {mode === m && m === "crossfade" && (
+                      <div className="border-border mx-2 flex flex-col gap-1.5 border-t pt-1.5 pb-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">
+                            Fade length
+                          </span>
+                          <span
+                            className="tabular-nums"
+                            data-testid="mix-crossfade-seconds-readout"
                           >
-                            This track has no beatgrid — a plain crossfade is
-                            used instead.
-                          </p>
-                        )}
+                            {mixConfig.crossfadeSeconds}s
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={CROSSFADE_SECONDS_MIN}
+                          max={CROSSFADE_SECONDS_MAX}
+                          step={1}
+                          value={mixConfig.crossfadeSeconds}
+                          data-testid="mix-crossfade-seconds"
+                          onChange={(e) =>
+                            setMixConfig({
+                              ...mixConfig,
+                              crossfadeSeconds: Number(e.target.value),
+                            })
+                          }
+                          className="accent-primary h-1 w-full cursor-pointer"
+                        />
                       </div>
                     )}
-                </div>
-              ))}
+
+                    {mode === m &&
+                      (m === "beatgrid" ||
+                        m === "beatgrid-eq" ||
+                        m === "loop-eq") && (
+                        <div className="border-border mx-2 flex flex-col gap-2 border-t pt-1.5 pb-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground text-xs">
+                              Overlap
+                            </span>
+                            <div className="flex items-center gap-0.5">
+                              {MATCH_BARS_STEPS.map((bars) => (
+                                <button
+                                  key={bars}
+                                  type="button"
+                                  data-testid={`mix-bars-${bars}`}
+                                  data-active={
+                                    mixConfig.matchBars === bars || undefined
+                                  }
+                                  onClick={() =>
+                                    setMixConfig({
+                                      ...mixConfig,
+                                      matchBars: bars,
+                                    })
+                                  }
+                                  className={cn(
+                                    "flex h-6 w-9 cursor-pointer items-center justify-center rounded-md border text-xs font-semibold tabular-nums transition-colors",
+                                    mixConfig.matchBars === bars
+                                      ? "border-primary text-primary"
+                                      : "border-border text-muted-foreground hover:bg-surface-3",
+                                  )}
+                                >
+                                  {bars}
+                                </button>
+                              ))}
+                              <span className="text-muted-foreground ml-1 text-xs">
+                                bars
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground text-xs">
+                              Section-aware
+                            </span>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={mixConfig.sectionAware}
+                              data-testid="mix-section-aware"
+                              onClick={() =>
+                                setMixConfig({
+                                  ...mixConfig,
+                                  sectionAware: !mixConfig.sectionAware,
+                                })
+                              }
+                              className={cn(
+                                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
+                                mixConfig.sectionAware
+                                  ? "bg-primary"
+                                  : "bg-surface-3",
+                              )}
+                              title="Snap mix to section boundaries"
+                            >
+                              <span
+                                className={cn(
+                                  "bg-background inline-block size-4 transform rounded-full shadow transition-transform",
+                                  mixConfig.sectionAware
+                                    ? "translate-x-4"
+                                    : "translate-x-0.5",
+                                )}
+                              />
+                            </button>
+                          </div>
+                          {hasBeatgrid ? (
+                            <p className="text-muted-foreground text-xs leading-snug">
+                              Needs a beatgrid on both tracks; without one this
+                              transition falls back to a plain crossfade.
+                            </p>
+                          ) : (
+                            <p
+                              className="text-warning text-xs leading-snug"
+                              data-testid="mix-beatgrid-unavailable"
+                            >
+                              This track has no beatgrid — a plain crossfade is
+                              used instead.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </PopoverContent>
