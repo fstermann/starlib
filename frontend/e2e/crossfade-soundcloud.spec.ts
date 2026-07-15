@@ -205,10 +205,11 @@ test.describe("Auto-mix crossfade — SoundCloud chain", { tag: "@slow" }, () =>
     await page.keyboard.press("Escape");
 
     // First fade (Alpha → Beta) fires at the mix-out point and adopts Beta.
+    // The next-chip preview lives in the utility bar, which is hidden in SC
+    // view — so assert the adopted title directly instead.
     await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
       timeout: 20000,
     });
-    await expect(player.getByTestId("player-next-chip")).toContainText("Beta");
     await expect(player.getByTitle("Beta", { exact: true })).toBeVisible({
       timeout: 20000,
     });
@@ -225,7 +226,6 @@ test.describe("Auto-mix crossfade — SoundCloud chain", { tag: "@slow" }, () =>
     await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
       timeout: 25000,
     });
-    await expect(player.getByTestId("player-next-chip")).toContainText("Gamma");
     await expect(player.getByTitle("Gamma", { exact: true })).toBeVisible({
       timeout: 20000,
     });
