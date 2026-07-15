@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import Hls from "hls.js";
 import {
   AudioWaveform,
@@ -13,16 +14,54 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import type WaveSurferType from "wavesurfer.js";
 
-import { BpmPitcher, computePlaybackRate } from "@/components/bpm-pitcher";
+import {
+  BpmPitcher,
+  computePlaybackRate,
+  resolveTrackBpm,
+} from "@/components/bpm-pitcher";
+import { MarqueeText } from "@/components/marquee-text";
+import { MixControls } from "@/components/mix-controls";
+import { MixOverviewSwipe } from "@/components/mix-overview-swipe";
+import { PeaksWaveform } from "@/components/peaks-waveform";
 import { PlayerDetailWaveform } from "@/components/player-detail-waveform";
 import { PlayerRekordboxWaveform } from "@/components/player-rekordbox-waveform";
 import { loadWaveform, pwv4ToPeaks } from "@/components/rekordbox-waveform";
 import { api } from "@/lib/api";
-import { LoopingWebAudioPlayer } from "@/lib/looping-web-audio-player";
-import { usePlayer } from "@/lib/player-context";
+import { onHlsFatalExpiry } from "@/lib/hls-expiry";
+import {
+  getSharedAudioContext,
+  LoopingWebAudioPlayer,
+} from "@/lib/looping-web-audio-player";
+import {
+  clearHandoff,
+  createIncomingHtmlDeck,
+  createIncomingLocalDeck,
+  htmlDeck,
+  localDeck,
+  runLoopEqTransition,
+  runTransition,
+  stashHandoff,
+  takeHandoff,
+  type Deck,
+  type TransitionHandle,
+} from "@/lib/mix/engine";
+import { createVolumeFade } from "@/lib/mix/html-deck";
+import {
+  planTransition,
+  type DeckInfo,
+  type TransitionPlan,
+} from "@/lib/mix/strategies";
+import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import { selectPeaksSource } from "@/lib/player-peaks";
 import {
   getCachedRekordboxAnalysis,
@@ -35,6 +74,7 @@ import {
   getCachedSoundcloudStreamUrl,
   invalidateSoundcloudStreamUrl,
 } from "@/lib/soundcloud-cache";
+import { useResizableWidth } from "@/lib/use-resizable";
 import { useWaveformStyle } from "@/lib/use-waveform-style";
 import { cn } from "@/lib/utils";
 import {
@@ -96,13 +136,7 @@ function attachAudioSource(
     const hls = new Hls();
     hls.loadSource(url);
     hls.attachMedia(audio);
-    hls.on(Hls.Events.ERROR, (_evt, data) => {
-      if (!data.fatal) return;
-      const status = data.response?.code;
-      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && status === 403) {
-        opts.onExpired?.();
-      }
-    });
+    onHlsFatalExpiry(hls, () => opts.onExpired?.());
     return hls;
   }
   if (audio.canPlayType("application/vnd.apple.mpegurl")) {
@@ -120,9 +154,92 @@ function formatTime(s: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
+/** Stable identity for the deck hand-off (matches the main effect's key). */
+function handoffKey(track: PlayerTrack): string {
+  return track.filePath;
+}
+
+/**
+ * Create the incoming deck B for `track`: a silent, cued Web Audio player for
+ * local tracks or a gain-routed HTML element for SoundCloud. Returns null when
+ * a SoundCloud stream URL can't be resolved.
+ */
+async function prepareDeckB(track: PlayerTrack): Promise<Deck | null> {
+  const isSc = selectPeaksSource(track).kind === "soundcloud";
+  const resolvedStream =
+    track.streamUrl ??
+    (track.streamRefreshKey != null
+      ? await getCachedSoundcloudStreamUrl(track.streamRefreshKey).catch(
+          () => undefined,
+        )
+      : undefined);
+  if (isSc) {
+    if (!resolvedStream) return null;
+    // Ensure the shared context is running — a pure-SoundCloud session may
+    // never have resumed it, and the fade rides its clock.
+    getSharedAudioContext()
+      .resume()
+      .catch(() => {});
+    return createIncomingHtmlDeck(resolvedStream);
+  }
+  const url = resolvedStream ?? api.getAudioUrl(track.filePath);
+  return createIncomingLocalDeck(url);
+}
+
+/** Best-effort peaks for the crossfade overlay (mirrors the init resolution,
+ * lower resolution). Falls back to a flat line on any failure. */
+async function resolveTrackPeaks(
+  track: PlayerTrack,
+  numPeaks: number,
+): Promise<number[]> {
+  const flat = () => new Array<number>(numPeaks).fill(0.4);
+  const src = selectPeaksSource(track);
+  try {
+    if (src.kind === "rekordbox") {
+      const data = await loadWaveform(src.id, src.device);
+      if (data) return pwv4ToPeaks(data);
+      return src.device ? flat() : api.getFilePeaks(track.filePath, numPeaks);
+    }
+    if (src.kind === "soundcloud") {
+      if (!src.waveformUrl) return flat();
+      const p = await getCachedSoundcloudPeaks(src.waveformUrl, numPeaks);
+      return p ?? flat();
+    }
+    return await api.getFilePeaks(track.filePath, numPeaks);
+  } catch {
+    return flat();
+  }
+}
+
+/** Build the strategy's DeckInfo from a track's BPM + rekordbox analysis. */
+function toDeckInfo(
+  bpm: number | null,
+  durationSec: number,
+  analysis: TrackAnalysis | null,
+): DeckInfo {
+  return {
+    bpm,
+    durationSec,
+    analysis: analysis
+      ? {
+          beats: analysis.beatgrid.map((b) => ({
+            timeSec: b.timeMs / 1000,
+            beat: b.beat,
+          })),
+          sections: (analysis.sections ?? []).map((s) => ({
+            startSec: s.startMs / 1000,
+            endSec: s.endMs / 1000,
+            kind: s.kind,
+          })),
+        }
+      : null,
+  };
+}
+
 export function WaveformPlayer() {
   const {
     currentTrack,
+    queueIndex,
     isPlaying,
     toggle,
     pause,
@@ -138,6 +255,7 @@ export function WaveformPlayer() {
     currentBpm,
     targetBpm,
     pitchEnabled,
+    mixConfig,
   } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -152,10 +270,28 @@ export function WaveformPlayer() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [ready, setReady] = useState(false);
+  // Auto-mix state: "idle" (no fade), "armed" (deck B prepared, waiting for the
+  // mix-out point), "transitioning" (crossfade running).
+  const [mixState, setMixState] = useState<"idle" | "armed" | "transitioning">(
+    "idle",
+  );
+  // Keep the crossfade overlay's last frame painted through the adoption seam:
+  // after the fade completes and the queue advances, the rebuilt player's
+  // waveform isn't ready for a few hundred ms — unmounting the overlay there
+  // flashes the stale/blank base row until WaveSurfer renders.
+  const [seamHold, setSeamHold] = useState(false);
+  const overlayFrameRef = useRef<{
+    dataStyle: string;
+    props: ComponentProps<typeof MixOverviewSwipe>;
+  } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [zoomBars, setZoomBars] = useState<number>(DEFAULT_ZOOM);
   const [detailOpen, setDetailOpen] = useState(false);
   const [analysis, setAnalysis] = useState<TrackAnalysis | null>(null);
+  // Click-to-expand artwork: the rail thumbnail morphs into a tree-panel-sized
+  // preview pinned above the player (framer-motion shared layoutId).
+  const [expanded, setExpanded] = useState(false);
+  const treeWidth = useResizableWidth("tree-panel-width", 240);
 
   // Cue + loop (in-memory only; reset on track change). The temp cue point is a
   // single settable/recallable marker; the loop is N beats from a start anchor,
@@ -168,6 +304,62 @@ export function WaveformPlayer() {
   // null falls back to the beat-length calc. Cleared by the beat controls.
   const [loopEndOverride, setLoopEndOverride] = useState<number | null>(null);
   const loopRef = useRef<{ start: number; end: number } | null>(null);
+
+  // --- auto-mix refs (read inside the init effect's long-lived closures) ---
+  const mixConfigRef = useRef(mixConfig);
+  const mixPlanRef = useRef<TransitionPlan | null>(null);
+  // Deck B, prepared ahead of the mix-out point. Ownership moves to the
+  // hand-off store when the transition starts; nulled here so cleanup doesn't
+  // double-destroy it.
+  const mixDeckBRef = useRef<Deck | null>(null);
+  // An adopted SoundCloud deck keeps the deck it was crossfaded in on, so the
+  // next transition fades the same volume driver instead of stacking a second
+  // one onto the element.
+  const htmlDeckRef = useRef<Deck | null>(null);
+  // Background-resolved BPM for the queued next track (keyed by identity so a
+  // stale value can't leak onto a different track). The arm effect reads it on
+  // the re-arm pass triggered when the resolution lands.
+  const mixNextBpmRef = useRef<{ filePath: string; bpm: number } | null>(null);
+  const transitionHandleRef = useRef<TransitionHandle | null>(null);
+  const transitionStartedRef = useRef(false);
+  const transitionCompletedRef = useRef(false);
+  const startTransitionRef = useRef<(() => void) | null>(null);
+  // Peaks for the crossfade overlay: the live deck A and the prepared deck B.
+  const currentPeaksRef = useRef<number[] | null>(null);
+  const [nextPeaks, setNextPeaks] = useState<number[] | null>(null);
+  // Incoming track's analysis, for the phrase band once the swipe fires.
+  const [nextAnalysis, setNextAnalysis] = useState<TrackAnalysis | null>(null);
+  // Deck B kept readable during the fade (for the incoming playhead); ownership
+  // still moves to the hand-off store.
+  const transitionDeckBRef = useRef<Deck | null>(null);
+  const transitionFadeRef = useRef(1);
+  // Re-time context for a running fade: post-swipe clicks reposition deck A and
+  // relaunch the fade at a new elapsed point.
+  const transitionRetimeRef = useRef<{
+    plan: TransitionPlan;
+    deckA: Deck;
+    relaunch: (elapsedSec: number) => void;
+  } | null>(null);
+  // `overviewProg` holds each deck's playhead sampled at a low rate (the
+  // full-track overview is static — no need to redraw its heavy canvas every
+  // audio frame, which was the stutter).
+  const [overviewProg, setOverviewProg] = useState({ old: 0, new: 0 });
+  // True once the fade passes its midpoint (the swipe fires) — the side rail
+  // then shows the incoming track's info.
+  const [mixPastMid, setMixPastMid] = useState(false);
+  // Bumped when a running fade is cancelled (rescue-seek back into the old
+  // track) so the prepare effect re-arms deck B for the next pass.
+  const [rearmTick, setRearmTick] = useState(0);
+  // Bumped when deck B finishes preparing — the deck lives in a ref, which
+  // can't drive the plan effect on its own.
+  const [deckBReadyTick, setDeckBReadyTick] = useState(0);
+  // Bumped when the queued track's background BPM resolution lands, so the
+  // plan folds the resolved rate in without re-preparing the deck.
+  const [nextBpmTick, setNextBpmTick] = useState(0);
+
+  useEffect(() => {
+    mixConfigRef.current = mixConfig;
+  }, [mixConfig]);
 
   const waveformStyle = useWaveformStyle();
 
@@ -446,6 +638,15 @@ export function WaveformPlayer() {
     };
   }, [pause]);
 
+  // Per-queue-entry identity for the init effect. Queues are built verbatim
+  // from listings, so the same file can sit twice in a row — a crossfade into
+  // that duplicate must still re-run the effect (cleanup resets the transition
+  // flags and the incoming init adopts the hand-off deck). Keying on bare
+  // filePath would skip it and wedge playback.
+  const currentEntryKey = currentTrack
+    ? `${queueIndex}:${currentTrack.filePath}`
+    : null;
+
   useEffect(() => {
     if (!currentTrack) return;
 
@@ -527,8 +728,137 @@ export function WaveformPlayer() {
       let wsMod: typeof import("wavesurfer.js");
       let hoverMod: typeof import("wavesurfer.js/dist/plugins/hover.esm.js");
       const isLocal = peaksSource.kind !== "soundcloud";
+      // Cleared here; only an adopted SoundCloud deck (below) re-populates it.
+      htmlDeckRef.current = null;
 
-      if (isLocal) {
+      // Refresh a signed CDN URL that 403'd mid-track (expired stream) and
+      // re-attach HLS on `audio`. Shared by the normal SoundCloud path and a
+      // crossfade-adopted deck.
+      const refreshExpiredStream = async (audio: HTMLAudioElement) => {
+        if (retriedStreamRefresh || !currentTrack!.streamRefreshKey) return;
+        retriedStreamRefresh = true;
+        // Evict the frontend cache AND force the backend to bypass its own
+        // cache — without force_refresh the server would hand us the same
+        // stale URL that just 403'd.
+        invalidateSoundcloudStreamUrl(currentTrack!.streamRefreshKey);
+        try {
+          const url = await getCachedSoundcloudStreamUrl(
+            currentTrack!.streamRefreshKey,
+            { forceRefresh: true },
+          );
+          if (cancelled) return;
+          // Confirm the refreshed URL is actually live before swapping it in
+          // — otherwise we silently replace a broken source with another
+          // broken one and the user just sees a dead player. Range-byte HEAD
+          // equivalent works against HLS playlist CDNs that reject bare HEAD.
+          try {
+            const probe = await fetch(url, {
+              method: "GET",
+              headers: { Range: "bytes=0-0" },
+            });
+            if (!probe.ok) {
+              setErrorMsg(
+                `Refreshed stream URL returned ${probe.status}. Playback stopped.`,
+              );
+              return;
+            }
+          } catch (probeErr) {
+            console.error("Refreshed HLS URL probe failed:", probeErr);
+            setErrorMsg(
+              "Couldn't reach the refreshed stream URL. Playback stopped.",
+            );
+            return;
+          }
+          if (cancelled) return;
+          hls?.destroy();
+          hls = attachAudioSource(audio, url, {
+            onExpired: () => {
+              // Fresh URL also 403'd — this isn't expiry, it's SoundCloud
+              // refusing to stream the track to our app entirely (label
+              // upload, geo-restriction, owner-disabled streaming).
+              console.warn(
+                "[player] refreshed HLS URL also returned 403; track restricted",
+              );
+              const sid =
+                typeof currentTrack!.streamRefreshKey === "number"
+                  ? currentTrack!.streamRefreshKey
+                  : Number(currentTrack!.streamRefreshKey);
+              if (Number.isFinite(sid) && sid > 0) markScUnplayable(sid);
+              // No setErrorMsg: the unplayable flag triggers auto-skip,
+              // and showing the error swaps out containerRef before the
+              // next track's init() can use it (see initial-bail comment).
+            },
+          });
+        } catch (err) {
+          console.warn("[player] failed to refresh HLS stream URL:", err);
+          setErrorMsg("Couldn't refresh the stream URL.");
+        }
+      };
+
+      // Auto-mix hand-off: if the previous track just crossfaded into this one,
+      // deck B is already decoded and playing at full gain. Adopt it and build
+      // the waveform view around it — no re-decode, no gap.
+      const adopted = takeHandoff(handoffKey(currentTrack!));
+
+      if (adopted) {
+        try {
+          const [p, ws1, hover1] = await Promise.all([
+            peaksPromise,
+            wsImportPromise,
+            hoverImportPromise,
+          ]);
+          peaks = p;
+          wsMod = ws1;
+          hoverMod = hover1;
+        } catch (err) {
+          if (cancelled) return;
+          console.error("[player] failed to load peaks for adopted deck:", err);
+          adopted.destroy();
+          setErrorMsg("Couldn't load the audio file.");
+          return;
+        }
+        if (cancelled || !containerRef.current) {
+          adopted.destroy();
+          return;
+        }
+        media = adopted.media;
+        knownDuration = adopted.duration;
+        if (adopted.kind === "local") {
+          const player = adopted.media as LoopingWebAudioPlayer;
+          webAudioRef.current = player;
+          player.addEventListener("pause", () => {
+            if (webAudioRef.current !== player) return;
+            if (transitionStartedRef.current) return;
+            if (isPlayingRef.current && player.paused) pause();
+          });
+          registerSeek((ratio) => {
+            player.currentTime =
+              Math.max(0, Math.min(1, ratio)) * player.duration;
+          });
+        } else {
+          const audio = adopted.media as HTMLAudioElement;
+          audioRef.current = audio;
+          // Keep the adopted deck so the next transition fades its existing
+          // volume driver.
+          htmlDeckRef.current = adopted;
+          // Own the adopted deck's Hls instance: a mid-track 403 (expired
+          // signed URL) must refresh the stream exactly like the normal
+          // attach path, and this effect's teardown must destroy it.
+          hls = adopted.hls;
+          if (hls) {
+            onHlsFatalExpiry(hls, () => void refreshExpiredStream(audio));
+          }
+          audio.addEventListener("pause", () => {
+            if (audioRef.current !== audio) return;
+            if (transitionStartedRef.current) return;
+            if (isPlayingRef.current && audio.paused) pause();
+          });
+          registerSeek((ratio) => {
+            audio.currentTime =
+              Math.max(0, Math.min(1, ratio)) * audio.duration;
+          });
+        }
+      } else if (isLocal) {
         // Local file → Web Audio: fetch + decode the whole buffer, then play it
         // through a source node. Seeks reschedule the node (no HTMLMediaElement
         // seek stall), so cue points are instant and loops wrap gaplessly.
@@ -538,6 +868,7 @@ export function WaveformPlayer() {
         // Mirror the HTMLAudioElement's OS-pause sync (headphones unplugged).
         player.addEventListener("pause", () => {
           if (webAudioRef.current !== player) return;
+          if (transitionStartedRef.current) return;
           if (isPlayingRef.current && player.paused) pause();
         });
         // USB Rekordbox exports route audio through the device endpoint
@@ -588,6 +919,7 @@ export function WaveformPlayer() {
         // ref-equality check skips it.
         audio.addEventListener("pause", () => {
           if (audioRef.current !== audio) return;
+          if (transitionStartedRef.current) return;
           if (isPlayingRef.current && audio.paused) pause();
         });
 
@@ -617,69 +949,8 @@ export function WaveformPlayer() {
         const sourceUrl =
           resolvedStreamUrl ?? api.getAudioUrl(currentTrack!.filePath);
 
-        const onStreamExpired = async () => {
-          if (retriedStreamRefresh || !currentTrack!.streamRefreshKey) return;
-          retriedStreamRefresh = true;
-          // Evict the frontend cache AND force the backend to bypass its own
-          // cache — without force_refresh the server would hand us the same
-          // stale URL that just 403'd.
-          invalidateSoundcloudStreamUrl(currentTrack!.streamRefreshKey);
-          try {
-            const url = await getCachedSoundcloudStreamUrl(
-              currentTrack!.streamRefreshKey,
-              { forceRefresh: true },
-            );
-            if (cancelled) return;
-            // Confirm the refreshed URL is actually live before swapping it in
-            // — otherwise we silently replace a broken source with another
-            // broken one and the user just sees a dead player. Range-byte HEAD
-            // equivalent works against HLS playlist CDNs that reject bare HEAD.
-            try {
-              const probe = await fetch(url, {
-                method: "GET",
-                headers: { Range: "bytes=0-0" },
-              });
-              if (!probe.ok) {
-                setErrorMsg(
-                  `Refreshed stream URL returned ${probe.status}. Playback stopped.`,
-                );
-                return;
-              }
-            } catch (probeErr) {
-              console.error("Refreshed HLS URL probe failed:", probeErr);
-              setErrorMsg(
-                "Couldn't reach the refreshed stream URL. Playback stopped.",
-              );
-              return;
-            }
-            if (cancelled) return;
-            hls?.destroy();
-            hls = attachAudioSource(audio, url, {
-              onExpired: () => {
-                // Fresh URL also 403'd — this isn't expiry, it's SoundCloud
-                // refusing to stream the track to our app entirely (label
-                // upload, geo-restriction, owner-disabled streaming).
-                console.warn(
-                  "[player] refreshed HLS URL also returned 403; track restricted",
-                );
-                const sid =
-                  typeof currentTrack!.streamRefreshKey === "number"
-                    ? currentTrack!.streamRefreshKey
-                    : Number(currentTrack!.streamRefreshKey);
-                if (Number.isFinite(sid) && sid > 0) markScUnplayable(sid);
-                // No setErrorMsg: the unplayable flag triggers auto-skip,
-                // and showing the error swaps out containerRef before the
-                // next track's init() can use it (see initial-bail comment).
-              },
-            });
-          } catch (err) {
-            console.warn("[player] failed to refresh HLS stream URL:", err);
-            setErrorMsg("Couldn't refresh the stream URL.");
-          }
-        };
-
         hls = attachAudioSource(audio, sourceUrl, {
-          onExpired: onStreamExpired,
+          onExpired: () => void refreshExpiredStream(audio),
         });
 
         // Seeks only need the media element + a finite duration — register as
@@ -744,6 +1015,9 @@ export function WaveformPlayer() {
         knownDuration = audio.duration;
         media = audio;
       }
+
+      // Cache deck A's peaks for the crossfade overlay's out-going waveform.
+      currentPeaksRef.current = peaks;
 
       const WaveSurfer = wsMod.default;
       const HoverPlugin = hoverMod.default;
@@ -823,6 +1097,8 @@ export function WaveformPlayer() {
         setDuration(knownDuration);
         reportDuration(knownDuration);
         setReady(true);
+        // The rebuilt waveform exists — drop the adoption-seam overlay hold.
+        setSeamHold(false);
         registerSeek((ratio) => {
           media.currentTime = Math.max(0, Math.min(1, ratio)) * media.duration;
         });
@@ -843,9 +1119,24 @@ export function WaveformPlayer() {
         }
         setCurrentTime(t);
         reportProgress(t / knownDuration);
+
+        // Auto-mix: fire the crossfade once we reach the planned mix-out point.
+        if (
+          mixConfigRef.current.enabled &&
+          !transitionStartedRef.current &&
+          mixPlanRef.current &&
+          mixDeckBRef.current &&
+          t >= mixPlanRef.current.deckAMixOutSec
+        ) {
+          startTransitionRef.current?.();
+        }
       });
 
       ws.on("finish", () => {
+        // A crossfade owns the advance — the out-going deck reaching its end
+        // mid-fade must not trigger a second next() (which would abort the fade
+        // and restart the incoming deck from 0).
+        if (transitionStartedRef.current) return;
         if (hasNextRef.current) {
           nextRef.current();
         } else {
@@ -870,9 +1161,47 @@ export function WaveformPlayer() {
 
     return () => {
       cancelled = true;
+      // --- auto-mix teardown ---
+      const adopted = transitionCompletedRef.current;
+      if (adopted) {
+        // Crossfade finished cleanly: deck B lives in the hand-off store for
+        // the incoming init to adopt. Just reset the flags — and keep the
+        // overlay's settled frame painted until the rebuilt waveform is ready.
+        transitionStartedRef.current = false;
+        transitionCompletedRef.current = false;
+        setSeamHold(true);
+        setMixState("idle");
+      } else {
+        // No transition, or a manual skip mid-fade: abort and discard deck B.
+        if (transitionStartedRef.current) transitionHandleRef.current?.cancel();
+        transitionStartedRef.current = false;
+        if (mixDeckBRef.current) {
+          mixDeckBRef.current.destroy();
+          mixDeckBRef.current = null;
+        }
+        clearHandoff();
+        setSeamHold(false);
+        overlayFrameRef.current = null;
+        setMixState("idle");
+      }
+      transitionHandleRef.current = null;
+      transitionRetimeRef.current = null;
+      const adoptedDeck = adopted ? transitionDeckBRef.current : null;
+      transitionDeckBRef.current = null;
+      mixPlanRef.current = null;
+      setNextPeaks(null);
+      setNextAnalysis(null);
       registerSeek(null);
-      reportProgress(0);
-      reportDuration(0);
+      if (adoptedDeck && adoptedDeck.duration > 0) {
+        // The adopted deck keeps playing through the rebuild — hold its live
+        // position so progress subscribers (zoom strip, overview) don't flash
+        // back to zero before the incoming init reports.
+        reportProgress(adoptedDeck.currentTime / adoptedDeck.duration);
+        reportDuration(adoptedDeck.duration);
+      } else {
+        reportProgress(0);
+        reportDuration(0);
+      }
       ws?.destroy();
       wsRef.current = null;
       hls?.destroy();
@@ -890,17 +1219,335 @@ export function WaveformPlayer() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTrack?.filePath, reportProgress, registerSeek, reportDuration]);
+  }, [currentEntryKey, reportProgress, registerSeek, reportDuration]);
+
+  // Begin the crossfade: wrap the live deck A, start deck B, run the fade, and
+  // advance the queue on completion (the rebuilt player adopts deck B).
+  const startTransition = useCallback(() => {
+    const plan = mixPlanRef.current;
+    const deckB = mixDeckBRef.current;
+    if (!plan || !deckB || transitionStartedRef.current) return;
+
+    let deckA: Deck | null = null;
+    if (webAudioRef.current) {
+      deckA = localDeck(webAudioRef.current);
+    } else if (htmlDeckRef.current) {
+      // Adopted SoundCloud deck: reuse its existing volume driver.
+      deckA = htmlDeckRef.current;
+    } else if (audioRef.current) {
+      // First transition off a freshly-loaded SoundCloud element: fade it via
+      // a volume driver (element decks never touch the Web Audio graph — see
+      // html-deck.ts).
+      deckA = htmlDeck(audioRef.current, createVolumeFade(audioRef.current, 1));
+    }
+    if (!deckA) {
+      console.warn("[mix] transition aborted: no out-going deck");
+      return;
+    }
+    console.debug("[mix] transition start");
+
+    transitionStartedRef.current = true;
+    transitionCompletedRef.current = false;
+    // Keep deck B readable for the incoming playhead during the fade, and record
+    // the fade length for the swipe's CSS transition.
+    transitionDeckBRef.current = deckB;
+    transitionFadeRef.current = Math.max(0.05, plan.fadeSeconds);
+    setMixState("transitioning");
+
+    // Ownership of deck B moves to the hand-off store for the rebuilt player.
+    const nextTrack = peekNext();
+    if (nextTrack) stashHandoff(handoffKey(nextTrack), deckB);
+    mixDeckBRef.current = null;
+
+    // Deck A may sit past the mix-out point (the user seeked into the fade
+    // window): join the fade mid-flight instead of starting it from zero.
+    const mediaRate =
+      (webAudioRef.current ?? audioRef.current)?.playbackRate || 1;
+    const elapsedSec =
+      Math.max(0, deckA.currentTime - plan.deckAMixOutSec) / mediaRate;
+
+    const launch = (elapsed: number) => {
+      const onMidpoint = () => setMixPastMid(true);
+      const onComplete = () => {
+        transitionCompletedRef.current = true;
+        nextRef.current();
+      };
+      // Loop-eq runs its own two-phase automation (loop + 3-band EQ + long
+      // outro fade); it joins mid-flight like the swipe modes.
+      if (plan.loopEq) {
+        return runLoopEqTransition({
+          deckA: deckA!,
+          deckB,
+          plan,
+          elapsedSec: elapsed,
+          onMidpoint,
+          onComplete,
+        });
+      }
+      return runTransition({
+        deckA: deckA!,
+        deckB,
+        plan,
+        elapsedSec: elapsed,
+        // Swap the side rail to the incoming track's info at the fade's midpoint
+        // (pause-aware — the engine's fade clock freezes with the decks).
+        onMidpoint,
+        onComplete,
+      });
+    };
+    transitionHandleRef.current = launch(elapsedSec);
+    // Post-swipe clicks can re-time the running fade to a new elapsed point.
+    transitionRetimeRef.current = {
+      plan,
+      deckA,
+      relaunch: (elapsed: number) => {
+        transitionHandleRef.current?.cancel();
+        transitionHandleRef.current = launch(elapsed);
+      },
+    };
+    // Seed the overview playheads from the decks' actual cue positions (deck B
+    // may have been cued mid-window by the elapsed join).
+    setOverviewProg({
+      old: deckA.currentTime / (deckA.duration || 1),
+      new: deckB.duration > 0 ? deckB.currentTime / deckB.duration : 0,
+    });
+  }, [peekNext]);
+
+  useEffect(() => {
+    startTransitionRef.current = startTransition;
+  }, [startTransition]);
+
+  // Reset the side-rail swap once the fade ends (the engine's midpoint
+  // callback sets it).
+  useEffect(() => {
+    if (mixState !== "transitioning") setMixPastMid(false);
+  }, [mixState]);
+
+  // Release the adoption-seam overlay hold when a load fails (the error view
+  // replaces the waveform area). The normal release happens in `ws.on("ready")`
+  // — an effect on `ready` can miss it: the adopted deck's ws often becomes
+  // ready within the same React batch as the seam's `setReady(false)`, so the
+  // committed `ready` value never changes.
+  useEffect(() => {
+    if (errorMsg) setSeamHold(false);
+  }, [errorMsg]);
+
+  // Sample each deck's playhead at ~8 Hz for the (static) overview. Far cheaper
+  // than redrawing its full-track canvas on every audio frame.
+  useEffect(() => {
+    if (mixState !== "transitioning") return;
+    const sample = () => {
+      const oldMedia = webAudioRef.current ?? audioRef.current;
+      const oldD = oldMedia?.duration ?? 0;
+      const oldT = oldMedia?.currentTime ?? 0;
+      const b = transitionDeckBRef.current;
+      setOverviewProg({
+        old: oldD > 0 ? Math.min(1, oldT / oldD) : 0,
+        new: b && b.duration > 0 ? Math.min(1, b.currentTime / b.duration) : 0,
+      });
+    };
+    sample();
+    const id = setInterval(sample, 120);
+    return () => clearInterval(id);
+  }, [mixState]);
+
+  // Prepare deck B (decode/attach the next track) while the current track
+  // plays, so the crossfade can start instantly at the mix-out point. Keyed on
+  // the next queue entry's identity only — plan knobs (fade length, pitch,
+  // target BPM, mode) must NOT re-download/re-decode the whole track; the plan
+  // effect below recomputes cheaply against the prepared deck. The deck kind
+  // (Web Audio buffer vs HTML element) depends solely on the track's source,
+  // never on the mix mode, so a mode change never needs a re-prepare.
+  const upcomingKey = hasNext
+    ? `${queueIndex + 1}:${peekNext()?.filePath ?? ""}`
+    : null;
+  useEffect(() => {
+    const teardownPrepared = () => {
+      if (mixDeckBRef.current) {
+        mixDeckBRef.current.destroy();
+        mixDeckBRef.current = null;
+      }
+      mixPlanRef.current = null;
+      setNextPeaks(null);
+      setNextAnalysis(null);
+      if (!transitionStartedRef.current) setMixState("idle");
+    };
+
+    if (
+      !mixConfig.enabled ||
+      !ready ||
+      !hasNext ||
+      transitionStartedRef.current
+    ) {
+      // A running transition owns the live plan (the overlay and re-time read
+      // it) — a config change re-running this effect mid-fade must not clear it.
+      if (!transitionStartedRef.current) {
+        if (mixConfig.enabled) {
+          console.debug("[mix] not arming:", { ready, hasNext });
+        }
+        teardownPrepared();
+      }
+      return;
+    }
+    const nextTrack = peekNext();
+    if (!nextTrack) return;
+
+    let cancelled = false;
+    (async () => {
+      const nextAnalysis = nextTrack.rekordboxId
+        ? await getCachedRekordboxAnalysis(
+            nextTrack.rekordboxId,
+            nextTrack.rekordboxDevice,
+          )
+        : null;
+      if (cancelled) return;
+
+      const [deck, peaksB] = await Promise.all([
+        prepareDeckB(nextTrack),
+        resolveTrackPeaks(nextTrack, 400),
+      ]);
+      if (cancelled) {
+        deck?.destroy();
+        return;
+      }
+      if (!deck) {
+        // Deck B couldn't be built (usually a failed stream-URL resolve).
+        // Dying silently here means no crossfade for the rest of the track —
+        // retry on a short delay instead; the resolve isn't negative-cached.
+        console.warn(
+          "[mix] arm failed: deck B not ready (stream unresolved) — retrying in 5s",
+          nextTrack.fileName,
+        );
+        setTimeout(() => {
+          if (!cancelled && !transitionStartedRef.current) {
+            setRearmTick((t) => t + 1);
+          }
+        }, 5000);
+        return;
+      }
+      mixDeckBRef.current = deck;
+      setNextPeaks(peaksB);
+      setNextAnalysis(nextAnalysis);
+      setDeckBReadyTick((t) => t + 1);
+    })().catch((err) => {
+      // A throw anywhere above would otherwise kill preparation invisibly.
+      console.error("[mix] deck B preparation crashed:", err);
+    });
+
+    return () => {
+      cancelled = true;
+      if (!transitionStartedRef.current) teardownPrepared();
+    };
+    // upcomingKey stands in for the next track's identity; the other plan
+    // inputs are consumed by the plan effect below.
+  }, [mixConfig.enabled, ready, hasNext, peekNext, upcomingKey, rearmTick]);
+
+  // Compute (and recompute) the transition plan against the prepared deck.
+  // planTransition is pure and cheap, so it can re-run on every knob change
+  // (fade-length slider steps, pitch toggles, BPM edits) without touching the
+  // prepared deck.
+  useEffect(() => {
+    if (
+      !mixConfig.enabled ||
+      !ready ||
+      !hasNext ||
+      transitionStartedRef.current
+    ) {
+      return;
+    }
+    const nextTrack = peekNext();
+    // Nothing to plan against until deck B lands (deckBReadyTick re-runs this).
+    if (!nextTrack || !mixDeckBRef.current) return;
+
+    // The incoming track's BPM: with the pitcher active, deck B should fade
+    // in already at the target tempo instead of snapping after adoption.
+    // Plan with the hint (or an earlier background resolution) and NEVER
+    // block arming on a fresh lookup — a cache miss falls through to full
+    // track analysis (Tauri), which can outlast the time to the mix-out
+    // point or hang, and the fade must still fire on schedule. When the
+    // background resolution lands it replans to fold the rate in; it also
+    // patches the queue hint (SC_BPM_UPDATED_EVENT) so the pitcher holds the
+    // rate seamlessly after adoption.
+    const nextBpm =
+      nextTrack.bpm ??
+      (mixNextBpmRef.current?.filePath === nextTrack.filePath
+        ? mixNextBpmRef.current.bpm
+        : null);
+    if (pitchEnabled && nextBpm == null) {
+      const track = nextTrack;
+      void resolveTrackBpm(track).then((bpm) => {
+        if (bpm == null) return;
+        // Stash even when this plan run is stale — the value stays true.
+        mixNextBpmRef.current = { filePath: track.filePath, bpm };
+        if (transitionStartedRef.current) return;
+        setNextBpmTick((t) => t + 1);
+      });
+    }
+
+    const deckACurrentRate = computePlaybackRate(
+      pitchEnabled,
+      currentBpm,
+      targetBpm,
+    );
+    const deckBDesiredRate = computePlaybackRate(
+      pitchEnabled,
+      nextBpm,
+      targetBpm,
+    );
+    const plan = planTransition({
+      deckA: toDeckInfo(currentBpm, duration, analysis),
+      deckB: toDeckInfo(nextBpm, 0, nextAnalysis),
+      deckACurrentRate,
+      deckADesiredRate: deckACurrentRate,
+      deckBDesiredRate,
+      targetBpm,
+      // With the pitcher active the beatgrid mix locks both decks to the
+      // target BPM; without it, it ramps the tempo across the fade.
+      beatSync: pitchEnabled,
+      config: mixConfig,
+    });
+    mixPlanRef.current = plan;
+    setMixState("armed");
+    console.debug(
+      `[mix] armed: ${plan.mode}${plan.fellBack ? " (fallback)" : ""} mixOut=${plan.deckAMixOutSec.toFixed(1)}s fade=${plan.fadeSeconds.toFixed(1)}s deckBRate=${plan.deckBInitialRate.toFixed(3)}`,
+    );
+    // deckBReadyTick/nextBpmTick re-run the plan when the prepared deck or the
+    // background BPM resolution lands.
+  }, [
+    mixConfig,
+    ready,
+    hasNext,
+    peekNext,
+    currentBpm,
+    targetBpm,
+    pitchEnabled,
+    duration,
+    analysis,
+    nextAnalysis,
+    deckBReadyTick,
+    nextBpmTick,
+  ]);
 
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws || !ready) return;
+    // During a crossfade the transport owns BOTH decks: pause/resume the fade
+    // itself (decks + gain/rate automation + fade clock) instead of deck A only.
+    if (
+      mixState === "transitioning" &&
+      !transitionCompletedRef.current &&
+      transitionHandleRef.current
+    ) {
+      if (isPlaying) transitionHandleRef.current.resume();
+      else transitionHandleRef.current.pause();
+      return;
+    }
     if (isPlaying) {
       ws.play().catch(() => {});
     } else {
       ws.pause();
     }
-  }, [isPlaying, ready]);
+  }, [isPlaying, ready, mixState]);
 
   // Apply BPM-pitcher playback rate. `playbackRate` resets to 1 whenever the
   // audio element's `src` changes, so this effect re-fires after every track
@@ -972,11 +1619,72 @@ export function WaveformPlayer() {
     .sort((a, b) => (a.cue.index ?? 0) - (b.cue.index ?? 0));
   const memCueItems = cueItems.filter((x) => !x.display.isHot);
 
-  const artworkUrl =
-    currentTrack.artworkUrl ?? api.getArtworkUrl(currentTrack.filePath);
-  const titleText = currentTrack.title ?? currentTrack.fileName;
-  const artistText = currentTrack.artist ?? "";
   const loadingProgress = duration > 0 ? currentTime / duration : 0;
+
+  // SoundCloud tracks don't carry cues/beatgrid, and loop/cue transport isn't
+  // meaningful for HLS decks — hide the whole utility bar in SC view.
+  const isSoundCloud = selectPeaksSource(currentTrack).kind === "soundcloud";
+
+  // --- crossfade overlay state ---
+  // Gate on the completion ref too: when the fade completes and the queue
+  // advances, there is a seam render where `currentTrack` is already the
+  // adopted track but `mixState` hasn't reset yet — without the gate the
+  // overlay/split would flash a bogus "next" transition for a frame.
+  const isTransitioning =
+    mixState === "transitioning" && !transitionCompletedRef.current;
+  // During the fade the queue hasn't advanced yet, so the incoming track is the
+  // next queue entry.
+  const nextTrack = isTransitioning ? peekNext() : null;
+  const deckAProgress = duration > 0 ? currentTime / duration : 0;
+  const deckBDuration = transitionDeckBRef.current?.duration ?? 0;
+  const deckBProgress =
+    deckBDuration > 0
+      ? Math.min(
+          1,
+          (transitionDeckBRef.current?.currentTime ?? 0) / deckBDuration,
+        )
+      : 0;
+  const nextTitleText = nextTrack
+    ? (nextTrack.title ?? nextTrack.fileName)
+    : "";
+
+  // The phrase band tracks what the overview shows: the old track until the
+  // swipe, the incoming track from the swipe on (and through the adoption
+  // seam, where the queue has advanced but this instance hasn't rebuilt yet).
+  const bandNext = isTransitioning
+    ? mixPastMid
+    : transitionCompletedRef.current;
+  const bandSections = bandNext ? nextAnalysis?.sections : analysis?.sections;
+  const bandDuration = bandNext ? deckBDuration : duration;
+
+  // Past the fade midpoint the rail shows the incoming track's info (synced
+  // with the waveform swipe).
+  const railSwapped = isTransitioning && mixPastMid && !!nextTrack;
+  const railTrack = railSwapped ? nextTrack! : currentTrack;
+  const artworkUrl =
+    railTrack.artworkUrl ?? api.getArtworkUrl(railTrack.filePath);
+  // SoundCloud serves artwork at multiple sizes via suffix (`-large` is ~100px,
+  // `-t500x500` is 500px). Upgrade for the expanded preview so it doesn't look
+  // pixelated at tree-panel width. Non-SC URLs pass through unchanged.
+  const largeArtworkUrl = artworkUrl.replace("-large", "-t500x500");
+  const morphTransition = {
+    type: "spring" as const,
+    stiffness: 380,
+    damping: 34,
+  };
+  const titleText = railTrack.title ?? railTrack.fileName;
+  const artistText = railTrack.artist ?? "";
+  // The time/BPM/key readouts swap with the rail: once past the swipe they read
+  // from the incoming deck (deck B) instead of waiting for adoption.
+  const incomingBpm = nextTrack
+    ? (nextTrack.bpm ??
+      (mixNextBpmRef.current?.filePath === nextTrack.filePath
+        ? mixNextBpmRef.current.bpm
+        : null))
+    : null;
+  const railBpm = railSwapped ? incomingBpm : currentBpm;
+  const railElapsed = railSwapped ? deckBProgress * deckBDuration : currentTime;
+  const railDuration = railSwapped ? deckBDuration : duration;
 
   // Colour the bottom waveform with Rekordbox's own analysis when the user
   // picked a Rekordbox style and the current track carries one. Non-Rekordbox
@@ -985,6 +1693,78 @@ export function WaveformPlayer() {
     !!currentTrack.rekordboxId &&
     (waveformStyle === "rekordbox_rgb" || waveformStyle === "rekordbox_blue");
   const rekVariant = waveformStyle === "rekordbox_blue" ? "blue" : "color";
+
+  // Hot/memory cue pips for the crossfade overlay, drawn inside each deck's
+  // layer so the swipe's clip + transforms place them with their waveform.
+  // Display-only — the overlay's click handler owns navigation.
+  const renderOverviewCues = (
+    cueAnalysis: TrackAnalysis | null,
+    durationSec: number,
+  ) => {
+    if (!cueAnalysis || cueAnalysis.cues.length === 0 || durationSec <= 0) {
+      return null;
+    }
+    const displays = computeCueDisplays(cueAnalysis.cues);
+    return (
+      <div className="pointer-events-none absolute inset-0">
+        {cueAnalysis.cues.map((c, i) => (
+          <div
+            key={i}
+            data-testid="player-overview-cue"
+            data-cue-type={c.type}
+            className="absolute inset-y-0"
+            style={{ left: `${(c.timeMs / 1000 / durationSec) * 100}%` }}
+          >
+            <div
+              className="absolute inset-y-0 w-px -translate-x-1/2"
+              style={{ backgroundColor: displays[i].color }}
+            />
+            <span
+              className="absolute top-0 flex size-3 -translate-x-1/2 items-center justify-center rounded-[2px] text-[8px] leading-none font-bold"
+              style={{
+                backgroundColor: displays[i].color,
+                color: textOn(displays[i].color),
+              }}
+            >
+              {displays[i].label}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // A full-track overview render for the crossfade swipe — Rekordbox-coloured
+  // when the style + track allow, else the default peaks bars — plus the
+  // track's cue markers.
+  const renderOverviewTrack = (
+    track: PlayerTrack,
+    peaks: number[],
+    progress: number,
+    durationSec: number,
+    cueAnalysis: TrackAnalysis | null,
+  ) => {
+    const colored =
+      !!track.rekordboxId &&
+      (waveformStyle === "rekordbox_rgb" || waveformStyle === "rekordbox_blue");
+    return (
+      <div className="relative h-full">
+        {colored && track.rekordboxId ? (
+          <PlayerRekordboxWaveform
+            trackId={track.rekordboxId}
+            device={track.rekordboxDevice}
+            variant={rekVariant}
+            durationSec={durationSec}
+            progressOverride={progress}
+            className="h-full"
+          />
+        ) : (
+          <PeaksWaveform peaks={peaks} progress={progress} className="h-full" />
+        )}
+        {renderOverviewCues(cueAnalysis, durationSec)}
+      </div>
+    );
+  };
 
   // Zoom is available for everything except SoundCloud streams (whose ~1800
   // pre-baked samples can't resolve a few bars).
@@ -996,15 +1776,215 @@ export function WaveformPlayer() {
   // green while pitching; below it sits the original key + the exact (fractional)
   // semitone shift, since a pitch often lands between two keys.
   const playRate = computePlaybackRate(pitchEnabled, currentBpm, targetBpm);
-  const keySemitones = keySemitonesForRate(playRate);
-  const semitonesFloat = semitonesFloatForRate(playRate);
-  const baseKey = currentTrack.musicalKey ?? null;
+  // Key follows the rail track (the incoming deck past the swipe), so it swaps
+  // in step with the title/artist rather than after adoption.
+  const keyRate = computePlaybackRate(pitchEnabled, railBpm, targetBpm);
+  const keySemitones = keySemitonesForRate(keyRate);
+  const semitonesFloat = semitonesFloatForRate(keyRate);
+  const baseKey = railTrack.musicalKey ?? null;
   const displayKey = baseKey
     ? keySemitones
       ? transposeKey(baseKey, keySemitones)
       : baseKey
     : null;
   const keyPitched = displayKey != null && displayKey !== baseKey;
+
+  // Each deck's effective rate across the fade (ramp modes average the ramp) —
+  // converts the wall-clock fade into each track's own seconds.
+  const mixRates = (() => {
+    const plan = mixPlanRef.current;
+    const ramp = plan?.rateRamp;
+    return {
+      a: ramp ? (ramp.deckAFrom + ramp.deckATo) / 2 : playRate,
+      b: ramp
+        ? (ramp.deckBFrom + ramp.deckBTo) / 2
+        : (plan?.deckBInitialRate ?? 1),
+    };
+  })();
+
+  // During a crossfade, where the detail strip's half-height split gives way to
+  // full height: left of deck B's mix-in point only the old track is audible
+  // (it keeps the full height), right of deck A's audible end only the new one
+  // is. Screen fractions of each deck's playhead-centred window.
+  const detailSplit = (() => {
+    if (!isTransitioning || !nextTrack) return null;
+    const plan = mixPlanRef.current;
+    // Loop-eq: the split (old bottom / new top) + divider cover only deck A's
+    // loop region, playhead-centred on deck A; the incoming track fills the rest
+    // full height. The loop box is drawn on the old layer over the same region.
+    if (plan?.loopEq) {
+      const le = plan.loopEq;
+      const tA = deckAProgress * duration;
+      const span = barSpanSeconds(zoomBars, currentBpm);
+      const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+      const inX = clamp01(0.5 + (le.loopRegion.start - tA) / span) * 100;
+      const outX = clamp01(0.5 + (le.loopRegion.end - tA) / span) * 100;
+      return {
+        oldClip: `polygon(${inX}% 50%, ${outX}% 50%, ${outX}% 100%, ${inX}% 100%)`,
+        newClip: `polygon(0 0, 100% 0, 100% 100%, ${outX}% 100%, ${outX}% 50%, ${inX}% 50%, ${inX}% 100%, 0 100%)`,
+        inX,
+        outX,
+        oldLoop: { startSec: le.loopRegion.start, endSec: le.loopRegion.end },
+      };
+    }
+    const fadeSec = transitionFadeRef.current;
+    const mixInSec = plan?.deckBStartOffsetSec ?? 0;
+    const mixOutSec = plan?.deckAMixOutSec ?? Math.max(0, duration - fadeSec);
+    // The fade is wall-clock; deck A consumes it at its playback rate.
+    const oldEndSec = Math.min(duration, mixOutSec + fadeSec * mixRates.a);
+    const tA = deckAProgress * duration;
+    const tB = deckBProgress * deckBDuration;
+    // Over the fade's last stretch, sweep both boundaries to the left edge so
+    // the incoming track unfolds to full height *before* the split settles at
+    // adoption — otherwise the old track's remnant snaps away in one frame.
+    const sweepSec = Math.max(0.2, Math.min(1.5, (fadeSec * playRate) / 3));
+    const sweep = Math.min(1, Math.max(0, (oldEndSec - tA) / sweepSec));
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const inX =
+      clamp01(
+        (0.5 +
+          (mixInSec - tB) / barSpanSeconds(zoomBars, nextTrack.bpm ?? null)) *
+          sweep,
+      ) * 100;
+    const outX = Math.max(
+      clamp01(
+        (0.5 + (oldEndSec - tA) / barSpanSeconds(zoomBars, currentBpm)) * sweep,
+      ) * 100,
+      inX,
+    );
+    return {
+      // Old: full height until the new track is in, bottom half across the
+      // overlap, clipped away once its own audible content ends.
+      oldClip: `polygon(0 0, ${inX}% 0, ${inX}% 50%, ${outX}% 50%, ${outX}% 100%, 0 100%)`,
+      // New: hidden before its mix-in, top half across the overlap, full
+      // height once the old track has run out.
+      newClip: `polygon(${inX}% 0, 100% 0, 100% 100%, ${outX}% 100%, ${outX}% 50%, ${inX}% 50%)`,
+      // The overlap's screen extent, for the half-split divider line.
+      inX,
+      outX,
+      oldLoop: null,
+    };
+  })();
+
+  // Abort a running fade and jump the old track to `sec`: restore deck A to
+  // full gain (and its pitched rate — ramp mode automates it away), discard
+  // deck B, and re-arm so the mix fires again on the next pass over the
+  // mix-out point.
+  const cancelTransitionAndSeek = (sec: number) => {
+    transitionHandleRef.current?.cancel();
+    transitionHandleRef.current = null;
+    transitionRetimeRef.current = null;
+    transitionStartedRef.current = false;
+    transitionCompletedRef.current = false;
+    transitionDeckBRef.current = null;
+    // Deck B's ownership moved to the hand-off store at fade start.
+    clearHandoff();
+    setMixState("idle");
+    setMixPastMid(false);
+    const media = webAudioRef.current ?? audioRef.current;
+    if (media) media.playbackRate = playRate;
+    if (duration > 0) seek(Math.max(0, Math.min(1, sec / duration)));
+    setRearmTick((t) => t + 1);
+  };
+
+  // Click-to-seek on the crossfade overview. Before the swipe the view is the
+  // old track at its natural scale: a click is a rescue — abort the fade and
+  // jump there. After the swipe the view is the incoming track at true scale:
+  // inside the fade window the whole fade is re-timed to the clicked moment
+  // (deck A repositioned to match); outside it the old track has no business
+  // playing on, so the fade finishes immediately and deck B cues there.
+  const handleTransitionSeek = (frac: number) => {
+    if (!mixPastMid) {
+      cancelTransitionAndSeek(frac * duration);
+      return;
+    }
+    const b = transitionDeckBRef.current;
+    if (!b || b.duration <= 0) return;
+    const tB = frac * b.duration;
+    const rt = transitionRetimeRef.current;
+    if (!rt) {
+      b.setCurrentTime(tB);
+      return;
+    }
+    const fadeSec = transitionFadeRef.current;
+    const startOff = rt.plan.deckBStartOffsetSec;
+    const elapsed = (tB - startOff) / mixRates.b; // wall-clock into the fade
+    if (elapsed < 0 || elapsed >= fadeSec) {
+      b.setCurrentTime(tB);
+      transitionHandleRef.current?.finish();
+    } else {
+      // Loop-eq re-times via the relaunch alone — deck A loops, and the
+      // relaunched runner places it at the matching loop phase.
+      if (!rt.plan.loopEq) {
+        rt.deckA.setCurrentTime(rt.plan.deckAMixOutSec + elapsed * mixRates.a);
+      }
+      setMixPastMid(elapsed >= fadeSec / 2);
+      rt.relaunch(elapsed);
+      // Relaunching starts both decks — honor a paused transport.
+      if (!isPlaying) transitionHandleRef.current?.pause();
+    }
+  };
+
+  // The crossfade overlay's frame. Rebuilt live during the fade and stashed,
+  // so through the adoption seam — fade done, queue advanced, but the rebuilt
+  // player's waveform not ready yet — the settled frame stays painted instead
+  // of flashing the stale/blank base row.
+  const overviewLoopEq = mixPlanRef.current?.loopEq ?? null;
+  // Loop-eq: the overview split window is deck A's loop region (not a fade). The
+  // swipe still fires at the transition point — deck B takes over as master and
+  // deck A collapses to a (dimmed) looping tail.
+  const loopLenA = overviewLoopEq
+    ? overviewLoopEq.loopRegion.end - overviewLoopEq.loopRegion.start
+    : 0;
+  const liveOverlayFrame =
+    isTransitioning && nextTrack
+      ? {
+          dataStyle: rekColored ? `rekordbox_${rekVariant}` : "default",
+          props: {
+            testId: "player-overview-swipe",
+            oldProgress: overviewProg.old,
+            newProgress: overviewProg.new,
+            swipeArmed: mixPastMid,
+            oldDurationSec: duration,
+            newDurationSec: deckBDuration,
+            mixOutSec: overviewLoopEq
+              ? overviewLoopEq.loopRegion.start
+              : (mixPlanRef.current?.deckAMixOutSec ??
+                Math.max(0, duration - transitionFadeRef.current)),
+            startOffsetSec: mixPlanRef.current?.deckBStartOffsetSec ?? 0,
+            oldFadeSec: overviewLoopEq
+              ? loopLenA
+              : transitionFadeRef.current * mixRates.a,
+            newFadeSec: overviewLoopEq
+              ? loopLenA * (mixRates.b / Math.max(1e-6, mixRates.a))
+              : transitionFadeRef.current * mixRates.b,
+            loopEq: overviewLoopEq ? { dimOld: mixPastMid } : null,
+            oldContent: renderOverviewTrack(
+              currentTrack,
+              currentPeaksRef.current ?? [],
+              overviewProg.old,
+              duration,
+              analysis,
+            ),
+            newContent: renderOverviewTrack(
+              nextTrack,
+              nextPeaks ?? [],
+              overviewProg.new,
+              deckBDuration,
+              nextAnalysis,
+            ),
+          } satisfies ComponentProps<typeof MixOverviewSwipe>,
+        }
+      : null;
+  if (liveOverlayFrame) overlayFrameRef.current = liveOverlayFrame;
+  // The seam spans the pre-cleanup render (queue advanced, mixState not yet
+  // reset) and the rebuild (seamHold, released on `ready`).
+  const inAdoptionSeam =
+    (mixState === "transitioning" && transitionCompletedRef.current) ||
+    seamHold;
+  const overlayFrame =
+    liveOverlayFrame ?? (inAdoptionSeam ? overlayFrameRef.current : null);
+
   // Fraction of the track visible in the detail strip — drawn as an indicator
   // rectangle over the whole-track overview.
   const viewport =
@@ -1200,498 +2180,716 @@ export function WaveformPlayer() {
   ) : null;
 
   return (
-    <div
-      ref={rootRef}
-      data-testid="waveform-player"
-      className="border-border fixed right-0 bottom-0 left-14 z-40 flex flex-col border-t bg-[var(--surface-2)] shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
-    >
-      {/* ===== Utility line — spans the whole player. Hot cues sit over the
-          rail column; memory cues start at the waveform's left edge; the merged
-          loop control stays far right. ===== */}
+    <>
+      {/* Big artwork — mounted only when expanded; shares layoutId with the
+          small artwork so framer-motion animates the transform between them.
+          Pinned directly above the player (whose height is dynamic). */}
+      {expanded && (
+        <motion.button
+          layoutId="player-artwork"
+          layoutDependency={expanded}
+          type="button"
+          data-testid="player-artwork"
+          onClick={() => setExpanded(false)}
+          className="bg-muted fixed left-14 z-50 cursor-pointer overflow-hidden"
+          style={{
+            bottom: "var(--player-height, 4rem)",
+            width: `${treeWidth - 1}px`,
+            height: `${treeWidth - 1}px`,
+          }}
+          title="Collapse artwork"
+          aria-label="Collapse artwork"
+          aria-expanded={true}
+          transition={morphTransition}
+        >
+          <img
+            src={largeArtworkUrl}
+            alt=""
+            className="size-full object-cover"
+            onError={(e) => {
+              // Fall back to the small artwork URL if the hi-res variant 404s
+              // (e.g., non-SC sources where `-large` isn't in the URL).
+              const img = e.currentTarget as HTMLImageElement;
+              if (img.src !== artworkUrl) {
+                img.src = artworkUrl;
+              } else {
+                img.style.display = "none";
+              }
+            }}
+          />
+        </motion.button>
+      )}
+
       <div
-        data-testid="player-utility-bar"
-        className="border-border flex h-8 shrink-0 items-center border-b"
+        ref={rootRef}
+        data-testid="waveform-player"
+        data-mix-state={mixState}
+        className="border-border fixed right-0 bottom-0 left-14 z-40 flex flex-col border-t bg-[var(--surface-2)] shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
       >
-        {/* Hot cues — over the rail column (matches its 360px width). */}
-        <div className="flex w-[360px] shrink-0 items-center gap-1 overflow-hidden px-3">
-          {hotCueChips}
-        </div>
-
-        {/* Memory cues start where the waveform starts; loop control far right. */}
-        <div className="flex flex-1 items-center gap-2 pr-3 pl-2">
-          <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-            {memCueChips}
-          </div>
-
-          {/* Loop control + detail/zoom controls, pinned to the far right. */}
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            {/* Merged loop control: chevrons set the length, the icon+number
-                both shows it and toggles the loop. */}
-            <div className="flex items-center gap-0.5">
-              <button
-                type="button"
-                onClick={(e) => {
-                  changeLoopBeats(-1);
-                  e.currentTarget.blur();
-                }}
-                disabled={loopBeats === LOOP_BEAT_STEPS[0]}
-                className={cn(
-                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
-                  loopBeats === LOOP_BEAT_STEPS[0] &&
-                    "cursor-not-allowed opacity-40 hover:bg-transparent",
-                )}
-                title="Halve loop length"
-                aria-label="Halve loop length"
-              >
-                <ChevronLeft className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                data-testid="player-loop-btn"
-                data-active={loopActive || undefined}
-                onClick={(e) => {
-                  toggleLoop();
-                  e.currentTarget.blur();
-                }}
-                disabled={!currentBpm}
-                className={cn(
-                  "flex h-6 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs font-semibold tabular-nums transition-colors",
-                  loopActive
-                    ? "border-primary text-primary hover:bg-primary/10"
-                    : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
-                  !currentBpm &&
-                    "cursor-not-allowed opacity-40 hover:bg-transparent",
-                )}
-                title={currentBpm ? "Toggle loop" : "Loop needs a known BPM"}
-                aria-label="Toggle loop"
-              >
-                <Repeat className="size-3.5" />
-                {loopBeats}
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  changeLoopBeats(1);
-                  e.currentTarget.blur();
-                }}
-                disabled={
-                  loopBeats === LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1]
-                }
-                className={cn(
-                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
-                  loopBeats === LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1] &&
-                    "cursor-not-allowed opacity-40 hover:bg-transparent",
-                )}
-                title="Double loop length"
-                aria-label="Double loop length"
-              >
-                <ChevronRight className="size-3.5" />
-              </button>
-            </div>
-            {zoomControls && (
-              <>
-                <div className="bg-border h-4 w-px" />
-                {zoomControls}
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ===== Body: side rail + waveforms ===== */}
-      <div className="flex min-h-0">
-        {/* ===== Side rail — transport + readouts; the right side is waveforms
-            only. ===== */}
-        <div className="border-border flex w-[360px] shrink-0 flex-col justify-end gap-1 border-r px-3 py-1.5">
-          {/* Artwork + title / artist */}
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div
-              data-testid="player-artwork"
-              className="bg-muted size-9 shrink-0 overflow-hidden rounded-md"
-            >
-              <img
-                src={artworkUrl}
-                alt=""
-                className="size-full object-cover"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).style.display = "none";
-                }}
-              />
-            </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <span
-                  className="text-primary truncate text-sm font-semibold"
-                  title={titleText}
-                >
-                  {titleText}
-                </span>
-                {currentTrack.permalinkUrl && (
-                  <a
-                    href={currentTrack.permalinkUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
-                    title="Open on SoundCloud"
-                    aria-label="Open on SoundCloud"
-                  >
-                    <img
-                      src="/icons/soundcloud.svg"
-                      alt=""
-                      className="size-3 dark:invert"
-                    />
-                  </a>
-                )}
-              </div>
-              {artistText && (
-                <span
-                  className="text-muted-foreground truncate text-xs"
-                  title={artistText}
-                >
-                  {artistText}
-                </span>
-              )}
-            </div>
-            {/* Elapsed / total time — compact, up by the title. */}
-            <div className="shrink-0 text-right leading-none tabular-nums">
-              <span className="text-foreground text-xs font-medium">
-                {formatTime(currentTime)}
-              </span>
-              <span className="text-muted-foreground text-2xs">
-                {" "}
-                / {formatTime(duration)}
-              </span>
-            </div>
-          </div>
-
-          {/* Transport + BPM/KEY readouts (identical in collapsed & expanded). */}
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={(e) => {
-                previous();
-                e.currentTarget.blur();
-              }}
-              disabled={!hasPrevious && currentTime <= 3}
-              className={cn(
-                "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors",
-                !hasPrevious &&
-                  currentTime <= 3 &&
-                  "cursor-not-allowed opacity-40 hover:bg-transparent",
-              )}
-              title="Previous (←)"
-              aria-label="Previous track"
-            >
-              <SkipBack className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              data-testid="player-toggle"
-              onClick={(e) => {
-                toggle();
-                // Drop focus so a subsequent Space keypress isn't captured by
-                // the button's default activation behavior (which would
-                // re-toggle on top of the window-level keyboard handler).
-                e.currentTarget.blur();
-              }}
-              className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors"
-              title={isPlaying ? "Pause (Space)" : "Play (Space)"}
-              aria-label={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying ? (
-                <Pause className="size-3.5" />
-              ) : (
-                <Play className="size-3.5 translate-x-px" />
-              )}
-            </button>
-            {/* CUE — round CDJ-style button: tap sets/recalls, hold previews. */}
-            <button
-              type="button"
-              data-testid="player-cue-btn"
-              onPointerDown={handleCueDown}
-              onPointerUp={handleCueUp}
-              onPointerCancel={handleCueUp}
-              className={cn(
-                "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border text-[10px] font-semibold transition-colors select-none",
-                cueSec != null
-                  ? "border-amber-500 text-amber-500 hover:bg-amber-500/10"
-                  : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
-              )}
-              title="Cue — tap to set/recall, hold to preview"
-              aria-label="Cue"
-            >
-              CUE
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                next();
-                e.currentTarget.blur();
-              }}
-              disabled={!hasNext}
-              className={cn(
-                "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors",
-                !hasNext &&
-                  "cursor-not-allowed opacity-40 hover:bg-transparent",
-              )}
-              title="Next (→)"
-              aria-label="Next track"
-            >
-              <SkipForward className="size-3.5" />
-            </button>
-
-            {/* BPM + KEY on the same level, right-aligned. Labels are never
-                tinted; the value carries the pitch colour. */}
-            <div className="ml-auto flex items-center gap-1">
-              <BpmPitcher />
-              <div className="flex h-10 flex-col items-center justify-center px-2 leading-none">
-                <span className="flex items-baseline gap-1">
-                  <span
-                    className={cn(
-                      "text-xs font-semibold tabular-nums",
-                      keyPitched ? "text-primary" : "text-foreground",
-                    )}
-                  >
-                    {displayKey ?? "—"}
-                  </span>
-                  <span className="text-muted-foreground text-[8px] tracking-wider uppercase">
-                    Key
-                  </span>
-                </span>
-                {pitchEnabled && baseKey != null && (
-                  <span className="text-2xs mt-0.5 tabular-nums">
-                    {/* Original key in gray; the shift carries the pitch colour. */}
-                    <span className="text-muted-foreground">{baseKey}</span>{" "}
-                    <span
-                      className={
-                        keyPitched ? "text-primary" : "text-muted-foreground"
-                      }
-                    >
-                      {semitonesFloat > 0 ? "+" : ""}
-                      {semitonesFloat.toFixed(1)} st
-                    </span>
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ===== Waveform area — right side, waveforms only ===== */}
-        {errorMsg ? (
+        {/* ===== Utility line — spans the whole player. Hot cues sit over the
+          rail column; memory cues start at the waveform's left edge; the merged
+          loop control stays far right. Hidden in SoundCloud view. ===== */}
+        {!isSoundCloud && (
           <div
-            role="alert"
-            className="text-destructive flex flex-1 items-center px-4 text-xs"
+            data-testid="player-utility-bar"
+            className="border-border flex h-8 shrink-0 items-center border-b"
           >
-            {errorMsg}
-          </div>
-        ) : (
-          <div className="flex min-w-0 flex-1">
-            <div className="relative flex min-w-0 flex-1 flex-col justify-center gap-1 py-2 pl-2">
-              {/* Zoom detail strip (shown when toggled on) */}
-              {detailShown && (
-                <div
-                  data-testid="player-detail-strip"
-                  data-zoom-bars={zoomBars}
-                  className="h-20 px-1"
-                  onWheel={(e) => {
-                    e.preventDefault();
-                    changeZoom(e.deltaY < 0 ? 1 : -1);
-                  }}
-                >
-                  <PlayerDetailWaveform
-                    track={currentTrack}
-                    zoomBars={zoomBars}
-                    durationSec={duration}
-                    bpm={currentBpm}
-                    waveformStyle={waveformStyle}
-                    loop={
-                      loopActive && loopEndSec != null
-                        ? { startSec: loopStartSec, endSec: loopEndSec }
-                        : null
-                    }
-                    cueSec={cueSec}
-                  />
-                </div>
-              )}
+            {/* Hot cues — over the rail column (matches its 360px width). */}
+            <div className="flex w-[360px] shrink-0 items-center gap-1 overflow-hidden px-3">
+              {hotCueChips}
+            </div>
 
-              {/* Overview waveform */}
-              <div
-                className="relative flex h-12 items-center px-1"
-                onWheel={
-                  detailShown
-                    ? (e) => {
-                        e.preventDefault();
-                        changeZoom(e.deltaY < 0 ? 1 : -1);
-                      }
-                    : undefined
-                }
-              >
-                <div
-                  ref={containerRef}
-                  className={cn("min-w-0 flex-1", rekColored && "opacity-0")}
-                  style={{ cursor: "pointer" }}
-                />
-                {/* Playhead + cue markers + loop region + zoom-window indicator
-                    over the whole-track overview. Phrase sections are a separate
-                    row. */}
-                {duration > 0 && (
-                  <div className="pointer-events-none absolute inset-x-1 inset-y-0 z-10">
-                    {/* Current play position. */}
-                    <div
-                      data-testid="player-overview-playhead"
-                      className="bg-primary absolute inset-y-0 w-0.5 -translate-x-1/2 rounded-full"
-                      style={{ left: `${(currentTime / duration) * 100}%` }}
-                    />
-                    {/* Loop region (drawn under the cue markers). */}
-                    {loopActive && loopEndSec != null && duration > 0 && (
-                      <div
-                        data-testid="player-loop-region"
-                        className="border-primary bg-primary/15 absolute inset-y-0 rounded-sm border"
-                        style={{
-                          left: `${(loopStartSec / duration) * 100}%`,
-                          width: `${((loopEndSec - loopStartSec) / duration) * 100}%`,
-                        }}
-                      />
-                    )}
-                    {/* Cue markers — hot cues colour-coded (letter), memory cues
-                        numbered. Click to seek. */}
-                    {duration > 0 &&
-                      analysis?.cues.map((c, i) => {
-                        const d = cueDisplays[i];
-                        return (
-                          <div
-                            key={i}
-                            className="absolute inset-y-0"
-                            style={{
-                              left: `${(c.timeMs / 1000 / duration) * 100}%`,
-                            }}
-                          >
-                            <div
-                              className="absolute inset-y-0 w-px -translate-x-1/2"
-                              style={{ backgroundColor: d.color }}
-                            />
-                            <button
-                              type="button"
-                              data-testid="player-cue"
-                              data-cue-type={c.type}
-                              onClick={() =>
-                                jumpToCue(
-                                  c.timeMs / 1000,
-                                  c.outMs != null ? c.outMs / 1000 : null,
-                                )
-                              }
-                              title={
-                                d.isHot
-                                  ? `Hot cue ${d.label}`
-                                  : `Memory cue ${d.label}`
-                              }
-                              className="pointer-events-auto absolute top-0 flex size-3 -translate-x-1/2 cursor-pointer items-center justify-center rounded-[2px] text-[8px] leading-none font-bold transition-transform hover:scale-110"
-                              style={{
-                                backgroundColor: d.color,
-                                color: textOn(d.color),
-                              }}
-                            >
-                              {d.label}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    {/* In-memory cue point (amber flag), click to recall. */}
-                    {cueSec != null && duration > 0 && (
-                      <div
-                        className="absolute inset-y-0"
-                        style={{ left: `${(cueSec / duration) * 100}%` }}
-                      >
-                        <div className="absolute inset-y-0 w-px -translate-x-1/2 bg-amber-500" />
-                        <button
-                          type="button"
-                          data-testid="player-cue-point"
-                          onClick={() => seek(cueSec / duration)}
-                          title="Cue point"
-                          aria-label="Cue point"
-                          className="pointer-events-auto absolute top-0 block size-0 -translate-x-1/2 cursor-pointer border-t-[7px] border-r-[5px] border-l-[5px] border-t-amber-500 border-r-transparent border-l-transparent"
-                        />
-                      </div>
-                    )}
-                    {viewport && (
-                      <div
-                        className="border-primary/70 bg-primary/15 absolute inset-y-0 rounded-sm border"
-                        style={{
-                          left: `${viewport.left * 100}%`,
-                          width: `${viewport.width * 100}%`,
-                        }}
-                      />
-                    )}
-                  </div>
-                )}
-                {/* Rekordbox RGB/Blue overlay — WaveSurfer stays mounted (hidden)
-                  to keep driving audio + progress; this canvas paints the
-                  coloured waveform and owns seek/hover. */}
-                {rekColored && currentTrack.rekordboxId && (
-                  <div
-                    data-testid="player-rekordbox-waveform"
-                    data-variant={rekVariant}
-                    className="absolute inset-x-1 inset-y-0 flex items-center"
-                  >
-                    <PlayerRekordboxWaveform
-                      trackId={currentTrack.rekordboxId}
-                      device={currentTrack.rekordboxDevice}
-                      variant={rekVariant}
-                      durationSec={duration}
-                      className="h-8"
-                    />
-                  </div>
-                )}
-                {/* Loading-state fallback progress — fades out once waveform is ready. */}
-                <div
-                  className={cn(
-                    "bg-surface-3 pointer-events-none absolute inset-x-1 bottom-0 h-0.5 overflow-hidden rounded-full transition-opacity duration-200",
-                    ready ? "opacity-0" : "opacity-100",
-                  )}
-                >
-                  <div
-                    className="bg-primary h-full"
-                    style={{
-                      width: `${Math.min(100, loadingProgress * 100)}%`,
-                    }}
-                  />
-                </div>
+            {/* Memory cues start where the waveform starts; loop control far right. */}
+            <div className="flex flex-1 items-center gap-2 pr-3 pl-2">
+              <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+                {memCueChips}
               </div>
 
-              {/* Phrase band — labelled song-structure sections. */}
-              {duration > 0 && analysis?.sections?.length ? (
-                <div className="relative h-3.5 px-1">
-                  <div className="absolute inset-x-1 inset-y-0">
-                    {analysis.sections.map((s, i) => {
-                      const color =
-                        SECTION_COLOR_VAR[s.kind] ?? SECTION_COLOR_VAR.other;
-                      return (
-                        <div
-                          key={i}
-                          data-testid="player-section"
-                          className="absolute inset-y-0 flex items-center overflow-hidden rounded-[1px] px-1"
-                          style={{
-                            left: `${(s.startMs / 1000 / duration) * 100}%`,
-                            width: `${((s.endMs - s.startMs) / 1000 / duration) * 100}%`,
-                            backgroundColor: color,
-                            // Darker same-hue border separates adjacent sections.
-                            boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${color} 55%, black)`,
-                          }}
-                        >
-                          <span className="truncate text-[8px] leading-none font-semibold tracking-wide text-black/70 uppercase">
-                            {s.label}
-                          </span>
-                        </div>
-                      );
-                    })}
+              {/* Loop control + detail/zoom controls, pinned to the far right. */}
+              <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                {/* Incoming-track preview — shown only while the crossfade runs. */}
+                {isTransitioning && nextTrack && (
+                  <div
+                    data-testid="player-next-chip"
+                    className="border-primary/40 bg-primary/5 text-primary flex h-6 items-center gap-1 rounded-md border pr-1.5 pl-2"
+                    title={`Next: ${nextTitleText}`}
+                  >
+                    <span className="text-2xs text-muted-foreground tracking-wide uppercase">
+                      Next
+                    </span>
+                    <span className="max-w-32 truncate text-xs font-medium">
+                      {nextTitleText}
+                    </span>
+                    <ChevronRight className="size-3" />
                   </div>
+                )}
+                {/* Merged loop control: chevrons set the length, the icon+number
+                both shows it and toggles the loop. */}
+                <div className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      changeLoopBeats(-1);
+                      e.currentTarget.blur();
+                    }}
+                    disabled={loopBeats === LOOP_BEAT_STEPS[0]}
+                    className={cn(
+                      "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
+                      loopBeats === LOOP_BEAT_STEPS[0] &&
+                        "cursor-not-allowed opacity-40 hover:bg-transparent",
+                    )}
+                    title="Halve loop length"
+                    aria-label="Halve loop length"
+                  >
+                    <ChevronLeft className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="player-loop-btn"
+                    data-active={loopActive || undefined}
+                    onClick={(e) => {
+                      toggleLoop();
+                      e.currentTarget.blur();
+                    }}
+                    disabled={!currentBpm}
+                    className={cn(
+                      "flex h-6 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs font-semibold tabular-nums transition-colors",
+                      loopActive
+                        ? "border-primary text-primary hover:bg-primary/10"
+                        : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
+                      !currentBpm &&
+                        "cursor-not-allowed opacity-40 hover:bg-transparent",
+                    )}
+                    title={
+                      currentBpm ? "Toggle loop" : "Loop needs a known BPM"
+                    }
+                    aria-label="Toggle loop"
+                  >
+                    <Repeat className="size-3.5" />
+                    {loopBeats}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      changeLoopBeats(1);
+                      e.currentTarget.blur();
+                    }}
+                    disabled={
+                      loopBeats === LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1]
+                    }
+                    className={cn(
+                      "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
+                      loopBeats ===
+                        LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1] &&
+                        "cursor-not-allowed opacity-40 hover:bg-transparent",
+                    )}
+                    title="Double loop length"
+                    aria-label="Double loop length"
+                  >
+                    <ChevronRight className="size-3.5" />
+                  </button>
                 </div>
-              ) : null}
+                {zoomControls && (
+                  <>
+                    <div className="bg-border h-4 w-px" />
+                    {zoomControls}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         )}
+
+        {/* ===== Body: side rail + waveforms ===== */}
+        <div className="flex min-h-0">
+          {/* ===== Side rail — transport + readouts; the right side is waveforms
+            only. ===== */}
+          <div className="border-border flex w-[360px] shrink-0 flex-col justify-end gap-1 border-r px-3 py-1">
+            {/* Artwork + title / artist */}
+            <div className="flex min-w-0 items-center gap-2.5">
+              {/* Artwork — click expands. When expanded, this unmounts and the
+                big artwork (same layoutId) takes over; framer-motion animates
+                the transform between the two positions. A placeholder keeps
+                the rail layout from shifting meanwhile. */}
+              {!expanded ? (
+                <motion.button
+                  layoutId="player-artwork"
+                  layoutDependency={expanded}
+                  type="button"
+                  data-testid="player-artwork"
+                  className="bg-muted relative size-9 shrink-0 cursor-pointer overflow-hidden rounded-md"
+                  onClick={() => setExpanded(true)}
+                  title="Expand artwork"
+                  aria-label="Expand artwork"
+                  aria-expanded={false}
+                  transition={morphTransition}
+                >
+                  <img
+                    src={artworkUrl}
+                    alt=""
+                    className="size-full object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display =
+                        "none";
+                    }}
+                  />
+                </motion.button>
+              ) : (
+                <div className="size-9 shrink-0" />
+              )}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <MarqueeText
+                    text={titleText}
+                    title={titleText}
+                    className="text-primary text-xs font-semibold"
+                  />
+                  {currentTrack.permalinkUrl && (
+                    <a
+                      href={currentTrack.permalinkUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+                      title="Open on SoundCloud"
+                      aria-label="Open on SoundCloud"
+                    >
+                      <img
+                        src="/icons/soundcloud.svg"
+                        alt=""
+                        className="size-3 dark:invert"
+                      />
+                    </a>
+                  )}
+                </div>
+                {artistText && (
+                  <span
+                    className="text-muted-foreground text-2xs truncate"
+                    title={artistText}
+                  >
+                    {artistText}
+                  </span>
+                )}
+              </div>
+              {/* Elapsed / total time — compact, up by the title. */}
+              <div
+                data-testid="player-time"
+                className="shrink-0 text-right leading-none tabular-nums"
+              >
+                <span className="text-foreground text-xs font-medium">
+                  {formatTime(railElapsed)}
+                </span>
+                <span className="text-muted-foreground text-2xs">
+                  {" "}
+                  / {formatTime(railDuration)}
+                </span>
+              </div>
+            </div>
+
+            {/* Transport + BPM/KEY readouts (identical in collapsed & expanded). */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  previous();
+                  e.currentTarget.blur();
+                }}
+                disabled={!hasPrevious && currentTime <= 3}
+                className={cn(
+                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-6 cursor-pointer items-center justify-center rounded-full transition-colors",
+                  !hasPrevious &&
+                    currentTime <= 3 &&
+                    "cursor-not-allowed opacity-40 hover:bg-transparent",
+                )}
+                title="Previous (←)"
+                aria-label="Previous track"
+              >
+                <SkipBack className="size-3" />
+              </button>
+              <button
+                type="button"
+                data-testid="player-toggle"
+                onClick={(e) => {
+                  toggle();
+                  // Drop focus so a subsequent Space keypress isn't captured by
+                  // the button's default activation behavior (which would
+                  // re-toggle on top of the window-level keyboard handler).
+                  e.currentTarget.blur();
+                }}
+                className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors"
+                title={isPlaying ? "Pause (Space)" : "Play (Space)"}
+                aria-label={isPlaying ? "Pause" : "Play"}
+              >
+                {isPlaying ? (
+                  <Pause className="size-3" />
+                ) : (
+                  <Play className="size-3 translate-x-px" />
+                )}
+              </button>
+              {/* CUE — round CDJ-style button: tap sets/recalls, hold previews. */}
+              <button
+                type="button"
+                data-testid="player-cue-btn"
+                onPointerDown={handleCueDown}
+                onPointerUp={handleCueUp}
+                onPointerCancel={handleCueUp}
+                className={cn(
+                  "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full border text-[9px] font-semibold transition-colors select-none",
+                  cueSec != null
+                    ? "border-amber-500 text-amber-500 hover:bg-amber-500/10"
+                    : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
+                )}
+                title="Cue — tap to set/recall, hold to preview"
+                aria-label="Cue"
+              >
+                CUE
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  next();
+                  e.currentTarget.blur();
+                }}
+                disabled={!hasNext}
+                className={cn(
+                  "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-6 cursor-pointer items-center justify-center rounded-full transition-colors",
+                  !hasNext &&
+                    "cursor-not-allowed opacity-40 hover:bg-transparent",
+                )}
+                title="Next (→)"
+                aria-label="Next track"
+              >
+                <SkipForward className="size-3" />
+              </button>
+
+              {/* BPM + KEY on the same level, right-aligned. Labels are never
+                tinted; the value carries the pitch colour. */}
+              <div className="ml-auto flex items-center gap-1">
+                <MixControls />
+                <BpmPitcher
+                  currentBpmOverride={railSwapped ? railBpm : undefined}
+                />
+                <div
+                  data-testid="player-key"
+                  className="flex h-9 flex-col items-center justify-center px-2 leading-none"
+                >
+                  <span className="flex items-baseline gap-1">
+                    <span
+                      className={cn(
+                        "text-xs font-semibold tabular-nums",
+                        keyPitched ? "text-primary" : "text-foreground",
+                      )}
+                    >
+                      {displayKey ?? "—"}
+                    </span>
+                    <span className="text-muted-foreground text-[8px] tracking-wider uppercase">
+                      Key
+                    </span>
+                  </span>
+                  {pitchEnabled && baseKey != null && (
+                    <span className="text-2xs mt-0.5 tabular-nums">
+                      {/* Original key in gray; the shift carries the pitch colour. */}
+                      <span className="text-muted-foreground">{baseKey}</span>{" "}
+                      <span
+                        className={
+                          keyPitched ? "text-primary" : "text-muted-foreground"
+                        }
+                      >
+                        {semitonesFloat > 0 ? "+" : ""}
+                        {semitonesFloat.toFixed(1)} st
+                      </span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ===== Waveform area — right side, waveforms only ===== */}
+          {errorMsg ? (
+            <div
+              role="alert"
+              className="text-destructive flex flex-1 items-center px-4 text-xs"
+            >
+              {errorMsg}
+            </div>
+          ) : (
+            <div className="flex min-w-0 flex-1">
+              <div className="relative flex min-w-0 flex-1 flex-col justify-center gap-1 py-2 pl-2">
+                {/* Zoom detail strip (shown when toggled on) */}
+                {detailShown && (
+                  <div
+                    data-testid="player-detail-strip"
+                    data-zoom-bars={zoomBars}
+                    className="relative h-20 px-1"
+                    onWheel={(e) => {
+                      e.preventDefault();
+                      changeZoom(e.deltaY < 0 ? 1 : -1);
+                    }}
+                  >
+                    {/* The strip renders keyed deck layers so React reconciles
+                      them across the fade's seams: during a fade the split is
+                      two layers (new track's top half over the old track's
+                      bottom half, each scrolling on its own playhead); at
+                      adoption the incoming layer is KEPT in place (same key)
+                      instead of remounting — a remount flickers (blank canvas
+                      until its waveform/size state reload). */}
+                    <div
+                      data-testid={
+                        isTransitioning && nextTrack
+                          ? "player-detail-split"
+                          : undefined
+                      }
+                      className="relative h-full"
+                    >
+                      {(isTransitioning && nextTrack
+                        ? [
+                            {
+                              key:
+                                currentTrack.filePath === nextTrack.filePath
+                                  ? `${currentTrack.filePath}#out`
+                                  : currentTrack.filePath,
+                              clipPath: detailSplit?.oldClip,
+                              node: (
+                                <PlayerDetailWaveform
+                                  track={currentTrack}
+                                  zoomBars={zoomBars}
+                                  durationSec={duration}
+                                  bpm={currentBpm}
+                                  waveformStyle={waveformStyle}
+                                  progressOverride={deckAProgress}
+                                  // Loop-eq: show the loop bracket on the looping
+                                  // out-going deck.
+                                  loop={detailSplit?.oldLoop ?? null}
+                                />
+                              ),
+                            },
+                            {
+                              key: nextTrack.filePath,
+                              clipPath: detailSplit?.newClip,
+                              node: (
+                                <PlayerDetailWaveform
+                                  track={nextTrack}
+                                  zoomBars={zoomBars}
+                                  durationSec={deckBDuration}
+                                  bpm={nextTrack.bpm ?? null}
+                                  waveformStyle={waveformStyle}
+                                  progressOverride={deckBProgress}
+                                />
+                              ),
+                            },
+                          ]
+                        : [
+                            {
+                              key: currentTrack.filePath,
+                              clipPath: undefined,
+                              node: (
+                                <PlayerDetailWaveform
+                                  track={currentTrack}
+                                  zoomBars={zoomBars}
+                                  // Zero through the adoption seam: the stale old
+                                  // duration would misplace the kept canvas; zero
+                                  // freezes it on its last fade frame until the
+                                  // rebuilt player reports real values.
+                                  durationSec={
+                                    transitionCompletedRef.current
+                                      ? 0
+                                      : duration
+                                  }
+                                  bpm={currentBpm}
+                                  waveformStyle={waveformStyle}
+                                  loop={
+                                    loopActive && loopEndSec != null
+                                      ? {
+                                          startSec: loopStartSec,
+                                          endSec: loopEndSec,
+                                        }
+                                      : null
+                                  }
+                                  cueSec={cueSec}
+                                />
+                              ),
+                            },
+                          ]
+                      ).map((d) => (
+                        <div
+                          key={d.key}
+                          className="absolute inset-0"
+                          style={{ clipPath: d.clipPath }}
+                        >
+                          {d.node}
+                        </div>
+                      ))}
+                      {/* Half-split divider across the overlap: the two decks
+                        above/below it are playing separately. Spans only the
+                        split region, so it sweeps out with the boundaries. */}
+                      {detailSplit && detailSplit.outX > detailSplit.inX && (
+                        <div
+                          data-testid="player-detail-split-divider"
+                          className="bg-primary pointer-events-none absolute top-1/2 h-0.5 -translate-y-1/2"
+                          style={{
+                            left: `${detailSplit.inX}%`,
+                            width: `${detailSplit.outX - detailSplit.inX}%`,
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Overview waveform */}
+                <div
+                  className="relative flex h-12 items-center px-1"
+                  onWheel={
+                    detailShown
+                      ? (e) => {
+                          e.preventDefault();
+                          changeZoom(e.deltaY < 0 ? 1 : -1);
+                        }
+                      : undefined
+                  }
+                >
+                  <div
+                    ref={containerRef}
+                    className={cn("min-w-0 flex-1", rekColored && "opacity-0")}
+                    style={{ cursor: "pointer" }}
+                  />
+                  {/* Playhead + cue markers + loop region + zoom-window indicator
+                    over the whole-track overview. Phrase sections are a separate
+                    row. */}
+                  {duration > 0 && (
+                    <div className="pointer-events-none absolute inset-x-1 inset-y-0 z-10">
+                      {/* Current play position. */}
+                      <div
+                        data-testid="player-overview-playhead"
+                        className="bg-primary absolute inset-y-0 w-0.5 -translate-x-1/2 rounded-full"
+                        style={{ left: `${(currentTime / duration) * 100}%` }}
+                      />
+                      {/* Loop region (drawn under the cue markers). */}
+                      {loopActive && loopEndSec != null && duration > 0 && (
+                        <div
+                          data-testid="player-loop-region"
+                          className="border-primary bg-primary/15 absolute inset-y-0 rounded-sm border"
+                          style={{
+                            left: `${(loopStartSec / duration) * 100}%`,
+                            width: `${((loopEndSec - loopStartSec) / duration) * 100}%`,
+                          }}
+                        />
+                      )}
+                      {/* Cue markers — hot cues colour-coded (letter), memory cues
+                        numbered. Click to seek. */}
+                      {duration > 0 &&
+                        analysis?.cues.map((c, i) => {
+                          const d = cueDisplays[i];
+                          return (
+                            <div
+                              key={i}
+                              className="absolute inset-y-0"
+                              style={{
+                                left: `${(c.timeMs / 1000 / duration) * 100}%`,
+                              }}
+                            >
+                              <div
+                                className="absolute inset-y-0 w-px -translate-x-1/2"
+                                style={{ backgroundColor: d.color }}
+                              />
+                              <button
+                                type="button"
+                                data-testid="player-cue"
+                                data-cue-type={c.type}
+                                onClick={() =>
+                                  jumpToCue(
+                                    c.timeMs / 1000,
+                                    c.outMs != null ? c.outMs / 1000 : null,
+                                  )
+                                }
+                                title={
+                                  d.isHot
+                                    ? `Hot cue ${d.label}`
+                                    : `Memory cue ${d.label}`
+                                }
+                                className="pointer-events-auto absolute top-0 flex size-3 -translate-x-1/2 cursor-pointer items-center justify-center rounded-[2px] text-[8px] leading-none font-bold transition-transform hover:scale-110"
+                                style={{
+                                  backgroundColor: d.color,
+                                  color: textOn(d.color),
+                                }}
+                              >
+                                {d.label}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      {/* In-memory cue point (amber flag), click to recall. */}
+                      {cueSec != null && duration > 0 && (
+                        <div
+                          className="absolute inset-y-0"
+                          style={{ left: `${(cueSec / duration) * 100}%` }}
+                        >
+                          <div className="absolute inset-y-0 w-px -translate-x-1/2 bg-amber-500" />
+                          <button
+                            type="button"
+                            data-testid="player-cue-point"
+                            onClick={() => seek(cueSec / duration)}
+                            title="Cue point"
+                            aria-label="Cue point"
+                            className="pointer-events-auto absolute top-0 block size-0 -translate-x-1/2 cursor-pointer border-t-[7px] border-r-[5px] border-l-[5px] border-t-amber-500 border-r-transparent border-l-transparent"
+                          />
+                        </div>
+                      )}
+                      {viewport && (
+                        <div
+                          className="border-primary/70 bg-primary/15 absolute inset-y-0 rounded-sm border"
+                          style={{
+                            left: `${viewport.left * 100}%`,
+                            width: `${viewport.width * 100}%`,
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+                  {/* Rekordbox RGB/Blue overlay — WaveSurfer stays mounted (hidden)
+                  to keep driving audio + progress; this canvas paints the
+                  coloured waveform and owns seek/hover. */}
+                  {rekColored && currentTrack.rekordboxId && (
+                    <div
+                      data-testid="player-rekordbox-waveform"
+                      data-variant={rekVariant}
+                      className="absolute inset-x-1 inset-y-0 flex items-center"
+                    >
+                      <PlayerRekordboxWaveform
+                        trackId={currentTrack.rekordboxId}
+                        device={currentTrack.rekordboxDevice}
+                        variant={rekVariant}
+                        durationSec={duration}
+                        className="h-8"
+                      />
+                    </div>
+                  )}
+                  {/* Crossfade overlay — aligned full-track overview: old on the
+                    left, new overlapping its tail on the right (split top/bottom
+                    across the overlap), swiping left at the fade's midpoint to
+                    reveal the rest of the incoming track. The settled frame
+                    stays painted through the adoption seam until the rebuilt
+                    waveform is ready, then gives way to it. */}
+                  {overlayFrame && (
+                    <div
+                      data-testid="player-crossfade-overview"
+                      data-overlay-mode={liveOverlayFrame ? "live" : "seam"}
+                      data-style={overlayFrame.dataStyle}
+                      className="animate-in fade-in-0 absolute inset-x-1 inset-y-0 z-20 flex cursor-pointer items-center overflow-hidden bg-[var(--surface-2)] duration-300"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const frac = Math.max(
+                          0,
+                          Math.min(1, (e.clientX - rect.left) / rect.width),
+                        );
+                        // Through the seam the settled frame shows the adopted
+                        // track at identity — a click is a plain seek on it
+                        // (deferred by the provider until the rebuilt player
+                        // registers its seek fn).
+                        if (liveOverlayFrame) handleTransitionSeek(frac);
+                        else seek(frac);
+                      }}
+                    >
+                      {/* The overlay covers the whole row (opaque, hides the base
+                        waveform); the swipe itself renders at the same h-8 as
+                        the resting overview waveform. */}
+                      <div className="h-8 w-full">
+                        <MixOverviewSwipe {...overlayFrame.props} />
+                      </div>
+                    </div>
+                  )}
+                  {/* Loading-state fallback progress — fades out once waveform is ready. */}
+                  <div
+                    className={cn(
+                      "bg-surface-3 pointer-events-none absolute inset-x-1 bottom-0 h-0.5 overflow-hidden rounded-full transition-opacity duration-200",
+                      ready ? "opacity-0" : "opacity-100",
+                    )}
+                  >
+                    <div
+                      className="bg-primary h-full"
+                      style={{
+                        width: `${Math.min(100, loadingProgress * 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Phrase band — labelled song-structure sections. From the
+                  swipe on (and through the adoption seam) the overview shows
+                  the incoming track, so the band flips with it. */}
+                {bandDuration > 0 && bandSections?.length ? (
+                  <div className="relative h-3.5 px-1">
+                    <div className="absolute inset-x-1 inset-y-0">
+                      {bandSections.map((s, i) => {
+                        const color =
+                          SECTION_COLOR_VAR[s.kind] ?? SECTION_COLOR_VAR.other;
+                        return (
+                          <div
+                            key={i}
+                            data-testid="player-section"
+                            className="absolute inset-y-0 flex items-center overflow-hidden rounded-[1px] px-1"
+                            style={{
+                              left: `${(s.startMs / 1000 / bandDuration) * 100}%`,
+                              width: `${((s.endMs - s.startMs) / 1000 / bandDuration) * 100}%`,
+                              backgroundColor: color,
+                              // Darker same-hue border separates adjacent sections.
+                              boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${color} 55%, black)`,
+                            }}
+                          >
+                            <span className="truncate text-[8px] leading-none font-semibold tracking-wide text-black/70 uppercase">
+                              {s.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -97,7 +97,63 @@ async function detectBpmForTrack(
   return Math.round(result.bpm);
 }
 
-export function BpmPitcher() {
+/**
+ * Resolve a track's BPM without user interaction: queue hint → backend cache
+ * → fresh analysis (Tauri only). Used by the auto-mix arm step so the incoming
+ * deck can fade in already pitched to the target BPM instead of snapping to it
+ * after adoption. Dispatches `SC_BPM_UPDATED_EVENT` on resolution so the queue
+ * hint (and table cells) pick the value up. Returns null when unknown.
+ */
+export async function resolveTrackBpm(
+  track: PlayerTrack,
+): Promise<number | null> {
+  if (track.bpm != null) return track.bpm;
+  const scId = getScTrackId(track);
+  const announce = (bpm: number) => {
+    if (scId === null) return;
+    window.dispatchEvent(
+      new CustomEvent<ScBpmUpdatedDetail>(SC_BPM_UPDATED_EVENT, {
+        detail: { trackId: scId, bpm: Math.round(bpm) },
+      }),
+    );
+  };
+  try {
+    if (!isTauri()) {
+      // No analysis bridge — the backend BPM cache is the best we can do.
+      if (scId === null) return null;
+      const cached = await api.getSoundcloudBpmsBulk([scId]);
+      const hit = cached.bpms[String(scId)];
+      if (typeof hit === "number" && hit > 0) {
+        announce(hit);
+        return Math.round(hit);
+      }
+      return null;
+    }
+    const bpm = await detectBpmForTrack(track);
+    // detectBpmForTrack only dispatches after fresh analysis; a cache hit must
+    // reach the queue hint too (re-dispatch is idempotent for listeners).
+    if (bpm != null) announce(bpm);
+    return bpm;
+  } catch (err) {
+    console.warn("[mix] BPM resolution failed for", track.fileName, err);
+    if (err instanceof TrackUnanalysableError && scId !== null) {
+      markScUnplayable(scId);
+    }
+    return null;
+  }
+}
+
+export function BpmPitcher({
+  currentBpmOverride,
+}: {
+  /**
+   * Overrides the BPM shown on the trigger (label + rate badge) only — used
+   * during an auto-mix swipe to preview the incoming deck's BPM before the
+   * queue advances. The popover control panel and BPM detection still act on
+   * the real current track. Undefined = no override.
+   */
+  currentBpmOverride?: number | null;
+} = {}) {
   const {
     currentTrack,
     currentBpm,
@@ -219,16 +275,23 @@ export function BpmPitcher() {
 
   const rate = computePlaybackRate(pitchEnabled, currentBpm, targetBpm);
   const ratePercent = (rate - 1) * 100;
+  // The trigger readout can preview the incoming deck during an auto-mix swipe.
+  const displayBpm =
+    currentBpmOverride !== undefined ? currentBpmOverride : currentBpm;
+  const displayRate = computePlaybackRate(pitchEnabled, displayBpm, targetBpm);
+  const displayRatePercent = (displayRate - 1) * 100;
   // When pitching is on, show the effective playback BPM (what you actually
   // hear). The rate is clamped to [0.5, 2.0], so this isn't always equal to
   // ``targetBpm`` — derive it from the rate so the readout stays honest.
   const effectiveBpm =
-    pitchEnabled && currentBpm != null ? Math.round(currentBpm * rate) : null;
+    pitchEnabled && displayBpm != null
+      ? Math.round(displayBpm * displayRate)
+      : null;
   const bpmLabel =
     effectiveBpm != null
       ? `${effectiveBpm}`
-      : currentBpm != null
-        ? `${currentBpm}`
+      : displayBpm != null
+        ? `${displayBpm}`
         : "—";
   const tauri = isTauri();
 
@@ -239,7 +302,7 @@ export function BpmPitcher() {
           <button
             type="button"
             data-testid="bpm-pitcher-trigger"
-            className="text-muted-foreground hover:bg-surface-3 flex h-10 cursor-pointer flex-col items-center justify-center rounded-md px-2 leading-none tabular-nums transition-colors"
+            className="text-muted-foreground hover:bg-surface-3 flex h-9 cursor-pointer flex-col items-center justify-center rounded-md px-2 leading-none tabular-nums transition-colors"
             title="Target BPM"
             aria-label="Target BPM pitcher"
           >
@@ -257,20 +320,22 @@ export function BpmPitcher() {
                 BPM
               </span>
             </span>
-            {pitchEnabled && currentBpm != null && (
+            {pitchEnabled && displayBpm != null && (
               <span
                 data-testid="bpm-pitcher-rate-badge"
                 className="text-2xs mt-0.5 tabular-nums"
               >
                 {/* Original BPM in gray; the delta carries the pitch colour. */}
-                <span className="text-muted-foreground">{currentBpm}</span>{" "}
+                <span className="text-muted-foreground">{displayBpm}</span>{" "}
                 <span
                   className={
-                    ratePercent === 0 ? "text-muted-foreground" : "text-primary"
+                    displayRatePercent === 0
+                      ? "text-muted-foreground"
+                      : "text-primary"
                   }
                 >
-                  {ratePercent > 0 ? "+" : ""}
-                  {ratePercent.toFixed(1)}%
+                  {displayRatePercent > 0 ? "+" : ""}
+                  {displayRatePercent.toFixed(1)}%
                 </span>
               </span>
             )}

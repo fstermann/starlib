@@ -14,7 +14,14 @@ import {
   SC_BPM_UPDATED_EVENT,
   type ScBpmUpdatedDetail,
 } from "@/components/soundcloud-batch-analyze-button";
+import {
+  DEFAULT_MIX_CONFIG,
+  MIX_CONFIG_KEY,
+  normalizeMixConfig,
+  type MixConfig,
+} from "@/lib/mix/config";
 import { useIsScUnplayable } from "@/lib/sc-unplayable";
+import { getRaw, setRaw } from "@/lib/settings";
 
 export interface PlayerTrack {
   filePath: string;
@@ -55,6 +62,10 @@ export interface PlayerTrack {
 
 interface PlayerContextValue {
   currentTrack: PlayerTrack | null;
+  /** Position of `currentTrack` in the queue (-1 when nothing is loaded).
+   * Queues can hold the same file twice in a row, so per-entry identity is
+   * `${queueIndex}:${filePath}` — filePath alone is not unique. */
+  queueIndex: number;
   isPlaying: boolean;
   /** Load a single track without playing. Replaces the queue with [track]. */
   load: (track: PlayerTrack) => void;
@@ -102,6 +113,9 @@ interface PlayerContextValue {
   /** When true, playback is pitched to `targetBpm / currentBpm`. Persisted. */
   pitchEnabled: boolean;
   setPitchEnabled: (enabled: boolean) => void;
+  /** Auto-mix (crossfade) configuration. Persisted to the UI store. */
+  mixConfig: MixConfig;
+  setMixConfig: (config: MixConfig) => void;
 }
 
 const PITCH_TARGET_KEY = "starlib.pitcher.targetBpm";
@@ -123,6 +137,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [currentBpm, setCurrentBpmState] = useState<number | null>(null);
   const [targetBpm, setTargetBpmState] = useState<number>(DEFAULT_TARGET_BPM);
   const [pitchEnabled, setPitchEnabledState] = useState<boolean>(false);
+  const [mixConfig, setMixConfigState] =
+    useState<MixConfig>(DEFAULT_MIX_CONFIG);
+
+  // Hydrate the auto-mix config from the UI store on mount.
+  useEffect(() => {
+    getRaw<MixConfig | null>(MIX_CONFIG_KEY, null)
+      .then((raw) => setMixConfigState(normalizeMixConfig(raw)))
+      .catch(() => {});
+  }, []);
+
+  const setMixConfig = useCallback((config: MixConfig) => {
+    const next = normalizeMixConfig(config);
+    setMixConfigState(next);
+    setRaw(MIX_CONFIG_KEY, next).catch(() => {});
+  }, []);
 
   // Hydrate pitcher prefs from localStorage. Done in an effect to keep SSR
   // safe — the initial server render gets the defaults and the client
@@ -189,27 +218,44 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return Number.isFinite(n) && n > 0 ? n : null;
   })();
 
-  // Keep `currentBpm` in sync with manual edits/reanalysis from the SC table
-  // cells. Without this the pitcher keeps using the stale value and the
-  // playback rate doesn't track the user's correction.
-  useEffect(() => {
-    if (currentScId == null) return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<ScBpmUpdatedDetail>).detail;
-      if (detail?.trackId === currentScId) {
-        setCurrentBpmState(detail.bpm);
-      }
-    };
-    window.addEventListener(SC_BPM_UPDATED_EVENT, handler);
-    return () => window.removeEventListener(SC_BPM_UPDATED_EVENT, handler);
-  }, [currentScId]);
-
   const setQueueState = useCallback((tracks: PlayerTrack[], index: number) => {
     queueRef.current = tracks;
     queueIndexRef.current = index;
     setQueue(tracks);
     setQueueIndex(index);
   }, []);
+
+  // Keep `currentBpm` AND queue-entry BPM hints in sync with edits/reanalysis
+  // from the SC table cells or the auto-mix arm step. Without the queue patch,
+  // a track whose BPM was resolved while queued (to pitch the incoming
+  // crossfade deck) would reseed to "unknown" when it becomes current — and
+  // the pitcher would audibly snap the rate to 1 before re-detecting.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<ScBpmUpdatedDetail>).detail;
+      if (!detail) return;
+      let changed = false;
+      const patched = queueRef.current.map((t) => {
+        const k = t.streamRefreshKey;
+        const n = typeof k === "number" ? k : Number(k);
+        if (
+          Number.isFinite(n) &&
+          n === detail.trackId &&
+          t.bpm !== detail.bpm
+        ) {
+          changed = true;
+          return { ...t, bpm: detail.bpm };
+        }
+        return t;
+      });
+      if (changed) setQueueState(patched, queueIndexRef.current);
+      if (currentScId != null && detail.trackId === currentScId) {
+        setCurrentBpmState(detail.bpm);
+      }
+    };
+    window.addEventListener(SC_BPM_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(SC_BPM_UPDATED_EVENT, handler);
+  }, [currentScId, setQueueState]);
 
   const playQueue = useCallback(
     (tracks: PlayerTrack[], index: number, startRatio?: number) => {
@@ -357,6 +403,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<PlayerContextValue>(
     () => ({
       currentTrack,
+      queueIndex,
       isPlaying,
       load,
       play,
@@ -381,9 +428,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setTargetBpm,
       pitchEnabled,
       setPitchEnabled,
+      mixConfig,
+      setMixConfig,
     }),
     [
       currentTrack,
+      queueIndex,
       isPlaying,
       load,
       play,
@@ -408,6 +458,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setTargetBpm,
       pitchEnabled,
       setPitchEnabled,
+      mixConfig,
+      setMixConfig,
     ],
   );
 

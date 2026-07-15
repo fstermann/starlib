@@ -16,6 +16,10 @@ interface PlayerRekordboxWaveformProps {
   variant: WaveformVariant;
   /** Track length in seconds, for the hover time label. */
   durationSec: number;
+  /** When set, drive the played overlay from this progress (0–1) instead of the
+   * global player progress, and disable seek/hover. Used to render the incoming
+   * deck during a crossfade. */
+  progressOverride?: number;
   className?: string;
 }
 
@@ -40,6 +44,7 @@ export function PlayerRekordboxWaveform({
   device,
   variant,
   durationSec,
+  progressOverride,
   className,
 }: PlayerRekordboxWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -172,14 +177,21 @@ export function PlayerRekordboxWaveform({
     [data, size, variant, durationSec],
   );
 
-  // Redraw on data/size/variant change and subscribe to live progress.
+  // Redraw on data/size/variant change and subscribe to live progress. A
+  // progress override (crossfade overlay) paints that instead and skips the
+  // global subscription.
   useEffect(() => {
+    if (progressOverride != null) {
+      progressRef.current = progressOverride;
+      draw(progressOverride, null);
+      return;
+    }
     draw(progressRef.current, hoverXRef.current);
     return subscribeProgress((p) => {
       progressRef.current = p;
       draw(p, hoverXRef.current);
     });
-  }, [draw, subscribeProgress]);
+  }, [draw, subscribeProgress, progressOverride]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -208,14 +220,19 @@ export function PlayerRekordboxWaveform({
     [seek],
   );
 
+  // Non-interactive when driven by an override (the incoming deck's preview).
+  const readOnly = progressOverride != null;
   return (
     <div ref={wrapRef} className={cn("size-full", className)}>
       <canvas
         ref={canvasRef}
-        className="block size-full cursor-pointer"
-        onClick={handleClick}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
+        className={cn(
+          "block size-full",
+          readOnly ? "pointer-events-none" : "cursor-pointer",
+        )}
+        onClick={readOnly ? undefined : handleClick}
+        onMouseMove={readOnly ? undefined : handleMouseMove}
+        onMouseLeave={readOnly ? undefined : handleMouseLeave}
         aria-hidden
       />
     </div>
