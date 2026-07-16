@@ -209,3 +209,62 @@ test.describe(
     });
   },
 );
+
+test.describe(
+  "Auto-mix crossfade — table highlight follows the audible track",
+  { tag: "@slow" },
+  () => {
+    test("incoming SoundCloud row is marked current mid-fade, not only at fade end", async ({
+      page,
+    }) => {
+      test.setTimeout(60_000);
+      await setup(page);
+      await page.goto("/library?source=soundcloud");
+
+      await expect(page.locator("[data-index]")).toHaveCount(2, {
+        timeout: 5000,
+      });
+
+      const alphaRow = page.locator('[data-index="0"] [role="row"]').first();
+      const betaRow = page.locator('[data-index="1"] [role="row"]').first();
+
+      await page
+        .locator('[data-index="0"]')
+        .getByRole("button", { name: /Play Alpha/ })
+        .click()
+        .catch(async () => {
+          await page.locator('[data-index="0"]').click();
+        });
+
+      const player = page.getByTestId("waveform-player");
+      await expect(player).toBeVisible();
+      await page.mouse.move(0, 0);
+      await expect(alphaRow).toHaveAttribute("aria-current", "true");
+
+      await player.getByTestId("mix-controls-trigger").click();
+      await page.getByTestId("mix-enabled-toggle").click();
+      await page.keyboard.press("Escape");
+
+      await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+        timeout: 20000,
+      });
+
+      // The marker flips to the incoming track WHILE the fade is still running
+      // (state stays "transitioning" until the fade completes and the queue
+      // advances). Before the fix it only flipped at fade end. Poll for the
+      // simultaneous state so the assertion can't straddle the completion seam.
+      await expect
+        .poll(
+          async () => {
+            const [state, betaCurrent] = await Promise.all([
+              player.getAttribute("data-mix-state"),
+              betaRow.getAttribute("aria-current"),
+            ]);
+            return state === "transitioning" && betaCurrent === "true";
+          },
+          { timeout: 20000 },
+        )
+        .toBe(true);
+    });
+  },
+);

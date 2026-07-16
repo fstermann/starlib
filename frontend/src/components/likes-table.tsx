@@ -488,8 +488,8 @@ function TrackRowInner({
 }: TrackRowProps) {
   const imgUrl = artworkUrl(track);
   const scTrackId = extractId(track);
-  const { currentTrack } = usePlayer();
-  const isCurrent = currentTrack?.filePath === `soundcloud:${scTrackId}`;
+  const { activeTrack } = usePlayer();
+  const isCurrent = activeTrack?.filePath === `soundcloud:${scTrackId}`;
   const unplayable = useIsScUnplayable(scTrackId || null);
 
   // Hover prefetch: warm the stream URL + peaks cache after a short dwell.
@@ -521,7 +521,8 @@ function TrackRowInner({
       <div
         role="row"
         tabIndex={0}
-        className={`group border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isSelected ? "bg-[var(--brand-soft)]" : isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
+        aria-current={isCurrent ? "true" : undefined}
+        className={`group border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isCurrent ? "bg-[var(--brand-soft)]" : isSelected || isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
         onClick={onExpand}
         onPointerEnter={onPointerEnter}
         onPointerLeave={onPointerLeave}

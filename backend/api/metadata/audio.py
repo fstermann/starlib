@@ -206,16 +206,26 @@ def _cached_wav_path(path: Path, cache_dir: Path) -> Path:
 
 
 def _transcode_to_wav(path: Path, wav_path: Path) -> None:
-    """Transcode *path* to a WAV file at *wav_path* using ffmpeg."""
+    """Transcode *path* to a WAV file at *wav_path* using ffmpeg.
+
+    ffmpeg's stderr is captured and logged on failure so a transcode error
+    (the usual cause of a 500 from the audio endpoint) is diagnosable instead
+    of vanishing into ``/dev/null``.
+    """
     tmp_path = wav_path.with_suffix(".tmp")
     try:
         subprocess.run(
             [_find_ffmpeg(), "-i", str(path), "-f", "wav", str(tmp_path), "-y"],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             check=True,
         )
         tmp_path.rename(wav_path)
+    except subprocess.CalledProcessError as e:
+        tmp_path.unlink(missing_ok=True)
+        stderr = (e.stderr or b"").decode("utf-8", "replace").strip()
+        logger.error("ffmpeg failed to transcode %s: %s", path.name, stderr[-2000:] or "(no stderr)")
+        raise
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise
