@@ -19,9 +19,11 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   Ban,
+  ChevronDown,
   Download,
   FolderCheck,
   GripVertical,
+  Search,
   ShoppingCart,
 } from "lucide-react";
 import * as React from "react";
@@ -39,6 +41,11 @@ import {
   type TrackTableColumn,
 } from "@/components/track-table/track-table";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
@@ -214,7 +221,7 @@ const LIKES_COLUMNS: LikesCol[] = [
   {
     id: "links",
     header: "Links",
-    defaultWidth: 112,
+    defaultWidth: 84,
     cellClassName: "shrink-0",
     renderHeader: () => (
       <div className="flex items-center justify-center gap-1">
@@ -238,122 +245,14 @@ const LIKES_COLUMNS: LikesCol[] = [
           ) : (
             <div className="size-5" />
           )}
-          {(() => {
-            if (track.download_url) {
-              return (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <a
-                      href={track.download_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
-                      onClick={(e) => e.stopPropagation()}
-                      data-testid="sc-download-link"
-                    >
-                      <Download className="size-3" />
-                    </a>
-                  </TooltipTrigger>
-                  <TooltipContent>Download</TooltipContent>
-                </Tooltip>
-              );
-            }
-            const fallback = parseFallbackDownloadUrl(track.description);
-            if (!fallback) return <div className="size-5" />;
-            const icon = purchaseIcon(fallback);
-            return (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <a
-                    href={fallback}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
-                    onClick={(e) => e.stopPropagation()}
-                    data-testid="sc-download-fallback"
-                  >
-                    {icon ? (
-                      <img src={icon.src} alt={icon.alt} className="size-3.5" />
-                    ) : (
-                      <Download className="size-3" />
-                    )}
-                  </a>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Download via {icon?.alt ?? "external link"}
-                </TooltipContent>
-              </Tooltip>
-            );
-          })()}
-          {track.purchase_url ? (
-            (() => {
-              const icon = purchaseIcon(track.purchase_url);
-              return (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <a
-                      href={track.purchase_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {icon ? (
-                        <img
-                          src={icon.src}
-                          alt={icon.alt}
-                          className="size-3.5"
-                        />
-                      ) : (
-                        <ShoppingCart className="size-3" />
-                      )}
-                    </a>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {track.purchase_title || icon?.alt || "Buy"}
-                  </TooltipContent>
-                </Tooltip>
-              );
-            })()
-          ) : (
-            <div className="size-5" />
-          )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <a
-                href={`https://bandcamp.com/search?q=${encodeURIComponent(searchQuery(track))}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex size-5 items-center justify-center opacity-40 transition-opacity hover:opacity-100"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <img
-                  src="/icons/bandcamp.svg"
-                  alt="Bandcamp"
-                  className="size-3.5"
-                />
-              </a>
-            </TooltipTrigger>
-            <TooltipContent>Search Bandcamp</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <a
-                href={`https://www.beatport.com/search?q=${encodeURIComponent(searchQuery(track))}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex size-5 items-center justify-center opacity-40 transition-opacity hover:opacity-100"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <img
-                  src="/icons/beatport.svg"
-                  alt="Beatport"
-                  className="size-3.5"
-                />
-              </a>
-            </TooltipTrigger>
-            <TooltipContent>Search Beatport</TooltipContent>
-          </Tooltip>
+          <DownloadMenu track={track} />
+          <LinkMenu
+            options={searchOptions(track)}
+            triggerIcon={<Search className="size-3" />}
+            tooltip="Search stores"
+            triggerClassName="flex size-5 items-center justify-center opacity-40 transition-opacity hover:opacity-100"
+            testId="sc-search"
+          />
         </TooltipProvider>
       </div>
     ),
@@ -447,6 +346,190 @@ function purchaseIcon(url: string): { src: string; alt: string } | null {
     /* invalid url */
   }
   return null;
+}
+
+interface LinkOption {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  /** Detected store logo, when the URL points at a known platform. */
+  logo?: { src: string; alt: string };
+}
+
+function logoIcon(
+  logo: { src: string; alt: string } | null,
+  fallback: React.ReactNode,
+): React.ReactNode {
+  return logo ? (
+    <img src={logo.src} alt={logo.alt} className="size-3" />
+  ) : (
+    fallback
+  );
+}
+
+/** Every distinct download/purchase link for a track: the direct download, a
+ *  store link parsed from the description, and any purchase link. Deduped by
+ *  URL so a description that just restates the purchase link isn't listed twice. */
+function downloadOptions(track: SCTrack): LinkOption[] {
+  const opts: LinkOption[] = [];
+  const seen = new Set<string>();
+  const add = (o: LinkOption) => {
+    if (seen.has(o.href)) return;
+    seen.add(o.href);
+    opts.push(o);
+  };
+  if (track.download_url) {
+    add({
+      href: track.download_url,
+      label: "Direct download",
+      icon: <Download className="size-3" />,
+    });
+  }
+  const fallback = parseFallbackDownloadUrl(track.description);
+  if (fallback) {
+    const logo = purchaseIcon(fallback);
+    add({
+      href: fallback,
+      label: logo ? `${logo.alt} (in description)` : "Link in description",
+      icon: logoIcon(logo, <Download className="size-3" />),
+      logo: logo ?? undefined,
+    });
+  }
+  if (track.purchase_url) {
+    const logo = purchaseIcon(track.purchase_url);
+    add({
+      href: track.purchase_url,
+      label: track.purchase_title || (logo ? `Buy on ${logo.alt}` : "Buy"),
+      icon: logoIcon(logo, <ShoppingCart className="size-3" />),
+      logo: logo ?? undefined,
+    });
+  }
+  return opts;
+}
+
+/** Bandcamp + Beatport store searches for a track (always both). */
+function searchOptions(track: SCTrack): LinkOption[] {
+  const q = encodeURIComponent(searchQuery(track));
+  return [
+    {
+      href: `https://bandcamp.com/search?q=${q}`,
+      label: "Bandcamp",
+      icon: <img src="/icons/bandcamp.svg" alt="Bandcamp" className="size-3" />,
+    },
+    {
+      href: `https://www.beatport.com/search?q=${q}`,
+      label: "Beatport",
+      icon: <img src="/icons/beatport.svg" alt="Beatport" className="size-3" />,
+    },
+  ];
+}
+
+/** Render a cluster of related external links behind a single icon: nothing
+ *  when empty, a plain link for one option, or a popover selector for several. */
+function LinkMenu({
+  options,
+  triggerIcon,
+  tooltip,
+  triggerClassName,
+  testId,
+}: {
+  options: LinkOption[];
+  triggerIcon: React.ReactNode;
+  tooltip: string;
+  triggerClassName: string;
+  testId: string;
+}) {
+  if (options.length === 0) return <div className="size-5" />;
+  if (options.length === 1) {
+    const only = options[0];
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <a
+            href={only.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={triggerClassName}
+            onClick={(e) => e.stopPropagation()}
+            data-testid={testId}
+          >
+            {triggerIcon}
+          </a>
+        </TooltipTrigger>
+        <TooltipContent>{only.label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+  // No Tooltip on the multi-link trigger: a hover tooltip fights the popover
+  // for the same pointer target. The chevron badge + title carry the affordance.
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(triggerClassName, "relative")}
+          onClick={(e) => e.stopPropagation()}
+          data-testid={testId}
+          aria-label={tooltip}
+          title={tooltip}
+        >
+          {triggerIcon}
+          {/* Badge signalling the icon opens a menu of several links. */}
+          <ChevronDown
+            className="bg-background absolute -right-1 -bottom-1 size-2 rounded-full"
+            strokeWidth={3}
+            aria-hidden
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={2}
+        className="w-auto min-w-0 p-1"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {options.map((opt) => (
+          <a
+            key={`${opt.href}${opt.label}`}
+            href={opt.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            data-testid={`${testId}-option`}
+            className="hover:bg-accent flex items-center gap-2 rounded-sm px-2 py-1 text-xs whitespace-nowrap transition-colors"
+          >
+            <span className="flex size-3.5 shrink-0 items-center justify-center">
+              {opt.icon}
+            </span>
+            {opt.label}
+          </a>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Download/purchase links behind one icon. The trigger keeps the detected
+ *  store logo (Bandcamp/Beatport/Hypeddit) when there is one, falling back to
+ *  a generic download glyph, so the source stays recognizable at a glance. */
+function DownloadMenu({ track }: { track: SCTrack }) {
+  const options = downloadOptions(track);
+  const logo = options.find((o) => o.logo)?.logo;
+  return (
+    <LinkMenu
+      options={options}
+      triggerIcon={
+        logo ? (
+          <img src={logo.src} alt={logo.alt} className="size-3.5" />
+        ) : (
+          <Download className="size-3" />
+        )
+      }
+      tooltip="Downloads"
+      triggerClassName="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
+      testId="sc-download"
+    />
+  );
 }
 
 /** A column enriched with its resolved pixel width. */
