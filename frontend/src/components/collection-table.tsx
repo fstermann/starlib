@@ -370,7 +370,13 @@ function EditableCell({
 interface EditRowProps {
   item: TrackBrowse;
   isSelected: boolean;
+  /** The row whose single-track editor is open — drives the inline
+   * click-to-edit affordance, not playback. */
   isCurrent: boolean;
+  /** This row's file is the one playing in the shared player. Drives the green
+   * "now playing" highlight + the cover's persistent Pause, consistent with
+   * the SoundCloud and Rekordbox tables. */
+  isPlaying: boolean;
   changes: Partial<Record<EditableField, string>>;
   hasChanges: boolean;
   onToggleSelect: (shiftKey: boolean) => void;
@@ -391,6 +397,7 @@ function EditRow({
   item,
   isSelected,
   isCurrent,
+  isPlaying,
   changes,
   onToggleSelect,
   onFieldChange,
@@ -421,12 +428,15 @@ function EditRow({
   return (
     <div
       role="row"
-      aria-current={isCurrent ? "true" : undefined}
+      aria-current={isPlaying ? "true" : undefined}
       className={cn(
         "group/row border-border relative flex h-10 cursor-pointer items-center gap-1.5 border-b pr-0 pl-3 transition-colors",
-        isCurrent && "bg-[var(--brand-soft)]",
-        isSelected && !isCurrent && "bg-[var(--surface-3)]",
-        !isCurrent && !isSelected && "hover:bg-[var(--surface-3)]",
+        isPlaying && "bg-[var(--brand-soft)]",
+        !isPlaying && (isCurrent || isSelected) && "bg-[var(--surface-3)]",
+        !isPlaying &&
+          !isCurrent &&
+          !isSelected &&
+          "hover:bg-[var(--surface-3)]",
         justSaved && "saved-pulse",
       )}
       onClick={(e) => {
@@ -443,7 +453,7 @@ function EditRow({
         onSelect();
       }}
     >
-      {isCurrent && (
+      {isPlaying && (
         <span
           aria-hidden
           className="bg-primary absolute inset-y-0 left-0 w-0.5"
@@ -467,7 +477,7 @@ function EditRow({
       {/* Artwork thumbnail with hover play/pause overlay */}
       <CoverPlayButton
         artworkUrl={artworkUrl}
-        isCurrent={isCurrent}
+        isCurrent={isPlaying}
         onStartPlay={onStartPlay}
         label={item.title ?? item.file_name}
         className={`ring-1 ${pendingArtworkB64 ? "ring-primary/40" : "ring-transparent"}`}
@@ -706,7 +716,7 @@ export function CollectionTable({
   const abortRef = useRef<AbortController | null>(null);
   const itemsRef = useRef<TrackBrowse[]>([]);
 
-  const { playQueue, load } = usePlayer();
+  const { playQueue, load, activeTrack } = usePlayer();
 
   const tableRef = useRef<TrackTableHandle>(null);
 
@@ -1673,6 +1683,9 @@ export function CollectionTable({
               item={item}
               isSelected={selectedPaths.has(item.file_path)}
               isCurrent={selectedFilePath === item.file_path}
+              isPlaying={
+                !!activeTrack && activeTrack.filePath === item.file_path
+              }
               changes={changes.get(item.file_path) ?? {}}
               hasChanges={
                 changes.has(item.file_path) ||

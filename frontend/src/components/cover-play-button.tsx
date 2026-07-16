@@ -99,7 +99,9 @@ export function CoverPlayButton({
         className={cn(
           "absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition-opacity",
           "group-hover/cover:opacity-100 group-focus-visible/cover:opacity-100",
-          loading && "opacity-100",
+          // The loaded track keeps its play/pause state visible without hover,
+          // so the playing row is identifiable as autoplay advances the queue.
+          (loading || isCurrent) && "opacity-100",
         )}
       >
         {loading ? (

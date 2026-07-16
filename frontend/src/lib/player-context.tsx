@@ -62,6 +62,13 @@ export interface PlayerTrack {
 
 interface PlayerContextValue {
   currentTrack: PlayerTrack | null;
+  /** The track that is actually audible right now. Equals `currentTrack`
+   * except during the second half of an auto-mix crossfade, when the next
+   * queue entry is already playing at (or past) equal gain while
+   * `currentTrack` — which keys the player's own decode/init — stays put until
+   * the fade completes. Track lists mark their "now playing" row from this so
+   * the highlight follows the sound instead of lagging a whole fade behind. */
+  activeTrack: PlayerTrack | null;
   /** Position of `currentTrack` in the queue (-1 when nothing is loaded).
    * Queues can hold the same file twice in a row, so per-entry identity is
    * `${queueIndex}:${filePath}` — filePath alone is not unique. */
@@ -116,6 +123,10 @@ interface PlayerContextValue {
   /** Auto-mix (crossfade) configuration. Persisted to the UI store. */
   mixConfig: MixConfig;
   setMixConfig: (config: MixConfig) => void;
+  /** WaveformPlayer reports whether a running crossfade has passed its
+   * midpoint — the point where the incoming (next) queue entry becomes the
+   * audible track. Drives `activeTrack`. */
+  reportCrossfadeMidpoint: (reached: boolean) => void;
 }
 
 const PITCH_TARGET_KEY = "starlib.pitcher.targetBpm";
@@ -139,6 +150,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [pitchEnabled, setPitchEnabledState] = useState<boolean>(false);
   const [mixConfig, setMixConfigState] =
     useState<MixConfig>(DEFAULT_MIX_CONFIG);
+  // True while a crossfade is past its midpoint: the next queue entry is the
+  // audible track, but `queueIndex` hasn't advanced yet (that happens when the
+  // fade completes and the rebuilt player adopts the incoming deck).
+  const [crossfadePastMid, setCrossfadePastMid] = useState(false);
 
   // Hydrate the auto-mix config from the UI store on mount.
   useEffect(() => {
@@ -196,6 +211,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const pendingSeekRef = useRef<number | null>(null);
 
   const currentTrack = queueIndex >= 0 ? (queue[queueIndex] ?? null) : null;
+  // See `activeTrack` on PlayerContextValue: the audible track, which leads
+  // `currentTrack` by one entry during a crossfade's second half.
+  const activeTrack =
+    crossfadePastMid && queueIndex >= 0 && queueIndex + 1 < queue.length
+      ? (queue[queueIndex + 1] ?? currentTrack)
+      : currentTrack;
+
+  const reportCrossfadeMidpoint = useCallback((reached: boolean) => {
+    setCrossfadePastMid(reached);
+  }, []);
 
   // Re-seed `currentBpm` whenever the loaded track changes. If the caller
   // supplied a `bpm` hint on the PlayerTrack, use it; otherwise reset to
@@ -403,6 +428,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<PlayerContextValue>(
     () => ({
       currentTrack,
+      activeTrack,
       queueIndex,
       isPlaying,
       load,
@@ -430,9 +456,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setPitchEnabled,
       mixConfig,
       setMixConfig,
+      reportCrossfadeMidpoint,
     }),
     [
       currentTrack,
+      activeTrack,
       queueIndex,
       isPlaying,
       load,
@@ -460,6 +488,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setPitchEnabled,
       mixConfig,
       setMixConfig,
+      reportCrossfadeMidpoint,
     ],
   );
 

@@ -256,6 +256,7 @@ export function WaveformPlayer() {
     targetBpm,
     pitchEnabled,
     mixConfig,
+    reportCrossfadeMidpoint,
   } = usePlayer();
   const containerRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -1173,6 +1174,9 @@ export function WaveformPlayer() {
         setMixState("idle");
       } else {
         // No transition, or a manual skip mid-fade: abort and discard deck B.
+        // Drop any past-midpoint marker so `activeTrack` snaps back to the
+        // (possibly user-chosen) current entry rather than leading it.
+        if (transitionStartedRef.current) reportCrossfadeMidpoint(false);
         if (transitionStartedRef.current) transitionHandleRef.current?.cancel();
         transitionStartedRef.current = false;
         if (mixDeckBRef.current) {
@@ -1267,9 +1271,20 @@ export function WaveformPlayer() {
       Math.max(0, deckA.currentTime - plan.deckAMixOutSec) / mediaRate;
 
     const launch = (elapsed: number) => {
-      const onMidpoint = () => setMixPastMid(true);
+      const onMidpoint = () => {
+        setMixPastMid(true);
+        // The incoming deck is now the audible track — flip the "now playing"
+        // marker the track lists read, so the highlight follows the sound
+        // instead of waiting for the fade to finish.
+        reportCrossfadeMidpoint(true);
+      };
       const onComplete = () => {
         transitionCompletedRef.current = true;
+        // Clear the marker in the same React batch as `next()` (which advances
+        // queueIndex onto the incoming track): once queueIndex catches up,
+        // `currentTrack` is the audible track again and the override must be
+        // off, or `activeTrack` would jump one entry too far.
+        reportCrossfadeMidpoint(false);
         nextRef.current();
       };
       // Loop-eq runs its own two-phase automation (loop + 3-band EQ + long
@@ -1311,7 +1326,7 @@ export function WaveformPlayer() {
       old: deckA.currentTime / (deckA.duration || 1),
       new: deckB.duration > 0 ? deckB.currentTime / deckB.duration : 0,
     });
-  }, [peekNext]);
+  }, [peekNext, reportCrossfadeMidpoint]);
 
   useEffect(() => {
     startTransitionRef.current = startTransition;

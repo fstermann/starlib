@@ -646,7 +646,7 @@ export function RekordboxView() {
                 const t = item;
                 const playable = !!t.file_path;
                 const isCurrent =
-                  player.currentTrack?.filePath === t.file_path && playable;
+                  player.activeTrack?.filePath === t.file_path && playable;
                 const isSelected = selectedIds.has(t.id);
                 return (
                   // Clicking anywhere on the row starts playback; the cover's
