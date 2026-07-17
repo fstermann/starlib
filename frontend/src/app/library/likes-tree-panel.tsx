@@ -2,6 +2,8 @@
 
 import {
   AudioLines,
+  CalendarDays,
+  CalendarRange,
   Heart,
   ListMusic,
   Repeat2,
@@ -17,6 +19,8 @@ import type { SCPlaylist } from "@/lib/soundcloud";
 
 import type { SystemPlaylistSummary } from "./use-system-playlists";
 
+export const NEW_TODAY_NODE_ID = "new-today";
+export const NEW_WEEK_NODE_ID = "new-week";
 export const LIKES_NODE_ID = "likes";
 export const REPOSTS_NODE_ID = "reposts";
 export const TRACKS_NODE_ID = "tracks";
@@ -28,6 +32,8 @@ export const memberNodeId = (userUrn: string) => `member:${userUrn}`;
 
 export type LikesTreeNodeKind =
   | "root"
+  | "new-today"
+  | "new-week"
   | "likes"
   | "reposts"
   | "tracks"
@@ -51,6 +57,16 @@ interface LikesTreePanelProps {
   selectedId: string;
   onSelect: (id: string) => void;
   storageKey: string;
+  /** Filtered count for the "New Today" smart node (feed releases from today). */
+  newTodayCount: number;
+  /** Filtered count for the "New This Week" smart node. */
+  newWeekCount: number;
+  /**
+   * Whether the "New Today"/"New This Week" smart nodes should render. They
+   * are fed by the personal followings feed, so pass `true` on the "me" tab
+   * only.
+   */
+  showNew?: boolean;
   /** Filtered count for the Likes node. */
   likesCount: number;
   /** Filtered count for the Reposts node. */
@@ -96,6 +112,9 @@ export function LikesTreePanel({
   selectedId,
   onSelect,
   storageKey,
+  newTodayCount,
+  newWeekCount,
+  showNew,
   likesCount,
   repostsCount,
   tracksCount,
@@ -143,7 +162,28 @@ export function LikesTreePanel({
       mix: m,
     }));
 
-    const children: LikesTreeNode[] = [
+    const children: LikesTreeNode[] = [];
+    // Auto-filled smart lists sourced from the followings feed. Only on the
+    // "me" tab — the feed is personal, so they don't apply to Discover groups.
+    if (showNew) {
+      children.push(
+        {
+          id: NEW_TODAY_NODE_ID,
+          name: "New Today",
+          children: [],
+          kind: "new-today",
+          trackCount: newTodayCount,
+        },
+        {
+          id: NEW_WEEK_NODE_ID,
+          name: "New This Week",
+          children: [],
+          kind: "new-week",
+          trackCount: newWeekCount,
+        },
+      );
+    }
+    children.push(
       {
         id: LIKES_NODE_ID,
         name: "Likes",
@@ -165,7 +205,7 @@ export function LikesTreePanel({
         kind: "tracks",
         trackCount: tracksCount,
       },
-    ];
+    );
     // Always surface Mixes on tabs where it applies. When the user hasn't
     // connected yet we still render the group (empty) so the CTA in the
     // right-hand pane is reachable — hiding it would leave users who
@@ -194,6 +234,9 @@ export function LikesTreePanel({
     };
   }, [
     playlists,
+    newTodayCount,
+    newWeekCount,
+    showNew,
     likesCount,
     repostsCount,
     tracksCount,
@@ -228,6 +271,16 @@ export function LikesTreePanel({
           : undefined
       }
       renderIcon={(node) => {
+        if (node.kind === "new-today") {
+          return (
+            <CalendarDays className="text-muted-foreground size-3.5 shrink-0" />
+          );
+        }
+        if (node.kind === "new-week") {
+          return (
+            <CalendarRange className="text-muted-foreground size-3.5 shrink-0" />
+          );
+        }
         if (node.kind === "likes") {
           return <Heart className="text-muted-foreground size-3.5 shrink-0" />;
         }
