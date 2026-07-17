@@ -51,6 +51,7 @@ import {
   type ProfileGroupMember,
 } from "@/lib/profile-groups";
 import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
+import { useScBpmMap } from "@/lib/sources/use-sc-bpm-map";
 import { cn } from "@/lib/utils";
 
 import { useFollowingsTracks } from "../weekly/use-followings-tracks";
@@ -97,11 +98,17 @@ function filterSchemaForTab(
   // your own likes from that list would always empty it. Everywhere else
   // (Mixes, Playlists, Discover, Search) the filter is useful.
   const onLikesNode = tab === "me" && nodeId === LIKES_NODE_ID;
+  // The "include unknown BPM" toggle is only meaningful once a BPM range is
+  // available — hide it until the source tracks yield real BPM values.
+  const bpmAttr = schema.attributes.find((a) => a.id === "bpm");
+  const hasBpmRange =
+    bpmAttr?.kind === "range" && (bpmAttr.max ?? 0) > (bpmAttr.min ?? 0);
   return {
     ...schema,
     attributes: schema.attributes.filter((a) => {
       if (a.id === "exclude_my_likes") return !onLikesNode;
       if (a.id === "in_collection") return hasCollection;
+      if (a.id === "bpm_include_unknown") return hasBpmRange;
       return true;
     }),
   };
@@ -413,6 +420,44 @@ export function SoundcloudView() {
       .catch(() => {});
   }, []);
 
+  // Cached BPMs for every list that feeds a count or the visible table, in one
+  // bulk request. Lifted above the filter so the BPM range predicate and the
+  // schema's BPM range see real (analysed/manual) BPMs — `track.bpm` metadata
+  // is null for most SoundCloud uploads. Deduped so the same id isn't sent
+  // twice across, e.g., Likes and a playlist.
+  const bpmSourceTracks = useMemo(() => {
+    const seen = new Set<number>();
+    const out: SCTrack[] = [];
+    const push = (list: SCTrack[] | undefined) => {
+      for (const t of list ?? []) {
+        const id = extractId(t);
+        if (id != null && !seen.has(id)) {
+          seen.add(id);
+          out.push(t);
+        }
+      }
+    };
+    push(activeLikes.tracks);
+    push(activeReposts?.tracks);
+    push(activeTracks?.tracks);
+    push(newTodayTracks);
+    push(newWeekTracks);
+    push(combinedPlaylistTracks.tracks);
+    push(playlistTracks.tracks);
+    push(mixTracks.tracks);
+    return out;
+  }, [
+    activeLikes.tracks,
+    activeReposts?.tracks,
+    activeTracks?.tracks,
+    newTodayTracks,
+    newWeekTracks,
+    combinedPlaylistTracks.tracks,
+    playlistTracks.tracks,
+    mixTracks.tracks,
+  ]);
+  const bpmMap = useScBpmMap(bpmSourceTracks);
+
   // Reset selection to Likes when the user switches tab or active group.
   // Skip the initial mount so a `?node=` URL param survives — otherwise
   // this effect would clobber it back to Likes before the page rendered.
@@ -442,6 +487,16 @@ export function SoundcloudView() {
           step: 15,
           formatHint: "duration",
         },
+        {
+          id: "bpm",
+          label: "BPM",
+          kind: "range",
+          min: 0,
+          max: 0,
+          step: 1,
+          formatHint: "bpm",
+        },
+        { id: "bpm_include_unknown", label: "Include unknown BPM", kind: "bool" },
         {
           id: "track_type",
           label: "Type",
@@ -478,8 +533,14 @@ export function SoundcloudView() {
   // and Playlists as well. Scoping the Set by tab silently no-op'd the
   // filter on those views.
   const filterPredicate = useMemo(
-    () => makeLikesFilterPredicate(filterOptions, myLikedIds, collectionIds),
-    [filterOptions, myLikedIds, collectionIds],
+    () =>
+      makeLikesFilterPredicate(
+        filterOptions,
+        myLikedIds,
+        collectionIds,
+        bpmMap,
+      ),
+    [filterOptions, myLikedIds, collectionIds, bpmMap],
   );
 
   // Filtered counts for tree nodes
@@ -786,6 +847,7 @@ export function SoundcloudView() {
             onFilterChange={setFilter}
             onClearFilters={clearFilters}
             filterOptions={filterOptions}
+            bpmMap={bpmMap}
           />
         </div>
       </div>
@@ -830,6 +892,7 @@ interface LikesViewProps {
   ) => void;
   onClearFilters: () => void;
   filterOptions: import("./use-likes-filter").LikesFilterOptions;
+  bpmMap: Map<number, number>;
 }
 
 function LikesView({
@@ -863,6 +926,7 @@ function LikesView({
   onFilterChange,
   onClearFilters,
   filterOptions,
+  bpmMap,
 }: LikesViewProps) {
   // Selection state stays local — filters live at the page level.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -916,13 +980,15 @@ function LikesView({
     filterOptions,
     myLikedIds,
     collectionIds,
+    bpmMap,
   );
 
   // Data-derived schema: enriches the seed with genre options/counts and a
-  // real duration range computed from the current sourceTracks.
+  // real duration + BPM range computed from the current sourceTracks.
   const { schema: enrichedSchema } = useFilterSchema({
     source: "soundcloud",
     tracks: sourceTracks,
+    bpmByTrack: bpmMap,
   });
   const schema = useMemo<FilterSchemaResponse>(() => {
     if (!enrichedSchema) return seedSchema;
@@ -1199,6 +1265,7 @@ function LikesView({
         ) : (
           <LikesTable
             tracks={filteredTracks}
+            bpmCache={bpmMap}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onRangeSelect={selectRange}

@@ -17,6 +17,7 @@ export type FilterSchemaSource =
   | {
       source: "soundcloud";
       tracks: SCTrack[];
+      bpmByTrack?: Map<number, number>;
     };
 
 export interface UseFilterSchemaResult {
@@ -41,12 +42,13 @@ export function useFilterSchema(
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<Error | null>(null);
 
-  // SoundCloud: synchronous compute; memoize on tracks reference.
+  // SoundCloud: synchronous compute; memoize on tracks + bpm-map reference.
   const scTracks = input.source === "soundcloud" ? input.tracks : null;
+  const scBpm = input.source === "soundcloud" ? input.bpmByTrack : undefined;
   const scSchema = React.useMemo(() => {
     if (!scTracks) return null;
-    return buildSoundcloudSchema({ tracks: scTracks });
-  }, [scTracks]);
+    return buildSoundcloudSchema({ tracks: scTracks, bpmByTrack: scBpm });
+  }, [scTracks, scBpm]);
 
   // Filesystem: async fetch; re-run on state/folder changes.
   const fsKey =

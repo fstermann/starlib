@@ -841,6 +841,10 @@ interface LikesTableProps {
   onSelectAll: () => void;
   onDeselectAll: () => void;
   collectionIds?: Set<number>;
+  /** Pre-fetched cached BPMs (track id → bpm). When provided, the table uses
+   *  it instead of making its own bulk request — pass it when a parent already
+   *  fetched BPMs (e.g. to drive a BPM filter) so there's a single source. */
+  bpmCache?: Map<number, number>;
   /** IDs of tracks the authenticated user has liked. When a track's id is in
    *  this set, the like button renders as active. */
   likedIds?: Set<number>;
@@ -885,6 +889,7 @@ export function LikesTable({
   onSelectAll,
   onDeselectAll,
   collectionIds,
+  bpmCache: externalBpmCache,
   likedIds,
   newTrackUrns,
   isColumnVisible,
@@ -1024,9 +1029,15 @@ export function LikesTable({
 
   // Pre-fill cached BPMs for all tracks in this table in a single bulk
   // request, rather than making one GET per visible row. The map survives
-  // re-renders; cells read it via SoundcloudBpmCacheContext.
-  const [bpmCache, setBpmCache] = useState<Map<number, number>>(new Map());
+  // re-renders; cells read it via SoundcloudBpmCacheContext. A parent can
+  // instead supply `externalBpmCache` (e.g. the SoundCloud library, which
+  // fetches BPMs once to drive its BPM filter) — then we skip our own fetch.
+  const [internalBpmCache, setInternalBpmCache] = useState<Map<number, number>>(
+    new Map(),
+  );
+  const bpmCache = externalBpmCache ?? internalBpmCache;
   useEffect(() => {
+    if (externalBpmCache) return;
     const ids: number[] = [];
     for (const t of tracks) {
       if (t.urn) {
@@ -1043,7 +1054,7 @@ export function LikesTable({
         if (cancelled) return;
         const next = new Map<number, number>();
         for (const [k, v] of Object.entries(resp.bpms)) next.set(Number(k), v);
-        setBpmCache(next);
+        setInternalBpmCache(next);
       })
       .catch(() => {
         /* Prefill is best-effort; cells fall back to metadata + Detect button. */
@@ -1051,7 +1062,7 @@ export function LikesTable({
     return () => {
       cancelled = true;
     };
-  }, [tracks]);
+  }, [tracks, externalBpmCache]);
 
   const colVisible = React.useCallback(
     (id: string) => {
