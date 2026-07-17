@@ -165,6 +165,40 @@ export async function addTracksToPlaylist(
   return data as SCPlaylist;
 }
 
+export async function renamePlaylist(
+  playlistUrn: string,
+  title: string,
+): Promise<SCPlaylist> {
+  const client = await getClient();
+  const { data, error } = await client.PUT("/playlists/{playlist_urn}", {
+    params: { path: { playlist_urn: playlistUrn } },
+    body: { playlist: { title } },
+  });
+  if (error)
+    throw new Error(`Failed to rename playlist: ${JSON.stringify(error)}`);
+  return data as SCPlaylist;
+}
+
+// Delete goes through the backend: SoundCloud's public API doesn't expose
+// DELETE on /playlists in its CORS policy, so the browser can't call it
+// directly (it fails with a network "Load failed"). The backend forwards the
+// request with the user's token — same pattern as like/unlike.
+export async function deletePlaylist(playlistUrn: string): Promise<void> {
+  const token = await ensureValidToken();
+  const parts = playlistUrn.split(":");
+  const playlistId = parseInt(parts[parts.length - 1], 10);
+  if (!playlistId) throw new Error(`Invalid playlist urn: ${playlistUrn}`);
+  const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const resp = await fetch(`${base}/api/soundcloud/playlists/${playlistId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`Failed to delete playlist: ${resp.status} ${body}`);
+  }
+}
+
 export type SCTracks = components["schemas"]["Tracks"];
 
 export async function getMyLikedTracks(

@@ -680,6 +680,10 @@ export function SoundcloudView() {
             mixes={mixes}
             perMixFilteredCount={perMixCount}
             showMixes={tab === "me"}
+            editable={tab === "me"}
+            onPlaylistDeleted={(urn) => {
+              if (nodeId === playlistNodeId(urn)) setNodeId(LIKES_NODE_ID);
+            }}
           />
         )}
 
@@ -694,6 +698,7 @@ export function SoundcloudView() {
             mixTracks={mixTracks}
             nodeId={nodeId ?? LIKES_NODE_ID}
             isPlaylistView={isPlaylistView}
+            selectedPlaylistUrn={selectedPlaylist?.urn ?? null}
             isAllPlaylistsView={isAllPlaylistsView}
             isMixView={isMixView}
             isMixesGroupView={isMixesGroupView}
@@ -729,6 +734,9 @@ interface LikesViewProps {
   mixTracks: ReturnType<typeof useSystemPlaylistTracks>;
   nodeId: string;
   isPlaylistView: boolean;
+  /** URN of the playlist currently being viewed (null unless in a playlist
+   *  node). Non-null + tab "me" ⇒ an editable, owned playlist. */
+  selectedPlaylistUrn: string | null;
   isAllPlaylistsView: boolean;
   isMixView: boolean;
   isMixesGroupView: boolean;
@@ -761,6 +769,7 @@ function LikesView({
   mixTracks,
   nodeId,
   isPlaylistView,
+  selectedPlaylistUrn,
   isAllPlaylistsView,
   isMixView,
   isMixesGroupView,
@@ -784,7 +793,15 @@ function LikesView({
 
   const columnPrefs = useColumnPrefs("library.soundcloud", LIKES_COLUMN_DEFS);
 
-  const sourceTracks = isMixView
+  // Optimistic "removed from playlist" set — a removed row disappears at once,
+  // before the playlist re-fetch. Cleared whenever the viewed node changes.
+  const [removedUrns, setRemovedUrns] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset optimistic removals when the viewed node changes
+    setRemovedUrns(new Set());
+  }, [nodeId]);
+
+  const baseTracks = isMixView
     ? mixTracks.tracks
     : isPlaylistView
       ? playlistTracks.tracks
@@ -795,6 +812,23 @@ function LikesView({
           : isTracksView
             ? (activeTracks?.tracks ?? EMPTY_TRACKS)
             : activeLikes.tracks;
+  const sourceTracks = useMemo(
+    () =>
+      removedUrns.size === 0
+        ? baseTracks
+        : baseTracks.filter((t) => !t.urn || !removedUrns.has(t.urn)),
+    [baseTracks, removedUrns],
+  );
+
+  // Editable when viewing one of the user's OWN playlists (tab "me").
+  const removeFromPlaylist =
+    tab === "me" && isPlaylistView && selectedPlaylistUrn
+      ? {
+          playlistUrn: selectedPlaylistUrn,
+          onRemoved: (urn: string) =>
+            setRemovedUrns((prev) => new Set(prev).add(urn)),
+        }
+      : undefined;
 
   const { filteredTracks } = useLikesFilter(
     sourceTracks,
@@ -1080,6 +1114,8 @@ function LikesView({
             columnWidths={columnPrefs.prefs.widths}
             onColumnWidthChange={columnPrefs.setWidth}
             onColumnWidthReset={columnPrefs.resetWidth}
+            showAddToPlaylist
+            removeFromPlaylist={removeFromPlaylist}
           />
         )}
 
