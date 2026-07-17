@@ -69,6 +69,11 @@ interface PlayerContextValue {
    * the fade completes. Track lists mark their "now playing" row from this so
    * the highlight follows the sound instead of lagging a whole fade behind. */
   activeTrack: PlayerTrack | null;
+  /** The full play queue (past + current + upcoming). Consumed by the queue
+   * panel to render the "next up" list; slice from `queueIndex + 1` for the
+   * not-yet-played tail. Per-entry identity is `${index}:${filePath}` — the
+   * same file can appear more than once, so filePath alone is not unique. */
+  queue: PlayerTrack[];
   /** Position of `currentTrack` in the queue (-1 when nothing is loaded).
    * Queues can hold the same file twice in a row, so per-entry identity is
    * `${queueIndex}:${filePath}` — filePath alone is not unique. */
@@ -87,11 +92,22 @@ interface PlayerContextValue {
     startRatio?: number,
   ) => void;
   /** Replace the not-yet-played tail of the queue (every entry after the
-   * current index) without disturbing the current track or its index. Lets a
-   * caller re-derive "what plays next" mid-playback — e.g. after the user
-   * filters the visible list — so autoplay stops walking into tracks that are
-   * no longer shown. No-op when nothing is loaded. */
+   * current index) without disturbing the current track or its index, and mark
+   * the queue user-managed. Used by the queue panel's reorder/remove — a
+   * deliberate hand-edit that should stick, so it also freezes out
+   * `reconcileUpcoming`. No-op when nothing is loaded. */
   replaceUpcoming: (upcoming: PlayerTrack[]) => void;
+  /** Like `replaceUpcoming`, but a no-op once the queue has been hand-edited
+   * (add/play-next/reorder/remove). The visible-list views call this to keep
+   * autoplay in step with sort/filter changes — without clobbering a queue the
+   * user has taken manual control of. A fresh `playQueue` re-enables it. */
+  reconcileUpcoming: (upcoming: PlayerTrack[]) => void;
+  /** Append a track to the end of the queue; starts playback if nothing is
+   * loaded. Marks the queue user-managed. */
+  enqueue: (track: PlayerTrack) => void;
+  /** Insert a track immediately after the current one; starts playback if
+   * nothing is loaded. Marks the queue user-managed. */
+  playNext: (track: PlayerTrack) => void;
   pause: () => void;
   toggle: (track?: PlayerTrack) => void;
   stop: () => void;
@@ -99,6 +115,9 @@ interface PlayerContextValue {
   seek: (ratio: number) => void;
   /** Advance to the next track in the queue. No-op at end. */
   next: () => void;
+  /** Jump playback to an arbitrary queue index and play. No-op when the index
+   * is out of range or already current. Used by the queue panel's click-to-play. */
+  jumpTo: (index: number) => void;
   /** Go to previous track, or restart current if playback is past 3s. */
   previous: () => void;
   /** Peek at the next queued track without advancing. Used by the player
@@ -209,6 +228,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const queueRef = useRef<PlayerTrack[]>([]);
   const queueIndexRef = useRef(-1);
+  // True once the user has hand-edited the queue (add/play-next/reorder/remove).
+  // Freezes out `reconcileUpcoming` so the visible-list views stop rewriting a
+  // queue the user is curating. Reset by `playQueue` (a fresh auto queue).
+  const userManagedRef = useRef(false);
   const progressRef = useRef(0);
   const progressCallbacksRef = useRef<Set<(p: number) => void>>(new Set());
   const seekFnRef = useRef<((ratio: number) => void) | null>(null);
@@ -298,6 +321,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         startRatio != null && startRatio > 0
           ? Math.max(0, Math.min(1, startRatio))
           : null;
+      // A fresh queue from a play action returns to auto mode: the visible-list
+      // views may reconcile its tail again.
+      userManagedRef.current = false;
       setQueueState(tracks, index);
       setIsPlaying(true);
     },
@@ -308,7 +334,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   // index untouched so the player never re-decodes (its init effect keys on
   // `${queueIndex}:${filePath}`). The preserved head is sliced from the live
   // queue, so `currentTrack`'s object identity is unchanged too.
-  const replaceUpcoming = useCallback(
+  const setUpcoming = useCallback(
     (upcoming: PlayerTrack[]) => {
       const idx = queueIndexRef.current;
       if (idx < 0) return;
@@ -319,6 +345,55 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       if (unchanged) return;
       const head = queueRef.current.slice(0, idx + 1);
       setQueueState([...head, ...upcoming], idx);
+    },
+    [setQueueState],
+  );
+
+  // A deliberate hand-edit: apply it and freeze out auto-reconciliation.
+  const replaceUpcoming = useCallback(
+    (upcoming: PlayerTrack[]) => {
+      userManagedRef.current = true;
+      setUpcoming(upcoming);
+    },
+    [setUpcoming],
+  );
+
+  // Auto-reconcile from the visible list — skipped once the user is curating.
+  const reconcileUpcoming = useCallback(
+    (upcoming: PlayerTrack[]) => {
+      if (userManagedRef.current) return;
+      setUpcoming(upcoming);
+    },
+    [setUpcoming],
+  );
+
+  const enqueue = useCallback(
+    (track: PlayerTrack) => {
+      userManagedRef.current = true;
+      const idx = queueIndexRef.current;
+      if (idx < 0 || queueRef.current.length === 0) {
+        seekFnRef.current = null;
+        setQueueState([track], 0);
+        setIsPlaying(true);
+        return;
+      }
+      setQueueState([...queueRef.current, track], idx);
+    },
+    [setQueueState],
+  );
+
+  const playNext = useCallback(
+    (track: PlayerTrack) => {
+      userManagedRef.current = true;
+      const idx = queueIndexRef.current;
+      if (idx < 0 || queueRef.current.length === 0) {
+        seekFnRef.current = null;
+        setQueueState([track], 0);
+        setIsPlaying(true);
+        return;
+      }
+      const q = queueRef.current;
+      setQueueState([...q.slice(0, idx + 1), track, ...q.slice(idx + 1)], idx);
     },
     [setQueueState],
   );
@@ -379,6 +454,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (nextIdx < 0 || nextIdx >= queueRef.current.length) return;
     queueIndexRef.current = nextIdx;
     setQueueIndex(nextIdx);
+    setIsPlaying(true);
+  }, []);
+
+  const jumpTo = useCallback((index: number) => {
+    if (
+      index < 0 ||
+      index >= queueRef.current.length ||
+      index === queueIndexRef.current
+    ) {
+      return;
+    }
+    // Drop the outgoing player's seek fn — it isn't valid for the new track.
+    seekFnRef.current = null;
+    queueIndexRef.current = index;
+    setQueueIndex(index);
     setIsPlaying(true);
   }, []);
 
@@ -454,17 +544,22 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     () => ({
       currentTrack,
       activeTrack,
+      queue,
       queueIndex,
       isPlaying,
       load,
       play,
       playQueue,
       replaceUpcoming,
+      reconcileUpcoming,
+      enqueue,
+      playNext,
       pause,
       toggle,
       stop,
       seek,
       next,
+      jumpTo,
       previous,
       peekNext,
       hasNext,
@@ -487,17 +582,22 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     [
       currentTrack,
       activeTrack,
+      queue,
       queueIndex,
       isPlaying,
       load,
       play,
       playQueue,
       replaceUpcoming,
+      reconcileUpcoming,
+      enqueue,
+      playNext,
       pause,
       toggle,
       stop,
       seek,
       next,
+      jumpTo,
       previous,
       peekNext,
       hasNext,
