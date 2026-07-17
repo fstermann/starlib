@@ -364,6 +364,53 @@ async def unlike_track(
     return await _proxy_like(track_id, "DELETE", token)
 
 
+async def _proxy_playlist_delete(playlist_id: int, token: str) -> Response:
+    """Forward a playlist delete to the SoundCloud public API."""
+    url = f"{_PUBLIC_API_BASE}/playlists/soundcloud:playlists:{playlist_id}"
+    headers = {"Authorization": f"OAuth {token}", "Accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            resp = await client.request("DELETE", url, headers=headers)
+    except Exception as exc:
+        logger.exception("SoundCloud playlist delete proxy transport error")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="SoundCloud upstream error",
+        ) from exc
+
+    if resp.status_code in (401, 403):
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail="SoundCloud rejected the user token",
+        )
+    if not resp.is_success:
+        logger.warning(
+            "SoundCloud DELETE /playlists returned %s for playlist %s",
+            resp.status_code,
+            playlist_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"SoundCloud returned {resp.status_code}",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/playlists/{playlist_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_playlist(
+    playlist_id: int,
+    authorization: str | None = Header(default=None),
+) -> Response:
+    """Delete a SoundCloud playlist on behalf of the authenticated user.
+
+    The browser can't call ``DELETE /playlists/...`` directly — SoundCloud
+    doesn't expose that method in its CORS policy — so this endpoint forwards
+    the request with the user's own token.
+    """
+    token = _user_token_from_authorization(authorization)
+    return await _proxy_playlist_delete(playlist_id, token)
+
+
 def _reset_cache_for_tests() -> None:
     """Clear the in-memory cache. Intended for tests only."""
     _cache.clear()

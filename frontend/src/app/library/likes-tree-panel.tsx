@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 
+import { PlaylistNodeMenu } from "@/components/playlist-node-menu";
 import { TreeView } from "@/components/tree/tree-view";
 import type { SourceProfile } from "@/lib/profile-groups";
 import type { SCPlaylist } from "@/lib/soundcloud";
@@ -82,6 +83,12 @@ interface LikesTreePanelProps {
    * member's playlists. Falls through to the flat `playlists` list when
    * absent or single-member. */
   playlistsByMember?: Array<{ source: SourceProfile; playlists: SCPlaylist[] }>;
+  /** When true, right-clicking a playlist node offers rename/delete. Only pass
+   *  for the user's own playlists (the "me" tab). */
+  editable?: boolean;
+  /** Called after a playlist is deleted, so the caller can navigate away if it
+   *  was the one being viewed. */
+  onPlaylistDeleted?: (urn: string) => void;
 }
 
 export function LikesTreePanel({
@@ -98,6 +105,8 @@ export function LikesTreePanel({
   perMixFilteredCount,
   showMixes,
   playlistsByMember,
+  editable,
+  onPlaylistDeleted,
 }: LikesTreePanelProps) {
   const tree = useMemo<LikesTreeNode>(() => {
     const toPlaylistNode = (pl: SCPlaylist, idx: number): LikesTreeNode => {
@@ -203,6 +212,21 @@ export function LikesTreePanel({
       onSelect={onSelect}
       storageKey={storageKey}
       hideRoot
+      wrapNode={
+        editable
+          ? (node, row) =>
+              node.kind === "playlist" && node.playlist?.urn ? (
+                <PlaylistNodeMenu
+                  playlist={node.playlist}
+                  onDeleted={onPlaylistDeleted}
+                >
+                  {row}
+                </PlaylistNodeMenu>
+              ) : (
+                row
+              )
+          : undefined
+      }
       renderIcon={(node) => {
         if (node.kind === "likes") {
           return <Heart className="text-muted-foreground size-3.5 shrink-0" />;

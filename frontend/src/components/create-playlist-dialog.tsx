@@ -18,7 +18,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createPlaylist, type SCTrack } from "@/lib/soundcloud";
+import {
+  createPlaylist,
+  type SCPlaylist,
+  type SCTrack,
+} from "@/lib/soundcloud";
 
 export const MAX_TRACKS = 500;
 
@@ -27,7 +31,7 @@ interface CreatePlaylistDialogProps {
   trigger?: React.ReactNode;
   defaultTitle?: string;
   defaultDescription?: string;
-  onCreated?: () => void;
+  onCreated?: (playlist: SCPlaylist) => void;
   /** Optional controlled open state — lets the dialog be opened from code
    * paths that don't render the trigger (e.g. command palette). */
   open?: boolean;
@@ -82,7 +86,7 @@ export function CreatePlaylistDialog({
       });
       const url = (playlist as Record<string, unknown>).permalink_url as
         string | undefined;
-      onCreated?.();
+      onCreated?.(playlist);
       setOpen(false);
       toast.success(`Playlist "${title.trim()}" created`, {
         action: url

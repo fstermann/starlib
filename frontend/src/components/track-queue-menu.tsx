@@ -6,6 +6,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 
@@ -14,23 +15,26 @@ import {
  * The parent supplies the actions (each view builds its own PlayerTrack and
  * calls the player context), so this component stays presentation-only.
  * `disabled` greys the items out for rows that can't be played (e.g. an
- * unresolved Rekordbox track).
+ * unresolved Rekordbox track). `extraItems`, when given, renders below a
+ * separator (the SoundCloud playlist actions).
  */
 export function TrackQueueMenu({
   onPlayNext,
   onAddToQueue,
   disabled = false,
+  extraItems,
   children,
 }: {
   onPlayNext: () => void;
   onAddToQueue: () => void;
   disabled?: boolean;
+  extraItems?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-40">
+      <ContextMenuContent className="w-44">
         <ContextMenuItem
           data-testid="queue-play-next"
           disabled={disabled}
@@ -49,6 +53,12 @@ export function TrackQueueMenu({
           <ListPlus className="size-3.5" />
           Add to queue
         </ContextMenuItem>
+        {extraItems && (
+          <>
+            <ContextMenuSeparator />
+            {extraItems}
+          </>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );

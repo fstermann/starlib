@@ -23,25 +23,42 @@ import {
   Download,
   FolderCheck,
   GripVertical,
+  ListPlus,
+  ListX,
   Search,
   ShoppingCart,
 } from "lucide-react";
 import * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
+import {
+  fetchAllPlaylistTracks,
+  invalidatePlaylistTracks,
+} from "@/app/library/use-playlist-tracks";
+import {
+  mutateCachedUserPlaylists,
+  useUserPlaylists,
+} from "@/app/library/use-user-playlists";
 import { CoverPlayButton } from "@/components/cover-play-button";
+import { CreatePlaylistDialog } from "@/components/create-playlist-dialog";
 import {
   SoundcloudBpmCacheContext,
   SoundcloudBpmCell,
 } from "@/components/soundcloud-bpm-cell";
 import { SoundcloudLikeButton } from "@/components/soundcloud-like-button";
 import { SourceProfileAvatar } from "@/components/source-profile-avatar";
+import {
+  TrackPlaylistSubmenu,
+  type AddToPlaylistResult,
+} from "@/components/track-playlist-submenu";
 import { TrackQueueMenu } from "@/components/track-queue-menu";
 import {
   TrackTable,
   type TrackTableColumn,
 } from "@/components/track-table/track-table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ContextMenuItem } from "@/components/ui/context-menu";
 import {
   Popover,
   PopoverContent,
@@ -59,7 +76,12 @@ import { parseFallbackDownloadUrl } from "@/lib/parse-fallback-download";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import type { SourceProfile } from "@/lib/profile-groups";
 import { useIsScUnplayable } from "@/lib/sc-unplayable";
-import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
+import {
+  addTracksToPlaylist,
+  parseSCTimestamp,
+  type SCPlaylist,
+  type SCTrack,
+} from "@/lib/soundcloud";
 import {
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
@@ -572,6 +594,25 @@ interface TrackRowProps {
   onAddToQueue: () => void;
   /** Insert this track right after the current one. */
   onPlayNext: () => void;
+  /** When set, the row's context menu gains "Add to playlist" (submenu of the
+   *  user's own playlists) and "Create playlist" (SoundCloud view only).
+   *  `createCount` is how many tracks the create action would use — the current
+   *  checkbox selection when this row is part of it, otherwise just this row. */
+  addToPlaylist?: {
+    trackUrns: string[];
+    playlists: SCPlaylist[];
+    loading: boolean;
+    onAdd: (playlist: SCPlaylist) => Promise<AddToPlaylistResult>;
+    createCount: number;
+    onCreatePlaylist: () => void;
+  };
+  /** When set, the row's context menu gains a "Remove from playlist" item
+   *  (shown only when viewing one of the user's own playlists). Acts on the
+   *  selection when this row is part of it; `count` is how many. */
+  removeFromPlaylist?: {
+    count: number;
+    onRemove: () => void;
+  };
   /** Columns filtered and ordered per user preferences, with resolved widths. */
   visibleColumns: ResolvedLikesCol[];
   /** When set, the row renders a drag handle and participates in SortableContext. */
@@ -594,6 +635,8 @@ function TrackRowInner({
   onStartPlay,
   onAddToQueue,
   onPlayNext,
+  addToPlaylist,
+  removeFromPlaylist,
   visibleColumns,
   dragHandle,
 }: TrackRowProps) {
@@ -632,6 +675,45 @@ function TrackRowInner({
       onPlayNext={onPlayNext}
       onAddToQueue={onAddToQueue}
       disabled={unplayable}
+      extraItems={
+        addToPlaylist || removeFromPlaylist ? (
+          <>
+            {addToPlaylist && (
+              <>
+                <TrackPlaylistSubmenu
+                  trackUrns={addToPlaylist.trackUrns}
+                  playlists={addToPlaylist.playlists}
+                  loading={addToPlaylist.loading}
+                  onAdd={addToPlaylist.onAdd}
+                />
+                <ContextMenuItem
+                  data-testid="playlist-create"
+                  onSelect={addToPlaylist.onCreatePlaylist}
+                  className="text-xs"
+                >
+                  <ListPlus className="size-3.5" />
+                  {addToPlaylist.createCount > 1
+                    ? `Create playlist (${addToPlaylist.createCount})`
+                    : "Create playlist"}
+                </ContextMenuItem>
+              </>
+            )}
+            {removeFromPlaylist && (
+              <ContextMenuItem
+                data-testid="playlist-remove"
+                variant="destructive"
+                onSelect={removeFromPlaylist.onRemove}
+                className="text-xs"
+              >
+                <ListX className="size-3.5" />
+                {removeFromPlaylist.count > 1
+                  ? `Remove from playlist (${removeFromPlaylist.count})`
+                  : "Remove from playlist"}
+              </ContextMenuItem>
+            )}
+          </>
+        ) : undefined
+      }
     >
       <div>
         <div
@@ -782,6 +864,17 @@ interface LikesTableProps {
   /** Reports the current *visible* URN order (after sort). Fires whenever
    *  the sorted display changes so callers can save whatever the user sees. */
   onVisibleOrderChange?: (orderedUrns: string[]) => void;
+  /** Opt-in: add an "Add to playlist" submenu to each row's context menu,
+   *  targeting the authenticated user's own SoundCloud playlists. */
+  showAddToPlaylist?: boolean;
+  /** When set, each row's context menu gains "Remove from playlist" acting on
+   *  this playlist. Only pass when viewing one of the user's own playlists.
+   *  `onRemoved` fires after a successful remove so the caller can drop the
+   *  row from the displayed list. */
+  removeFromPlaylist?: {
+    playlistUrn: string;
+    onRemoved: (trackUrn: string) => void;
+  };
 }
 
 export function LikesTable({
@@ -802,10 +895,123 @@ export function LikesTable({
   onColumnWidthReset,
   onReorderTracks,
   onVisibleOrderChange,
+  showAddToPlaylist,
+  removeFromPlaylist,
 }: LikesTableProps) {
   const reorderEnabled = !!onReorderTracks;
   const { playQueue, currentTrack, reconcileUpcoming, enqueue, playNext } =
     usePlayer();
+
+  // "Add to playlist" submenu (SoundCloud view only). The user's own playlists
+  // are shared with the SoundCloud view's list via a module-level cache, so
+  // this is a cache hit rather than a second fetch.
+  const {
+    playlists: myPlaylists,
+    loading: playlistsLoading,
+    reload: reloadPlaylists,
+  } = useUserPlaylists(showAddToPlaylist ? "me" : null);
+  const handleAddToPlaylist = useCallback(
+    async (
+      playlist: SCPlaylist,
+      tracksToAdd: SCTrack[],
+    ): Promise<AddToPlaylistResult> => {
+      if (!playlist.urn) return "error";
+      const targetUrns = tracksToAdd
+        .map((t) => t.urn)
+        .filter((u): u is string => u != null);
+      if (targetUrns.length === 0) return "error";
+      try {
+        // SoundCloud's playlist PUT *replaces* the track set, so read the
+        // existing tracks first (cached, shared with the playlist view) and
+        // append to them — the playlist metadata carries no tracks.
+        const existing = await fetchAllPlaylistTracks(playlist.urn);
+        const existingUrns = existing
+          .map((t) => t.urn)
+          .filter((u): u is string => u != null);
+        const existingSet = new Set(existingUrns);
+        const toAdd = targetUrns.filter((u) => !existingSet.has(u));
+        if (toAdd.length === 0) {
+          toast.info(
+            targetUrns.length === 1
+              ? `Already in "${playlist.title}"`
+              : `All ${targetUrns.length} tracks already in "${playlist.title}"`,
+          );
+          return "exists";
+        }
+        const updated = await addTracksToPlaylist(playlist.urn, [
+          ...existingUrns,
+          ...toAdd,
+        ]);
+        invalidatePlaylistTracks(playlist.urn);
+        reloadPlaylists();
+        const url = (updated as Record<string, unknown>).permalink_url as
+          string | undefined;
+        toast.success(
+          toAdd.length === 1
+            ? `Added to "${playlist.title}"`
+            : `Added ${toAdd.length} tracks to "${playlist.title}"`,
+          {
+            action: url
+              ? { label: "Open", onClick: () => window.open(url, "_blank") }
+              : undefined,
+          },
+        );
+        return "added";
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to add to playlist",
+        );
+        return "error";
+      }
+    },
+    [reloadPlaylists],
+  );
+
+  // "Remove from playlist" — only wired when the caller is viewing one of the
+  // user's own playlists (see the `removeFromPlaylist` prop). Reads the current
+  // track set, drops the target, and writes the rest back.
+  const removePlaylistUrn = removeFromPlaylist?.playlistUrn;
+  const notifyRemoved = removeFromPlaylist?.onRemoved;
+  const handleRemoveFromPlaylist = useCallback(
+    async (tracksToRemove: SCTrack[]) => {
+      if (!removePlaylistUrn) return;
+      const targetUrns = tracksToRemove
+        .map((t) => t.urn)
+        .filter((u): u is string => u != null);
+      if (targetUrns.length === 0) return;
+      const targetSet = new Set(targetUrns);
+      try {
+        const existing = await fetchAllPlaylistTracks(removePlaylistUrn);
+        const kept = existing
+          .map((t) => t.urn)
+          .filter((u): u is string => u != null && !targetSet.has(u));
+        await addTracksToPlaylist(removePlaylistUrn, kept);
+        invalidatePlaylistTracks(removePlaylistUrn);
+        targetUrns.forEach((u) => notifyRemoved?.(u));
+        reloadPlaylists();
+        toast.success(
+          targetUrns.length === 1
+            ? `Removed "${tracksToRemove[0].title ?? "track"}" from playlist`
+            : `Removed ${targetUrns.length} tracks from playlist`,
+        );
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to remove from playlist",
+        );
+      }
+    },
+    [removePlaylistUrn, notifyRemoved, reloadPlaylists],
+  );
+
+  // "Create playlist" from the row context menu. Seeded with the tracks chosen
+  // at right-click time (selection or single row) and rendered once below.
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createTracks, setCreateTracks] = useState<SCTrack[]>([]);
+  const openCreatePlaylist = useCallback((tracksForPlaylist: SCTrack[]) => {
+    setCreateTracks(tracksForPlaylist);
+    setCreateDialogOpen(true);
+  }, []);
+
   // Mirror the current track into a ref so the reconcile effect can read it
   // without making it a dependency — otherwise reconciling (which changes
   // `currentTrack`'s reference) would re-trigger the effect and loop. This
@@ -920,6 +1126,13 @@ export function LikesTable({
     });
     return sorted;
   }, [tracks, sortBy, sortOrder]);
+
+  // Tracks currently checkbox-selected — the "Create playlist" context action
+  // uses these when the right-clicked row is part of the selection.
+  const selectedTracks = useMemo(
+    () => sortedTracks.filter((t) => selectedIds.has(extractId(t))),
+    [sortedTracks, selectedIds],
+  );
 
   // Row reordering is only active when no column sort is applied — otherwise
   // the user's drag target (sorted position) wouldn't map to a meaningful
@@ -1108,6 +1321,10 @@ export function LikesTable({
             return { ...lc, width: col.width };
           })
           .filter((v): v is ResolvedLikesCol => v !== null);
+        // Tracks the playlist actions operate on: the checkbox selection when
+        // this row is part of it, otherwise just this row.
+        const rowTargets =
+          id != null && selectedIds.has(id) ? selectedTracks : [track];
         return (
           <TrackRow
             sortableId={sortableId}
@@ -1141,6 +1358,31 @@ export function LikesTable({
             onStartPlay={() => handleStartPlay(index)}
             onAddToQueue={() => enqueue(scTrackToPlayerTrack(track, bpmCache))}
             onPlayNext={() => playNext(scTrackToPlayerTrack(track, bpmCache))}
+            addToPlaylist={
+              showAddToPlaylist
+                ? {
+                    // Act on the whole checkbox selection when this row is part
+                    // of it, otherwise just this row.
+                    trackUrns: rowTargets
+                      .map((t) => t.urn)
+                      .filter((u): u is string => u != null),
+                    playlists: myPlaylists,
+                    loading: playlistsLoading,
+                    onAdd: (playlist) =>
+                      handleAddToPlaylist(playlist, rowTargets),
+                    createCount: rowTargets.length,
+                    onCreatePlaylist: () => openCreatePlaylist(rowTargets),
+                  }
+                : undefined
+            }
+            removeFromPlaylist={
+              removeFromPlaylist
+                ? {
+                    count: rowTargets.length,
+                    onRemove: () => handleRemoveFromPlaylist(rowTargets),
+                  }
+                : undefined
+            }
             visibleColumns={rowCols}
           />
         );
@@ -1192,6 +1434,16 @@ export function LikesTable({
         </DndContext>
       ) : (
         table
+      )}
+      {showAddToPlaylist && (
+        <CreatePlaylistDialog
+          tracks={createTracks}
+          open={createDialogOpen}
+          onOpenChange={setCreateDialogOpen}
+          onCreated={(playlist) =>
+            mutateCachedUserPlaylists("me", (pls) => [playlist, ...pls])
+          }
+        />
       )}
     </SoundcloudBpmCacheContext.Provider>
   );
