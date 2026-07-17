@@ -21,6 +21,7 @@ import { LogoSpinner } from "@/components/logo-spinner";
 import { MiniWaveform } from "@/components/mini-waveform";
 import { RulesetPreview } from "@/components/rulesets/ruleset-preview";
 import { Spinner } from "@/components/spinner";
+import { TrackQueueMenu } from "@/components/track-queue-menu";
 import {
   TrackTable,
   TrailingSortButton,
@@ -64,7 +65,7 @@ import {
   type TrackBrowse,
   type TrackInfoUpdateRequest,
 } from "@/lib/api";
-import { usePlayer } from "@/lib/player-context";
+import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import { searchParams } from "@/lib/search-params";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
 import { parseRemix, removeMix } from "@/lib/string-utils";
@@ -409,6 +410,17 @@ function EditRow({
   folderPath,
   visibleFields,
 }: EditRowProps) {
+  const { enqueue, playNext } = usePlayer();
+  const playerTrack: PlayerTrack = {
+    filePath: item.file_path,
+    fileName: item.file_name,
+    title: item.title ?? undefined,
+    artist: Array.isArray(item.artist)
+      ? item.artist.join(", ")
+      : (item.artist ?? undefined),
+    bpm: item.bpm ?? null,
+  };
+
   const artworkUrl = item.has_artwork
     ? api.getArtworkUrl(item.file_path)
     : pendingArtworkB64
@@ -426,187 +438,192 @@ function EditRow({
   const isChanged = (field: EditableField): boolean => field in changes;
 
   return (
-    <div
-      role="row"
-      aria-current={isPlaying ? "true" : undefined}
-      className={cn(
-        "group/row border-border relative flex h-10 cursor-pointer items-center gap-1.5 border-b pr-0 pl-3 transition-colors",
-        isPlaying && "bg-[var(--brand-soft)]",
-        !isPlaying && (isCurrent || isSelected) && "bg-[var(--surface-3)]",
-        !isPlaying &&
-          !isCurrent &&
-          !isSelected &&
-          "hover:bg-[var(--surface-3)]",
-        justSaved && "saved-pulse",
-      )}
-      onClick={(e) => {
-        // Row click only opens the single-track editor / player.
-        // Multi-select is exclusively driven by the checkbox column.
-        const t = e.target as HTMLElement;
-        if (
-          t.closest(
-            'input, textarea, button, [role="menuitem"], [role="menuitemcheckbox"], [data-row-noselect]',
-          )
-        ) {
-          return;
-        }
-        onSelect();
-      }}
+    <TrackQueueMenu
+      onPlayNext={() => playNext(playerTrack)}
+      onAddToQueue={() => enqueue(playerTrack)}
     >
-      {isPlaying && (
-        <span
-          aria-hidden
-          className="bg-primary absolute inset-y-0 left-0 w-0.5"
-        />
-      )}
-      {/* Checkbox */}
       <div
-        className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
+        role="row"
+        aria-current={isPlaying ? "true" : undefined}
+        className={cn(
+          "group/row border-border relative flex h-10 cursor-pointer items-center gap-1.5 border-b pr-0 pl-3 transition-colors",
+          isPlaying && "bg-[var(--brand-soft)]",
+          !isPlaying && (isCurrent || isSelected) && "bg-[var(--surface-3)]",
+          !isPlaying &&
+            !isCurrent &&
+            !isSelected &&
+            "hover:bg-[var(--surface-3)]",
+          justSaved && "saved-pulse",
+        )}
         onClick={(e) => {
-          e.stopPropagation();
-          onToggleSelect(e.shiftKey);
+          // Row click only opens the single-track editor / player.
+          // Multi-select is exclusively driven by the checkbox column.
+          const t = e.target as HTMLElement;
+          if (
+            t.closest(
+              'input, textarea, button, [role="menuitem"], [role="menuitemcheckbox"], [data-row-noselect]',
+            )
+          ) {
+            return;
+          }
+          onSelect();
         }}
       >
-        <Checkbox
-          checked={isSelected}
-          tabIndex={-1}
-          className="cursor-pointer"
-        />
-      </div>
-
-      {/* Artwork thumbnail with hover play/pause overlay */}
-      <CoverPlayButton
-        artworkUrl={artworkUrl}
-        isCurrent={isPlaying}
-        onStartPlay={onStartPlay}
-        label={item.title ?? item.file_name}
-        className={`ring-1 ${pendingArtworkB64 ? "ring-primary/40" : "ring-transparent"}`}
-      />
-
-      {/* Mini waveform (top-half) */}
-      <div className="h-6 w-20 shrink-0">
-        <MiniWaveform
-          track={{
-            filePath: item.file_path,
-            fileName: item.file_name,
-            title: item.title ?? undefined,
-            artist: Array.isArray(item.artist)
-              ? item.artist.join(", ")
-              : (item.artist ?? undefined),
-          }}
-          halfHeight
-          onStartPlay={onStartPlay}
-        />
-      </div>
-
-      {/* Column cells — order driven by visibleFields (user-reorderable). */}
-      {visibleFields.map((f) => {
-        if (f.key === "folder") {
-          return (
-            <span
-              key={f.key}
-              className="text-muted-foreground min-w-0 shrink-0 truncate text-xs"
-              style={{ width: f.width }}
-              title={item.folder ?? ""}
-            >
-              {item.folder && folderPath
-                ? item.folder.startsWith(folderPath)
-                  ? item.folder.slice(folderPath.length + 1) || "."
-                  : item.folder
-                : "—"}
-            </span>
-          );
-        }
-        if (f.key === "file_size") {
-          const bytes = item.file_size ?? 0;
-          return (
-            <span
-              key={f.key}
-              data-size-cell
-              className="text-muted-foreground min-w-0 shrink-0 truncate text-right text-xs tabular-nums"
-              style={{ width: f.width }}
-              title={bytes ? `${bytes.toLocaleString()} bytes` : ""}
-            >
-              {bytes ? formatFileSize(bytes) : "—"}
-            </span>
-          );
-        }
-        if (f.key === "duration") {
-          const secs = item.duration ?? null;
-          return (
-            <span
-              key={f.key}
-              data-duration-cell
-              className="text-muted-foreground min-w-0 shrink-0 truncate text-right text-xs tabular-nums"
-              style={{ width: f.width }}
-            >
-              {secs != null ? formatDuration(secs) : "—"}
-            </span>
-          );
-        }
-        if (f.key === "file_format") {
-          const fmt = item.file_format
-            ? item.file_format.replace(/^\./, "").toLowerCase()
-            : "";
-          return (
-            <span
-              key={f.key}
-              data-format-cell
-              className="text-muted-foreground min-w-0 shrink-0 truncate text-xs tabular-nums"
-              style={{ width: f.width }}
-              title={item.file_format ?? ""}
-            >
-              {fmt || "—"}
-            </span>
-          );
-        }
-        if (f.key === "soundcloud_linked") {
-          return (
-            <div
-              key={f.key}
-              className="flex shrink-0 items-center justify-center"
-              style={{ width: f.width }}
-              title={isScLinked ? "Linked to SoundCloud" : "Not linked"}
-            >
-              <SoundCloudLogo
-                className={cn(
-                  "size-3.5",
-                  isScLinked ? "text-primary" : "text-muted-foreground/40",
-                )}
-              />
-            </div>
-          );
-        }
-        return (
-          <EditableCell
-            key={f.key}
-            value={getValue(f.key as EditableField)}
-            onCommit={(v) => onFieldChange(f.key as EditableField, v)}
-            onActivate={onSelect}
-            isCurrent={isCurrent}
-            placeholder={f.label}
-            isChanged={isChanged(f.key as EditableField)}
-            width={f.width}
+        {isPlaying && (
+          <span
+            aria-hidden
+            className="bg-primary absolute inset-y-0 left-0 w-0.5"
           />
-        );
-      })}
+        )}
+        {/* Checkbox */}
+        <div
+          className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect(e.shiftKey);
+          }}
+        >
+          <Checkbox
+            checked={isSelected}
+            tabIndex={-1}
+            className="cursor-pointer"
+          />
+        </div>
 
-      {/* Added date (read-only) */}
-      <span className="text-muted-foreground w-20 shrink-0 text-xs tabular-nums">
-        {item.mtime
-          ? new Date(item.mtime * 1000).toISOString().slice(0, 10)
-          : "—"}
-      </span>
+        {/* Artwork thumbnail with hover play/pause overlay */}
+        <CoverPlayButton
+          artworkUrl={artworkUrl}
+          isCurrent={isPlaying}
+          onStartPlay={onStartPlay}
+          label={item.title ?? item.file_name}
+          className={`ring-1 ${pendingArtworkB64 ? "ring-primary/40" : "ring-transparent"}`}
+        />
 
-      {/* File name — moved to the end; folder is more relevant in tree view */}
-      <span
-        data-file-path={item.file_path}
-        className="text-muted-foreground w-32 shrink-0 truncate text-xs"
-        title={item.file_name}
-      >
-        {item.file_name}
-      </span>
-    </div>
+        {/* Mini waveform (top-half) */}
+        <div className="h-6 w-20 shrink-0">
+          <MiniWaveform
+            track={{
+              filePath: item.file_path,
+              fileName: item.file_name,
+              title: item.title ?? undefined,
+              artist: Array.isArray(item.artist)
+                ? item.artist.join(", ")
+                : (item.artist ?? undefined),
+            }}
+            halfHeight
+            onStartPlay={onStartPlay}
+          />
+        </div>
+
+        {/* Column cells — order driven by visibleFields (user-reorderable). */}
+        {visibleFields.map((f) => {
+          if (f.key === "folder") {
+            return (
+              <span
+                key={f.key}
+                className="text-muted-foreground min-w-0 shrink-0 truncate text-xs"
+                style={{ width: f.width }}
+                title={item.folder ?? ""}
+              >
+                {item.folder && folderPath
+                  ? item.folder.startsWith(folderPath)
+                    ? item.folder.slice(folderPath.length + 1) || "."
+                    : item.folder
+                  : "—"}
+              </span>
+            );
+          }
+          if (f.key === "file_size") {
+            const bytes = item.file_size ?? 0;
+            return (
+              <span
+                key={f.key}
+                data-size-cell
+                className="text-muted-foreground min-w-0 shrink-0 truncate text-right text-xs tabular-nums"
+                style={{ width: f.width }}
+                title={bytes ? `${bytes.toLocaleString()} bytes` : ""}
+              >
+                {bytes ? formatFileSize(bytes) : "—"}
+              </span>
+            );
+          }
+          if (f.key === "duration") {
+            const secs = item.duration ?? null;
+            return (
+              <span
+                key={f.key}
+                data-duration-cell
+                className="text-muted-foreground min-w-0 shrink-0 truncate text-right text-xs tabular-nums"
+                style={{ width: f.width }}
+              >
+                {secs != null ? formatDuration(secs) : "—"}
+              </span>
+            );
+          }
+          if (f.key === "file_format") {
+            const fmt = item.file_format
+              ? item.file_format.replace(/^\./, "").toLowerCase()
+              : "";
+            return (
+              <span
+                key={f.key}
+                data-format-cell
+                className="text-muted-foreground min-w-0 shrink-0 truncate text-xs tabular-nums"
+                style={{ width: f.width }}
+                title={item.file_format ?? ""}
+              >
+                {fmt || "—"}
+              </span>
+            );
+          }
+          if (f.key === "soundcloud_linked") {
+            return (
+              <div
+                key={f.key}
+                className="flex shrink-0 items-center justify-center"
+                style={{ width: f.width }}
+                title={isScLinked ? "Linked to SoundCloud" : "Not linked"}
+              >
+                <SoundCloudLogo
+                  className={cn(
+                    "size-3.5",
+                    isScLinked ? "text-primary" : "text-muted-foreground/40",
+                  )}
+                />
+              </div>
+            );
+          }
+          return (
+            <EditableCell
+              key={f.key}
+              value={getValue(f.key as EditableField)}
+              onCommit={(v) => onFieldChange(f.key as EditableField, v)}
+              onActivate={onSelect}
+              isCurrent={isCurrent}
+              placeholder={f.label}
+              isChanged={isChanged(f.key as EditableField)}
+              width={f.width}
+            />
+          );
+        })}
+
+        {/* Added date (read-only) */}
+        <span className="text-muted-foreground w-20 shrink-0 text-xs tabular-nums">
+          {item.mtime
+            ? new Date(item.mtime * 1000).toISOString().slice(0, 10)
+            : "—"}
+        </span>
+
+        {/* File name — moved to the end; folder is more relevant in tree view */}
+        <span
+          data-file-path={item.file_path}
+          className="text-muted-foreground w-32 shrink-0 truncate text-xs"
+          title={item.file_name}
+        >
+          {item.file_name}
+        </span>
+      </div>
+    </TrackQueueMenu>
   );
 }
 

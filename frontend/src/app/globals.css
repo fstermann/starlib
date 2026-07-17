@@ -237,6 +237,12 @@
   --text-2xs--letter-spacing: 0.06em;
   --text-2xs--font-weight: 600;
 
+  /* Align the dense scale with DESIGN.md §3.2 — the app runs 1–2px tighter than
+   * Tailwind's stock text-xs/sm (12/14px). Size only; line-height and weight
+   * keep Tailwind's proportional defaults so nothing re-weights. */
+  --text-xs: 0.6875rem; /* 11px */
+  --text-sm: 0.75rem; /* 12px */
+
   /* Radii — derived from single knob. */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

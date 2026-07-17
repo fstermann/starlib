@@ -15,6 +15,7 @@ import {
 } from "@/components/layout/top-bar-context";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { RekordboxWaveform } from "@/components/rekordbox-waveform";
+import { TrackQueueMenu } from "@/components/track-queue-menu";
 import {
   TrackTable,
   type ResolvedColumn,
@@ -652,86 +653,98 @@ export function RekordboxView() {
                   // Clicking anywhere on the row starts playback; the cover's
                   // play button is the keyboard/AT-accessible control, so the
                   // row stays a plain div (no nested-button ARIA).
-                  <div
-                    onClick={() => playable && handleStartPlay(index)}
-                    title={
-                      playable
-                        ? undefined
-                        : "Missing local file — not playable from Rekordbox"
-                    }
-                    className={cn(
-                      "group border-border flex h-10 items-center gap-1.5 border-b pr-0 pl-3 text-xs transition-colors select-none",
-                      playable
-                        ? "cursor-pointer hover:bg-[var(--surface-3)]"
-                        : "text-muted-foreground/60 cursor-default",
-                      isCurrent && "bg-[var(--brand-soft)]",
-                      isSelected && !isCurrent && "bg-[var(--surface-3)]",
-                    )}
+                  <TrackQueueMenu
+                    disabled={!playable}
+                    onPlayNext={() => {
+                      const pt = toPlayerTrack(t, device);
+                      if (pt) player.playNext(pt);
+                    }}
+                    onAddToQueue={() => {
+                      const pt = toPlayerTrack(t, device);
+                      if (pt) player.enqueue(pt);
+                    }}
                   >
                     <div
-                      className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleSelect(index, e.shiftKey);
-                      }}
+                      onClick={() => playable && handleStartPlay(index)}
+                      title={
+                        playable
+                          ? undefined
+                          : "Missing local file — not playable from Rekordbox"
+                      }
+                      className={cn(
+                        "group border-border flex h-10 items-center gap-1.5 border-b pr-0 pl-3 text-xs transition-colors select-none",
+                        playable
+                          ? "cursor-pointer hover:bg-[var(--surface-3)]"
+                          : "text-muted-foreground/60 cursor-default",
+                        isCurrent && "bg-[var(--brand-soft)]",
+                        isSelected && !isCurrent && "bg-[var(--surface-3)]",
+                      )}
                     >
-                      <Checkbox
-                        checked={isSelected}
-                        tabIndex={-1}
-                        className="pointer-events-none size-3.5"
-                      />
-                    </div>
-                    <CoverPlayButton
-                      artworkUrl={
-                        t.has_artwork
-                          ? api.getRekordboxArtworkUrl(
-                              t.id,
-                              true,
-                              deviceId ?? undefined,
-                            )
-                          : null
-                      }
-                      isCurrent={isCurrent}
-                      onStartPlay={
-                        playable ? () => handleStartPlay(index) : undefined
-                      }
-                      label={t.title}
-                    />
-                    <div className="flex h-10 w-24 shrink-0 items-center">
-                      {t.has_waveform ? (
-                        <RekordboxWaveform
-                          trackId={t.id}
-                          device={deviceId ?? undefined}
-                          track={playable ? toPlayerTrack(t, device) : null}
-                          onStartPlay={
-                            playable
-                              ? (startRatio) =>
-                                  handleStartPlay(index, startRatio)
-                              : undefined
-                          }
-                          width={96}
-                          height={20}
-                        />
-                      ) : null}
-                    </div>
-                    {visibleColumns.map((col) => (
                       <div
-                        key={col.id}
-                        // truncate lives on the same element as the explicit
-                        // width so resizes reflow the ellipsis immediately —
-                        // an inner span with `truncate` doesn't always pick
-                        // up the new available width on a numeric style
-                        // change.
-                        className={cn(
-                          "min-w-0 shrink-0 truncate",
-                          col.className,
-                        )}
-                        style={{ width: col.width }}
+                        className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelect(index, e.shiftKey);
+                        }}
                       >
-                        {renderCell(col, t, isCurrent)}
+                        <Checkbox
+                          checked={isSelected}
+                          tabIndex={-1}
+                          className="pointer-events-none size-3.5"
+                        />
                       </div>
-                    ))}
-                  </div>
+                      <CoverPlayButton
+                        artworkUrl={
+                          t.has_artwork
+                            ? api.getRekordboxArtworkUrl(
+                                t.id,
+                                true,
+                                deviceId ?? undefined,
+                              )
+                            : null
+                        }
+                        isCurrent={isCurrent}
+                        onStartPlay={
+                          playable ? () => handleStartPlay(index) : undefined
+                        }
+                        label={t.title}
+                      />
+                      <div className="flex h-10 w-24 shrink-0 items-center">
+                        {t.has_waveform ? (
+                          <RekordboxWaveform
+                            trackId={t.id}
+                            device={deviceId ?? undefined}
+                            track={playable ? toPlayerTrack(t, device) : null}
+                            onStartPlay={
+                              playable
+                                ? (startRatio) =>
+                                    handleStartPlay(index, startRatio)
+                                : undefined
+                            }
+                            width={96}
+                            height={20}
+                          />
+                        ) : null}
+                      </div>
+                      {visibleColumns.map((col) => (
+                        <div
+                          key={col.id}
+                          // truncate lives on the same element as the explicit
+                          // width so resizes reflow the ellipsis immediately —
+                          // an inner span with `truncate` doesn't always pick
+                          // up the new available width on a numeric style
+                          // change.
+                          className={cn(
+                            "min-w-0 shrink-0 truncate",
+                            col.className,
+                          )}
+                          style={{ width: col.width }}
+                        >
+                          {renderCell(col, t, isCurrent)}
+                        </div>
+                      ))}
+                    </div>
+                  </TrackQueueMenu>
                 );
               }}
             />

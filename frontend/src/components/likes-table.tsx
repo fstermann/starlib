@@ -36,6 +36,7 @@ import {
 } from "@/components/soundcloud-bpm-cell";
 import { SoundcloudLikeButton } from "@/components/soundcloud-like-button";
 import { SourceProfileAvatar } from "@/components/source-profile-avatar";
+import { TrackQueueMenu } from "@/components/track-queue-menu";
 import {
   TrackTable,
   type TrackTableColumn,
@@ -567,6 +568,10 @@ interface TrackRowProps {
   onExpand: () => void;
   /** Install the queue starting at this row and begin playback. */
   onStartPlay: () => Promise<void> | void;
+  /** Append this track to the end of the play queue. */
+  onAddToQueue: () => void;
+  /** Insert this track right after the current one. */
+  onPlayNext: () => void;
   /** Columns filtered and ordered per user preferences, with resolved widths. */
   visibleColumns: ResolvedLikesCol[];
   /** When set, the row renders a drag handle and participates in SortableContext. */
@@ -587,6 +592,8 @@ function TrackRowInner({
   onToggleSelect,
   onExpand,
   onStartPlay,
+  onAddToQueue,
+  onPlayNext,
   visibleColumns,
   dragHandle,
 }: TrackRowProps) {
@@ -621,89 +628,95 @@ function TrackRowInner({
   }, []);
 
   return (
-    <div>
-      <div
-        role="row"
-        tabIndex={0}
-        aria-current={isCurrent ? "true" : undefined}
-        className={`group border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isCurrent ? "bg-[var(--brand-soft)]" : isSelected || isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
-        onClick={onExpand}
-        onPointerEnter={onPointerEnter}
-        onPointerLeave={onPointerLeave}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") onExpand();
-          if (e.key === " ") {
-            e.preventDefault();
-            onToggleSelect(e.shiftKey);
-          }
-        }}
-      >
-        {/* Drag handle */}
-        {dragHandle && (
-          <button
-            {...dragHandle.attributes}
-            {...dragHandle.listeners}
-            tabIndex={-1}
-            aria-label="Drag to reorder"
-            data-testid="likes-row-drag-handle"
-            onClick={(e) => e.stopPropagation()}
-            className="text-muted-foreground/50 hover:text-foreground flex size-4 shrink-0 cursor-grab items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
-          >
-            <GripVertical className="size-3" />
-          </button>
-        )}
-
-        {/* Checkbox */}
+    <TrackQueueMenu
+      onPlayNext={onPlayNext}
+      onAddToQueue={onAddToQueue}
+      disabled={unplayable}
+    >
+      <div>
         <div
-          className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleSelect(e.shiftKey);
+          role="row"
+          tabIndex={0}
+          aria-current={isCurrent ? "true" : undefined}
+          className={`group border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isCurrent ? "bg-[var(--brand-soft)]" : isSelected || isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
+          onClick={onExpand}
+          onPointerEnter={onPointerEnter}
+          onPointerLeave={onPointerLeave}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onExpand();
+            if (e.key === " ") {
+              e.preventDefault();
+              onToggleSelect(e.shiftKey);
+            }
           }}
         >
-          <Checkbox
-            checked={isSelected}
-            className="pointer-events-none size-3.5"
-          />
-        </div>
+          {/* Drag handle */}
+          {dragHandle && (
+            <button
+              {...dragHandle.attributes}
+              {...dragHandle.listeners}
+              tabIndex={-1}
+              aria-label="Drag to reorder"
+              data-testid="likes-row-drag-handle"
+              onClick={(e) => e.stopPropagation()}
+              className="text-muted-foreground/50 hover:text-foreground flex size-4 shrink-0 cursor-grab items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
+            >
+              <GripVertical className="size-3" />
+            </button>
+          )}
 
-        {/* Artwork with hover play/pause overlay — streams via the backend
-            HLS endpoint when playback starts. */}
-        <CoverPlayButton
-          artworkUrl={imgUrl}
-          isCurrent={isCurrent}
-          onStartPlay={scTrackId ? onStartPlay : undefined}
-          unplayable={unplayable}
-          label={track.title ?? undefined}
-        />
-
-        {/* Reorderable column cells */}
-        {visibleColumns.map((col) => (
+          {/* Checkbox */}
           <div
-            key={col.id}
-            className={col.cellClassName}
-            style={{ width: col.width }}
+            className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect(e.shiftKey);
+            }}
           >
-            {col.renderBody({
-              track,
-              isExpanded,
-              inCollection,
-              isLiked,
-              isNew: isNew ?? false,
-            })}
+            <Checkbox
+              checked={isSelected}
+              className="pointer-events-none size-3.5"
+            />
           </div>
-        ))}
-      </div>
 
-      {/* Expanded detail: description */}
-      {isExpanded && track.description && (
-        <div className="border-border bg-muted border-b px-3 py-2">
-          <p className="text-muted-foreground max-w-prose text-xs whitespace-pre-line">
-            {track.description}
-          </p>
+          {/* Artwork with hover play/pause overlay — streams via the backend
+            HLS endpoint when playback starts. */}
+          <CoverPlayButton
+            artworkUrl={imgUrl}
+            isCurrent={isCurrent}
+            onStartPlay={scTrackId ? onStartPlay : undefined}
+            unplayable={unplayable}
+            label={track.title ?? undefined}
+          />
+
+          {/* Reorderable column cells */}
+          {visibleColumns.map((col) => (
+            <div
+              key={col.id}
+              className={col.cellClassName}
+              style={{ width: col.width }}
+            >
+              {col.renderBody({
+                track,
+                isExpanded,
+                inCollection,
+                isLiked,
+                isNew: isNew ?? false,
+              })}
+            </div>
+          ))}
         </div>
-      )}
-    </div>
+
+        {/* Expanded detail: description */}
+        {isExpanded && track.description && (
+          <div className="border-border bg-muted border-b px-3 py-2">
+            <p className="text-muted-foreground max-w-prose text-xs whitespace-pre-line">
+              {track.description}
+            </p>
+          </div>
+        )}
+      </div>
+    </TrackQueueMenu>
   );
 }
 
@@ -791,7 +804,8 @@ export function LikesTable({
   onVisibleOrderChange,
 }: LikesTableProps) {
   const reorderEnabled = !!onReorderTracks;
-  const { playQueue, currentTrack, replaceUpcoming } = usePlayer();
+  const { playQueue, currentTrack, reconcileUpcoming, enqueue, playNext } =
+    usePlayer();
   // Mirror the current track into a ref so the reconcile effect can read it
   // without making it a dependency — otherwise reconciling (which changes
   // `currentTrack`'s reference) would re-trigger the effect and loop. This
@@ -940,10 +954,10 @@ export function LikesTable({
       (t) => `soundcloud:${extractId(t)}` === current.filePath,
     );
     if (pos < 0) return;
-    replaceUpcoming(
+    reconcileUpcoming(
       sortedTracks.slice(pos + 1).map((t) => scTrackToPlayerTrack(t, bpmCache)),
     );
-  }, [sortedTracks, bpmCache, replaceUpcoming]);
+  }, [sortedTracks, bpmCache, reconcileUpcoming]);
 
   // Report the current visible order (after sort) to callers so they can save
   // whatever the user currently sees.
@@ -1125,6 +1139,8 @@ export function LikesTable({
             }}
             onExpand={() => handleExpand(track)}
             onStartPlay={() => handleStartPlay(index)}
+            onAddToQueue={() => enqueue(scTrackToPlayerTrack(track, bpmCache))}
+            onPlayNext={() => playNext(scTrackToPlayerTrack(track, bpmCache))}
             visibleColumns={rowCols}
           />
         );
@@ -1161,6 +1177,8 @@ export function LikesTable({
                   onToggleSelect={() => undefined}
                   onExpand={() => undefined}
                   onStartPlay={() => undefined}
+                  onAddToQueue={() => undefined}
+                  onPlayNext={() => undefined}
                   visibleColumns={visibleColumns}
                   dragHandle={{
                     attributes: {},

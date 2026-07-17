@@ -35,6 +35,7 @@ import { MixOverviewSwipe } from "@/components/mix-overview-swipe";
 import { PeaksWaveform } from "@/components/peaks-waveform";
 import { PlayerDetailWaveform } from "@/components/player-detail-waveform";
 import { PlayerRekordboxWaveform } from "@/components/player-rekordbox-waveform";
+import { QueuePanel } from "@/components/queue-panel";
 import { loadWaveform, pwv4ToPeaks } from "@/components/rekordbox-waveform";
 import { api } from "@/lib/api";
 import { onHlsFatalExpiry } from "@/lib/hls-expiry";
@@ -2515,6 +2516,7 @@ export function WaveformPlayer() {
               >
                 <SkipForward className="size-3" />
               </button>
+              <QueuePanel />
 
               {/* BPM + KEY on the same level, right-aligned. Labels are never
                 tinted; the value carries the pitch colour. */}
