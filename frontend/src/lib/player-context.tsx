@@ -86,6 +86,12 @@ interface PlayerContextValue {
     index: number,
     startRatio?: number,
   ) => void;
+  /** Replace the not-yet-played tail of the queue (every entry after the
+   * current index) without disturbing the current track or its index. Lets a
+   * caller re-derive "what plays next" mid-playback — e.g. after the user
+   * filters the visible list — so autoplay stops walking into tracks that are
+   * no longer shown. No-op when nothing is loaded. */
+  replaceUpcoming: (upcoming: PlayerTrack[]) => void;
   pause: () => void;
   toggle: (track?: PlayerTrack) => void;
   stop: () => void;
@@ -298,6 +304,25 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     [setQueueState],
   );
 
+  // Swap the tail after the current entry, keeping the current track and its
+  // index untouched so the player never re-decodes (its init effect keys on
+  // `${queueIndex}:${filePath}`). The preserved head is sliced from the live
+  // queue, so `currentTrack`'s object identity is unchanged too.
+  const replaceUpcoming = useCallback(
+    (upcoming: PlayerTrack[]) => {
+      const idx = queueIndexRef.current;
+      if (idx < 0) return;
+      const currentTail = queueRef.current.slice(idx + 1);
+      const unchanged =
+        currentTail.length === upcoming.length &&
+        currentTail.every((t, i) => t.filePath === upcoming[i]?.filePath);
+      if (unchanged) return;
+      const head = queueRef.current.slice(0, idx + 1);
+      setQueueState([...head, ...upcoming], idx);
+    },
+    [setQueueState],
+  );
+
   const load = useCallback(
     (track: PlayerTrack) => {
       setQueueState([track], 0);
@@ -434,6 +459,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       load,
       play,
       playQueue,
+      replaceUpcoming,
       pause,
       toggle,
       stop,
@@ -466,6 +492,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       load,
       play,
       playQueue,
+      replaceUpcoming,
       pause,
       toggle,
       stop,
