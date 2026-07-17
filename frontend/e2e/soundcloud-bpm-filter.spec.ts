@@ -78,10 +78,7 @@ async function setup(page: import("@playwright/test").Page) {
       contentType: "application/json",
       body: JSON.stringify({
         bpms: Object.fromEntries(
-          TRACKS.filter((t) => t.bpm != null).map((t) => [
-            String(t.id),
-            t.bpm,
-          ]),
+          TRACKS.filter((t) => t.bpm != null).map((t) => [String(t.id), t.bpm]),
         ),
       }),
     }),

@@ -496,7 +496,11 @@ export function SoundcloudView() {
           step: 1,
           formatHint: "bpm",
         },
-        { id: "bpm_include_unknown", label: "Include unknown BPM", kind: "bool" },
+        {
+          id: "bpm_include_unknown",
+          label: "Include unknown BPM",
+          kind: "bool",
+        },
         {
           id: "track_type",
           label: "Type",

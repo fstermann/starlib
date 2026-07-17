@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 
 import type { FilterState } from "@/lib/filters/schema";
-import { scTrackId } from "@/lib/sources/use-sc-bpm-map";
 import type { SCTrack } from "@/lib/soundcloud";
+import { scTrackId } from "@/lib/sources/use-sc-bpm-map";
 
 export interface LikesFilterOptions {
   search: string;
