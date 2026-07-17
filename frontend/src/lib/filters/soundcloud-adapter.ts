@@ -1,8 +1,12 @@
 import type { FilterSchemaResponse } from "@/lib/filters/schema";
 import type { SCTrack } from "@/lib/soundcloud";
+import { scTrackId } from "@/lib/sources/use-sc-bpm-map";
 
 export interface SoundcloudSchemaInputs {
   tracks: SCTrack[];
+  /** Cached BPMs (track id → bpm) so the range covers analysed tracks, not
+   * just the rare uploads that carry a metadata `bpm`. */
+  bpmByTrack?: Map<number, number>;
 }
 
 /**
@@ -17,12 +21,15 @@ export interface SoundcloudSchemaInputs {
 export function buildSoundcloudSchema(
   inputs: SoundcloudSchemaInputs,
 ): FilterSchemaResponse {
-  const { tracks } = inputs;
+  const { tracks, bpmByTrack } = inputs;
 
   const genreCounts: Record<string, number> = {};
   let durationMin = Infinity;
   let durationMax = -Infinity;
   let hasDuration = false;
+  let bpmMin = Infinity;
+  let bpmMax = -Infinity;
+  let hasBpm = false;
   // Same 12-minute heuristic as the weekly view — keeps the track/set
   // split consistent wherever users toggle it.
   const trackTypeCounts: Record<string, number> = { track: 0, set: 0 };
@@ -36,6 +43,13 @@ export function buildSoundcloudSchema(
       hasDuration = true;
       if (s < 720) trackTypeCounts.track += 1;
       else trackTypeCounts.set += 1;
+    }
+    const id = scTrackId(t);
+    const bpm = (id != null ? bpmByTrack?.get(id) : undefined) ?? t.bpm;
+    if (bpm != null && bpm > 0) {
+      if (bpm < bpmMin) bpmMin = bpm;
+      if (bpm > bpmMax) bpmMax = bpm;
+      hasBpm = true;
     }
   }
 
@@ -62,6 +76,19 @@ export function buildSoundcloudSchema(
               max: Math.ceil(durationMax),
               step: 15,
               formatHint: "duration" as const,
+            },
+          ]
+        : []),
+      ...(hasBpm
+        ? [
+            {
+              id: "bpm",
+              label: "BPM",
+              kind: "range" as const,
+              min: Math.floor(bpmMin),
+              max: Math.ceil(bpmMax),
+              step: 1,
+              formatHint: "bpm" as const,
             },
           ]
         : []),

@@ -2,12 +2,17 @@ import { useMemo } from "react";
 
 import type { FilterState } from "@/lib/filters/schema";
 import type { SCTrack } from "@/lib/soundcloud";
+import { scTrackId } from "@/lib/sources/use-sc-bpm-map";
 
 export interface LikesFilterOptions {
   search: string;
   genres: string[];
   minDuration: number | null;
   maxDuration: number | null;
+  minBpm: number | null;
+  maxBpm: number | null;
+  /** When a BPM range is set, whether tracks with no known BPM still pass. */
+  includeUnknownBpm: boolean;
   excludeMyLikes: boolean;
   inCollection: boolean | null; // null = any, true = in collection, false = not in collection
   /** null = any; "track" = shorter than SET_THRESHOLD_SECONDS; "set" = at or above. */
@@ -28,6 +33,10 @@ export function filterStateToLikesOptions(
 ): LikesFilterOptions {
   const duration = (state.duration as
     [number | null, number | null] | undefined) ?? [null, null];
+  const bpm = (state.bpm as [number | null, number | null] | undefined) ?? [
+    null,
+    null,
+  ];
   // track_type is modelled as a multi-select enum with options ["track",
   // "set"]. A single-item selection means "only this type"; picking both
   // (or neither) is equivalent to no filter and collapses to null.
@@ -42,6 +51,9 @@ export function filterStateToLikesOptions(
     genres: (state.genre as string[] | undefined) ?? [],
     minDuration: duration[0],
     maxDuration: duration[1],
+    minBpm: bpm[0],
+    maxBpm: bpm[1],
+    includeUnknownBpm: state.bpm_include_unknown === true,
     excludeMyLikes: state.exclude_my_likes === true,
     inCollection:
       state.in_collection === true
@@ -66,13 +78,18 @@ function extractId(track: SCTrack): number | undefined {
   return parseInt(parts[parts.length - 1], 10) || undefined;
 }
 
-/** Pure predicate for filtering a single track — use outside of the hook. */
+/** Pure predicate for filtering a single track — use outside of the hook.
+ *
+ * `bpmByTrack` supplies cached (analysed/manual) BPMs; the predicate falls
+ * back to the track's metadata `bpm` when a track isn't in the map. */
 export function makeLikesFilterPredicate(
   options: LikesFilterOptions,
   myLikedIds?: Set<number>,
   collectionIds?: Set<number>,
+  bpmByTrack?: Map<number, number>,
 ): (track: SCTrack) => boolean {
   const searchLower = options.search.toLowerCase().trim();
+  const bpmActive = options.minBpm != null || options.maxBpm != null;
   return (track) => {
     if (searchLower) {
       const title = (track.title ?? "").toLowerCase();
@@ -105,6 +122,16 @@ export function makeLikesFilterPredicate(
       if (options.trackType === "set" && !isSet) return false;
       if (options.trackType === "track" && isSet) return false;
     }
+    if (bpmActive) {
+      const id = scTrackId(track);
+      const bpm = (id != null ? bpmByTrack?.get(id) : undefined) ?? track.bpm;
+      if (bpm == null) {
+        if (!options.includeUnknownBpm) return false;
+      } else {
+        if (options.minBpm != null && bpm < options.minBpm) return false;
+        if (options.maxBpm != null && bpm > options.maxBpm) return false;
+      }
+    }
     return true;
   };
 }
@@ -114,6 +141,7 @@ export function useLikesFilter(
   options: UseLikesFilterOptions,
   myLikedIds?: Set<number>,
   collectionIds?: Set<number>,
+  bpmByTrack?: Map<number, number>,
 ): UseLikesFilterResult {
   const availableGenres = useMemo(() => {
     const genreSet = new Set<string>();
@@ -128,9 +156,10 @@ export function useLikesFilter(
       options,
       myLikedIds,
       collectionIds,
+      bpmByTrack,
     );
     return tracks.filter(predicate);
-  }, [tracks, options, myLikedIds, collectionIds]);
+  }, [tracks, options, myLikedIds, collectionIds, bpmByTrack]);
 
   return { filteredTracks, availableGenres };
 }
