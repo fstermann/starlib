@@ -327,6 +327,27 @@ function artworkUrl(track: SCTrack): string | null {
   return api.proxyImageUrl(url);
 }
 
+// Build a PlayerTrack skeleton from an SC track. Every entry is a skeleton —
+// the player resolves streamUrl on demand via the shared TTL cache. Shared by
+// the play-to-start path and the mid-playback queue reconcile.
+function scTrackToPlayerTrack(
+  track: SCTrack,
+  bpmCache: Map<number, number>,
+): PlayerTrack {
+  const id = extractId(track);
+  return {
+    filePath: `soundcloud:${id}`,
+    fileName: track.title ?? String(id),
+    title: track.title ?? undefined,
+    artist: track.user?.username ?? undefined,
+    waveformUrl: track.waveform_url ?? undefined,
+    streamRefreshKey: id,
+    permalinkUrl: track.permalink_url ?? undefined,
+    artworkUrl: artworkUrl(track) ?? undefined,
+    bpm: bpmCache.get(id) ?? track.bpm ?? null,
+  };
+}
+
 function searchQuery(track: SCTrack): string {
   const artist = track.user?.username ?? "";
   const title = track.title ?? "";
@@ -770,7 +791,16 @@ export function LikesTable({
   onVisibleOrderChange,
 }: LikesTableProps) {
   const reorderEnabled = !!onReorderTracks;
-  const { playQueue } = usePlayer();
+  const { playQueue, currentTrack, replaceUpcoming } = usePlayer();
+  // Mirror the current track into a ref so the reconcile effect can read it
+  // without making it a dependency — otherwise reconciling (which changes
+  // `currentTrack`'s reference) would re-trigger the effect and loop. This
+  // effect is declared before the reconcile effect, so the ref is fresh by the
+  // time reconcile runs on the same render.
+  const currentTrackRef = useRef(currentTrack);
+  useEffect(() => {
+    currentTrackRef.current = currentTrack;
+  }, [currentTrack]);
 
   // Pre-fill cached BPMs for all tracks in this table in a single bulk
   // request, rather than making one GET per visible row. The map survives
@@ -883,30 +913,37 @@ export function LikesTable({
   const reorderable = reorderEnabled && !sortBy;
 
   // Build a PlayerTrack queue from the currently visible (sorted) SC tracks
-  // and start playback at `index`. Every entry is a skeleton — the player
-  // resolves streamUrl on demand via the shared TTL cache, so the clicked
-  // row's URL is fetched in parallel with peaks + waveform init rather
-  // than serialised before the UI updates.
+  // and start playback at `index`. The clicked row's URL is fetched in
+  // parallel with peaks + waveform init rather than serialised before the UI
+  // updates.
   const handleStartPlay = useCallback(
     (index: number) => {
-      const queue: PlayerTrack[] = sortedTracks.map((t) => {
-        const id = extractId(t);
-        return {
-          filePath: `soundcloud:${id}`,
-          fileName: t.title ?? String(id),
-          title: t.title ?? undefined,
-          artist: t.user?.username ?? undefined,
-          waveformUrl: t.waveform_url ?? undefined,
-          streamRefreshKey: id,
-          permalinkUrl: t.permalink_url ?? undefined,
-          artworkUrl: artworkUrl(t) ?? undefined,
-          bpm: bpmCache.get(id) ?? t.bpm ?? null,
-        };
-      });
-      playQueue(queue, index);
+      playQueue(
+        sortedTracks.map((t) => scTrackToPlayerTrack(t, bpmCache)),
+        index,
+      );
     },
     [sortedTracks, playQueue, bpmCache],
   );
+
+  // Keep autoplay in step with the filtered/sorted view. The queue is a
+  // snapshot taken when playback starts, so a filter applied mid-playback
+  // would otherwise keep autoplaying tracks the user just filtered out. When
+  // the currently playing track is still visible here (so this table owns the
+  // queue), re-derive the upcoming tail from the current visible order after
+  // it — leaving the current entry and its index untouched so playback never
+  // restarts.
+  useEffect(() => {
+    const current = currentTrackRef.current;
+    if (!current) return;
+    const pos = sortedTracks.findIndex(
+      (t) => `soundcloud:${extractId(t)}` === current.filePath,
+    );
+    if (pos < 0) return;
+    replaceUpcoming(
+      sortedTracks.slice(pos + 1).map((t) => scTrackToPlayerTrack(t, bpmCache)),
+    );
+  }, [sortedTracks, bpmCache, replaceUpcoming]);
 
   // Report the current visible order (after sort) to callers so they can save
   // whatever the user currently sees.
