@@ -200,6 +200,49 @@ test.describe("Command palette", () => {
     await expect(page).toHaveURL(/play=%2Fmusic%2Fcollection%2Fx\.aif/);
   });
 
+  test("right-click adds a SoundCloud track result to the play queue", async ({
+    page,
+  }) => {
+    await page.goto("/library");
+    await page.getByRole("button", { name: /open command palette/i }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByPlaceholder(/search or type a command/i).fill("track");
+    const trackRow = dialog.getByRole("option", { name: /Remote Track A/ });
+    await expect(trackRow).toBeVisible();
+
+    // Right-click opens the queue context menu; the palette stays open so the
+    // user can queue several tracks in a row.
+    await trackRow.click({ button: "right" });
+    await page.getByTestId("queue-add").click();
+    await expect(
+      page.getByText(/added to queue: remote track a/i),
+    ).toBeVisible();
+
+    // Enqueue onto an empty queue starts playback, so the track lands as the
+    // now-playing entry in the player bar.
+    await expect(page.getByTestId("waveform-player")).toContainText(
+      "Remote Track A",
+    );
+  });
+
+  test("right-click can play a SoundCloud track result next", async ({
+    page,
+  }) => {
+    await page.goto("/library");
+    await page.getByRole("button", { name: /open command palette/i }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByPlaceholder(/search or type a command/i).fill("track");
+    const trackRow = dialog.getByRole("option", { name: /Remote Track B/ });
+    await expect(trackRow).toBeVisible();
+
+    await trackRow.click({ button: "right" });
+    await page.getByTestId("queue-play-next").click();
+    await expect(page.getByText(/playing next: remote track b/i)).toBeVisible();
+    await expect(page.getByTestId("waveform-player")).toContainText(
+      "Remote Track B",
+    );
+  });
+
   test("nav command navigates to the destination", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: /open command palette/i }).click();
