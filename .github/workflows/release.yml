@@ -183,6 +183,46 @@ jobs:
               working-directory: desktop
               run: npm install
 
+            # ── Assemble the release body: release-please's changelog (what
+            # changed, pulled from the tagged CHANGELOG.md so both matrix jobs
+            # produce identical text) followed by install instructions.
+            - name: Assemble release notes
+              id: notes
+              shell: bash
+              run: |
+                  # Top-most version section of CHANGELOG.md, minus its own heading.
+                  CHANGES=$(awk '
+                      /^## / { blocks++ }
+                      blocks == 1 && !/^## / { print }
+                      blocks == 2 { exit }
+                  ' CHANGELOG.md)
+
+                  {
+                      echo "body<<RELEASE_NOTES_EOF"
+                      if [ -n "$CHANGES" ]; then
+                          echo "## What's changed"
+                          echo "$CHANGES"
+                          echo
+                      fi
+                      cat <<'INSTALL'
+                  ### Installation (macOS)
+
+                  1. Download the `.dmg` file for your Mac:
+                     - **Apple Silicon (M1/M2/M3):** `*-aarch64.dmg`
+                     - **Intel:** `*-x86_64.dmg`
+                  2. Open the `.dmg` and drag **Starlib** to your Applications folder.
+                  3. Remove the macOS quarantine flag (required for unsigned builds):
+                     ```bash
+                     xattr -cr /Applications/Starlib.app
+                     ```
+                  4. Follow the setup wizard to enter your SoundCloud API credentials.
+
+                  ### Getting SoundCloud API credentials
+                  Register a free app at https://soundcloud.com/you/apps, then copy your Client ID and Client Secret.
+                  INSTALL
+                      echo "RELEASE_NOTES_EOF"
+                  } >> "$GITHUB_OUTPUT"
+
             # ── tauri-action: build, upload artifacts + latest.json to the release
             - name: Build and release
               uses: tauri-apps/tauri-action@v1
@@ -194,24 +234,7 @@ jobs:
                   projectPath: desktop
                   tagName: ${{ inputs.tag }}
                   releaseName: "Starlib ${{ inputs.tag }}"
-                  releaseBody: |
-                      ## Starlib ${{ inputs.tag }}
-
-                      ### Installation (macOS)
-
-                      1. Download the `.dmg` file for your Mac:
-                         - **Apple Silicon (M1/M2/M3):** `*-aarch64.dmg`
-                         - **Intel:** `*-x86_64.dmg`
-                      2. Open the `.dmg` and drag **Starlib** to your Applications folder.
-                      3. Remove the macOS quarantine flag (required for unsigned builds):
-                         ```bash
-                         xattr -cr /Applications/Starlib.app
-                         ```
-                      4. Follow the setup wizard to enter your SoundCloud API credentials.
-
-                      ### Getting SoundCloud API credentials
-                      Register a free app at https://soundcloud.com/you/apps, then copy your Client ID and Client Secret.
+                  releaseBody: ${{ steps.notes.outputs.body }}
                   releaseDraft: false
                   prerelease: false
-                  generateReleaseNotes: true
                   args: --target ${{ matrix.tauri-target }}
