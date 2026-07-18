@@ -13,8 +13,12 @@ const TRACK_URL_RE = /^https?:\/\/(www\.)?soundcloud\.com\//i;
 
 export function SoundcloudTracksProvider({
   onSelect,
+  onAddToQueue,
+  onPlayNext,
 }: {
   onSelect: (track: SCTrack) => void;
+  onAddToQueue: (track: SCTrack) => void;
+  onPlayNext: (track: SCTrack) => void;
 }) {
   const provider = useMemo<CommandProvider>(
     () => ({
@@ -48,10 +52,12 @@ export function SoundcloudTracksProvider({
             onSelect(t);
             close();
           },
+          onAddToQueue: () => onAddToQueue(t),
+          onPlayNext: () => onPlayNext(t),
         }));
       },
     }),
-    [onSelect],
+    [onSelect, onAddToQueue, onPlayNext],
   );
 
   useRegisterProvider(provider);

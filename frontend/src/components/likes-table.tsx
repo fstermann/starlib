@@ -73,8 +73,9 @@ import {
 import { api } from "@/lib/api";
 import type { ColumnDef } from "@/lib/columns/types";
 import { parseFallbackDownloadUrl } from "@/lib/parse-fallback-download";
-import { usePlayer, type PlayerTrack } from "@/lib/player-context";
+import { usePlayer } from "@/lib/player-context";
 import type { SourceProfile } from "@/lib/profile-groups";
+import { scTrackToPlayerTrack } from "@/lib/sc-player-track";
 import { useIsScUnplayable } from "@/lib/sc-unplayable";
 import {
   addTracksToPlaylist,
@@ -348,27 +349,6 @@ function artworkUrl(track: SCTrack): string | null {
   const url = track.artwork_url;
   if (!url) return null;
   return api.proxyImageUrl(url);
-}
-
-// Build a PlayerTrack skeleton from an SC track. Every entry is a skeleton —
-// the player resolves streamUrl on demand via the shared TTL cache. Shared by
-// the play-to-start path and the mid-playback queue reconcile.
-function scTrackToPlayerTrack(
-  track: SCTrack,
-  bpmCache: Map<number, number>,
-): PlayerTrack {
-  const id = extractId(track);
-  return {
-    filePath: `soundcloud:${id}`,
-    fileName: track.title ?? String(id),
-    title: track.title ?? undefined,
-    artist: track.user?.username ?? undefined,
-    waveformUrl: track.waveform_url ?? undefined,
-    streamRefreshKey: id,
-    permalinkUrl: track.permalink_url ?? undefined,
-    artworkUrl: artworkUrl(track) ?? undefined,
-    bpm: bpmCache.get(id) ?? track.bpm ?? null,
-  };
 }
 
 function searchQuery(track: SCTrack): string {
