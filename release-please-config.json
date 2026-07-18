@@ -1,0 +1,34 @@
+{
+    "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+    "release-type": "python",
+    "include-component-in-tag": false,
+    "bump-minor-pre-major": true,
+    "bump-patch-for-minor-pre-major": false,
+    "pull-request-title-pattern": "chore: release v${version}",
+    "pull-request-header": "Automated release — merge to tag the version and publish the desktop build.",
+    "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "refactor", "section": "Refactoring" },
+        { "type": "docs", "section": "Documentation" },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "chore", "section": "Chores", "hidden": true },
+        { "type": "style", "section": "Styling", "hidden": true },
+        { "type": "test", "section": "Tests", "hidden": true },
+        { "type": "build", "section": "Build System", "hidden": true },
+        { "type": "ci", "section": "Continuous Integration", "hidden": true }
+    ],
+    "packages": {
+        ".": {
+            "package-name": "starlib",
+            "changelog-path": "CHANGELOG.md",
+            "extra-files": [
+                { "type": "json", "path": "frontend/package.json", "jsonpath": "$.version" },
+                { "type": "json", "path": "desktop/package.json", "jsonpath": "$.version" },
+                { "type": "json", "path": "desktop/src-tauri/tauri.conf.json", "jsonpath": "$.version" },
+                { "type": "toml", "path": "desktop/src-tauri/Cargo.toml", "jsonpath": "$.package.version" }
+            ]
+        }
+    }
+}

@@ -1,0 +1,87 @@
+name: release-please
+
+# Automated releases driven by Conventional Commits.
+#
+# On every push to main, release-please maintains a "release PR" that bumps the
+# version across all manifests and updates CHANGELOG.md. Merging that PR tags
+# the release (vX.Y.Z) and creates the GitHub Release, which then triggers the
+# desktop build (reusable release.yml) to attach the .dmg artifacts.
+
+on:
+    push:
+        branches: [main]
+
+permissions:
+    contents: write
+    pull-requests: write
+
+jobs:
+    release-please:
+        runs-on: ubuntu-latest
+        outputs:
+            release_created: ${{ steps.release.outputs.release_created }}
+            tag_name: ${{ steps.release.outputs.tag_name }}
+        steps:
+            - uses: googleapis/release-please-action@v4
+              id: release
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            # release-please bumps the four manifests but cannot touch lockfiles.
+            # When a release PR is open, sync the lockfiles to the bumped version
+            # and commit them onto the PR branch so `npm ci` / builds stay honest.
+            - name: Checkout release PR branch
+              if: ${{ steps.release.outputs.pr }}
+              uses: actions/checkout@v7
+              with:
+                  ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+                  fetch-depth: 0
+
+            - name: Set up Node
+              if: ${{ steps.release.outputs.pr }}
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "22"
+
+            - name: Set up Python
+              if: ${{ steps.release.outputs.pr }}
+              uses: actions/setup-python@v6
+              with:
+                  python-version: "3.13"
+
+            - name: Install uv
+              if: ${{ steps.release.outputs.pr }}
+              run: pip install uv
+
+            - name: Install Rust stable
+              if: ${{ steps.release.outputs.pr }}
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Sync lockfiles to bumped version
+              if: ${{ steps.release.outputs.pr }}
+              run: |
+                  uv lock
+                  npm install --package-lock-only --ignore-scripts --prefix frontend
+                  npm install --package-lock-only --ignore-scripts --prefix desktop
+                  cargo update -p starlib
+
+            - name: Commit lockfile updates
+              if: ${{ steps.release.outputs.pr }}
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  if ! git diff --quiet; then
+                      git commit -am "build: sync lockfiles for release"
+                      git push
+                  fi
+
+    # Build + attach desktop artifacts once the release PR is merged and tagged.
+    build:
+        needs: release-please
+        if: ${{ needs.release-please.outputs.release_created == 'true' }}
+        permissions:
+            contents: write
+        uses: ./.github/workflows/release.yml
+        with:
+            tag: ${{ needs.release-please.outputs.tag_name }}
+        secrets: inherit

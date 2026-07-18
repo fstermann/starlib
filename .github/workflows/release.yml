@@ -1,19 +1,26 @@
-name: Release
+name: Release build
+
+# Builds the Python sidecar + Tauri desktop app for a tagged release and uploads
+# the artifacts to the matching GitHub Release.
+#
+# Invoked by release-please.yml when a release PR merges (the `build` job passes
+# the freshly-created tag), or manually via workflow_dispatch to (re)build an
+# existing tag. Versioning, tagging, changelog and release creation all live in
+# release-please — this workflow only compiles and attaches artifacts.
 
 on:
+    workflow_call:
+        inputs:
+            tag:
+                description: "Release tag to build (e.g. v0.6.0)"
+                required: true
+                type: string
     workflow_dispatch:
         inputs:
-            bump:
-                description: "Version bump type"
+            tag:
+                description: "Existing release tag to (re)build (e.g. v0.6.0)"
                 required: true
-                type: choice
-                options:
-                    - patch
-                    - minor
-                    - major
-
-permissions:
-    contents: write
+                type: string
 
 env:
     # ── Python backend sidecar binary name (must match tauri.conf.json externalBin)
@@ -25,92 +32,9 @@ env:
 
 jobs:
     # ────────────────────────────────────────────────────────────────────────
-    # Job 0: Bump version, commit, tag, and push
-    # ────────────────────────────────────────────────────────────────────────
-    bump-version:
-        runs-on: ubuntu-latest
-        outputs:
-            new_version: ${{ steps.bump.outputs.new_version }}
-            old_version: ${{ steps.bump.outputs.old_version }}
-            tag: ${{ steps.bump.outputs.tag }}
-            release_branch: ${{ steps.bump.outputs.release_branch }}
-        steps:
-            - uses: actions/checkout@v7
-
-            - name: Bump version
-              id: bump
-              shell: bash
-              run: |
-                  # Read current version from pyproject.toml
-                  CURRENT=$(grep -m1 '^version' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-                  IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-
-                  case "${{ inputs.bump }}" in
-                    major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-                    minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-                    patch) PATCH=$((PATCH + 1)) ;;
-                  esac
-
-                  NEW="${MAJOR}.${MINOR}.${PATCH}"
-                  echo "new_version=$NEW" >> "$GITHUB_OUTPUT"
-                  echo "old_version=$CURRENT" >> "$GITHUB_OUTPUT"
-                  echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
-                  echo "release_branch=releases/v$NEW" >> "$GITHUB_OUTPUT"
-                  echo "Bumping $CURRENT → $NEW"
-
-            - name: Set up Python ${{ env.PYTHON_VERSION }}
-              uses: actions/setup-python@v6
-              with:
-                  python-version: ${{ env.PYTHON_VERSION }}
-
-            - name: Install uv
-              run: pip install uv
-
-            - name: Set up Node ${{ env.NODE_VERSION }}
-              uses: actions/setup-node@v6
-              with:
-                  node-version: ${{ env.NODE_VERSION }}
-
-            - name: Install Rust stable
-              uses: dtolnay/rust-toolchain@stable
-
-            - name: Update version in all files
-              shell: bash
-              run: |
-                  NEW="${{ steps.bump.outputs.new_version }}"
-
-                  # pyproject.toml + uv.lock
-                  uv version "$NEW"
-
-                  # desktop/src-tauri/Cargo.toml + Cargo.lock
-                  sed -i "0,/^version = \".*\"/s//version = \"$NEW\"/" desktop/src-tauri/Cargo.toml
-                  cargo update --workspace
-
-                  # desktop/package.json + desktop/package-lock.json
-                  npm version "$NEW" --no-git-tag-version --prefix desktop
-
-                  # frontend/package.json + frontend/package-lock.json
-                  npm version "$NEW" --no-git-tag-version --prefix frontend
-
-                  # desktop/src-tauri/tauri.conf.json
-                  jq --indent 4 --arg v "$NEW" '.version = $v' desktop/src-tauri/tauri.conf.json > tmp.json
-                  mv tmp.json desktop/src-tauri/tauri.conf.json
-
-            - name: Commit and tag
-              run: |
-                  git config user.name "github-actions[bot]"
-                  git config user.email "github-actions[bot]@users.noreply.github.com"
-                  git checkout -b "${{ steps.bump.outputs.release_branch }}"
-                  git add -A
-                  git commit -m "release: v${{ steps.bump.outputs.old_version }} → v${{ steps.bump.outputs.new_version }}"
-                  git tag "v${{ steps.bump.outputs.new_version }}"
-                  git push origin "${{ steps.bump.outputs.release_branch }}" --tags
-
-    # ────────────────────────────────────────────────────────────────────────
     # Job 1: Build the Python backend sidecar (macOS arm64 + optionally x86_64)
     # ────────────────────────────────────────────────────────────────────────
     build-sidecar:
-        needs: bump-version
         strategy:
             fail-fast: false
             matrix:
@@ -129,7 +53,7 @@ jobs:
         steps:
             - uses: actions/checkout@v7
               with:
-                  ref: ${{ needs.bump-version.outputs.tag }}
+                  ref: ${{ inputs.tag }}
 
             - name: Set up Python ${{ env.PYTHON_VERSION }}
               uses: actions/setup-python@v6
@@ -184,11 +108,11 @@ jobs:
     # ────────────────────────────────────────────────────────────────────────
     # Job 2: Build and release the Tauri desktop app via tauri-apps/tauri-action
     #
-    # tauri-action handles: Tauri build, latest.json generation, GitHub Release
-    # creation, and artifact upload. We handle ad-hoc codesign after.
+    # tauri-action handles: Tauri build, latest.json generation, uploading the
+    # artifacts to the existing GitHub Release, and codesign after.
     # ────────────────────────────────────────────────────────────────────────
     build-tauri:
-        needs: [bump-version, build-sidecar]
+        needs: build-sidecar
         permissions:
             contents: write
         strategy:
@@ -211,7 +135,7 @@ jobs:
         steps:
             - uses: actions/checkout@v7
               with:
-                  ref: ${{ needs.bump-version.outputs.tag }}
+                  ref: ${{ inputs.tag }}
 
             # ── Download pre-built sidecar binary ──────────────────────────────
             - name: Download sidecar artifact
@@ -259,7 +183,7 @@ jobs:
               working-directory: desktop
               run: npm install
 
-            # ── tauri-action: build, create release, upload artifacts + latest.json
+            # ── tauri-action: build, upload artifacts + latest.json to the release
             - name: Build and release
               uses: tauri-apps/tauri-action@v1
               env:
@@ -268,10 +192,10 @@ jobs:
                   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
               with:
                   projectPath: desktop
-                  tagName: ${{ needs.bump-version.outputs.tag }}
-                  releaseName: "Starlib ${{ needs.bump-version.outputs.tag }}"
+                  tagName: ${{ inputs.tag }}
+                  releaseName: "Starlib ${{ inputs.tag }}"
                   releaseBody: |
-                      ## Starlib ${{ needs.bump-version.outputs.tag }}
+                      ## Starlib ${{ inputs.tag }}
 
                       ### Installation (macOS)
 
@@ -291,55 +215,3 @@ jobs:
                   prerelease: false
                   generateReleaseNotes: true
                   args: --target ${{ matrix.tauri-target }}
-
-    # ────────────────────────────────────────────────────────────────────────
-    # Job 3: Merge release branch into main after everything succeeds
-    # ────────────────────────────────────────────────────────────────────────
-    merge-to-main:
-        needs: [bump-version, build-tauri]
-        if: ${{ success() }}
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-
-        steps:
-            - uses: actions/checkout@v7
-              with:
-                  ref: ${{ github.ref_name }}
-                  fetch-depth: 0
-
-            - name: Fast-forward merge release branch into main
-              run: |
-                  git config user.name "github-actions[bot]"
-                  git config user.email "github-actions[bot]@users.noreply.github.com"
-                  git fetch origin "${{ needs.bump-version.outputs.release_branch }}"
-                  git merge --ff-only "origin/${{ needs.bump-version.outputs.release_branch }}"
-                  git push origin HEAD:${{ github.ref_name }}
-
-            - name: Delete release branch
-              run: git push origin --delete "${{ needs.bump-version.outputs.release_branch }}"
-
-    # ────────────────────────────────────────────────────────────────────────
-    # Job 4: Clean up on failure — delete release branch, tag & release
-    # ────────────────────────────────────────────────────────────────────────
-    cleanup-on-failure:
-        needs: [bump-version, build-sidecar, build-tauri]
-        if: ${{ always() && (needs.bump-version.result == 'failure' || needs.build-sidecar.result == 'failure' || needs.build-tauri.result == 'failure') }}
-        runs-on: ubuntu-latest
-
-        steps:
-            - uses: actions/checkout@v7
-              with:
-                  ref: ${{ github.ref }}
-                  fetch-depth: 0
-
-            - name: Delete GitHub Release (if created)
-              env:
-                  GH_TOKEN: ${{ github.token }}
-              run: gh release delete "${{ needs.bump-version.outputs.tag }}" --yes --cleanup-tag || true
-
-            - name: Delete remote tag
-              run: git push origin --delete "refs/tags/${{ needs.bump-version.outputs.tag }}" || true
-
-            - name: Delete release branch
-              run: git push origin --delete "${{ needs.bump-version.outputs.release_branch }}" || true
