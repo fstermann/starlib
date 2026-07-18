@@ -565,16 +565,26 @@ export function TrackEditor({
     (scSearching || scQueryPending) &&
     !commentData.soundcloud_id &&
     !commentData.soundcloud_permalink;
+  // Toggling the SoundCloud chip only counts as an edit when it changes the
+  // serialized starlib_meta that handleSave actually writes. Enabling the chip
+  // on a track with no linked SC id writes nothing new, so it must not trip the
+  // unsaved-changes gate — which would otherwise block Apply rules (see #371).
+  const scMetaChanged =
+    serializeComment(
+      scLinkEnabled ? commentData.soundcloud_id : "",
+      scLinkEnabled ? commentData.soundcloud_permalink : "",
+    ) !==
+    serializeComment(
+      originalScLinkEnabled ? originalCommentData.soundcloud_id : "",
+      originalScLinkEnabled ? originalCommentData.soundcloud_permalink : "",
+    );
   const hasChanges =
     scBusy ||
     pendingArtworkData !== null ||
     (Object.keys(formData) as FormFieldKey[]).some(
       (k) => formData[k] !== originalFormData[k],
     ) ||
-    scLinkEnabled !== originalScLinkEnabled ||
-    commentData.soundcloud_id !== originalCommentData.soundcloud_id ||
-    commentData.soundcloud_permalink !==
-      originalCommentData.soundcloud_permalink;
+    scMetaChanged;
 
   // Show a hint when release_year and the year part of release_date disagree.
   const releaseDateYear =
@@ -1841,12 +1851,13 @@ export function TrackEditor({
               >
                 {/* Left chip: SC link toggle */}
                 <button
+                  data-testid="sc-link-toggle"
                   onClick={() => setScLinkEnabled(!scLinkEnabled)}
                   className={`text-2xs absolute -top-2.75 left-3 inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-0.5 font-semibold tracking-wider uppercase transition-all duration-150 ${
                     scLinkEnabled
                       ? "bg-card text-primary border shadow-sm"
                       : "bg-card text-muted-foreground hover:text-foreground border border-dashed"
-                  } ${scLinkEnabled !== originalScLinkEnabled ? "border-warning/70" : scLinkEnabled ? "border-border" : "border-border hover:border-border"}`}
+                  } ${scMetaChanged ? "border-warning/70" : scLinkEnabled ? "border-border" : "border-border hover:border-border"}`}
                 >
                   <activeSource.Icon className="size-2.5" />
                   SoundCloud
