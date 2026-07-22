@@ -160,7 +160,7 @@ jobs:
 
             # ── Node + frontend build ───────────────────────────────────────────
             - name: Set up Node ${{ env.NODE_VERSION }}
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@v7
               with:
                   node-version: ${{ env.NODE_VERSION }}
                   cache: "npm"
