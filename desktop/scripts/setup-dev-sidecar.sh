@@ -6,6 +6,24 @@
 #        Or automatically via: npm run desktop:dev
 set -e
 
+# ── Refuse to start if something already owns the backend port ────────────
+# Tauri spawns the sidecar unconditionally; if the port is taken the new
+# backend exits on bind and /health still answers from the orphan, so the app
+# silently runs against stale code. Fail here instead.
+BACKEND_PORT=8000
+EXISTING_PID=$(lsof -nP -tiTCP:"${BACKEND_PORT}" -sTCP:LISTEN 2>/dev/null | head -1 || true)
+if [[ -n "$EXISTING_PID" ]]; then
+  echo "Error: port ${BACKEND_PORT} is already in use by PID ${EXISTING_PID}:" >&2
+  ps -o pid,lstart,command -p "$EXISTING_PID" >&2
+  echo "" >&2
+  echo "The sidecar cannot bind, and the app would talk to that process instead." >&2
+  echo "Kill it with:" >&2
+  echo "" >&2
+  echo "  kill ${EXISTING_PID}" >&2
+  echo "" >&2
+  exit 1
+fi
+
 ARCH=$(rustc -vV | grep 'host:' | awk '{print $2}')
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DESKTOP_DIR="${SCRIPT_DIR}/.."

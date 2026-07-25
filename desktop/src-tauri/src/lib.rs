@@ -25,6 +25,22 @@ const HEALTH_RETRY_INTERVAL_MS: u64 = 500;
 const MAX_RESTART_ATTEMPTS: u32 = 3;
 const RESTART_DELAY_MS: u64 = 2000;
 
+/// Managed handle to the running sidecar. `None` means "no live backend" —
+/// the watchdog's restart trigger.
+type BackendChild = std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>;
+
+/// Store (or clear, with `None`) the managed sidecar handle.
+fn set_backend_child(
+    handle: &tauri::AppHandle,
+    child: Option<tauri_plugin_shell::process::CommandChild>,
+) {
+    if let Some(mutex) = handle.try_state::<BackendChild>() {
+        if let Ok(mut guard) = mutex.lock() {
+            *guard = child;
+        }
+    }
+}
+
 /// Poll the backend /health endpoint until it responds or retries are exhausted.
 async fn wait_for_backend_ready() -> bool {
     let client = reqwest::Client::new();
@@ -49,16 +65,18 @@ async fn wait_for_backend_ready() -> bool {
     false
 }
 
-/// Spawn the sidecar and forward its output. Returns the child handle.
-fn spawn_sidecar(
-    app: &tauri::AppHandle,
-) -> Result<tauri_plugin_shell::process::CommandChild, String> {
+/// Spawn the sidecar, store its handle, and forward its output.
+fn spawn_sidecar(app: &tauri::AppHandle) -> Result<(), String> {
     let shell = app.shell();
     let (mut rx, child) = shell
         .sidecar("starlib-backend")
         .expect("starlib-backend sidecar not found in bundle")
         .spawn()
         .map_err(|e| format!("Failed to spawn sidecar: {e}"))?;
+
+    // Store before the output task starts, so a Terminated event can never
+    // clear the slot ahead of us filling it.
+    set_backend_child(app, Some(child));
 
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -73,6 +91,8 @@ fn spawn_sidecar(
                 }
                 CommandEvent::Terminated(status) => {
                     log::info!("[backend] process exited: {:?}", status);
+                    // Clear the handle so the watchdog sees the exit and respawns.
+                    set_backend_child(&handle, None);
                     let _ = handle.emit("backend-disconnected", "Backend process exited");
                     break;
                 }
@@ -81,15 +101,18 @@ fn spawn_sidecar(
         }
     });
 
-    Ok(child)
+    Ok(())
 }
 
 /// Start the Python backend sidecar with automatic restart on crash.
 /// Keeps a reference to the child process so it can be killed on app close.
 fn start_backend(app: &tauri::AppHandle) {
+    // Register the slot before spawning: a sidecar that dies immediately (e.g.
+    // the port is already taken) emits Terminated before we could store it,
+    // and that event must find the state in place to clear it.
+    app.manage(BackendChild::new(None));
     match spawn_sidecar(app) {
-        Ok(child) => {
-            app.manage(std::sync::Mutex::new(Some(child)));
+        Ok(()) => {
             // Spawn a watchdog that monitors and restarts on crash.
             let handle = app.clone();
             tauri::async_runtime::spawn(async move {
@@ -104,7 +127,7 @@ fn start_backend(app: &tauri::AppHandle) {
                     }
 
                     let needs_restart = {
-                        if let Some(mutex) = handle.try_state::<std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>>() {
+                        if let Some(mutex) = handle.try_state::<BackendChild>() {
                             if let Ok(guard) = mutex.lock() {
                                 guard.is_none()
                             } else {
@@ -134,17 +157,8 @@ fn start_backend(app: &tauri::AppHandle) {
                     }
 
                     log::warn!("[backend] restarting sidecar (attempt {attempts}/{MAX_RESTART_ATTEMPTS})");
-                    match spawn_sidecar(&handle) {
-                        Ok(child) => {
-                            if let Some(mutex) = handle.try_state::<std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>>() {
-                                if let Ok(mut guard) = mutex.lock() {
-                                    *guard = Some(child);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("[backend] restart failed: {e}");
-                        }
+                    if let Err(e) = spawn_sidecar(&handle) {
+                        log::error!("[backend] restart failed: {e}");
                     }
                 }
             });
@@ -237,7 +251,7 @@ pub fn run() {
                 // Dropping the child handle closes the stdin pipe; the Python
                 // sidecar detects stdin EOF and exits. We also send SIGTERM as
                 // a backup (PyInstaller's bootloader forwards it to the child).
-                if let Some(mutex) = window.app_handle().try_state::<std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>>() {
+                if let Some(mutex) = window.app_handle().try_state::<BackendChild>() {
                     if let Ok(mut guard) = mutex.lock() {
                         if let Some(child) = guard.take() {
                             let pid = child.pid();
