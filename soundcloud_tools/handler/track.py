@@ -45,6 +45,25 @@ def _find_binary(name: str) -> str:
     return name
 
 
+def _run_ffmpeg(command: list[Any]) -> None:
+    """Run an ffmpeg command with its stdio detached from the parent's.
+
+    ffmpeg inherits the parent's stdout/stderr by default. When the backend runs
+    without a reader on those pipes, ffmpeg's progress output triggers SIGPIPE and
+    the conversion dies mid-encode. Capturing the output keeps it alive and lets us
+    surface ffmpeg's own error message instead of a bare signal.
+
+    Raises
+    ------
+    RuntimeError
+        If ffmpeg exits with a non-zero status.
+    """
+    result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        raise RuntimeError(f"ffmpeg failed (exit {result.returncode}): {stderr[-2000:] or '(no stderr)'}")
+
+
 FILETYPE_MAP = {
     ".mp3": MP3,
     ".aif": AIFF,
@@ -425,7 +444,7 @@ class TrackHandler(BaseModel):
             "-y",
             self.mp3_file,
         ]
-        subprocess.run(command, check=True)
+        _run_ffmpeg(command)
         return self.mp3_file
 
     def convert_to_aiff(self):
@@ -501,7 +520,7 @@ class TrackHandler(BaseModel):
             "-y",
             self.aiff_file,
         ]
-        subprocess.run(command, check=True)
+        _run_ffmpeg(command)
         return self.aiff_file
 
     def move_to_cleaned(self):
@@ -671,7 +690,7 @@ class TrackHandler(BaseModel):
                 "-y",
                 str(output_path),
             ]
-            subprocess.run(command, check=True)
+            _run_ffmpeg(command)
             return output_path
 
         if target_format == "aiff":
@@ -689,7 +708,7 @@ class TrackHandler(BaseModel):
                 "-y",
                 str(output_path),
             ]
-            subprocess.run(command, check=True)
+            _run_ffmpeg(command)
             return output_path
 
         return None
