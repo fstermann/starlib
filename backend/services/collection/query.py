@@ -8,7 +8,6 @@ import logging
 from datetime import date
 from pathlib import Path
 
-from backend.domain.tags import TrackInfo
 from backend.infra import cache
 from backend.services.collection.indexing import ensure_folder_indexed
 
@@ -19,123 +18,6 @@ def get_collection_soundcloud_ids(folder: Path) -> list[int]:
     """Return all SoundCloud track IDs linked to collection tracks."""
     ensure_folder_indexed(folder)
     return cache.get_soundcloud_ids(folder)
-
-
-def load_all_track_infos(folder: Path) -> list[TrackInfo]:
-    """Return TrackInfo objects for all tracks in a folder (from DB cache)."""
-    ensure_folder_indexed(folder)
-    rows = cache.get_all_tracks(folder.resolve())
-    result: list[TrackInfo] = []
-    for row in rows:
-        try:
-            result.append(
-                TrackInfo(
-                    title=row["title"],
-                    artist=row["artist_str"],
-                    genre=row["genre"],
-                    key=row["key"],
-                    bpm=row["bpm"],
-                    release_date=date.fromisoformat(row["release_date"]) if row["release_date"] else None,
-                )
-            )
-        except Exception:
-            pass
-    return result
-
-
-def filter_tracks_by_metadata(  # noqa: C901
-    folder: Path,
-    genres: list[str] | None = None,
-    artists: list[str] | None = None,
-    keys: list[str] | None = None,
-    bpm_values: list[int] | None = None,
-    bpm_range: tuple[int, int] | None = None,
-    start_date: date | None = None,
-    end_date: date | None = None,
-    search_query: str | None = None,
-) -> list[int]:
-    """
-    Filter tracks by metadata criteria.
-
-    Returns indices of tracks that match all specified criteria.
-
-    Parameters
-    ----------
-    folder : Path
-        Folder containing tracks
-    genres : list[str], optional
-        Filter by genres (OR logic)
-    artists : list[str], optional
-        Filter by artists (OR logic, substring match)
-    keys : list[str], optional
-        Filter by keys (OR logic)
-    bpm_values : list[int], optional
-        Filter by specific BPM values (OR logic)
-    bpm_range : tuple[int, int], optional
-        Filter by BPM range (inclusive)
-    start_date : date, optional
-        Minimum release date (inclusive)
-    end_date : date, optional
-        Maximum release date (inclusive)
-    search_query : str, optional
-        Search query (case-insensitive, searches title, artist, genre)
-
-    Returns
-    -------
-    list[int]
-        List of indices of tracks that match all criteria
-    """
-    track_infos = load_all_track_infos(folder)
-
-    # Set defaults
-    start_date = start_date or date.min
-    end_date = end_date or date.today()
-
-    selected_indices = []
-
-    for i, track in enumerate(track_infos):
-        # Genre filter
-        if genres and track.genre not in genres:
-            continue
-
-        # Artist filter (substring match)
-        if artists:
-            if not any(artist in track.artist_str for artist in artists):
-                continue
-
-        # Key filter
-        if keys and track.key not in keys:
-            continue
-
-        # BPM value filter
-        if bpm_values and track.bpm not in bpm_values:
-            continue
-
-        # BPM range filter
-        if bpm_range and track.bpm:
-            if not (bpm_range[0] <= track.bpm <= bpm_range[1]):
-                continue
-
-        # Date range filter
-        if track.release_date:
-            if not (start_date <= track.release_date <= end_date):
-                continue
-
-        # Search query filter
-        if search_query:
-            search_lower = search_query.lower()
-            searchable = [
-                (track.genre or "").lower(),
-                track.artist_str.lower(),
-                (track.title or "").lower(),
-            ]
-            if not any(search_lower in field for field in searchable):
-                continue
-
-        # All filters passed
-        selected_indices.append(i)
-
-    return selected_indices
 
 
 def get_collection_metadata_stats(folder: Path) -> dict:

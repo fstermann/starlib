@@ -196,36 +196,6 @@ def delete_track_file(file_path: Path, root_folder: Path) -> None:
     handler.delete()
 
 
-def rename_track_file(
-    file_path: Path,
-    root_folder: Path,
-    new_filename: str | None = None,
-) -> Path:
-    """
-    Rename a track file based on its metadata.
-
-    Parameters
-    ----------
-    file_path : Path
-        Path to the audio file
-    root_folder : Path
-        Root folder for the music library
-    new_filename : str | None
-        Optional explicit filename. If None, uses track_info.filename
-
-    Returns
-    -------
-    Path
-        New file path after renaming
-    """
-    handler = TrackHandler(root_folder=root_folder, file=file_path)
-
-    if new_filename is None:
-        new_filename = handler.track_info.filename
-
-    return handler.rename(new_filename)
-
-
 def get_track_info(file_path: Path, root_folder: Path) -> TrackInfo:
     """
     Read track information from an audio file.
@@ -306,26 +276,6 @@ def check_file_readiness(file_path: Path, root_folder: Path) -> dict[str, bool |
         "covers_count": covers_count,
         "has_one_cover": covers_count == 1,
     }
-
-
-def get_artwork_covers(file_path: Path, root_folder: Path) -> list[bytes]:
-    """
-    Get all artwork covers from an audio file.
-
-    Parameters
-    ----------
-    file_path : Path
-        Path to the audio file
-    root_folder : Path
-        Root folder for the music library
-
-    Returns
-    -------
-    list[bytes]
-        List of cover image data (JPEG bytes)
-    """
-    handler = TrackHandler(root_folder=root_folder, file=file_path)
-    return [cover.data for cover in handler.covers]
 
 
 def add_artwork_to_track(
@@ -435,23 +385,6 @@ def extract_artwork(file_path: Path, root_folder: Path, cache_dir: Path | None =
     temp_file = Path(tempfile.mkstemp(suffix=".jpg")[1])
     temp_file.write_bytes(cover_data)
     return temp_file
-
-
-def embed_artwork(file_path: Path, root_folder: Path, artwork_path: Path) -> None:
-    """
-    Embed artwork from an image file into an audio file.
-
-    Parameters
-    ----------
-    file_path : Path
-        Path to the audio file
-    root_folder : Path
-        Root folder for the music library
-    artwork_path : Path
-        Path to the artwork image file
-    """
-    artwork_data = artwork_path.read_bytes()
-    add_artwork_to_track(file_path, root_folder, artwork_data)
 
 
 def remove_artwork(file_path: Path, root_folder: Path) -> None:

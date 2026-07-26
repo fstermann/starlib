@@ -114,18 +114,6 @@ def is_indexing(folder: Path) -> bool:
     return folder.resolve() in _indexing
 
 
-# Backwards-compatible alias used by the API layer
-def is_cache_loading(folder: Path) -> bool:
-    return is_indexing(folder)
-
-
-def invalidate_file(file_path: Path) -> None:
-    """Remove a file from the cache so it gets re-indexed on next scan."""
-    cache.invalidate_file(file_path)
-    with _state_lock:
-        _indexed_this_session.discard(file_path.parent.resolve())
-
-
 def reindex_file(root_folder: Path, file_path: Path) -> None:
     """Re-index a single file immediately without a full folder re-scan."""
     _index_one(root_folder, file_path)

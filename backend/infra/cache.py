@@ -203,12 +203,6 @@ def get_track_mtime(file_path: Path) -> float | None:
     return float(row[0]) if row else None
 
 
-def get_all_tracks(folder: Path):
-    with get_engine().connect() as conn:
-        result = conn.execute(select(Track).where(Track.folder == str(folder)))
-        return result.mappings().all()
-
-
 def get_tracks_missing_bpm(folder: Path, recursive: bool = False) -> list[str]:
     """Return file_paths of indexed tracks in `folder` that have no BPM value."""
     with get_engine().connect() as conn:
@@ -221,17 +215,6 @@ def get_tracks_missing_bpm(folder: Path, recursive: bool = False) -> list[str]:
 def invalidate_folder(folder: Path) -> None:
     with get_engine().begin() as conn:
         conn.execute(delete(Track).where(Track.folder == str(folder)))
-
-
-def invalidate_file(file_path: Path) -> None:
-    delete_track(file_path)
-
-
-def get_distinct_folders() -> list[str]:
-    """Return all distinct folder paths that contain at least one track."""
-    with get_engine().connect() as conn:
-        rows = conn.execute(select(Track.folder).distinct().order_by(Track.folder)).all()
-    return [r[0] for r in rows]
 
 
 def get_folder_track_counts(

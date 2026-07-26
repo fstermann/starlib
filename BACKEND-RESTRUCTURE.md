@@ -102,11 +102,17 @@ reasoning matters more than the original plan did:
 
 ## 4. What it uncovered
 
-- **Dead code.** After splitting `collection.py`, most of
-  `services/collection/folders.py` has no callers: `collect_recent_downloads`,
-  `move_files_to_folder`, `get_folder_path`, `check_if_folder_has_audio`,
-  `get_folder_stats`, and `indexing.is_cache_loading` / `indexing.invalidate_file`.
-  Left in place deliberately — deleting it is a separate decision.
+- **Dead code — since removed.** Splitting the big modules made 21 unreferenced
+  functions visible, and a name-usage scan over `backend/`, `tests/` and
+  `scripts/` found the rest. All are gone: five folder helpers
+  (`collect_recent_downloads`, `move_files_to_folder`, `get_folder_path`,
+  `check_if_folder_has_audio`, `get_folder_stats`), `indexing.is_cache_loading`
+  and `indexing.invalidate_file`, `query.filter_tracks_by_metadata` and its only
+  callee `load_all_track_infos`, three metadata helpers (`get_artwork_covers`,
+  `embed_artwork`, `rename_track_file`), `engine.get_db_path`, three cache
+  functions (`get_distinct_folders`, `invalidate_file`, `get_all_tracks`) and
+  eight leftover string helpers in `domain/titles.py`. Removal was iterated to a
+  fixed point — deleting a caller orphans its callee — and the scan is empty.
 - **An impurity in `domain/tags.py`.** `TrackInfo.check_artwork_url` performs a
   `requests.get` inside a pydantic validator, so constructing a `TrackInfo` with
   an `artwork_url` does network I/O. Moving the fetch to the caller is a

@@ -53,9 +53,3 @@ def get_engine() -> Engine:
     if _engine is None:
         raise RuntimeError("cache DB engine not initialised — call init_engine() first")
     return _engine
-
-
-def get_db_path() -> Path:
-    if _engine_path is None:
-        raise RuntimeError("cache DB engine not initialised")
-    return _engine_path
