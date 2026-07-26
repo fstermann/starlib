@@ -76,7 +76,7 @@ def run_migrations(engine: Engine, db_path: Path) -> None:
 
 
 def _alembic_config(engine: Engine) -> Config:
-    """Build an Alembic ``Config`` pointed at the in-package ``backend/alembic``.
+    """Build an Alembic ``Config`` pointed at the in-package ``backend/infra/db/alembic``.
 
     Resolving via ``importlib.resources`` is the key detail that makes the
     sidecar work: PyInstaller bundles ``backend.infra.db.alembic`` as a Python

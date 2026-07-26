@@ -1,6 +1,6 @@
 """Tag vocabulary and the in-memory track model.
 
-Pure half of the old ``core/audio/tags.py``: the ID3 field registry
+The I/O-free half of tag handling: the ID3 field registry
 (:data:`SIMPLE_TAG_FIELDS`), the ``TXXX:starlib`` payload model
 (:class:`StarlibMeta`), the list serialisation helpers, and
 :class:`TrackInfo` — the app's in-memory view of one track's metadata.

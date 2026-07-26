@@ -13,8 +13,8 @@ the adapters. Dependencies point inward only:
 ``backend.schemas`` is layer-neutral — it is the shared contract vocabulary and
 imports nothing but itself, so every layer may depend on it.
 
-Without this check the layers erode silently: that is how ``core/domain/``
-ended up empty while ``core/services/`` grew to twenty modules.
+Without this check the layers erode silently: the previous layout ended up
+with an empty domain package and a twenty-module services grab bag.
 """
 
 from __future__ import annotations
