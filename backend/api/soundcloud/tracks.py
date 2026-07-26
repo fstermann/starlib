@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -19,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 from fastapi import APIRouter, Header, HTTPException, Response, status
 
-from backend.infra.soundcloud import token_cache
+from backend.infra.soundcloud import client, token_cache
 from backend.infra.soundcloud.oauth import OAuthManager  # re-exported for tests
 from backend.infra.soundcloud.settings import get_settings  # re-exported for tests
 from backend.schemas.soundcloud import StreamUrlResponse
@@ -30,15 +29,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/soundcloud", tags=["soundcloud"])
 
-# Client-Credentials OAuth tokens are rejected by api-v2.soundcloud.com; the
-# public API at api.soundcloud.com accepts them.
-_PUBLIC_API_BASE = "https://api.soundcloud.com"
+_PUBLIC_API_BASE = client.PUBLIC_API_BASE
 
 # Default cache TTL (seconds). Signed CDN URLs live ~1 hour; refresh at 30 min.
 _DEFAULT_TTL_SECONDS = 30 * 60
 
-# HTTP timeout for upstream SoundCloud calls. Overridable via env var for ops.
-_HTTP_TIMEOUT_SECONDS: float = float(os.environ.get("STARLIB_SC_HTTP_TIMEOUT", "15"))
+_HTTP_TIMEOUT_SECONDS: float = client.TIMEOUT_SECONDS
 
 # Allowlist of hosts the `/streams` endpoint may redirect us to. We follow
 # only these on the redirect hop so a spoofed upstream can't bounce us to a
@@ -99,9 +95,7 @@ async def _http_get(url: str, *, token: str, follow_redirects: bool) -> httpx.Re
     the web-client `client_id`/`app_version` query params, because the public
     API drops the Authorization header and returns 401 when those are present.
     """
-    headers = {"Authorization": f"OAuth {token}", "Accept": "application/json"}
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
-        return await client.get(url, headers=headers, follow_redirects=follow_redirects)
+    return await client.get(url, token=token, follow_redirects=follow_redirects)
 
 
 async def _fetch_stream_url(track_id: int) -> tuple[str, float]:
@@ -306,10 +300,8 @@ def _user_token_from_authorization(authorization: str | None) -> str:
 async def _proxy_like(track_id: int, method: str, token: str) -> Response:
     """Forward a like/unlike call to the SoundCloud public API."""
     url = f"{_PUBLIC_API_BASE}/likes/tracks/soundcloud:tracks:{track_id}"
-    headers = {"Authorization": f"OAuth {token}", "Accept": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
-            resp = await client.request(method, url, headers=headers)
+        resp = await client.request(method, url, token=token)
     except Exception as exc:
         logger.exception("SoundCloud like proxy transport error")
         raise HTTPException(
@@ -359,10 +351,8 @@ async def unlike_track(
 async def _proxy_playlist_delete(playlist_id: int, token: str) -> Response:
     """Forward a playlist delete to the SoundCloud public API."""
     url = f"{_PUBLIC_API_BASE}/playlists/soundcloud:playlists:{playlist_id}"
-    headers = {"Authorization": f"OAuth {token}", "Accept": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
-            resp = await client.request("DELETE", url, headers=headers)
+        resp = await client.request("DELETE", url, token=token)
     except Exception as exc:
         logger.exception("SoundCloud playlist delete proxy transport error")
         raise HTTPException(

@@ -15,10 +15,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import httpx
 from fastapi import APIRouter, HTTPException, Path, status
 
 from backend.api.setup import read_config, write_config
+from backend.infra.soundcloud import client
 from backend.infra.soundcloud.settings import get_settings
 from backend.schemas.soundcloud import SystemPlaylistsResponse, SystemPlaylistSummary, SystemPlaylistTracksResponse
 
@@ -26,8 +26,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/soundcloud/system-playlists", tags=["soundcloud"])
 
-_API_V2 = "https://api-v2.soundcloud.com"
-_HTTP_TIMEOUT = 15.0
+_API_V2 = client.API_V2_BASE
 
 # Only surface mixes the user actually recognizes as "their" playlists.
 # ``mixed-selections`` returns a superset; we whitelist the two selections
@@ -75,12 +74,7 @@ def _clear_oauth_token() -> None:
 async def _api_v2_get(path: str, token: str, **params: Any) -> dict[str, Any]:
     """GET ``/path`` on api-v2 with the session cookie as an OAuth header."""
     url = f"{_API_V2}{path}"
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-        resp = await client.get(
-            url,
-            params=params or None,
-            headers={"Authorization": f"OAuth {token}"},
-        )
+    resp = await client.get(url, token=token, params=params or None, accept_json=False)
     if resp.status_code == 401:
         _clear_oauth_token()
         raise HTTPException(
