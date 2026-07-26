@@ -20,8 +20,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from backend.core.audio.tags import TrackHandler
 from backend.schemas.ruleset import Rule, Ruleset
-from soundcloud_tools.handler.track import TrackHandler
 
 logger = logging.getLogger(__name__)
 

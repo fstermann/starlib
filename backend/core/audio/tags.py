@@ -11,17 +11,12 @@ from typing import Any, ClassVar, Literal, Self
 
 import mutagen
 import requests
-from mutagen.aiff import AIFF
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import APIC, COMM, ID3, TBPM, TCON, TDRC, TDRL, TIT2, TIT3, TKEY, TOPE, TPE1, TPE4, TXXX
-from mutagen.mp3 import MP3
-from mutagen.wave import WAVE
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from soundcloud_tools.models import Track
-from soundcloud_tools.settings import get_settings
-from soundcloud_tools.utils import convert_to_int, load_tracks
-from soundcloud_tools.utils.string import get_first_artist, get_mix_arist, get_mix_name, parse_date
+from backend.core.audio.folders import FILETYPE_MAP, load_tracks
+from backend.core.audio.titles import parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +59,6 @@ def _run_ffmpeg(command: list[Any]) -> None:
         raise RuntimeError(f"ffmpeg failed (exit {result.returncode}): {stderr[-2000:] or '(no stderr)'}")
 
 
-FILETYPE_MAP = {
-    ".mp3": MP3,
-    ".aif": AIFF,
-    ".aiff": AIFF,
-    ".wav": WAVE,
-}
-
-
 class StarlibMeta(BaseModel):
     """App-managed origin/sync metadata stored in ``TXXX:starlib``.
 
@@ -107,20 +94,20 @@ class StarlibMeta(BaseModel):
         data = {k: v for k, v in data.items() if k in known}
         return cls(**data)
 
-    @classmethod
-    def from_sc_track(cls, track: Track) -> Self:
-        return cls(
-            version=get_settings().version,
-            soundcloud_id=track.id,
-            soundcloud_permalink=track.permalink_url,
-        )
-
     def to_str(self) -> str:
         return "; \n".join(f"{k}={self.escape_value(str(v))}" for k, v in self.model_dump().items() if v is not None)
 
     @property
     def is_empty(self) -> bool:
         return not (self.version or self.soundcloud_id or self.soundcloud_permalink)
+
+
+def convert_to_int(value: Any, default: int = 0) -> int:
+    """Coerce *value* to ``int``, falling back to *default* on bad input."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
 
 
 def unescape_list_value(value: str):
@@ -273,42 +260,9 @@ class TrackInfo(BaseModel):
     def sort_artists(
         cls, artists: set[str], title: str, type: Literal["artist", "original_artist", "remixer"]
     ) -> list[str]:
-        from soundcloud_tools.handler.artist_ranking import rank_artists
+        from backend.core.audio.titles import rank_artists
 
         return rank_artists(artists, title=title, role=type)
-
-    @classmethod
-    def from_sc_track(cls, track: Track) -> Self:
-        artist_options: set[str] = {
-            a
-            for a in (
-                track.publisher_metadata and track.publisher_metadata.artist,
-                track.user.username,
-                get_first_artist(track.title),
-                get_mix_arist(track.title),
-            )
-            if a
-        }
-
-        most_likely_artists = cls.sort_artists(artist_options, track.title, "artist")
-        most_likely_original_artists = cls.sort_artists(artist_options, track.title, "original_artist")
-        most_likely_remixers = cls.sort_artists(artist_options, track.title, "remixer")
-
-        mix_name = get_mix_name(track.title)
-
-        release_date = track.display_date.date()
-        return cls(
-            title=track.title,
-            artist=next(iter(most_likely_artists), ""),
-            genre=track.genre or "",
-            release_date=release_date,
-            release_year=release_date.year,
-            artwork_url=track.hq_artwork_url or track.user.hq_avatar_url,
-            original_artist=next(iter(most_likely_original_artists), ""),
-            remixer=next(iter(most_likely_remixers), ""),
-            mix_name=mix_name,
-            starlib_meta=StarlibMeta.from_sc_track(track),
-        )
 
 
 class TrackHandler(BaseModel):
@@ -370,11 +324,11 @@ class TrackHandler(BaseModel):
         return obj
 
     @staticmethod
-    def _get_tag_value(track: Track, tag: str, default: Any = "") -> str:
+    def _get_tag_value(track: mutagen.FileType, tag: str, default: Any = "") -> str:
         return str(track.tags.get(tag, default))
 
     @staticmethod
-    def _get_tag_list_value(track: Track, tag: str, default: Any = "") -> list[str]:
+    def _get_tag_list_value(track: mutagen.FileType, tag: str, default: Any = "") -> list[str]:
         value = TrackHandler._get_tag_value(track, tag, default=default)
         return value.split("\u0000") if "\u0000" in value else deserialize_list(value)
 

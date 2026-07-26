@@ -13,8 +13,8 @@ from pathlib import Path
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from backend.core.audio.tags import TrackHandler
 from backend.core.services import cache_db
-from soundcloud_tools.handler.track import TrackHandler
 
 logger = logging.getLogger(__name__)
 

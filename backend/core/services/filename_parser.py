@@ -2,7 +2,7 @@
 
 Audio filenames in the wild follow the convention ``Artist - Title (Mix)``.
 This parser uses the same regex helpers as SC-title parsing
-(:mod:`soundcloud_tools.utils.string`) so a remix appearing in either the SC
+(:mod:`backend.core.audio.titles`) so a remix appearing in either the SC
 title or the local filename is handled consistently.
 
 The parser is intentionally conservative: ambiguous stems return ``None``
@@ -14,8 +14,7 @@ from __future__ import annotations
 
 import re
 
-from backend.core.services.suggestion_engine import ParsedFilename
-from soundcloud_tools.utils.string import (
+from backend.core.audio.titles import (
     get_first_artist,
     get_mix_arist,
     get_mix_name,
@@ -25,6 +24,7 @@ from soundcloud_tools.utils.string import (
     remove_premiere,
     replace_underscores,
 )
+from backend.core.services.suggestion_engine import ParsedFilename
 
 
 def _strip_trailing_paren(text: str) -> str:

@@ -1,6 +1,6 @@
 /**
  * String transformation utilities for audio metadata.
- * TypeScript ports of soundcloud_tools/utils/string.py
+ * TypeScript ports of backend/core/audio/titles.py
  */
 
 function removeDoubleSpaces(text: string): string {

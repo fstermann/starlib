@@ -21,8 +21,8 @@ from fastapi import APIRouter, Header, HTTPException, Response, status
 from pydantic import BaseModel
 
 from backend.core.services import sc_auth_cache
-from soundcloud_tools.oauth import OAuthManager  # re-exported for tests
-from soundcloud_tools.settings import get_settings  # re-exported for tests
+from backend.core.services.sc_oauth import OAuthManager  # re-exported for tests
+from backend.sc_settings import get_settings  # re-exported for tests
 
 __all__ = ["OAuthManager", "get_settings", "router"]
 
@@ -103,9 +103,8 @@ async def _http_get(url: str, *, token: str, follow_redirects: bool) -> httpx.Re
     """Authenticated GET against the SoundCloud public API.
 
     Uses only the `Authorization: OAuth <token>` header — deliberately omits
-    the web-client `client_id`/`app_version` query params that the
-    ``soundcloud_tools.Client`` injects, because the public API drops the
-    Authorization header and returns 401 when those are present.
+    the web-client `client_id`/`app_version` query params, because the public
+    API drops the Authorization header and returns 401 when those are present.
     """
     headers = {"Authorization": f"OAuth {token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:

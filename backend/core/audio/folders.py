@@ -2,9 +2,17 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
+from mutagen.aiff import AIFF
+from mutagen.mp3 import MP3
+from mutagen.wave import WAVE
 from pydantic import BaseModel, field_validator
 
-from soundcloud_tools.handler.track import FILETYPE_MAP
+FILETYPE_MAP = {
+    ".mp3": MP3,
+    ".aif": AIFF,
+    ".aiff": AIFF,
+    ".wav": WAVE,
+}
 
 
 class FolderHandler(BaseModel):
@@ -48,3 +56,25 @@ class FolderHandler(BaseModel):
     @staticmethod
     def last_modified(path: Path) -> datetime:
         return datetime.fromtimestamp(path.lstat().st_atime)
+
+
+def load_tracks(folder: Path, file_types: list[str] | None = None):
+    files = list(folder.glob("*"))
+    files = [
+        f
+        for f in files
+        if f.is_file() and (f.suffix in file_types if file_types else True) and not f.stem.startswith(".")
+    ]
+    files.sort(key=lambda f: f.name)
+    return files
+
+
+def load_tracks_recursive(folder: Path, file_types: list[str] | None = None) -> list[Path]:
+    """Like ``load_tracks`` but recurses into subdirectories."""
+    files = [
+        f
+        for f in folder.rglob("*")
+        if f.is_file() and (f.suffix in file_types if file_types else True) and not f.stem.startswith(".")
+    ]
+    files.sort(key=lambda f: f.name)
+    return files

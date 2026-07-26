@@ -45,7 +45,7 @@ class ParsedFilename:
 
 @dataclass(frozen=True)
 class ParsedSCTitle:
-    """Heuristic parse of an SC track title (delegates to soundcloud_tools)."""
+    """Heuristic parse of an SC track title (delegates to backend.core.audio.titles)."""
 
     first_artist: str | None = None
     mix_artist: str | None = None
@@ -195,7 +195,7 @@ def compute_suggestions(
 
 
 def _parse_sc_title(title: str) -> ParsedSCTitle:
-    from soundcloud_tools.utils.string import (
+    from backend.core.audio.titles import (
         get_first_artist,
         get_mix_arist,
         get_mix_name,

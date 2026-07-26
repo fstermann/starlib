@@ -20,10 +20,10 @@ from pathlib import Path
 
 from sqlalchemy import Select, String, delete, func, or_, select, update
 
+from backend.core.audio.tags import SIMPLE_TAG_FIELDS
 from backend.core.db.engine import get_engine, init_engine
 from backend.core.db.migrations import run_migrations
 from backend.core.db.models import Peaks, SoundcloudTrackBpm, Track
-from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS
 
 logger = logging.getLogger(__name__)
 

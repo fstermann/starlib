@@ -28,14 +28,10 @@ class Settings(BaseSettings):
 
     user_id: int = 0
     datadome_clientid: str = ""
-    sc_a_id: str = ""
 
     proxy: str | None = None
 
     root_music_folder: str = "~/Music/tracks"
-
-    weekly_archive_artists: str = ""
-    """Weekly archive artist filtering (comma-separated permalinks)"""
 
     version: str = "1.0"
 

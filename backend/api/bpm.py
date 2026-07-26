@@ -18,8 +18,8 @@ from pydantic import BaseModel, Field
 
 from backend.core.services import app_settings as app_settings_service
 from backend.core.services import cache_db, sc_auth_cache
-from soundcloud_tools.oauth import OAuthManager
-from soundcloud_tools.settings import get_settings
+from backend.core.services.sc_oauth import OAuthManager
+from backend.sc_settings import get_settings
 
 logger = logging.getLogger(__name__)
 
