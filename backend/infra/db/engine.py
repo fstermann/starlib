@@ -36,10 +36,12 @@ def init_engine(db_path: Path) -> Engine:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if _engine is not None:
         _engine.dispose()
+    # No pool_pre_ping: it issues an extra "SELECT 1" on every checkout to
+    # detect connections a server dropped from under us.  A local SQLite file
+    # has no such failure mode, so it is pure overhead on the hottest path.
     engine = create_engine(
         f"sqlite:///{db_path}",
         connect_args={"check_same_thread": False},
-        pool_pre_ping=True,
         future=True,
     )
     _install_pragmas(engine)

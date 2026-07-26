@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable, Sequence
 from datetime import date
 from pathlib import Path
 
@@ -85,7 +86,7 @@ def init_db(db_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def upsert_track(
+def track_row(
     *,
     file_path: Path,
     folder: Path,
@@ -108,10 +109,13 @@ def upsert_track(
     mix_name: str | None = None,
     release_year: int | None = None,
     user_comment: str | None = None,
-) -> None:
-    """Insert or replace a track row."""
-    engine = get_engine()
-    row = {
+) -> dict:
+    """Build the column dict for one track row.
+
+    Split out from :func:`upsert_track` so the indexer can assemble many rows
+    off-thread and write them in one batched transaction.
+    """
+    return {
         "file_path": str(file_path),
         "file_name": file_path.name,
         "folder": str(folder),
@@ -135,15 +139,36 @@ def upsert_track(
         "mtime": mtime,
         "soundcloud_id": soundcloud_id,
     }
+
+
+def _upsert_stmt(row_keys: Iterable[str]):
+    """Build the INSERT ... ON CONFLICT DO UPDATE statement for track rows."""
     # Use raw SQLite "INSERT OR REPLACE" semantics via SQLAlchemy Core to keep
     # the single-round-trip behaviour the caller relied on previously.
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-    stmt = sqlite_insert(Track.__table__).values(row)
-    update_cols = {c: stmt.excluded[c] for c in row if c != "file_path"}
-    stmt = stmt.on_conflict_do_update(index_elements=[Track.__table__.c.file_path], set_=update_cols)
-    with engine.begin() as conn:
-        conn.execute(stmt)
+    stmt = sqlite_insert(Track.__table__)
+    update_cols = {c: stmt.excluded[c] for c in row_keys if c != "file_path"}
+    return stmt.on_conflict_do_update(index_elements=[Track.__table__.c.file_path], set_=update_cols)
+
+
+def upsert_track(**kwargs) -> None:
+    """Insert or replace a single track row."""
+    row = track_row(**kwargs)
+    with get_engine().begin() as conn:
+        conn.execute(_upsert_stmt(row), [row])
+
+
+def upsert_tracks(rows: Sequence[dict]) -> None:
+    """Insert or replace many track rows in one transaction.
+
+    Every row must carry the same columns — they all come from
+    :func:`track_row`, so that holds by construction.
+    """
+    if not rows:
+        return
+    with get_engine().begin() as conn:
+        conn.execute(_upsert_stmt(rows[0]), list(rows))
 
 
 def update_track_bpm(file_path: Path, bpm: int) -> bool:
@@ -201,6 +226,18 @@ def get_track_mtime(file_path: Path) -> float | None:
     with get_engine().connect() as conn:
         row = conn.execute(select(Track.mtime).where(Track.file_path == str(file_path))).first()
     return float(row[0]) if row else None
+
+
+def get_track_mtimes(folder: Path, *, recursive: bool = False) -> dict[str, float]:
+    """Return ``{file_path: mtime}`` for every indexed track under *folder*.
+
+    One query instead of a ``get_track_mtime`` per file — a folder scan
+    otherwise issues a round trip for each file on disk just to decide it has
+    nothing to do.
+    """
+    with get_engine().connect() as conn:
+        rows = conn.execute(select(Track.file_path, Track.mtime).where(_folder_clause(folder, recursive))).all()
+    return {str(r[0]): float(r[1]) for r in rows}
 
 
 def get_tracks_missing_bpm(folder: Path, recursive: bool = False) -> list[str]:
@@ -352,8 +389,14 @@ def get_tracks(
     size_max: int | None = None,
     sort_by: str = "file_name",
     sort_order: str = "asc",
+    limit: int | None = None,
+    offset: int | None = None,
 ):
-    """Return filtered and sorted track rows as mapping-style objects."""
+    """Return filtered and sorted track rows as mapping-style objects.
+
+    When *limit* is given the slice is taken in SQL.  Callers that page must
+    pass it — otherwise every page request materialises the entire folder.
+    """
     stmt = _apply_filters(
         select(Track),
         folder=folder,
@@ -385,8 +428,57 @@ def get_tracks(
     else:
         stmt = stmt.order_by(order_expr)
 
+    # file_path is the primary key, so this makes the ordering total — without
+    # it two rows tying on the sort column can swap between pages and a row is
+    # shown twice (or skipped) as the user scrolls.
+    stmt = stmt.order_by(Track.file_path.asc())
+
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    if offset:
+        stmt = stmt.offset(offset)
+
     with get_engine().connect() as conn:
         return conn.execute(stmt).mappings().all()
+
+
+def count_tracks(
+    folder: Path,
+    *,
+    recursive: bool = False,
+    search_query: str | None = None,
+    genres: list[str] | None = None,
+    artists: list[str] | None = None,
+    keys: list[str] | None = None,
+    bpm_min: int | None = None,
+    bpm_max: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    has_soundcloud_id: bool | None = None,
+    file_formats: list[str] | None = None,
+    size_min: int | None = None,
+    size_max: int | None = None,
+) -> int:
+    """Count rows matching the same filters :func:`get_tracks` applies."""
+    stmt = _apply_filters(
+        select(func.count()).select_from(Track),
+        folder=folder,
+        recursive=recursive,
+        search_query=search_query,
+        genres=genres,
+        artists=artists,
+        keys=keys,
+        bpm_min=bpm_min,
+        bpm_max=bpm_max,
+        start_date=start_date,
+        end_date=end_date,
+        has_soundcloud_id=has_soundcloud_id,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
+    )
+    with get_engine().connect() as conn:
+        return int(conn.execute(stmt).scalar_one())
 
 
 # ---------------------------------------------------------------------------

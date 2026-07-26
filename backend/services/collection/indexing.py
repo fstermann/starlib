@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from backend.infra import cache
-from backend.infra.audio.folders import load_tracks_recursive
+from backend.infra.audio.folders import FILETYPE_MAP, load_tracks_recursive
 from backend.infra.audio.track_handler import TrackHandler
 
 logger = logging.getLogger(__name__)
@@ -26,13 +26,14 @@ _indexed_this_session: set[Path] = set()  # folders fully scanned this session
 _state_lock = threading.Lock()
 
 
-def _index_one(root_folder: Path, file: Path) -> None:
-    """Index a single file into the DB if its mtime has changed."""
+# Rows written per transaction during a folder scan.  One commit per file
+# means one WAL fsync per file; batching amortises that over the whole scan.
+_WRITE_BATCH_SIZE = 200
+
+
+def _build_row(root_folder: Path, file: Path, mtime: float, size: int) -> dict | None:
+    """Read *file*'s tags and project them into a cache row, or None if unreadable."""
     try:
-        stat = file.stat()
-        mtime = stat.st_mtime
-        if cache.get_track_mtime(file) == mtime:
-            return  # unchanged
         handler = TrackHandler(root_folder=root_folder, file=file)
         track_info = handler.track_info
         missing: list[str] = []
@@ -45,7 +46,7 @@ def _index_one(root_folder: Path, file: Path) -> None:
         if not track_info.artwork:
             missing.append("artwork")
         sc_id = track_info.starlib_meta.soundcloud_id if track_info.starlib_meta else None
-        cache.upsert_track(
+        return cache.track_row(
             file_path=file,
             folder=file.parent.resolve(),
             title=track_info.title or None,
@@ -55,7 +56,7 @@ def _index_one(root_folder: Path, file: Path) -> None:
             bpm=track_info.bpm,
             release_date=track_info.release_date,
             has_artwork=track_info.artwork is not None,
-            file_size=stat.st_size,
+            file_size=size,
             file_format=file.suffix,
             duration=track_info.length,
             is_complete=track_info.complete,
@@ -70,18 +71,69 @@ def _index_one(root_folder: Path, file: Path) -> None:
         )
     except Exception as e:
         logger.warning("Skipping unreadable file %s: %s", file, e)
+        return None
+
+
+def _index_one(root_folder: Path, file: Path) -> None:
+    """Index a single file into the DB if its mtime has changed."""
+    try:
+        stat = file.stat()
+    except OSError as e:
+        logger.warning("Skipping unreadable file %s: %s", file, e)
+        return
+    if cache.get_track_mtime(file) == stat.st_mtime:
+        return  # unchanged
+    row = _build_row(root_folder, file, stat.st_mtime, stat.st_size)
+    if row is not None:
+        cache.upsert_tracks([row])
+
+
+def _stale_files(folder: Path, audio_files: list[Path]) -> list[tuple[Path, float, int]]:
+    """Return (file, mtime, size) for files whose on-disk mtime differs from the cache."""
+    known = cache.get_track_mtimes(folder.resolve(), recursive=True)
+    stale: list[tuple[Path, float, int]] = []
+    for f in audio_files:
+        try:
+            stat = f.stat()
+        except OSError:
+            continue
+        if known.get(str(f)) != stat.st_mtime:
+            stale.append((f, stat.st_mtime, stat.st_size))
+    return stale
 
 
 def _load_folder_to_db(folder: Path, root_folder: Path) -> None:
     """Scan *folder* recursively, indexing new/changed files into the DB."""
     resolved = folder.resolve()
     try:
-        audio_files = load_tracks_recursive(folder)
+        # Only formats the tag reader can actually open — otherwise every
+        # stray .asd/.jpg costs a mutagen open that raises.
+        audio_files = load_tracks_recursive(folder, list(FILETYPE_MAP))
+        stale = _stale_files(folder, audio_files)
+
+        written = 0
+        batch: list[dict] = []
         with ThreadPoolExecutor() as pool:
-            futures = [pool.submit(_index_one, root_folder, f) for f in audio_files]
-            for _ in as_completed(futures):
-                pass
-        logger.info("Finished indexing %s (%d files)", folder, len(audio_files))
+            futures = [pool.submit(_build_row, root_folder, f, mtime, size) for f, mtime, size in stale]
+            for future in as_completed(futures):
+                row = future.result()
+                if row is None:
+                    continue
+                batch.append(row)
+                if len(batch) >= _WRITE_BATCH_SIZE:
+                    cache.upsert_tracks(batch)
+                    written += len(batch)
+                    batch = []
+        if batch:
+            cache.upsert_tracks(batch)
+            written += len(batch)
+
+        logger.info(
+            "Finished indexing %s (%d files, %d changed)",
+            folder,
+            len(audio_files),
+            written,
+        )
     except Exception as e:
         logger.error("Failed to index folder %s: %s", folder, e)
     finally:
