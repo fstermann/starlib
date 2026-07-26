@@ -731,6 +731,37 @@ async function mockScreenshotApi(page: Page) {
   );
 }
 
+/**
+ * Wait for every rendered <img> to finish decoding.
+ *
+ * Cover art is requested through the mocked image proxy only after the table
+ * rows mount, so those requests are still in flight when `networkidle`
+ * resolves. Screenshotting at that point captures empty artwork tiles instead
+ * of real covers.
+ */
+async function waitForImages(page: Page) {
+  try {
+    await page.waitForFunction(
+      () =>
+        document.images.length > 0 &&
+        Array.from(document.images).every(
+          (img) => img.complete && img.naturalWidth > 0,
+        ),
+      undefined,
+      { timeout: 15_000 },
+    );
+  } catch {
+    const broken = await page.evaluate(() =>
+      Array.from(document.images)
+        .filter((img) => !img.complete || img.naturalWidth === 0)
+        .map((img) => img.src),
+    );
+    console.warn(
+      `[screenshots] ${broken.length} image(s) did not load: ${broken.slice(0, 3).join(", ")}`,
+    );
+  }
+}
+
 function hideDevToolbar(page: Page) {
   return page.addInitScript(() => {
     const style = document.createElement("style");
@@ -801,6 +832,7 @@ test.describe("Documentation screenshots", () => {
     // Wait for table rows to render
     const firstRow = page.locator('[role="row"][class*="border-b"]').first();
     await firstRow.waitFor({ state: "visible" });
+    await waitForImages(page);
     await page.waitForTimeout(400);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "library.png"),
@@ -823,6 +855,7 @@ test.describe("Documentation screenshots", () => {
     await page
       .locator('input[data-slot="input"][placeholder="Title"]')
       .waitFor({ state: "visible" });
+    await waitForImages(page);
     await page.waitForTimeout(600);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "library-single.png"),
@@ -834,6 +867,7 @@ test.describe("Documentation screenshots", () => {
     await page.goto("/library?source=soundcloud");
     await page.waitForLoadState("networkidle");
     await waitForBackendGate(page);
+    await waitForImages(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "library-soundcloud.png"),
       fullPage: false,
@@ -844,6 +878,7 @@ test.describe("Documentation screenshots", () => {
     await page.goto("/weekly");
     await page.waitForLoadState("networkidle");
     await waitForBackendGate(page);
+    await waitForImages(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "weekly.png"),
       fullPage: false,
