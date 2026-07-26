@@ -195,7 +195,7 @@ def compute_suggestions(
 
 
 def _parse_sc_title(title: str) -> ParsedSCTitle:
-    from soundcloud_tools.utils.string import (
+    from backend.core.audio.titles import (
         get_first_artist,
         get_mix_arist,
         get_mix_name,

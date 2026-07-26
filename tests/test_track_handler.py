@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from mutagen.id3 import COMM, ID3, TIT2
 
-from soundcloud_tools.handler.track import (
+from backend.core.audio.tags import (
     SIMPLE_TAG_FIELDS,
     SIMPLE_TAG_FIELDS_BY_NAME,
     StarlibMeta,

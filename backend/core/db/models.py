@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from sqlmodel import Field, Index, SQLModel
 
-from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS
+from backend.core.audio.tags import SIMPLE_TAG_FIELDS
 
 
 class Track(SQLModel, table=True):

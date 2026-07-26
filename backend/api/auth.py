@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse
 
 from backend.api.setup import read_config, write_config
+from backend.sc_settings import get_settings
 from backend.schemas.auth import (
     AuthorizeResponse,
     CallbackRequest,
@@ -25,7 +26,6 @@ from backend.schemas.auth import (
     SessionCookieResponse,
     UserInfo,
 )
-from soundcloud_tools.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +343,7 @@ def save_session_cookie(body: SessionCookieRequest) -> SessionCookieResponse:
     handler exchanges the code for OAuth2 tokens as usual. *In addition*,
     the webview's cookie jar now holds the web-session ``oauth_token``,
     which the shell posts here. We persist it to ``config.env`` as
-    ``OAUTH_TOKEN`` so :class:`soundcloud_tools.settings.Settings` picks
+    ``OAUTH_TOKEN`` so :class:`backend.sc_settings.Settings` picks
     it up on the next ``get_settings()`` call.
     """
     token = body.oauth_token.strip()

@@ -15,17 +15,17 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from backend.core.services import cache_db, rule_engine
-from backend.core.services import folder_config as folder_config_service
-from backend.core.services import ruleset as ruleset_service
-from soundcloud_tools.handler.track import SIMPLE_TAG_FIELDS, StarlibMeta, TrackHandler, TrackInfo
-from soundcloud_tools.utils.string import (
+from backend.core.audio.tags import SIMPLE_TAG_FIELDS, StarlibMeta, TrackHandler, TrackInfo
+from backend.core.audio.titles import (
     remove_double_spaces,
     remove_free_dl,
     remove_mix,
     remove_remix,
     replace_underscores,
 )
+from backend.core.services import cache_db, rule_engine
+from backend.core.services import folder_config as folder_config_service
+from backend.core.services import ruleset as ruleset_service
 
 logger = logging.getLogger(__name__)
 

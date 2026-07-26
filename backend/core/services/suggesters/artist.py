@@ -15,11 +15,11 @@ have a SC track with one artist and a filename with another.
 
 from __future__ import annotations
 
+from backend.core.audio.titles import rank_artists
 from backend.core.services.list_format import aggregate_distinct, normalize_list, split_list
 from backend.core.services.suggesters._base import candidate, compact
 from backend.core.services.suggestion_engine import SuggestionContext
 from backend.schemas.suggestions import FieldName, FieldSuggestion, SuggestionSource
-from soundcloud_tools.handler.artist_ranking import rank_artists
 
 
 def _collect_sources(ctx: SuggestionContext) -> list[tuple[str, SuggestionSource, str]]:

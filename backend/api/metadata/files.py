@@ -16,6 +16,8 @@ from fastapi_pagination import Page, paginate
 
 from backend.api.deps import get_root_folder, validate_file_path, validate_folder_mode
 from backend.api.metadata._helpers import resolve_folder
+from backend.core.audio.folders import FILETYPE_MAP, FolderHandler
+from backend.core.audio.tags import SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
 from backend.core.services import cache_db, collection, metadata
 from backend.schemas.metadata import (
     ApplyRulesRequest,
@@ -37,8 +39,6 @@ from backend.schemas.metadata import (
     TrackInfoUpdateRequest,
 )
 from backend.schemas.tree import TreeNode
-from soundcloud_tools.handler.folder import FolderHandler
-from soundcloud_tools.handler.track import FILETYPE_MAP, SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
 
 logger = logging.getLogger(__name__)
 

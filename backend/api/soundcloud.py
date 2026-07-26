@@ -21,8 +21,8 @@ from fastapi import APIRouter, Header, HTTPException, Response, status
 from pydantic import BaseModel
 
 from backend.core.services import sc_auth_cache
-from soundcloud_tools.oauth import OAuthManager  # re-exported for tests
-from soundcloud_tools.settings import get_settings  # re-exported for tests
+from backend.core.services.sc_oauth import OAuthManager  # re-exported for tests
+from backend.sc_settings import get_settings  # re-exported for tests
 
 __all__ = ["OAuthManager", "get_settings", "router"]
 

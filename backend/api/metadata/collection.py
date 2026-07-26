@@ -7,9 +7,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.api.deps import get_root_folder
+from backend.core.audio.folders import FolderHandler
 from backend.core.services import collection
 from backend.schemas.metadata import CollectionSoundcloudIdsResponse, CollectionStatsResponse
-from soundcloud_tools.handler.folder import FolderHandler
 
 logger = logging.getLogger(__name__)
 

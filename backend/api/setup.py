@@ -14,8 +14,8 @@ from fastapi import APIRouter, HTTPException, status
 
 from backend.config import _APP_CONFIG_DIR, get_backend_settings
 from backend.core.services import app_settings as app_settings_service
+from backend.sc_settings import get_settings
 from backend.schemas.setup import SetupRequest, SetupResponse, SetupStatusResponse
-from soundcloud_tools.settings import get_settings
 
 logger = logging.getLogger(__name__)
 

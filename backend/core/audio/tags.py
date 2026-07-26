@@ -11,15 +11,12 @@ from typing import Any, ClassVar, Literal, Self
 
 import mutagen
 import requests
-from mutagen.aiff import AIFF
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import APIC, COMM, ID3, TBPM, TCON, TDRC, TDRL, TIT2, TIT3, TKEY, TOPE, TPE1, TPE4, TXXX
-from mutagen.mp3 import MP3
-from mutagen.wave import WAVE
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from soundcloud_tools.utils import convert_to_int, load_tracks
-from soundcloud_tools.utils.string import parse_date
+from backend.core.audio.folders import FILETYPE_MAP, load_tracks
+from backend.core.audio.titles import parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -60,14 +57,6 @@ def _run_ffmpeg(command: list[Any]) -> None:
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
         raise RuntimeError(f"ffmpeg failed (exit {result.returncode}): {stderr[-2000:] or '(no stderr)'}")
-
-
-FILETYPE_MAP = {
-    ".mp3": MP3,
-    ".aif": AIFF,
-    ".aiff": AIFF,
-    ".wav": WAVE,
-}
 
 
 class StarlibMeta(BaseModel):
@@ -111,6 +100,14 @@ class StarlibMeta(BaseModel):
     @property
     def is_empty(self) -> bool:
         return not (self.version or self.soundcloud_id or self.soundcloud_permalink)
+
+
+def convert_to_int(value: Any, default: int = 0) -> int:
+    """Coerce *value* to ``int``, falling back to *default* on bad input."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
 
 
 def unescape_list_value(value: str):
@@ -263,7 +260,7 @@ class TrackInfo(BaseModel):
     def sort_artists(
         cls, artists: set[str], title: str, type: Literal["artist", "original_artist", "remixer"]
     ) -> list[str]:
-        from soundcloud_tools.handler.artist_ranking import rank_artists
+        from backend.core.audio.titles import rank_artists
 
         return rank_artists(artists, title=title, role=type)
 
