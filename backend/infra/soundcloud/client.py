@@ -13,6 +13,7 @@ re-auth prompt — so that stays in the routers.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -25,6 +26,36 @@ API_V2_BASE = "https://api-v2.soundcloud.com"
 
 # HTTP timeout for upstream SoundCloud calls. Overridable via env var for ops.
 TIMEOUT_SECONDS: float = float(os.environ.get("STARLIB_SC_HTTP_TIMEOUT", "15"))
+
+# One client per event loop, so connections (and their TLS handshakes) are
+# reused across calls. Building a fresh AsyncClient per request throws the
+# pool away every time and makes every call pay a new handshake.
+#
+# The client is keyed on the running loop, not just cached: its pooled
+# connections are bound to the loop that opened them, so handing a client from
+# a finished loop to a new one raises "Event loop is closed". The app has a
+# single long-lived loop; tests and scripts do not.
+_client: httpx.AsyncClient | None = None
+_client_loop: asyncio.AbstractEventLoop | None = None
+
+
+def get_client() -> httpx.AsyncClient:
+    """Return the shared client for the running loop, creating it on first use."""
+    global _client, _client_loop
+    loop = asyncio.get_running_loop()
+    if _client is None or _client.is_closed or _client_loop is not loop:
+        _client = httpx.AsyncClient(timeout=TIMEOUT_SECONDS)
+        _client_loop = loop
+    return _client
+
+
+async def close_client() -> None:
+    """Close the shared client. Called on application shutdown."""
+    global _client, _client_loop
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+    _client_loop = None
 
 
 def _headers(token: str, *, accept_json: bool) -> dict[str, str]:
@@ -50,14 +81,13 @@ async def request(
     public API drops the Authorization header and returns 401 when those are
     present.
     """
-    async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
-        return await client.request(
-            method,
-            url,
-            params=params or None,
-            headers=_headers(token, accept_json=accept_json),
-            follow_redirects=follow_redirects,
-        )
+    return await get_client().request(
+        method,
+        url,
+        params=params or None,
+        headers=_headers(token, accept_json=accept_json),
+        follow_redirects=follow_redirects,
+    )
 
 
 async def get(

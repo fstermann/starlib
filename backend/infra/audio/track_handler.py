@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterable
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -118,8 +119,15 @@ class TrackHandler(BaseModel):
         lossless_extensions = {".aif", ".aiff", ".wav", ".flac", ".alac"}
         return self.file.suffix.lower() in lossless_extensions
 
-    @property
+    @cached_property
     def track(self):
+        """The parsed mutagen object for this file.
+
+        Cached: opening the file re-reads and re-parses every ID3 frame,
+        embedded artwork included.  A handler is always short-lived (one per
+        file, per operation), and the write helpers mutate this object before
+        calling ``save()``, so the cached copy never drifts from disk.
+        """
         class_ = FILETYPE_MAP.get(Path(self.file).suffix, EasyID3)
         obj = class_(self.file)
         if not hasattr(obj, "tags") or obj.tags is None:
@@ -181,11 +189,12 @@ class TrackHandler(BaseModel):
         return self.track.tags.getall("APIC")
 
     def get_single_cover(self, raise_error: bool = True):
-        if len(self.covers) != 1:
+        covers = self.covers
+        if len(covers) != 1:
             if raise_error:
                 raise ValueError("Track has more than one cover")
-            return self.covers[0].data if self.covers else None
-        return self.covers[0].data
+            return covers[0].data if covers else None
+        return covers[0].data
 
     def convert_to_mp3(self):
         if not self.cleaned_folder.exists():

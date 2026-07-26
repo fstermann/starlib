@@ -122,7 +122,9 @@ async def update_file_artwork(
             detail="Failed to embed artwork",
         ) from e
 
-    indexing.invalidate_cache()
+    # Only this file changed — a bare invalidate_cache() would drop the
+    # whole session index and force a full re-scan of every folder.
+    indexing.reindex_file(root_folder, resolved_path)
 
     return OperationResponse(
         success=True,
@@ -165,7 +167,7 @@ def delete_file_artwork(
             detail="Failed to remove artwork",
         ) from e
 
-    indexing.invalidate_cache()
+    indexing.reindex_file(root_folder, resolved_path)
 
     return OperationResponse(
         success=True,
