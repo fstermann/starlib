@@ -38,21 +38,18 @@ The backend is a **FastAPI** application responsible for:
 
 ```
 backend/
-├── api/               # Route handlers
-│   ├── auth.py        # OAuth endpoints
+├── api/               # HTTP layer — route handlers
 │   ├── deps.py        # Dependency injection
 │   ├── rekordbox.py   # Rekordbox browse source
 │   ├── ai.py          # AI provider configuration
-│   └── metadata/      # Metadata editing routes
-├── core/              # Business logic
-│   ├── audio/         # Tags, folders, titles
-│   ├── db/            # SQLite engine, models, migrations
-│   ├── domain/        # Domain types
-│   └── services/      # Domain services
+│   ├── metadata/      # Metadata editing routes
+│   └── soundcloud/    # OAuth, streams, playlists
+├── domain/            # Pure logic — tags, titles, filenames, suggestions
+├── services/          # Use cases — collection, metadata, rules, rekordbox
+├── infra/             # Adapters — db, cache, audio, soundcloud, ai, keychain
 ├── schemas/           # Pydantic request/response models
-├── alembic/           # Database migrations
-├── soundcloud_tools/  # Vendored SoundCloud client + models
 ├── config.py          # Settings (env vars)
+├── lifespan.py        # Startup/shutdown wiring
 └── main.py            # Application entry point
 ```
 

@@ -1,24 +1,16 @@
-"""File and folder operations for the Meta Editor."""
+"""Per-file metadata routes: read, update, batch, readiness, rules, delete."""
 
 import asyncio
 import base64
 import logging
-import os
-import shutil
-import time
-from collections.abc import Iterable
-from datetime import date
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from fastapi_pagination import Page, paginate
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from backend.api.deps import get_root_folder, validate_file_path, validate_folder_mode
-from backend.api.metadata._helpers import resolve_folder
-from backend.core.audio.folders import FILETYPE_MAP, FolderHandler
-from backend.core.audio.tags import SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
-from backend.core.services import cache_db, collection, metadata
+from backend.api.deps import get_root_folder, validate_file_path
+from backend.api.metadata._helpers import _track_info_to_response_dict
+from backend.infra import cache
 from backend.schemas.metadata import (
     ApplyRulesRequest,
     ApplyRulesResponse,
@@ -26,19 +18,13 @@ from backend.schemas.metadata import (
     BatchResultItem,
     BatchUpdateRequest,
     BatchUpdateResponse,
-    FetchCandidate,
-    FetchFromDownloadsPreview,
-    FetchFromDownloadsRequest,
-    FetchFromDownloadsResponse,
-    FileInfoResponse,
     FileReadinessResponse,
-    FilterValuesResponse,
     OperationResponse,
-    TrackBrowseResponse,
     TrackInfoResponse,
     TrackInfoUpdateRequest,
 )
-from backend.schemas.tree import TreeNode
+from backend.services import metadata
+from backend.services.collection import indexing
 
 logger = logging.getLogger(__name__)
 
@@ -47,617 +33,6 @@ router = APIRouter()
 # Bound concurrent Apply Rules jobs so a stack of clicks can't spawn
 # unbounded ffmpeg conversions in parallel.
 _apply_rules_semaphore = asyncio.Semaphore(2)
-
-_SORT_BY_PATTERN = "^(title|artist|genre|bpm|key|release_date|file_name|folder|mtime|file_format|file_size|duration)$"
-
-
-def _row_value(row, key, default=None):
-    """sqlite3.Row doesn't support .get(); guard column-missing safely."""
-    try:
-        return row[key]
-    except (IndexError, KeyError):
-        return default
-
-
-def _track_info_to_response_dict(track_info: TrackInfo) -> dict:
-    """Project a TrackInfo into the flat dict used by TrackInfoResponse.
-
-    artist/original_artist/remixer are surfaced as their joined-string form so
-    the API stays a stable shape regardless of the underlying list-vs-scalar.
-    """
-    out: dict = {}
-    for f in SIMPLE_TAG_FIELDS:
-        value = getattr(track_info, f.name)
-        if f.name == "artist":
-            out["artist"] = track_info.artist_str or None
-        elif f.name == "original_artist":
-            out["original_artist"] = track_info.original_artist_str or None
-        elif f.name == "remixer":
-            out["remixer"] = track_info.remixer_str or None
-        elif f.name == "starlib_meta":
-            out["starlib_meta"] = value.to_str() if value else None
-        else:
-            out[f.name] = value
-    return out
-
-
-def _row_to_browse_dict(row) -> dict:
-    """Project a cache_db row into the flat dict used by TrackBrowseResponse."""
-    out = {
-        "title": row["title"],
-        "artist": row["artist_str"],
-        "genre": row["genre"],
-        "bpm": row["bpm"],
-        "key": row["key"],
-        "release_date": date.fromisoformat(row["release_date"]) if row["release_date"] else None,
-        "release_year": _row_value(row, "release_year"),
-        "original_artist": _row_value(row, "original_artist"),
-        "remixer": _row_value(row, "remixer"),
-        "mix_name": _row_value(row, "mix_name"),
-        "user_comment": _row_value(row, "user_comment"),
-        "starlib_meta": None,  # not cached; live read would be required
-    }
-    return out
-
-
-@router.post("/folders/initialize", response_model=OperationResponse)
-def initialize_folders(
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> OperationResponse:
-    """Create the root folder and all required subfolders."""
-    root_folder.mkdir(parents=True, exist_ok=True)
-    for subfolder in ["prepare", "collection", "cleaned", "archive"]:
-        (root_folder / subfolder).mkdir(exist_ok=True)
-    return OperationResponse(success=True, message=f"Folders created under {root_folder}")
-
-
-# Audio file extensions accepted by the Fetch-from-Downloads action.
-# Aligned with FILETYPE_MAP (the formats the indexer/handler can actually
-# read) so we never move a file the library would then fail to surface.
-_FETCH_AUDIO_EXTENSIONS = frozenset(FILETYPE_MAP.keys())
-
-
-def _is_recent_audio(src: Path, cutoff: float) -> bool:
-    """True if *src* is a non-hidden audio file modified at or after *cutoff*."""
-    if not src.is_file() or src.name.startswith("."):
-        return False
-    if src.suffix.lower() not in _FETCH_AUDIO_EXTENSIONS:
-        return False
-    try:
-        return src.stat().st_mtime >= cutoff
-    except OSError:
-        return False
-
-
-def _resolve_fetch_paths(dest_path: str, root_folder: Path) -> tuple[Path, Path, Path]:
-    """Validate Downloads + destination and return (downloads, dest, resolved_root)."""
-    downloads = (Path.home() / "Downloads").resolve()
-    if not downloads.is_dir():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Downloads folder not found at {downloads}",
-        )
-
-    dest = Path(dest_path).resolve()
-    resolved_root = root_folder.resolve()
-    try:
-        dest.relative_to(resolved_root)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Destination is outside the music library root.",
-        ) from e
-    if not dest.is_dir():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Destination folder does not exist: {dest}",
-        )
-    return downloads, dest, resolved_root
-
-
-@router.get("/folders/fetch-from-downloads/preview", response_model=FetchFromDownloadsPreview)
-def fetch_from_downloads_preview(
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-    dest_path: str = Query(..., description="Destination folder under the music root"),
-    window_days: int = Query(1, ge=1, le=365),
-) -> FetchFromDownloadsPreview:
-    """List recent audio files in ~/Downloads that would be moved into *dest_path*.
-
-    Files already present in the destination (collisions) are reported under
-    ``skipped`` and are not part of ``candidates``.
-    """
-    downloads, dest, _ = _resolve_fetch_paths(dest_path, root_folder)
-
-    cutoff = time.time() - window_days * 86400
-    candidates: list[FetchCandidate] = []
-    skipped: list[str] = []
-
-    for src in downloads.iterdir():
-        if not _is_recent_audio(src, cutoff):
-            continue
-        if (dest / src.name).exists():
-            skipped.append(src.name)
-            continue
-        try:
-            stat = src.stat()
-        except OSError:
-            continue
-        candidates.append(FetchCandidate(name=src.name, size=stat.st_size, mtime=stat.st_mtime))
-
-    candidates.sort(key=lambda c: c.mtime, reverse=True)
-    return FetchFromDownloadsPreview(candidates=candidates, skipped=sorted(skipped))
-
-
-@router.post("/folders/fetch-from-downloads", response_model=FetchFromDownloadsResponse)
-def fetch_from_downloads(
-    request: FetchFromDownloadsRequest,
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> FetchFromDownloadsResponse:
-    """Move recent audio files from ~/Downloads into a library subfolder.
-
-    Files are filtered by extension (audio formats only) and mtime (within
-    ``window_days`` of now). A file is skipped when the destination already
-    contains an entry with the same name — making the operation idempotent.
-    When ``request.file_names`` is set, only those names are eligible to move.
-    """
-    downloads, dest, resolved_root = _resolve_fetch_paths(request.dest_path, root_folder)
-
-    cutoff = time.time() - request.window_days * 86400
-    selection = set(request.file_names) if request.file_names is not None else None
-    moved: list[str] = []
-    skipped: list[str] = []
-    errors: list[str] = []
-
-    for src in downloads.iterdir():
-        if not _is_recent_audio(src, cutoff):
-            continue
-        if selection is not None and src.name not in selection:
-            continue
-
-        target = dest / src.name
-        if target.exists():
-            skipped.append(src.name)
-            continue
-
-        try:
-            shutil.move(str(src), str(target))
-        except Exception as e:
-            logger.exception("Failed to move %s to %s", src, target)
-            errors.append(f"{src.name}: {e}")
-            continue
-
-        try:
-            collection.reindex_file(resolved_root, target)
-        except Exception:
-            logger.exception("Failed to reindex %s after move", target)
-        moved.append(src.name)
-
-    return FetchFromDownloadsResponse(moved=moved, skipped=skipped, errors=errors)
-
-
-def _folder_tree_dict(root_str: str, track_folders: Iterable[str]) -> dict:
-    """Build a nested folder-name dict from track folders and on-disk dirs.
-
-    Args:
-        root_str: Resolved root folder path as a string.
-        track_folders: Absolute paths of folders containing indexed tracks.
-
-    Returns:
-        Nested dict mapping folder name to its children dict.
-    """
-    tree: dict = {}
-
-    def _insert(fp: str) -> None:
-        # Make path relative to root; skip entries outside root
-        if not fp.startswith(root_str):
-            return
-        rel = fp[len(root_str) :]
-        if rel.startswith("/"):
-            rel = rel[1:]
-        parts = rel.split("/") if rel else []
-        node = tree
-        for part in parts:
-            node = node.setdefault(part, {})
-
-    for fp in track_folders:
-        _insert(fp)
-
-    # Also walk the filesystem so directories without indexed tracks (empty
-    # folders) appear in the tree.
-    for dirpath, dirnames, _ in os.walk(root_str):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-        for d in dirnames:
-            _insert(f"{dirpath}/{d}")
-
-    return tree
-
-
-@router.get("/folders/tree", response_model=TreeNode)
-def get_folder_tree(
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-    search: str | None = Query(None),
-    genres: list[str] | None = Query(None),
-    keys: list[str] | None = Query(None),
-    bpm_min: int | None = Query(None, ge=0),
-    bpm_max: int | None = Query(None, ge=0),
-    has_soundcloud_id: bool | None = Query(None),
-    file_formats: list[str] | None = Query(None),
-    size_min: int | None = Query(None, ge=0),
-    size_max: int | None = Query(None, ge=0),
-) -> TreeNode:
-    """Return the folder tree built from indexed tracks and on-disk directories.
-
-    Every directory under the root is included — empty folders too. Hidden
-    (dot-prefixed) directories are skipped, matching the indexer.
-
-    ``track_count`` is always the unfiltered recursive total, so the tree
-    structure is stable. When any filter argument is supplied, each node's
-    ``filtered_count`` carries the recursive count of tracks matching those
-    filters (``None`` otherwise).
-    """
-    root_str = str(root_folder.resolve())
-    folder_counts = cache_db.get_folder_track_counts()
-
-    has_filters = any(
-        v is not None
-        for v in (search, genres, keys, bpm_min, bpm_max, has_soundcloud_id, file_formats, size_min, size_max)
-    )
-    filtered_counts = (
-        cache_db.get_folder_track_counts(
-            search_query=search,
-            genres=genres,
-            keys=keys,
-            bpm_min=bpm_min,
-            bpm_max=bpm_max,
-            has_soundcloud_id=has_soundcloud_id,
-            file_formats=file_formats,
-            size_min=size_min,
-            size_max=size_max,
-        )
-        if has_filters
-        else None
-    )
-
-    # Build nested dict from flat folder paths (always the unfiltered set, so
-    # folders never disappear when a filter narrows the counts).
-    tree = _folder_tree_dict(root_str, folder_counts)
-
-    def _build(name: str, abs_path: str, children_dict: dict) -> TreeNode:
-        children = [_build(k, f"{abs_path}/{k}", v) for k, v in sorted(children_dict.items())]
-        total = folder_counts.get(abs_path, 0) + sum(c.track_count for c in children)
-        filtered = None
-        if filtered_counts is not None:
-            filtered = filtered_counts.get(abs_path, 0) + sum(c.filtered_count or 0 for c in children)
-        return TreeNode(id=abs_path, name=name, children=children, track_count=total, filtered_count=filtered)
-
-    root_name = root_folder.name
-    children = [_build(k, f"{root_str}/{k}", v) for k, v in sorted(tree.items())]
-    total = folder_counts.get(root_str, 0) + sum(c.track_count for c in children)
-    filtered_root = None
-    if filtered_counts is not None:
-        filtered_root = filtered_counts.get(root_str, 0) + sum(c.filtered_count or 0 for c in children)
-    return TreeNode(id=root_str, name=root_name, children=children, track_count=total, filtered_count=filtered_root)
-
-
-@router.get("/folders/browse-path", response_model=Page[TrackBrowseResponse])
-def browse_by_path(
-    response: Response,
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-    path: str = Query(..., description="Absolute folder path to browse"),
-    recursive: bool = Query(True, description="Include tracks in subfolders"),
-    search: str | None = Query(None),
-    genres: list[str] | None = Query(None),
-    artists: list[str] | None = Query(None),
-    keys: list[str] | None = Query(None),
-    bpm_min: int | None = Query(None, ge=0),
-    bpm_max: int | None = Query(None, ge=0),
-    date_from: date | None = Query(None),
-    date_to: date | None = Query(None),
-    has_soundcloud_id: bool | None = Query(None),
-    file_formats: list[str] | None = Query(None),
-    size_min: int | None = Query(None, ge=0),
-    size_max: int | None = Query(None, ge=0),
-    sort_by: str = Query("file_name", pattern=_SORT_BY_PATTERN),
-    sort_order: str = Query("asc", pattern="^(asc|desc)$"),
-) -> Page[TrackBrowseResponse]:
-    """Browse tracks by absolute folder path with optional recursion."""
-    folder_path = Path(path).resolve()
-    resolved_root = root_folder.resolve()
-
-    # Security: path must be under root
-    try:
-        folder_path.relative_to(resolved_root)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Path is outside the music library root.",
-        ) from e
-
-    collection.ensure_folder_indexed(folder_path, root_folder=resolved_root)
-
-    try:
-        pairs = collection.list_and_filter_tracks(
-            folder=folder_path,
-            search_query=search,
-            genres=genres,
-            artists=artists,
-            keys=keys,
-            bpm_min=bpm_min,
-            bpm_max=bpm_max,
-            start_date=date_from,
-            end_date=date_to,
-            has_soundcloud_id=has_soundcloud_id,
-            file_formats=file_formats,
-            size_min=size_min,
-            size_max=size_max,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            recursive=recursive,
-        )
-    except Exception as e:
-        logger.exception("Failed to list tracks")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to list tracks",
-        ) from e
-
-    def to_browse_response(row) -> TrackBrowseResponse:
-        return TrackBrowseResponse(
-            file_path=row["file_path"],
-            file_name=row["file_name"],
-            folder=_row_value(row, "folder"),
-            soundcloud_id=_row_value(row, "soundcloud_id"),
-            has_artwork=bool(row["has_artwork"]),
-            file_format=row["file_format"],
-            file_size=row["file_size"] or 0,
-            duration=row["duration"],
-            mtime=row["mtime"],
-            **_row_to_browse_dict(row),
-        )
-
-    if collection.is_indexing(folder_path):
-        response.headers["X-Cache-Loading"] = "true"
-
-    return paginate(pairs, transformer=lambda items: [to_browse_response(p) for p in items])
-
-
-@router.get("/folders/browse-path/filter-values", response_model=FilterValuesResponse)
-def browse_path_filter_values(
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-    path: str = Query(..., description="Absolute folder path"),
-    recursive: bool = Query(True),
-    search: str | None = Query(None),
-    genres: list[str] | None = Query(None),
-    keys: list[str] | None = Query(None),
-    bpm_min: int | None = Query(None, ge=0),
-    bpm_max: int | None = Query(None, ge=0),
-    file_formats: list[str] | None = Query(None),
-    size_min: int | None = Query(None, ge=0),
-    size_max: int | None = Query(None, ge=0),
-) -> FilterValuesResponse:
-    """Get available filter values for a folder path."""
-    folder_path = Path(path).resolve()
-    resolved_root = root_folder.resolve()
-
-    try:
-        folder_path.relative_to(resolved_root)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Path is outside the music library root.",
-        ) from e
-
-    collection.ensure_folder_indexed(folder_path, root_folder=resolved_root)
-
-    result = collection.get_folder_filter_values(
-        folder_path,
-        recursive=recursive,
-        search_query=search,
-        genres=genres,
-        keys=keys,
-        bpm_min=bpm_min,
-        bpm_max=bpm_max,
-        file_formats=file_formats,
-        size_min=size_min,
-        size_max=size_max,
-    )
-    return FilterValuesResponse(**result)
-
-
-@router.get("/folders/{mode}/files", response_model=Page[FileInfoResponse])
-def list_folder_files(
-    mode: str,
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> Page[FileInfoResponse]:
-    """List all audio files in a specific folder (paginated).
-
-    Parameters
-    ----------
-    mode : str
-        Folder mode: "prepare", "collection", "cleaned", or ""
-    root_folder : Path
-        Root music folder (injected)
-
-    Returns
-    -------
-    Page[FileInfoResponse]
-        Paginated list of audio files with basic info
-
-    Raises
-    ------
-    HTTPException
-        If folder doesn't exist or is invalid
-    """
-    validated_mode = validate_folder_mode(mode)
-
-    if not root_folder.is_dir():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Folder does not exist",
-        )
-
-    folder_handler = FolderHandler(folder=root_folder)
-
-    if validated_mode == "prepare":
-        folder_path = folder_handler.get_prepare_folder()
-    elif validated_mode == "collection":
-        folder_path = folder_handler.get_collection_folder()
-    elif validated_mode == "cleaned":
-        folder_path = folder_handler.get_cleaned_folder()
-    else:
-        folder_path = root_folder
-
-    is_valid, _ = collection.validate_folder(folder_path)
-    if not is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Folder does not exist",
-        )
-
-    files = [f for f in collection.list_audio_files(folder_path) if f.suffix != ".asd"]
-
-    def to_file_info(f: Path) -> FileInfoResponse:
-        return FileInfoResponse(
-            file_path=str(f),
-            file_name=f.name,
-            file_size=f.stat().st_size,
-            file_format=f.suffix,
-            has_artwork=bool(TrackHandler(root_folder=root_folder, file=f).covers),
-        )
-
-    return paginate(files, transformer=lambda items: [to_file_info(f) for f in items])
-
-
-@router.get("/folders/{mode}/browse", response_model=Page[TrackBrowseResponse])
-def browse_folder_files(
-    response: Response,
-    mode: str,
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-    search: str | None = Query(None, description="Full-text search across title, artist, genre"),
-    genres: list[str] | None = Query(None, description="Filter by genre (OR logic, exact match)"),
-    artists: list[str] | None = Query(None, description="Filter by artist (OR logic, substring match)"),
-    keys: list[str] | None = Query(None, description="Filter by key (OR logic, exact match)"),
-    bpm_min: int | None = Query(None, ge=0, description="Minimum BPM"),
-    bpm_max: int | None = Query(None, ge=0, description="Maximum BPM"),
-    date_from: date | None = Query(None, description="Earliest release date (YYYY-MM-DD)"),
-    date_to: date | None = Query(None, description="Latest release date (YYYY-MM-DD)"),
-    has_soundcloud_id: bool | None = Query(None, description="Filter by SoundCloud link presence"),
-    file_formats: list[str] | None = Query(None, description="Filter by file format (e.g. mp3, flac)"),
-    size_min: int | None = Query(None, ge=0, description="Minimum file size in bytes"),
-    size_max: int | None = Query(None, ge=0, description="Maximum file size in bytes"),
-    sort_by: str = Query("file_name", pattern=_SORT_BY_PATTERN),
-    sort_order: str = Query("asc", pattern="^(asc|desc)$"),
-) -> Page[TrackBrowseResponse]:
-    """Browse tracks in a folder with filtering, sorting, and pagination.
-
-    Parameters
-    ----------
-    mode : str
-        Folder mode: "prepare", "collection", "cleaned", or ""
-    root_folder : Path
-        Root music folder (injected)
-
-    Returns
-    -------
-    Page[TrackBrowseResponse]
-        Filtered, sorted, paginated track metadata
-    """
-    folder_path = resolve_folder(mode, root_folder)
-
-    try:
-        pairs = collection.list_and_filter_tracks(
-            folder=folder_path,
-            search_query=search,
-            genres=genres,
-            artists=artists,
-            keys=keys,
-            bpm_min=bpm_min,
-            bpm_max=bpm_max,
-            start_date=date_from,
-            end_date=date_to,
-            has_soundcloud_id=has_soundcloud_id,
-            file_formats=file_formats,
-            size_min=size_min,
-            size_max=size_max,
-            sort_by=sort_by,
-            sort_order=sort_order,
-        )
-    except Exception as e:
-        logger.exception("Failed to list tracks")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to list tracks",
-        ) from e
-
-    def to_browse_response(row) -> TrackBrowseResponse:
-        return TrackBrowseResponse(
-            file_path=row["file_path"],
-            file_name=row["file_name"],
-            folder=_row_value(row, "folder"),
-            soundcloud_id=_row_value(row, "soundcloud_id"),
-            has_artwork=bool(row["has_artwork"]),
-            file_format=row["file_format"],
-            file_size=row["file_size"] or 0,
-            duration=row["duration"],
-            mtime=row["mtime"],
-            **_row_to_browse_dict(row),
-        )
-
-    if collection.is_indexing(folder_path):
-        response.headers["X-Cache-Loading"] = "true"
-
-    return paginate(pairs, transformer=lambda items: [to_browse_response(p) for p in items])
-
-
-@router.get("/folders/{mode}/filter-values", response_model=FilterValuesResponse)
-def get_folder_filter_values(
-    mode: str,
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-    search: str | None = Query(None, description="Active search filter"),
-    genres: list[str] | None = Query(None, description="Active genre filters"),
-    keys: list[str] | None = Query(None, description="Active key filters"),
-    bpm_min: int | None = Query(None, ge=0, description="Active BPM minimum"),
-    bpm_max: int | None = Query(None, ge=0, description="Active BPM maximum"),
-    file_formats: list[str] | None = Query(None, description="Active file-format filters"),
-    size_min: int | None = Query(None, ge=0, description="Active file-size minimum (bytes)"),
-    size_max: int | None = Query(None, ge=0, description="Active file-size maximum (bytes)"),
-) -> FilterValuesResponse:
-    """Get available filter values for a folder (genres, artists, keys, BPM range).
-
-    Parameters
-    ----------
-    mode : str
-        Folder mode: "prepare", "collection", "cleaned", or ""
-    root_folder : Path
-        Root music folder (injected)
-
-    Returns
-    -------
-    FilterValuesResponse
-        Available filter options
-    """
-    folder_path = resolve_folder(mode, root_folder)
-
-    try:
-        values = collection.get_folder_filter_values(
-            folder_path,
-            search_query=search,
-            genres=genres,
-            keys=keys,
-            bpm_min=bpm_min,
-            bpm_max=bpm_max,
-            file_formats=file_formats,
-            size_min=size_min,
-            size_max=size_max,
-        )
-    except Exception as e:
-        logger.exception("Failed to get filter values")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get filter values",
-        ) from e
-
-    return FilterValuesResponse(**values)
 
 
 @router.get("/files/{file_path:path}/info", response_model=TrackInfoResponse)
@@ -770,8 +145,8 @@ def update_file_info(
 
     # Targeted cache update: remove old entry and re-index the (possibly renamed) file
     if new_path != resolved_path:
-        cache_db.delete_track(resolved_path)
-    collection.reindex_file(root_folder, new_path)
+        cache.delete_track(resolved_path)
+    indexing.reindex_file(root_folder, new_path)
 
     return OperationResponse(
         success=True,
@@ -830,8 +205,8 @@ def batch_update_file_info(
                 metadata.add_artwork_to_track(new_path, root_folder, artwork_bytes)
 
             if new_path != resolved_path:
-                cache_db.delete_track(resolved_path)
-            collection.reindex_file(root_folder, new_path)
+                cache.delete_track(resolved_path)
+            indexing.reindex_file(root_folder, new_path)
 
             results.append(
                 BatchResultItem(
@@ -968,7 +343,7 @@ async def apply_rules_to_file(
         ) from e
 
     # Remove the old file from cache (it's been moved/converted)
-    cache_db.delete_track(resolved_path)
+    cache.delete_track(resolved_path)
 
     return ApplyRulesResponse(
         success=result["success"],
@@ -1010,7 +385,7 @@ def delete_file(
         logger.exception("Failed to delete file")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file") from e
 
-    cache_db.delete_track(resolved_path)
+    cache.delete_track(resolved_path)
 
     return OperationResponse(
         success=True,

@@ -2,7 +2,7 @@
 
 Reads and writes the user config file at the platform-appropriate path
 (e.g. ~/Library/Application Support/com.starlib.Starlib/config.env on macOS).
-The backend.sc_settings Settings class is a pydantic-settings BaseSettings that picks up
+The backend.infra.soundcloud.settings Settings class is a pydantic-settings BaseSettings that picks up
 variables from a .env file. We point it at the user config file via _env_file.
 """
 
@@ -13,9 +13,9 @@ import stat
 from fastapi import APIRouter, HTTPException, status
 
 from backend.config import _APP_CONFIG_DIR, get_backend_settings
-from backend.core.services import app_settings as app_settings_service
-from backend.sc_settings import get_settings
+from backend.infra.soundcloud.settings import get_settings
 from backend.schemas.setup import SetupRequest, SetupResponse, SetupStatusResponse
+from backend.services import app_settings as app_settings_service
 
 logger = logging.getLogger(__name__)
 

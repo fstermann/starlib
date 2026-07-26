@@ -13,7 +13,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.api import soundcloud as soundcloud_api
+from backend.api.soundcloud import tracks as soundcloud_api
+from backend.infra.soundcloud import client as sc_client
 
 
 class _MockAsyncClient:
@@ -29,7 +30,7 @@ class _MockAsyncClient:
     async def __aexit__(self, *args):
         return False
 
-    async def request(self, method, url, headers=None):
+    async def request(self, method, url, params=None, headers=None, follow_redirects=False):
         self._recorder.append((method, url, headers))
         return self._resp
 
@@ -51,7 +52,7 @@ def client() -> TestClient:
 def test_delete_playlist_forwards_to_soundcloud(client: TestClient) -> None:
     calls: list = []
     with patch.object(
-        soundcloud_api.httpx,
+        sc_client.httpx,
         "AsyncClient",
         lambda *a, **k: _MockAsyncClient(_resp(200), calls),
     ):
@@ -75,7 +76,7 @@ def test_delete_playlist_requires_auth(client: TestClient) -> None:
 
 def test_delete_playlist_propagates_upstream_failure(client: TestClient) -> None:
     with patch.object(
-        soundcloud_api.httpx,
+        sc_client.httpx,
         "AsyncClient",
         lambda *a, **k: _MockAsyncClient(_resp(404), []),
     ):

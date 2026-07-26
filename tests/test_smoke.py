@@ -3,10 +3,10 @@ def test_import_backend():
 
 
 def test_import_audio():
-    import backend.core.audio.folders
-    import backend.core.audio.tags
-    import backend.core.audio.titles
+    import backend.domain.tags
+    import backend.domain.titles
+    import backend.infra.audio.folders
 
-    assert backend.core.audio.tags.SIMPLE_TAG_FIELDS
-    assert backend.core.audio.folders.FILETYPE_MAP
-    assert backend.core.audio.titles.rank_artists([], title="", role="artist") == []
+    assert backend.domain.tags.SIMPLE_TAG_FIELDS
+    assert backend.infra.audio.folders.FILETYPE_MAP
+    assert backend.domain.titles.rank_artists([], title="", role="artist") == []

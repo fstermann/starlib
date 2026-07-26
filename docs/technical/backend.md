@@ -45,10 +45,13 @@ Interactive API documentation is auto-generated:
 
 ```
 backend/
-├── api/                  # FastAPI route handlers
+├── main.py               # App factory
+├── lifespan.py           # Startup/shutdown wiring (cache DB, watcher, initial scan)
+├── config.py             # BackendSettings (process/env config)
+│
+├── api/                  # HTTP layer — routers only; __init__.py aggregates them
 │   ├── ai.py             # AI provider config (Ollama / Claude Code / Anthropic)
 │   ├── app_settings.py   # Application-level user settings
-│   ├── auth.py           # OAuth 2.1 endpoints
 │   ├── bpm.py            # BPM persistence (analysis runs in the Tauri layer)
 │   ├── deps.py           # Dependency injection
 │   ├── folder_config.py  # Folder display + per-folder ruleset config
@@ -56,42 +59,52 @@ backend/
 │   ├── rekordbox.py      # Rekordbox browse source (local DB or USB export)
 │   ├── rulesets.py       # Finalization rulesets
 │   ├── setup.py          # First-launch setup/config
-│   ├── soundcloud.py     # Signed HLS stream URLs
 │   ├── suggestions.py    # Ranked metadata suggestions
-│   ├── system_playlists.py  # SoundCloud generated mixes
-│   └── metadata/         # Metadata editing endpoints
-│       ├── artwork.py
-│       ├── audio.py
-│       ├── collection.py
-│       ├── files.py
-│       └── proxy.py
-├── core/                 # Business logic
-│   ├── audio/            # Tag, folder, and title handling
-│   ├── db/               # SQLite engine, models, migration runner
-│   ├── domain/           # Domain types
-│   └── services/         # Domain services (see below)
-├── schemas/              # Pydantic request/response models
-├── alembic/              # Database migrations
-├── soundcloud_tools/     # Vendored SoundCloud client + models
-├── config.py             # Backend configuration
-└── main.py               # Application entry point
+│   ├── metadata/         # Metadata editing endpoints
+│   │   ├── folders.py    # Library layout, fetch-from-downloads
+│   │   ├── browse.py     # Folder tree, paged browsing, filter values
+│   │   ├── files.py      # Per-file read/update/batch/readiness/rules/delete
+│   │   └── artwork.py · audio.py · collection.py · proxy.py
+│   └── soundcloud/       # SoundCloud-facing routes
+│       ├── auth.py       # OAuth 2.1 endpoints
+│       ├── tracks.py     # Signed HLS stream URLs, likes, playlists
+│       └── system_playlists.py  # SoundCloud generated mixes
+│
+├── domain/               # Pure logic — no I/O, no frameworks
+│   ├── tags.py           # ID3 tag registry, StarlibMeta, TrackInfo
+│   ├── titles.py         # Title/artist parsing and ranking heuristics
+│   ├── filenames.py      # "Artist - Title (Mix)" stem decomposition
+│   ├── formatting.py     # List normalisation/aggregation helpers
+│   └── suggestions/      # types · engine · registry · suggesters/
+│
+├── services/             # Use cases — orchestrate domain + infra
+│   ├── collection/       # indexing · folders · query
+│   ├── metadata.py       # Read/write audio tags
+│   ├── rules.py          # Ruleset execution
+│   ├── ruleset.py        # Ruleset definition/persistence
+│   ├── profile_group.py · folder_config.py · app_settings.py
+│   └── rekordbox/        # Rekordbox database + USB export access
+│
+├── infra/                # Adapters to the outside world
+│   ├── db/               # SQLite engine, models, migration runner, alembic/
+│   ├── cache.py          # Track/peaks/SC-BPM cache on top of the SQLite layer
+│   ├── audio/            # track_handler (mutagen + ffmpeg) · folders
+│   ├── soundcloud/       # client · oauth · token_cache · settings
+│   ├── ai/               # ollama · anthropic · claude_code
+│   ├── settings_store.py # settings.json load/save/migrate
+│   ├── keychain.py       # OS keychain access for secrets
+│   └── watcher.py        # Filesystem watcher
+│
+└── schemas/              # Pydantic request/response models (layer-neutral)
 ```
 
-Notable services under `core/services/`:
+The package is layered: **`api` → `services` → `domain`**, with **`infra`**
+holding the adapters. Dependencies point inward only — `domain/` imports no
+framework and no other layer, and `infra/` never reaches back into `services/`
+or `api/`. `scripts/check_layering.py` runs in pre-commit and fails the commit
+if an import points the wrong way.
 
-| Service | Responsibility |
-|---------|----------------|
-| `cache_db.py` | Track/peaks cache on top of the SQLite layer |
-| `collection.py` | Local collection indexing |
-| `metadata.py` | Read/write audio tags |
-| `rekordbox/` | Rekordbox database + USB export access |
-| `rule_engine.py`, `ruleset.py` | Ruleset definition and execution |
-| `suggesters/`, `suggestion_engine.py` | Ranked metadata suggestions |
-| `analyser/` | Audio analysis |
-| `ollama.py`, `anthropic.py`, `claude_code.py` | AI provider clients |
-| `sc_oauth.py`, `sc_auth_cache.py` | SoundCloud OAuth + token cache |
-| `credentials.py` | OS keychain access for secrets |
-| `watcher.py` | Filesystem watcher |
+`tests/` mirrors the same four directories.
 
 ## Key features
 
@@ -111,7 +124,7 @@ Notable services under `core/services/`:
 ### AI providers
 
 - One set of `/api/ai/*` endpoints backed by three interchangeable providers: local [Ollama](https://ollama.com), the Claude Code CLI, and the Anthropic API
-- Per-provider settings live under a single `AiSettings` block persisted in `settings.json`; the Anthropic API key goes to the OS credential store via `core/services/credentials.py`
+- Per-provider settings live under a single `AiSettings` block persisted in `settings.json`; the Anthropic API key goes to the OS credential store via `infra/keychain.py`
 - Health check, model listing, and completion per provider
 - See the [AI providers user guide](../guide/ai.md) for setup instructions
 
@@ -119,20 +132,20 @@ Notable services under `core/services/`:
 
 State that isn't a user-editable config file lives in a SQLite cache database:
 
-- **Engine** (`core/db/engine.py`) — one module-level SQLAlchemy engine, WAL mode with `synchronous=NORMAL`, pragmas reapplied on every pooled connection
-- **Models** (`core/db/models.py`) — SQLModel tables: `tracks`, `peaks`, `soundcloud_track_bpm`
-- **Migrations** (`core/db/migrations.py` + `backend/alembic/`) — Alembic runs `upgrade head` at startup. A DB with tables but no `alembic_version` (pre-#286) is caught up by the legacy bootstrap, backed up, stamped at `0001`, then upgraded.
+- **Engine** (`infra/db/engine.py`) — one module-level SQLAlchemy engine, WAL mode with `synchronous=NORMAL`, pragmas reapplied on every pooled connection
+- **Models** (`infra/db/models.py`) — SQLModel tables: `tracks`, `peaks`, `soundcloud_track_bpm`
+- **Migrations** (`infra/db/migrations.py` + `infra/db/alembic/`) — Alembic runs `upgrade head` at startup. A DB with tables but no `alembic_version` (pre-#286) is caught up by the legacy bootstrap, backed up, stamped at `0001`, then upgraded.
 
-Adding a schema change means editing the models and generating a revision under `backend/alembic/versions/` — never hand-editing the DB.
+Adding a schema change means editing the models and generating a revision under `backend/infra/db/alembic/versions/` — never hand-editing the DB.
 
 ## Development
 
 ### Adding new endpoints
 
-1. **Define schemas** in `schemas/` (request/response models)
-2. **Implement service** in `core/services/` (business logic)
-3. **Create route** in `api/` (HTTP layer)
-4. **Register router** in `main.py`
+1. **Define schema** in `schemas/` (request/response models)
+2. **Put pure logic** in `domain/` (no I/O) and orchestration in `services/`
+3. **Put anything that talks to the outside world** in `infra/`
+4. **Create route** in `api/` and register it in `api/__init__.py`
 
 ### Testing
 

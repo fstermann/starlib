@@ -53,10 +53,10 @@ for pkg in [
 # Alembic's scripts directory lives inside the backend package, but
 # collect_all("backend") does not pick up non-.py files (like script.py.mako
 # or the generated revision modules). Bundle it explicitly so
-# importlib.resources.files("backend.alembic") finds versions/ at runtime.
-_alembic_dir = root / "backend" / "alembic"
+# importlib.resources.files("backend.infra.db.alembic") finds versions/ at runtime.
+_alembic_dir = root / "backend" / "infra" / "db" / "alembic"
 if _alembic_dir.exists():
-    datas.append((str(_alembic_dir), "backend/alembic"))
+    datas.append((str(_alembic_dir), "backend/infra/db/alembic"))
 
 # ── Entry-point analysis ───────────────────────────────────────────────────
 a = Analysis(

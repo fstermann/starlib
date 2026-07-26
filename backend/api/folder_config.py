@@ -5,9 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from backend.core.services import folder_config as folder_config_service
 from backend.schemas.folder_config import FoldersConfig
 from backend.schemas.settings import FolderRulesetBinding
+from backend.services import folder_config as folder_config_service
 
 router = APIRouter(prefix="/api/folders", tags=["folders"])
 

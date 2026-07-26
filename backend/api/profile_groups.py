@@ -4,13 +4,13 @@ import logging
 
 from fastapi import APIRouter, HTTPException, status
 
-from backend.core.services import profile_group as profile_group_service
 from backend.schemas.profile_group import (
     ProfileGroup,
     ProfileGroupCreate,
     ProfileGroupsResponse,
     ProfileGroupUpdate,
 )
+from backend.services import profile_group as profile_group_service
 
 logger = logging.getLogger(__name__)
 

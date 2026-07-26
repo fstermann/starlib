@@ -19,7 +19,7 @@ import logging
 import sys
 from pathlib import Path
 
-from backend.core.audio.tags import TrackHandler
+from backend.infra.audio.track_handler import TrackHandler
 
 logger = logging.getLogger(__name__)
 

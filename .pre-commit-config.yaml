@@ -56,6 +56,12 @@ repos:
         # https://jsh9.github.io/pydoclint/config_options.html
   - repo: local
     hooks:
+      - id: backend-layering
+        name: Backend layer boundaries
+        # stdlib-only, so pre-commit's own interpreter is enough — CI has no uv
+        language: python
+        entry: python scripts/check_layering.py
+        files: ^backend/.*\.py$
       - id: tsc
         name: TypeScript type check
         language: system

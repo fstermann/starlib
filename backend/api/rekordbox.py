@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from backend.api.metadata.audio import stream_local_file
-from backend.core.services import rekordbox as rb_service
+from backend.services import rekordbox as rb_service
 
 logger = logging.getLogger(__name__)
 

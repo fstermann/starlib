@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.api import auth as auth_api
+from backend.api.soundcloud import auth as auth_api
 
 
 @pytest.fixture(autouse=True)

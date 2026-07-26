@@ -13,9 +13,10 @@ from fastapi.responses import FileResponse
 
 from backend.api.deps import get_root_folder, validate_file_path
 from backend.config import get_backend_settings
-from backend.core.services import cache_db, metadata
-from backend.core.services.metadata import _find_ffmpeg
+from backend.infra import cache
 from backend.schemas.metadata import PeaksResponse
+from backend.services import metadata
+from backend.services.metadata import _find_ffmpeg
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ async def get_file_peaks(
     # Fast path — serve from SQLite cache without touching the semaphore.
     try:
         mtime = resolved_path.stat().st_mtime
-        cached = cache_db.get_peaks(resolved_path, mtime, num_peaks)
+        cached = cache.get_peaks(resolved_path, mtime, num_peaks)
         if cached is not None:
             return PeaksResponse(peaks=cached)
     except OSError:

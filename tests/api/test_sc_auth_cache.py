@@ -7,14 +7,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from backend.core.services import sc_auth_cache
+from backend.infra.soundcloud import token_cache
 
 
 @pytest.fixture(autouse=True)
 def _reset():
-    sc_auth_cache.reset_cache()
+    token_cache.reset_cache()
     yield
-    sc_auth_cache.reset_cache()
+    token_cache.reset_cache()
 
 
 def _settings() -> SimpleNamespace:
@@ -31,8 +31,8 @@ def test_token_reused_within_ttl() -> None:
     manager_instance.get_access_token.return_value = "tok-1"
     manager_cls = MagicMock(return_value=manager_instance)
 
-    t1 = sc_auth_cache.get_cached_access_token(_settings(), manager_cls)
-    t2 = sc_auth_cache.get_cached_access_token(_settings(), manager_cls)
+    t1 = token_cache.get_cached_access_token(_settings(), manager_cls)
+    t2 = token_cache.get_cached_access_token(_settings(), manager_cls)
 
     assert t1 == t2 == "tok-1"
     assert manager_cls.call_count == 1
@@ -45,13 +45,13 @@ def test_token_refreshed_after_ttl_expiry() -> None:
     manager_instance.get_access_token.side_effect = ["tok-1", "tok-2"]
     manager_cls = MagicMock(return_value=manager_instance)
 
-    t1 = sc_auth_cache.get_cached_access_token(_settings(), manager_cls, ttl_seconds=60)
+    t1 = token_cache.get_cached_access_token(_settings(), manager_cls, ttl_seconds=60)
     assert t1 == "tok-1"
 
     # Force the cached entry into "needs-refresh" territory.
-    sc_auth_cache._expires_at = 0.0  # type: ignore[assignment]
+    token_cache._expires_at = 0.0  # type: ignore[assignment]
 
-    t2 = sc_auth_cache.get_cached_access_token(_settings(), manager_cls, ttl_seconds=60)
+    t2 = token_cache.get_cached_access_token(_settings(), manager_cls, ttl_seconds=60)
     assert t2 == "tok-2"
     assert manager_instance.get_access_token.call_count == 2
 
@@ -64,4 +64,4 @@ def test_raises_without_credentials() -> None:
         has_oauth_credentials=lambda: False,
     )
     with pytest.raises(RuntimeError):
-        sc_auth_cache.get_cached_access_token(settings, MagicMock())
+        token_cache.get_cached_access_token(settings, MagicMock())
