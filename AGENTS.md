@@ -84,6 +84,10 @@ cd frontend && npm run generate               # SC + backend types
 # Backend
 
 - Use Google-style docstrings.
+- The package is layered: **`api` → `services` → `domain`**, with **`infra`** holding the adapters (db, cache, SoundCloud HTTP, AI providers, keychain, watcher, settings store). `schemas/` is layer-neutral.
+- Dependencies point inward only. `domain/` is pure — no `fastapi`, `httpx`, `sqlmodel`, `keyring`, and no imports of `api`/`services`/`infra`. `scripts/check_layering.py` runs in pre-commit and fails the commit otherwise.
+- Put new code in the layer that matches what it does, not next to whatever called it: pure logic in `domain/`, anything touching the network/disk/DB in `infra/`, orchestration in `services/`, HTTP handling in `api/` (register the router in `api/__init__.py`).
+- `tests/` mirrors the same four directories.
 
 # Design
 
