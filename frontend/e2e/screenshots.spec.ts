@@ -40,6 +40,22 @@ const CACHE_FILE = path.join(__dirname, "../../.cache/screenshot-tracks.json");
 // Track data: real SoundCloud data when available, otherwise placeholders
 // ---------------------------------------------------------------------------
 
+/**
+ * Upload date for feed track `i`, anchored to the start of the current week
+ * (Sunday, matching useWeeklyGroups) rather than to "now".
+ *
+ * Spacing feed tracks at `now - i days` makes the weekly screenshot depend on
+ * which weekday it was captured: on a Sunday only one track lands in the
+ * current week, leaving the page near-empty. Tracks 0-6 fill the current week,
+ * 7-11 fill the one before it, so the shot looks the same on any day.
+ */
+function feedCreatedAt(i: number): Date {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay() + (i % 7) - 7 * Math.floor(i / 7));
+  return d;
+}
+
 function makePlaceholderTracks(
   count: number,
   idOffset: number,
@@ -161,9 +177,7 @@ if (fs.existsSync(CACHE_FILE)) {
     );
   MOCK_FEED_TRACKS = realFeed
     .slice(0, 12)
-    .map((t, i) =>
-      buildSCTrack(t, i, new Date(Date.now() - i * 24 * 60 * 60 * 1000)),
-    );
+    .map((t, i) => buildSCTrack(t, i, feedCreatedAt(i)));
 } else {
   MOCK_TRACKS = makePlaceholderTracks(
     12,
@@ -178,7 +192,7 @@ if (fs.existsSync(CACHE_FILE)) {
     PLACEHOLDER_FEED_TITLES,
     PLACEHOLDER_ARTISTS,
     "Feed",
-  );
+  ).map((t, i) => ({ ...t, created_at: feedCreatedAt(i).toISOString() }));
 }
 
 async function mockScreenshotApi(page: Page) {
@@ -717,6 +731,37 @@ async function mockScreenshotApi(page: Page) {
   );
 }
 
+/**
+ * Wait for every rendered <img> to finish decoding.
+ *
+ * Cover art is requested through the mocked image proxy only after the table
+ * rows mount, so those requests are still in flight when `networkidle`
+ * resolves. Screenshotting at that point captures empty artwork tiles instead
+ * of real covers.
+ */
+async function waitForImages(page: Page) {
+  try {
+    await page.waitForFunction(
+      () =>
+        document.images.length > 0 &&
+        Array.from(document.images).every(
+          (img) => img.complete && img.naturalWidth > 0,
+        ),
+      undefined,
+      { timeout: 15_000 },
+    );
+  } catch {
+    const broken = await page.evaluate(() =>
+      Array.from(document.images)
+        .filter((img) => !img.complete || img.naturalWidth === 0)
+        .map((img) => img.src),
+    );
+    console.warn(
+      `[screenshots] ${broken.length} image(s) did not load: ${broken.slice(0, 3).join(", ")}`,
+    );
+  }
+}
+
 function hideDevToolbar(page: Page) {
   return page.addInitScript(() => {
     const style = document.createElement("style");
@@ -787,6 +832,7 @@ test.describe("Documentation screenshots", () => {
     // Wait for table rows to render
     const firstRow = page.locator('[role="row"][class*="border-b"]').first();
     await firstRow.waitFor({ state: "visible" });
+    await waitForImages(page);
     await page.waitForTimeout(400);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "library.png"),
@@ -809,6 +855,7 @@ test.describe("Documentation screenshots", () => {
     await page
       .locator('input[data-slot="input"][placeholder="Title"]')
       .waitFor({ state: "visible" });
+    await waitForImages(page);
     await page.waitForTimeout(600);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "library-single.png"),
@@ -820,6 +867,7 @@ test.describe("Documentation screenshots", () => {
     await page.goto("/library?source=soundcloud");
     await page.waitForLoadState("networkidle");
     await waitForBackendGate(page);
+    await waitForImages(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "library-soundcloud.png"),
       fullPage: false,
@@ -830,6 +878,7 @@ test.describe("Documentation screenshots", () => {
     await page.goto("/weekly");
     await page.waitForLoadState("networkidle");
     await waitForBackendGate(page);
+    await waitForImages(page);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, "weekly.png"),
       fullPage: false,
