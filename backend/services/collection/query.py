@@ -56,6 +56,8 @@ def list_and_filter_tracks(
     file_formats: list[str] | None = None,
     size_min: int | None = None,
     size_max: int | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
 ) -> list:
     """
     List, filter, and sort tracks via SQL. Returns sqlite3.Row items.
@@ -86,6 +88,10 @@ def list_and_filter_tracks(
         "asc" or "desc"
     recursive : bool
         Include tracks in subfolders
+    limit : int, optional
+        Maximum rows to return. Applied in SQL.
+    offset : int, optional
+        Rows to skip before collecting. Applied in SQL.
 
     Returns
     -------
@@ -110,6 +116,81 @@ def list_and_filter_tracks(
         size_max=size_max,
         sort_by=sort_by,
         sort_order=sort_order,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def count_filtered_tracks(
+    folder: Path,
+    search_query: str | None = None,
+    genres: list[str] | None = None,
+    artists: list[str] | None = None,
+    keys: list[str] | None = None,
+    bpm_min: int | None = None,
+    bpm_max: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    recursive: bool = False,
+    has_soundcloud_id: bool | None = None,
+    file_formats: list[str] | None = None,
+    size_min: int | None = None,
+    size_max: int | None = None,
+) -> int:
+    """Total rows matching the same filters as :func:`list_and_filter_tracks`.
+
+    Parameters
+    ----------
+    folder : Path
+        Folder to scan
+    search_query : str, optional
+        Case-insensitive substring search across title, artist, genre
+    genres : list[str], optional
+        Exact genre matches (OR logic)
+    artists : list[str], optional
+        Substring artist matches (OR logic)
+    keys : list[str], optional
+        Exact key matches (OR logic)
+    bpm_min : int, optional
+        Minimum BPM (inclusive)
+    bpm_max : int, optional
+        Maximum BPM (inclusive)
+    start_date : date, optional
+        Earliest release date (inclusive)
+    end_date : date, optional
+        Latest release date (inclusive)
+    recursive : bool
+        Include tracks in subfolders
+    has_soundcloud_id : bool, optional
+        Filter by SoundCloud link presence
+    file_formats : list[str], optional
+        Exact file-format matches (OR logic)
+    size_min : int, optional
+        Minimum file size in bytes
+    size_max : int, optional
+        Maximum file size in bytes
+
+    Returns
+    -------
+    int
+        Number of matching rows.
+    """
+    ensure_folder_indexed(folder)
+    return cache.count_tracks(
+        folder.resolve(),
+        recursive=recursive,
+        search_query=search_query,
+        genres=genres,
+        artists=artists,
+        keys=keys,
+        bpm_min=bpm_min,
+        bpm_max=bpm_max,
+        start_date=start_date,
+        end_date=end_date,
+        has_soundcloud_id=has_soundcloud_id,
+        file_formats=file_formats,
+        size_min=size_min,
+        size_max=size_max,
     )
 
 

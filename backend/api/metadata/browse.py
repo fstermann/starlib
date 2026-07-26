@@ -9,6 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi_pagination import Page, paginate
+from fastapi_pagination.api import create_page, resolve_params
 
 from backend.api.deps import get_root_folder, validate_folder_mode
 from backend.api.metadata._helpers import _row_to_browse_dict, _row_value, resolve_folder
@@ -170,7 +171,28 @@ def browse_by_path(
 
     indexing.ensure_folder_indexed(folder_path, root_folder=resolved_root)
 
+    # Page in SQL. Materialising the whole folder and slicing it in Python
+    # costs the full row set on every page request.
+    params = resolve_params()
+    raw = params.to_raw_params().as_limit_offset()
+
     try:
+        total = query.count_filtered_tracks(
+            folder=folder_path,
+            search_query=search,
+            genres=genres,
+            artists=artists,
+            keys=keys,
+            bpm_min=bpm_min,
+            bpm_max=bpm_max,
+            start_date=date_from,
+            end_date=date_to,
+            has_soundcloud_id=has_soundcloud_id,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
+            recursive=recursive,
+        )
         pairs = query.list_and_filter_tracks(
             folder=folder_path,
             search_query=search,
@@ -185,9 +207,11 @@ def browse_by_path(
             file_formats=file_formats,
             size_min=size_min,
             size_max=size_max,
+            recursive=recursive,
             sort_by=sort_by,
             sort_order=sort_order,
-            recursive=recursive,
+            limit=raw.limit,
+            offset=raw.offset,
         )
     except Exception as e:
         logger.exception("Failed to list tracks")
@@ -213,7 +237,7 @@ def browse_by_path(
     if indexing.is_indexing(folder_path):
         response.headers["X-Cache-Loading"] = "true"
 
-    return paginate(pairs, transformer=lambda items: [to_browse_response(p) for p in items])
+    return create_page([to_browse_response(row) for row in pairs], total=total, params=params)
 
 
 @router.get("/folders/browse-path/filter-values", response_model=FilterValuesResponse)
@@ -359,7 +383,27 @@ def browse_folder_files(
     """
     folder_path = resolve_folder(mode, root_folder)
 
+    # Page in SQL. Materialising the whole folder and slicing it in Python
+    # costs the full row set on every page request.
+    params = resolve_params()
+    raw = params.to_raw_params().as_limit_offset()
+
     try:
+        total = query.count_filtered_tracks(
+            folder=folder_path,
+            search_query=search,
+            genres=genres,
+            artists=artists,
+            keys=keys,
+            bpm_min=bpm_min,
+            bpm_max=bpm_max,
+            start_date=date_from,
+            end_date=date_to,
+            has_soundcloud_id=has_soundcloud_id,
+            file_formats=file_formats,
+            size_min=size_min,
+            size_max=size_max,
+        )
         pairs = query.list_and_filter_tracks(
             folder=folder_path,
             search_query=search,
@@ -376,6 +420,8 @@ def browse_folder_files(
             size_max=size_max,
             sort_by=sort_by,
             sort_order=sort_order,
+            limit=raw.limit,
+            offset=raw.offset,
         )
     except Exception as e:
         logger.exception("Failed to list tracks")
@@ -401,7 +447,7 @@ def browse_folder_files(
     if indexing.is_indexing(folder_path):
         response.headers["X-Cache-Loading"] = "true"
 
-    return paginate(pairs, transformer=lambda items: [to_browse_response(p) for p in items])
+    return create_page([to_browse_response(row) for row in pairs], total=total, params=params)
 
 
 @router.get("/folders/{mode}/filter-values", response_model=FilterValuesResponse)
