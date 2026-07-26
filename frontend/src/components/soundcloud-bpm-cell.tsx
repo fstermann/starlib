@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Waves } from "lucide-react";
+import { Info, Waves } from "lucide-react";
 import React, { useContext, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -10,18 +10,17 @@ import {
 } from "@/components/soundcloud-batch-analyze-button";
 import { Spinner } from "@/components/spinner";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { NumberInput } from "@/components/ui/number-input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { analyzeSc, TrackUnanalysableError } from "@/lib/sc-bpm";
 import { markScUnplayable, useIsScUnplayable } from "@/lib/sc-unplayable";
@@ -68,6 +67,10 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
 
   const cachedBpm = bpmCache.get(trackId);
   const displayBpm = analyzedBpm ?? cachedBpm ?? metadataBpm ?? null;
+  // A BPM we produced ourselves means the default pass already ran, so the
+  // only reanalyze worth offering is the stronger DP tracker. A BPM that only
+  // came from SoundCloud metadata still deserves the fast default pass.
+  const alreadyAnalyzed = (analyzedBpm ?? cachedBpm) != null;
 
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [draft, setDraft] = useState<string>("");
@@ -188,48 +191,35 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
               </Button>
             </div>
             {isTauri() && (
-              <div className="flex items-stretch gap-px">
+              <div className="flex items-center gap-1">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleAnalyze(true)}
+                  onClick={() => handleAnalyze(true, alreadyAnalyzed)}
                   disabled={loading || unanalysable || sessionUnplayable}
                   data-testid="sc-bpm-reanalyze"
-                  className="flex-1 rounded-r-none"
+                  className="flex-1"
                 >
                   {loading ? <Spinner /> : <Waves />}
-                  Reanalyze
+                  {alreadyAnalyzed ? "Reanalyze (stronger)" : "Analyze"}
                 </Button>
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={loading || unanalysable || sessionUnplayable}
-                      aria-label="Reanalyze options"
-                      data-testid="sc-bpm-reanalyze-menu"
-                      className="rounded-l-none border-l-0 px-1.5"
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="About BPM analysis"
+                      data-testid="sc-bpm-reanalyze-info"
+                      className="text-muted-foreground hover:text-foreground flex size-8 shrink-0 cursor-help items-center justify-center"
                     >
-                      <ChevronDown className="size-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-60">
-                    <DropdownMenuItem
-                      onClick={() => handleAnalyze(true, true)}
-                      data-testid="sc-bpm-reanalyze-strong"
-                      className="items-start py-2"
-                    >
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-medium">
-                          Reanalyze (stronger)
-                        </span>
-                        <span className="text-muted-foreground text-xs">
-                          DP beat tracker — try this if BPM seems wrong
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      <Info className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" className="max-w-56">
+                    {alreadyAnalyzed
+                      ? "DP beat tracker — slower, but usually right when the first pass was wrong"
+                      : "Detect BPM from the audio instead of trusting SoundCloud's metadata"}
+                  </TooltipContent>
+                </Tooltip>
               </div>
             )}
           </div>
