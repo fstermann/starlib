@@ -58,8 +58,9 @@ repos:
     hooks:
       - id: backend-layering
         name: Backend layer boundaries
-        language: system
-        entry: uv run python scripts/check_layering.py
+        # stdlib-only, so pre-commit's own interpreter is enough — CI has no uv
+        language: python
+        entry: python scripts/check_layering.py
         files: ^backend/.*\.py$
       - id: tsc
         name: TypeScript type check
