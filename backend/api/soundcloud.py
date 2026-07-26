@@ -18,11 +18,11 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException, Response, status
-from pydantic import BaseModel
 
 from backend.infra.soundcloud import token_cache
 from backend.infra.soundcloud.oauth import OAuthManager  # re-exported for tests
 from backend.infra.soundcloud.settings import get_settings  # re-exported for tests
+from backend.schemas.soundcloud import StreamUrlResponse
 
 __all__ = ["OAuthManager", "get_settings", "router"]
 
@@ -52,13 +52,6 @@ _ALLOWED_REDIRECT_HOSTS: tuple[str, ...] = (
     "cf-hls-media.sndcdn.com",
     "playback.media-streaming.soundcloud.cloud",
 )
-
-
-class StreamUrlResponse(BaseModel):
-    """Signed HLS stream URL for a SoundCloud track."""
-
-    url: str
-    expires_at: str
 
 
 @dataclass

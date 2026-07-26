@@ -14,12 +14,21 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
 
 from backend.infra import cache
 from backend.infra.soundcloud import token_cache
 from backend.infra.soundcloud.oauth import OAuthManager
 from backend.infra.soundcloud.settings import get_settings
+from backend.schemas.bpm import (
+    BulkBpmRequest,
+    BulkBpmResponse,
+    ClientTokenResponse,
+    LocalBpmPayload,
+    LocalBpmResponse,
+    LocalCandidatesResponse,
+    SoundcloudBpmPayload,
+    SoundcloudBpmResponse,
+)
 from backend.services import app_settings as app_settings_service
 
 logger = logging.getLogger(__name__)
@@ -30,26 +39,6 @@ router = APIRouter(prefix="/api/bpm", tags=["bpm"])
 # ---------------------------------------------------------------------------
 # Local files
 # ---------------------------------------------------------------------------
-
-
-class LocalBpmPayload(BaseModel):
-    """Client-computed BPM for a local audio file."""
-
-    file_path: str = Field(..., description="Absolute path of the local audio file.")
-    bpm: float = Field(..., gt=0, description="Detected BPM from the analysis layer.")
-    algorithm_version: int = Field(..., ge=1, description="Version tag of the analyzer.")
-
-
-class LocalBpmResponse(BaseModel):
-    file_path: str
-    bpm: int
-    algorithm_version: int
-
-
-class LocalCandidatesResponse(BaseModel):
-    """Absolute file paths of indexed tracks without a cached BPM."""
-
-    file_paths: list[str]
 
 
 def _validate_library_folder(folder: str) -> Path:
@@ -140,24 +129,6 @@ def save_local_bpm(payload: LocalBpmPayload) -> LocalBpmResponse:
 # ---------------------------------------------------------------------------
 
 
-class SoundcloudBpmPayload(BaseModel):
-    """Client-computed BPM for a SoundCloud track."""
-
-    track_id: int = Field(..., gt=0)
-    bpm: float = Field(..., gt=0)
-
-
-class SoundcloudBpmResponse(BaseModel):
-    track_id: int
-    bpm: int
-
-
-class ClientTokenResponse(BaseModel):
-    """Client-Credentials OAuth token for Rust-side API calls."""
-
-    token: str
-
-
 @router.post("/soundcloud", response_model=SoundcloudBpmResponse)
 def save_soundcloud_bpm(payload: SoundcloudBpmPayload) -> SoundcloudBpmResponse:
     """Persist a BPM value for a SoundCloud track."""
@@ -183,14 +154,6 @@ def get_soundcloud_bpm(track_id: int) -> SoundcloudBpmResponse | None:
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No cached BPM for this track")
     return SoundcloudBpmResponse(track_id=int(row["track_id"]), bpm=int(row["bpm"]))
-
-
-class BulkBpmRequest(BaseModel):
-    track_ids: list[int] = Field(default_factory=list)
-
-
-class BulkBpmResponse(BaseModel):
-    bpms: dict[str, int]  # string keys for JSON friendliness
 
 
 @router.post("/soundcloud/bulk", response_model=BulkBpmResponse)

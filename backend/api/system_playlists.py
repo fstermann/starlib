@@ -17,10 +17,10 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Path, status
-from pydantic import BaseModel
 
 from backend.api.setup import read_config, write_config
 from backend.infra.soundcloud.settings import get_settings
+from backend.schemas.soundcloud import SystemPlaylistsResponse, SystemPlaylistSummary, SystemPlaylistTracksResponse
 
 logger = logging.getLogger(__name__)
 
@@ -36,29 +36,6 @@ _SELECTION_URNS = (
     "soundcloud:selections:made-for-you",  # Weekly Wave, Daily Drops
     "soundcloud:selections:your-moods",  # Your Mix 1..10
 )
-
-
-class SystemPlaylistSummary(BaseModel):
-    """Slim representation of a system playlist for tree display."""
-
-    urn: str
-    title: str
-    short_title: str | None = None
-    description: str | None = None
-    artwork_url: str | None = None
-    track_count: int
-    last_updated: str | None = None
-    permalink_url: str | None = None
-    # Numeric track ids — the frontend hydrates these lazily via /tracks.
-    track_ids: list[int]
-
-
-class SystemPlaylistsResponse(BaseModel):
-    playlists: list[SystemPlaylistSummary]
-
-
-class SystemPlaylistTracksResponse(BaseModel):
-    tracks: list[dict[str, Any]]
 
 
 def _oauth_token_or_404() -> str:
