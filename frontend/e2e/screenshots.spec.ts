@@ -40,6 +40,22 @@ const CACHE_FILE = path.join(__dirname, "../../.cache/screenshot-tracks.json");
 // Track data: real SoundCloud data when available, otherwise placeholders
 // ---------------------------------------------------------------------------
 
+/**
+ * Upload date for feed track `i`, anchored to the start of the current week
+ * (Sunday, matching useWeeklyGroups) rather than to "now".
+ *
+ * Spacing feed tracks at `now - i days` makes the weekly screenshot depend on
+ * which weekday it was captured: on a Sunday only one track lands in the
+ * current week, leaving the page near-empty. Tracks 0-6 fill the current week,
+ * 7-11 fill the one before it, so the shot looks the same on any day.
+ */
+function feedCreatedAt(i: number): Date {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay() + (i % 7) - 7 * Math.floor(i / 7));
+  return d;
+}
+
 function makePlaceholderTracks(
   count: number,
   idOffset: number,
@@ -161,9 +177,7 @@ if (fs.existsSync(CACHE_FILE)) {
     );
   MOCK_FEED_TRACKS = realFeed
     .slice(0, 12)
-    .map((t, i) =>
-      buildSCTrack(t, i, new Date(Date.now() - i * 24 * 60 * 60 * 1000)),
-    );
+    .map((t, i) => buildSCTrack(t, i, feedCreatedAt(i)));
 } else {
   MOCK_TRACKS = makePlaceholderTracks(
     12,
@@ -178,7 +192,7 @@ if (fs.existsSync(CACHE_FILE)) {
     PLACEHOLDER_FEED_TITLES,
     PLACEHOLDER_ARTISTS,
     "Feed",
-  );
+  ).map((t, i) => ({ ...t, created_at: feedCreatedAt(i).toISOString() }));
 }
 
 async function mockScreenshotApi(page: Page) {
