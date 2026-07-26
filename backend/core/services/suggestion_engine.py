@@ -45,7 +45,7 @@ class ParsedFilename:
 
 @dataclass(frozen=True)
 class ParsedSCTitle:
-    """Heuristic parse of an SC track title (delegates to soundcloud_tools)."""
+    """Heuristic parse of an SC track title (delegates to backend.core.audio.titles)."""
 
     first_artist: str | None = None
     mix_artist: str | None = None

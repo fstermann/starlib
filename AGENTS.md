@@ -6,7 +6,7 @@ Music management app for DJs and producers: edit local audio metadata, explore S
 
 | Component  | Stack                         | Directory   |
 |------------|-------------------------------|-------------|
-| Backend    | FastAPI · Python (uv)         | `backend/`, `soundcloud_tools/`, `starlib/` |
+| Backend    | FastAPI · Python (uv)         | `backend/` |
 | Frontend   | Next.js · React · TypeScript · Tailwind v4 · shadcn | `frontend/` |
 | Desktop    | Tauri v2 · Rust               | `desktop/`  |
 | Docs       | Zensical (mkdocs-style)       | `docs/`     |

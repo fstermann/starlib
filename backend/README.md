@@ -60,7 +60,7 @@ backend/
 ## Key Features
 
 ### OAuth 2.1 Authentication
-- Automatically handled by `soundcloud_tools.client.Client`
+- Automatically handled by `backend.core.services.sc_oauth.OAuthManager`
 - Token refresh managed transparently
 - Falls back to manual `OAUTH_TOKEN` if OAuth credentials not available
 

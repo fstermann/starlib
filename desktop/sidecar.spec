@@ -12,7 +12,7 @@ Notes
 -----
 - reload=False is enforced via the BACKEND_RELOAD=false env var baked in.
 - The binary binds to 127.0.0.1:8000 (localhost only).
-- All data files (soundcloud_tools, backend) are included via collect_all.
+- All data files (backend) are included via collect_all.
 """
 
 import sys
@@ -32,7 +32,6 @@ binaries = [(str(_ffmpeg_bin), ".")] if _ffmpeg_bin.exists() else []
 hiddenimports = []
 
 for pkg in [
-    "soundcloud_tools",
     "backend",
     "fastapi",
     "uvicorn",

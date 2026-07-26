@@ -220,7 +220,7 @@ export interface paths {
          *     handler exchanges the code for OAuth2 tokens as usual. *In addition*,
          *     the webview's cookie jar now holds the web-session ``oauth_token``,
          *     which the shell posts here. We persist it to ``config.env`` as
-         *     ``OAUTH_TOKEN`` so :class:`soundcloud_tools.settings.Settings` picks
+         *     ``OAUTH_TOKEN`` so :class:`backend.sc_settings.Settings` picks
          *     it up on the next ``get_settings()`` call.
          */
         post: operations["save_session_cookie_auth_soundcloud_session_cookie_post"];
@@ -1486,6 +1486,30 @@ export interface paths {
          * @description Unlike a SoundCloud track on behalf of the authenticated user.
          */
         delete: operations["unlike_track_api_soundcloud_tracks__track_id__like_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soundcloud/playlists/{playlist_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Playlist
+         * @description Delete a SoundCloud playlist on behalf of the authenticated user.
+         *
+         *     The browser can't call ``DELETE /playlists/...`` directly — SoundCloud
+         *     doesn't expose that method in its CORS policy — so this endpoint forwards
+         *     the request with the user's own token.
+         */
+        delete: operations["delete_playlist_api_soundcloud_playlists__playlist_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5259,6 +5283,37 @@ export interface operations {
             };
             path: {
                 track_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_playlist_api_soundcloud_playlists__playlist_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                playlist_id: number;
             };
             cookie?: never;
         };

@@ -6,9 +6,8 @@ Pipeline:
   2. `parse`  Extract the embedded `__NEXT_DATA__` JSON from each cached page
               and write a flat list of Beatport rows to
               `scripts/.cache/beatport_rows.json`.
-  3. `match`  For each Beatport row, query SoundCloud search (via the
-              existing `soundcloud_tools` client) and keep the top track
-              whose artist+title fuzzy match >= a threshold and whose
+  3. `match`  For each Beatport row, query the SoundCloud search API and keep
+              the top track whose artist+title fuzzy match >= a threshold and whose
               duration is within ~10 s of Beatport's reported length.
               Emit the final committed manifest at
               `fixtures/bpm/manifest.json`.

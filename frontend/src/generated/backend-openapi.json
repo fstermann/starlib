@@ -275,7 +275,7 @@
           "authentication"
         ],
         "summary": "Save Session Cookie",
-        "description": "Persist the api-v2 web-session ``oauth_token`` captured by the desktop shell.\n\nThe Tauri login window opens SoundCloud's OAuth2 authorize URL in an\nin-app webview; after consent the backend's existing ``/redirect``\nhandler exchanges the code for OAuth2 tokens as usual. *In addition*,\nthe webview's cookie jar now holds the web-session ``oauth_token``,\nwhich the shell posts here. We persist it to ``config.env`` as\n``OAUTH_TOKEN`` so :class:`soundcloud_tools.settings.Settings` picks\nit up on the next ``get_settings()`` call.",
+        "description": "Persist the api-v2 web-session ``oauth_token`` captured by the desktop shell.\n\nThe Tauri login window opens SoundCloud's OAuth2 authorize URL in an\nin-app webview; after consent the backend's existing ``/redirect``\nhandler exchanges the code for OAuth2 tokens as usual. *In addition*,\nthe webview's cookie jar now holds the web-session ``oauth_token``,\nwhich the shell posts here. We persist it to ``config.env`` as\n``OAUTH_TOKEN`` so :class:`backend.sc_settings.Settings` picks\nit up on the next ``get_settings()`` call.",
         "operationId": "save_session_cookie_auth_soundcloud_session_cookie_post",
         "requestBody": {
           "content": {
@@ -3612,6 +3612,58 @@
         }
       }
     },
+    "/api/soundcloud/playlists/{playlist_id}": {
+      "delete": {
+        "tags": [
+          "soundcloud"
+        ],
+        "summary": "Delete Playlist",
+        "description": "Delete a SoundCloud playlist on behalf of the authenticated user.\n\nThe browser can't call ``DELETE /playlists/...`` directly \u2014 SoundCloud\ndoesn't expose that method in its CORS policy \u2014 so this endpoint forwards\nthe request with the user's own token.",
+        "operationId": "delete_playlist_api_soundcloud_playlists__playlist_id__delete",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Playlist Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/soundcloud/system-playlists": {
       "get": {
         "tags": [
@@ -5240,6 +5292,17 @@
               }
             ],
             "title": "Comment"
+          },
+          "outMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outms"
           }
         },
         "type": "object",

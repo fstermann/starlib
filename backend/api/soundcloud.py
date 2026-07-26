@@ -103,9 +103,8 @@ async def _http_get(url: str, *, token: str, follow_redirects: bool) -> httpx.Re
     """Authenticated GET against the SoundCloud public API.
 
     Uses only the `Authorization: OAuth <token>` header — deliberately omits
-    the web-client `client_id`/`app_version` query params that the
-    ``soundcloud_tools.Client`` injects, because the public API drops the
-    Authorization header and returns 401 when those are present.
+    the web-client `client_id`/`app_version` query params, because the public
+    API drops the Authorization header and returns 401 when those are present.
     """
     headers = {"Authorization": f"OAuth {token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
