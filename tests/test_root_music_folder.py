@@ -3,8 +3,8 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.infra import settings_store as settings_svc
 from backend.services import app_settings as app_settings_svc
-from backend.services import settings_store as settings_svc
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -16,7 +16,7 @@ def _patch_paths(tmp_path: Path):
     config_dir.mkdir()
     settings_file = config_dir / "settings.json"
     return patch.multiple(
-        "backend.services.settings_store",
+        "backend.infra.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
         _LEGACY_CONFIG_FILE=config_dir / "config.env",
@@ -44,7 +44,7 @@ def test_migration_reads_root_from_config_env(tmp_path: Path) -> None:
     )
 
     with patch.multiple(
-        "backend.services.settings_store",
+        "backend.infra.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
         _LEGACY_CONFIG_FILE=config_env,
@@ -69,7 +69,7 @@ def test_migration_removes_key_from_config_env(tmp_path: Path) -> None:
     )
 
     with patch.multiple(
-        "backend.services.settings_store",
+        "backend.infra.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
         _LEGACY_CONFIG_FILE=config_env,
@@ -97,7 +97,7 @@ def test_migration_skipped_when_root_already_set(tmp_path: Path) -> None:
     )
 
     with patch.multiple(
-        "backend.services.settings_store",
+        "backend.infra.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
         _LEGACY_CONFIG_FILE=config_env,
@@ -122,7 +122,7 @@ def test_migration_falls_back_to_home_music_when_config_env_missing(tmp_path: Pa
     )
 
     with patch.multiple(
-        "backend.services.settings_store",
+        "backend.infra.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
         _LEGACY_CONFIG_FILE=config_env,

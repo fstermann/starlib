@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from backend.infra import settings_store as settings_service
 from backend.schemas.folder_config import FoldersConfig
 from backend.schemas.settings import FolderRulesetBinding
-from backend.services import settings_store as settings_service
 
 
 @dataclass(frozen=True)

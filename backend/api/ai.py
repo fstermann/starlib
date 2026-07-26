@@ -9,6 +9,7 @@ import logging
 from fastapi import APIRouter, HTTPException, status
 
 from backend.infra import keychain
+from backend.infra import settings_store as settings_service
 from backend.infra.ai import anthropic as anthropic_service
 from backend.infra.ai import claude_code as claude_code_service
 from backend.infra.ai import ollama as ollama_service
@@ -21,7 +22,6 @@ from backend.schemas.ai import (
     AiStatusResponse,
     OllamaPullRequest,
 )
-from backend.services import settings_store as settings_service
 
 logger = logging.getLogger(__name__)
 

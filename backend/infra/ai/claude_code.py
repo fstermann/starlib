@@ -10,8 +10,8 @@ import logging
 import shutil
 from typing import Any
 
+from backend.infra import settings_store as settings_service
 from backend.schemas.ai import AiModel
-from backend.services import settings_store as settings_service
 
 logger = logging.getLogger(__name__)
 

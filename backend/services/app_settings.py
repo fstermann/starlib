@@ -1,6 +1,6 @@
 """Application-level settings facade over the consolidated settings file."""
 
-from backend.services import settings_store as settings_service
+from backend.infra import settings_store as settings_service
 
 
 def load() -> dict:

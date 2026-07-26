@@ -10,7 +10,7 @@ def _patch_paths(tmp_path: Path):
     config_dir = tmp_path / "starlib"
     config_dir.mkdir()
     return patch.multiple(
-        "backend.services.settings_store",
+        "backend.infra.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=config_dir / "settings.json",
     )
@@ -36,7 +36,7 @@ def test_empty_folders_are_reseeded_on_load(tmp_path: Path) -> None:
     )
 
     with patch.multiple(
-        "backend.services.settings_store",
+        "backend.infra.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
     ):
@@ -88,7 +88,7 @@ def test_legacy_string_bindings_load_as_non_recursive(tmp_path: Path) -> None:
     )
 
     with patch.multiple(
-        "backend.services.settings_store",
+        "backend.infra.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
     ):
@@ -114,7 +114,7 @@ def test_non_empty_folders_are_preserved(tmp_path: Path) -> None:
     )
 
     with patch.multiple(
-        "backend.services.settings_store",
+        "backend.infra.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
     ):

@@ -22,7 +22,7 @@ def patched_paths(tmp_path: Path):
     config_dir.mkdir()
     settings_file = config_dir / "settings.json"
     with patch.multiple(
-        "backend.services.settings_store",
+        "backend.infra.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
     ):

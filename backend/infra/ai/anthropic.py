@@ -13,8 +13,8 @@ from anthropic import AsyncAnthropic
 from anthropic import AuthenticationError as AnthropicAuthenticationError
 
 from backend.infra import keychain
+from backend.infra import settings_store as settings_service
 from backend.schemas.ai import AiModel
-from backend.services import settings_store as settings_service
 
 logger = logging.getLogger(__name__)
 
