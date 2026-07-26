@@ -8,7 +8,8 @@ Starlib is a DJ library management app. Organise your tracks, edit metadata, and
 
 ## What can it do?
 
-- **Library:** Two sources in one view — edit metadata on local files, or browse your SoundCloud likes and playlists (and other users' libraries under Discover)
+- **Library:** Three sources in one view — edit metadata on local files, browse your SoundCloud likes and playlists (and other users' libraries under Discover), or read your Rekordbox collection
+- **Player:** Waveforms, cue points, loops, a queue, target-BPM pitching, and auto-mix between tracks
 - **Weekly Favorites:** Discover new tracks from followed artists, grouped by calendar week
 
 ## Get started

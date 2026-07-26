@@ -8,12 +8,15 @@ Starlib has two main tools, accessible from the sidebar or the home screen.
 
 ## :material-library: Library
 
-The Library is one view for your whole music collection, with two **sources** you switch between at the top of the page:
+The Library is one view for your whole music collection, with three **sources** you switch between at the top of the page:
 
 - **Filesystem** — local audio files, with metadata editing
 - **SoundCloud** — your likes and playlists, plus Discover for browsing other users
+- **Rekordbox** — your Rekordbox collection, read-only, from the local install or a mounted USB/SD export
 
-The source switcher is a segmented pill in the top bar. The active source shows its icon + label; the inactive one appears as an icon and expands to reveal its label on hover.
+The source switcher is a segmented pill in the top bar. The active source shows its icon + label; the inactive ones appear as icons and expand to reveal their label on hover.
+
+Every source shares the same table, filters, and [player](player.md) — you can queue a local file after a SoundCloud track after a Rekordbox track.
 
 ### :material-folder-open: Filesystem source
 
@@ -99,17 +102,57 @@ Browse your SoundCloud library and discover music from other users. Switch the s
 
 | Sub-tab | Description |
 |---------|-------------|
-| **My Library** | Your likes, playlists, and **Mixes** (Weekly Wave, Daily Drops, Your Mix 1–10) on SoundCloud |
+| **My Library** | Your likes, reposts, tracks, playlists, and **Mixes** (Weekly Wave, Daily Drops, Your Mix 1–10) on SoundCloud |
 | **Discover** | Search for another user and browse their library, with an option to exclude tracks you've already liked |
 | **Search** | Free-text search across all of SoundCloud — find any track, not just ones in your (or another user's) likes. Paste a SoundCloud track URL to resolve it directly. |
 
-All three sub-tabs share the same filter/table UX: filter by genre, duration, track vs. DJ set, and collection status; exclude tracks you've already liked on SoundCloud; see at a glance which tracks are already in your local collection; select tracks to build a playlist and publish it to SoundCloud.
+All three sub-tabs share the same filter/table UX: filter by genre, duration, BPM range, track vs. DJ set, and collection status; exclude tracks you've already liked on SoundCloud; see at a glance which tracks are already in your local collection; select tracks to build a playlist and publish it to SoundCloud.
+
+#### Smart lists
+
+On **My Library**, two auto-filled nodes sit at the top of the tree, sourced from your followings feed:
+
+- **New Today** — releases from artists you follow that landed today
+- **New This Week** — the same for the current week
+
+Both show a live count that respects your active filters, so you can narrow to a genre or BPM range and see how much is actually new.
+
+#### Playlist management
+
+Playlists are editable from the tree and from track rows:
+
+- **Right-click a track** → **Add to playlist** (submenu of your own playlists), **Remove from playlist** (when you're viewing one), or **Create playlist** seeded with the selected tracks
+- **Right-click a playlist** in the tree to rename or delete it
+- Or run **Create playlist from N selected tracks** from the [command palette](command-palette.md)
+
+#### Columns
+
+The table ships a wide set of SoundCloud metadata columns — key signature, label, metadata artist, tags, release date, like/repost/comment/download/play counts, downloadable, access, sharing, license, ISRC, and description. Use the **column visibility** menu in the toolbar to pick which ones show; your choice is remembered per view.
 
 The **Mixes** section always shows on *My Library* for the desktop app, but it only populates after the login window has captured a SoundCloud session cookie — personalized-playlist endpoints aren't exposed on SoundCloud's public API. If the cookie is missing or expired, the Mixes pane shows a **Reconnect SoundCloud** button that restarts the login flow; the cookie is harvested on the way out and stored in `config.env` as `OAUTH_TOKEN`. See [`authentication.md`](../technical/authentication.md) for the full flow.
 
 <figure markdown="span" style="text-align: center;">
   ![Library — SoundCloud](../assets/images/screenshots/library-soundcloud.png){ width="90%" }
 </figure>
+
+### :material-usb-flash-drive: Rekordbox source
+
+Browse your Rekordbox collection without opening Rekordbox. This source is **read-only** — Starlib never writes to the Rekordbox database.
+
+Pick what to browse with the device selector at the top:
+
+- **Local** — the Rekordbox 6 install on this machine
+- **A mounted USB/SD export** — any Rekordbox-exported stick Starlib finds. Mounted devices are detected automatically; eject one safely with the :material-eject: button.
+
+The tree on the left mirrors your Rekordbox playlist folders. Playlists keep their Rekordbox order — including smart playlists and hand-curated sets — so the table is filterable but deliberately not sortable.
+
+Tracks carry their Rekordbox analysis, which means:
+
+- **Colour-coded waveforms** in the player, the same ones you see on a CDJ
+- **Beatgrids**, which unlock the beatgrid [auto-mix](player.md#auto-mix) modes
+- Artwork, BPM, and key straight from the Rekordbox database
+
+Filter by search, genre, key, and BPM range. With BPM pitching enabled, the key column shows the pitched key next to the original.
 
 ### Settings
 
@@ -178,9 +221,9 @@ Classic requires **title, artist, genre, release date, and artwork** before it c
 
 Under **Settings > Library**, choose the default format used by convert rules set to "preferred". This can be overridden per-rule.
 
-#### Ollama (LLM Integration)
+#### AI
 
-Under **Settings > Ollama**, connect a local Ollama instance for LLM-powered features. See the [Ollama setup guide](ollama.md) for installation and configuration.
+Under **Settings > AI**, choose which LLM provider backs the AI-powered features — local Ollama, the Claude Code CLI, or the Anthropic API. See the [AI providers guide](ai.md) for setup.
 
 ## :material-keyboard: Command palette
 
@@ -191,9 +234,15 @@ Press ++cmd+p++ (macOS) or ++ctrl+p++ (Windows/Linux) from anywhere to open the 
 - **Local Library** — search your on-disk collection by title or artist
 - **SoundCloud Tracks** — search all of SoundCloud by title/artist, or paste a track URL. Selecting a result opens the Search tab with that track and **starts playback automatically**.
 - **SoundCloud Users** — jump straight into a user's library in Discover
-- **Actions** — connect/disconnect SoundCloud, toggle the theme, open Settings, reload the current library, create a playlist from selected tracks, and other context-aware commands contributed by the current view
+- **Actions** — connect/disconnect SoundCloud, toggle the theme, open Settings, reload the current library, create a playlist from selected tracks, toggle BPM pitching or auto-mix, and other context-aware commands contributed by the current view
 
 Use ++arrow-up++ / ++arrow-down++ to navigate, ++enter++ to run, ++escape++ to dismiss.
+
+The [command palette reference](command-palette.md) lists every command and when it's available.
+
+## :material-play-circle: Player
+
+Tracks from any source play in a shared player rail with waveforms, cue points, looping, a reorderable queue, BPM pitching, and auto-mix. See the [Player guide](player.md).
 
 ## :material-calendar-week: Weekly Favorites
 
