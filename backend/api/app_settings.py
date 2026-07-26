@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from backend.core.services import app_settings as app_settings_service
-from backend.core.services import watcher
+from backend.infra import watcher
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 

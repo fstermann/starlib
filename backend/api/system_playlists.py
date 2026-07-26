@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, Path, status
 from pydantic import BaseModel
 
 from backend.api.setup import read_config, write_config
-from backend.sc_settings import get_settings
+from backend.infra.soundcloud.settings import get_settings
 
 logger = logging.getLogger(__name__)
 

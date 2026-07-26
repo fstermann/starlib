@@ -20,7 +20,7 @@ def client() -> TestClient:
 
 
 def test_save_soundcloud_bpm_rounds_and_persists(client: TestClient) -> None:
-    with patch("backend.api.bpm.cache_db.upsert_sc_bpm") as mock:
+    with patch("backend.api.bpm.cache.upsert_sc_bpm") as mock:
         resp = client.post(
             "/api/bpm/soundcloud",
             json={"track_id": 12345, "bpm": 128.4},
@@ -42,7 +42,7 @@ def test_save_rejects_non_positive_bpm(client: TestClient) -> None:
 
 def test_get_soundcloud_bpm_returns_cached(client: TestClient) -> None:
     with patch(
-        "backend.api.bpm.cache_db.get_sc_bpm",
+        "backend.api.bpm.cache.get_sc_bpm",
         return_value={"track_id": 42, "bpm": 128, "analyzed_at": 0.0},
     ):
         resp = client.get("/api/bpm/soundcloud/42")
@@ -51,13 +51,13 @@ def test_get_soundcloud_bpm_returns_cached(client: TestClient) -> None:
 
 
 def test_get_soundcloud_bpm_404_when_missing(client: TestClient) -> None:
-    with patch("backend.api.bpm.cache_db.get_sc_bpm", return_value=None):
+    with patch("backend.api.bpm.cache.get_sc_bpm", return_value=None):
         resp = client.get("/api/bpm/soundcloud/999")
     assert resp.status_code == 404
 
 
 def test_bulk_lookup_returns_hits(client: TestClient) -> None:
-    with patch("backend.api.bpm.cache_db.get_sc_bpms", return_value={1: 128, 2: 140}):
+    with patch("backend.api.bpm.cache.get_sc_bpms", return_value={1: 128, 2: 140}):
         resp = client.post("/api/bpm/soundcloud/bulk", json={"track_ids": [1, 2, 3]})
     assert resp.status_code == 200
     assert resp.json() == {"bpms": {"1": 128, "2": 140}}

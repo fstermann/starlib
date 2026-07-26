@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.core.db import engine as db_engine
-from backend.core.services import cache_db
+from backend.infra import cache
+from backend.infra.db import engine as db_engine
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +26,7 @@ def _reset_engine():
 
 
 def _add(folder: Path, name: str) -> None:
-    cache_db.upsert_track(
+    cache.upsert_track(
         file_path=folder / name,
         folder=folder,
         title=name,
@@ -47,7 +47,7 @@ def _add(folder: Path, name: str) -> None:
 
 def test_tree_includes_empty_folders(client: TestClient, tmp_music_folder: Path) -> None:
     root = tmp_music_folder.resolve()
-    cache_db.init_db(root / "cache.db")
+    cache.init_db(root / "cache.db")
 
     # "collection" gets a track; "prepare" and "cleaned" stay empty, and an
     # empty nested folder plus a hidden folder are created on disk only.

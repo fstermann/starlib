@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.core.db import engine as db_engine
-from backend.core.services import cache_db
+from backend.infra import cache
+from backend.infra.db import engine as db_engine
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +24,7 @@ def _reset_engine():
 
 
 def _add(folder: Path, name: str, *, genre: str, bpm: int) -> None:
-    cache_db.upsert_track(
+    cache.upsert_track(
         file_path=folder / name,
         folder=folder,
         title=name,
@@ -44,7 +44,7 @@ def _add(folder: Path, name: str, *, genre: str, bpm: int) -> None:
 
 
 def test_folder_counts_unfiltered_and_filtered(tmp_path: Path) -> None:
-    cache_db.init_db(tmp_path / "cache.db")
+    cache.init_db(tmp_path / "cache.db")
     house = tmp_path / "music" / "house"
     techno = tmp_path / "music" / "techno"
     house.mkdir(parents=True)
@@ -55,17 +55,17 @@ def test_folder_counts_unfiltered_and_filtered(tmp_path: Path) -> None:
     _add(techno, "c.mp3", genre="Techno", bpm=135)
 
     # Unfiltered: direct count per folder.
-    assert cache_db.get_folder_track_counts() == {
+    assert cache.get_folder_track_counts() == {
         str(house): 2,
         str(techno): 1,
     }
 
     # Genre filter narrows counts and drops non-matching folders.
-    assert cache_db.get_folder_track_counts(genres=["Techno"]) == {
+    assert cache.get_folder_track_counts(genres=["Techno"]) == {
         str(house): 1,
         str(techno): 1,
     }
-    assert cache_db.get_folder_track_counts(genres=["House"]) == {str(house): 1}
+    assert cache.get_folder_track_counts(genres=["House"]) == {str(house): 1}
 
     # BPM range filter.
-    assert cache_db.get_folder_track_counts(bpm_min=131) == {str(techno): 1}
+    assert cache.get_folder_track_counts(bpm_min=131) == {str(techno): 1}

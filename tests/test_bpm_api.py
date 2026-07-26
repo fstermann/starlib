@@ -24,9 +24,9 @@ def _payload(file_path: str = "/music/track.mp3", bpm: float = 128.4, algo: int 
 
 
 def test_rounds_bpm_and_persists(client: TestClient) -> None:
-    """Happy path: float BPM is rounded and handed to cache_db."""
+    """Happy path: float BPM is rounded and handed to cache."""
 
-    with patch("backend.api.bpm.cache_db.update_track_bpm", return_value=True) as mock:
+    with patch("backend.api.bpm.cache.update_track_bpm", return_value=True) as mock:
         resp = client.post("/api/bpm/local", json=_payload(bpm=128.4))
 
     assert resp.status_code == 200
@@ -41,7 +41,7 @@ def test_rounds_bpm_and_persists(client: TestClient) -> None:
 
 def test_rounds_half_up(client: TestClient) -> None:
     """128.6 → 129, not 128."""
-    with patch("backend.api.bpm.cache_db.update_track_bpm", return_value=True):
+    with patch("backend.api.bpm.cache.update_track_bpm", return_value=True):
         resp = client.post("/api/bpm/local", json=_payload(bpm=128.6))
     assert resp.json()["bpm"] == 129
 
@@ -49,7 +49,7 @@ def test_rounds_half_up(client: TestClient) -> None:
 def test_unknown_track_returns_404(client: TestClient) -> None:
     """update_track_bpm returning False (no row updated) surfaces as 404."""
 
-    with patch("backend.api.bpm.cache_db.update_track_bpm", return_value=False):
+    with patch("backend.api.bpm.cache.update_track_bpm", return_value=False):
         resp = client.post("/api/bpm/local", json=_payload())
 
     assert resp.status_code == 404

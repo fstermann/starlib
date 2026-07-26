@@ -1,7 +1,7 @@
 """Alembic environment.
 
 Invoked both from the CLI (``alembic revision --autogenerate``, ``alembic
-check``) and programmatically from ``backend.core.db.migrations`` at app
+check``) and programmatically from ``backend.infra.db.migrations`` at app
 startup.  The online path honours a pre-created Connection when the caller
 puts one on ``config.attributes["connection"]``, so the same open engine can
 drive the upgrade without opening a second SQLite handle.
@@ -14,7 +14,7 @@ from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
 # Importing models registers every table on SQLModel.metadata.
-from backend.core.db import models  # noqa: F401
+from backend.infra.db import models  # noqa: F401
 
 config = context.config
 target_metadata = SQLModel.metadata

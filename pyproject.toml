@@ -83,7 +83,7 @@ extend-immutable-calls = ["fastapi.Query", "fastapi.Depends", "Query", "Depends"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["backend.core.services.cache_db", "backend.core.db.*"]
+module = ["backend.infra.cache", "backend.infra.db.*"]
 disable_error_code = ["attr-defined", "union-attr", "arg-type", "operator", "call-arg"]
 
 [tool.pytest.ini_options]

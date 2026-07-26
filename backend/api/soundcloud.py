@@ -20,9 +20,9 @@ import httpx
 from fastapi import APIRouter, Header, HTTPException, Response, status
 from pydantic import BaseModel
 
-from backend.core.services import sc_auth_cache
-from backend.core.services.sc_oauth import OAuthManager  # re-exported for tests
-from backend.sc_settings import get_settings  # re-exported for tests
+from backend.infra.soundcloud import token_cache
+from backend.infra.soundcloud.oauth import OAuthManager  # re-exported for tests
+from backend.infra.soundcloud.settings import get_settings  # re-exported for tests
 
 __all__ = ["OAuthManager", "get_settings", "router"]
 
@@ -136,7 +136,7 @@ async def _fetch_stream_url(track_id: int) -> tuple[str, float]:
             detail="SoundCloud OAuth credentials not configured",
         )
     try:
-        token = sc_auth_cache.get_cached_access_token(settings, OAuthManager)
+        token = token_cache.get_cached_access_token(settings, OAuthManager)
     except Exception as exc:
         logger.exception("Failed to acquire SoundCloud OAuth token")
         raise HTTPException(
@@ -160,9 +160,9 @@ async def _fetch_stream_url(track_id: int) -> tuple[str, float]:
     # through the full user-OAuth flow just to keep playback alive.
     if response.status_code == 401:
         logger.info("SoundCloud /streams 401 for track %s — refreshing token and retrying", track_id)
-        sc_auth_cache.reset_cache()
+        token_cache.reset_cache()
         try:
-            token = sc_auth_cache.get_cached_access_token(settings, OAuthManager)
+            token = token_cache.get_cached_access_token(settings, OAuthManager)
             response = await _http_get(streams_url, token=token, follow_redirects=True)
         except Exception as exc:
             logger.exception("Retry after SoundCloud 401 failed")
@@ -414,4 +414,4 @@ def _reset_cache_for_tests() -> None:
     """Clear the in-memory cache. Intended for tests only."""
     _cache.clear()
     _inflight_locks.clear()
-    sc_auth_cache.reset_cache()
+    token_cache.reset_cache()

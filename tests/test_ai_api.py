@@ -47,7 +47,7 @@ class TestGetStatus:
     def test_anthropic_no_key(self, client: TestClient) -> None:
         with (
             patch("backend.api.ai.settings_service.load", return_value=_settings("anthropic")),
-            patch("backend.api.ai.credentials.has_anthropic_api_key", return_value=False),
+            patch("backend.api.ai.keychain.has_anthropic_api_key", return_value=False),
         ):
             resp = client.get("/api/ai/status")
 
@@ -59,7 +59,7 @@ class TestGetStatus:
     def test_anthropic_with_valid_key(self, client: TestClient) -> None:
         with (
             patch("backend.api.ai.settings_service.load", return_value=_settings("anthropic")),
-            patch("backend.api.ai.credentials.has_anthropic_api_key", return_value=True),
+            patch("backend.api.ai.keychain.has_anthropic_api_key", return_value=True),
             patch("backend.api.ai.anthropic_service.validate_api_key", new_callable=AsyncMock, return_value=True),
         ):
             resp = client.get("/api/ai/status")
@@ -131,7 +131,7 @@ class TestSettings:
     def test_get_settings(self, client: TestClient) -> None:
         with (
             patch("backend.api.ai.settings_service.load", return_value=_settings("ollama")),
-            patch("backend.api.ai.credentials.has_anthropic_api_key", return_value=False),
+            patch("backend.api.ai.keychain.has_anthropic_api_key", return_value=False),
         ):
             resp = client.get("/api/ai/settings")
 
@@ -152,7 +152,7 @@ class TestSettings:
         with (
             patch("backend.api.ai.settings_service.update", side_effect=mock_update),
             patch("backend.api.ai.settings_service.load", return_value=_settings("anthropic")),
-            patch("backend.api.ai.credentials.has_anthropic_api_key", return_value=True),
+            patch("backend.api.ai.keychain.has_anthropic_api_key", return_value=True),
         ):
             resp = client.post("/api/ai/settings", json={"provider": "anthropic"})
 
@@ -163,9 +163,9 @@ class TestSettings:
 class TestAnthropicCredentials:
     def test_set_key_success(self, client: TestClient) -> None:
         with (
-            patch("backend.api.ai.credentials.set_anthropic_api_key", return_value=True) as mock_set,
+            patch("backend.api.ai.keychain.set_anthropic_api_key", return_value=True) as mock_set,
             patch("backend.api.ai.settings_service.load", return_value=_settings("anthropic")),
-            patch("backend.api.ai.credentials.has_anthropic_api_key", return_value=True),
+            patch("backend.api.ai.keychain.has_anthropic_api_key", return_value=True),
         ):
             resp = client.post("/api/ai/anthropic/credentials", json={"api_key": "sk-ant-xxx"})
 
@@ -179,9 +179,9 @@ class TestAnthropicCredentials:
 
     def test_delete_key(self, client: TestClient) -> None:
         with (
-            patch("backend.api.ai.credentials.delete_anthropic_api_key", return_value=True) as mock_del,
+            patch("backend.api.ai.keychain.delete_anthropic_api_key", return_value=True) as mock_del,
             patch("backend.api.ai.settings_service.load", return_value=_settings("anthropic")),
-            patch("backend.api.ai.credentials.has_anthropic_api_key", return_value=False),
+            patch("backend.api.ai.keychain.has_anthropic_api_key", return_value=False),
         ):
             resp = client.delete("/api/ai/anthropic/credentials")
 

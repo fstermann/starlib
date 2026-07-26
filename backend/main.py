@@ -28,10 +28,10 @@ from backend.api.suggestions import router as suggestions_router
 from backend.api.system_playlists import router as system_playlists_router
 from backend.config import get_backend_settings
 from backend.core.services import app_settings as app_settings_service
-from backend.core.services import cache_db, watcher
 from backend.core.services import folder_config as folder_config_service
-from backend.core.services import ollama as ollama_service
 from backend.core.services.collection import ensure_folder_indexed
+from backend.infra import cache, watcher
+from backend.infra.ai import ollama as ollama_service
 
 # Log to stdout so the Tauri sidecar captures and writes everything to backend.log.
 logging.basicConfig(
@@ -49,8 +49,8 @@ async def lifespan(app: FastAPI):
     root = Path(app_settings_service.get_root_music_folder()).expanduser()
 
     # Initialise SQLite cache (creates tables if first run)
-    cache_db.init_db(settings.cache_dir / "metadata.db")
-    cache_db.prune_missing_files()
+    cache.init_db(settings.cache_dir / "metadata.db")
+    cache.prune_missing_files()
 
     # Start watchdog observer for real-time file change detection
     watcher.start_watcher(root)

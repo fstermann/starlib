@@ -1,6 +1,6 @@
 """SQLModel-backed cache for track metadata and waveform peaks.
 
-Thin CRUD layer over ``backend.core.db``.  Every public function keeps its
+Thin CRUD layer over ``backend.infra.db``.  Every public function keeps its
 pre-#286 signature so that callers in ``collection.py``, ``watcher.py``, and
 the metadata endpoints don't have to change.
 
@@ -20,10 +20,10 @@ from pathlib import Path
 
 from sqlalchemy import Select, String, delete, func, or_, select, update
 
-from backend.core.db.engine import get_engine, init_engine
-from backend.core.db.migrations import run_migrations
-from backend.core.db.models import Peaks, SoundcloudTrackBpm, Track
 from backend.domain.tags import SIMPLE_TAG_FIELDS
+from backend.infra.db.engine import get_engine, init_engine
+from backend.infra.db.migrations import run_migrations
+from backend.infra.db.models import Peaks, SoundcloudTrackBpm, Track
 
 logger = logging.getLogger(__name__)
 

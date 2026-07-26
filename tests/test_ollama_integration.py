@@ -9,8 +9,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.api.ai import router
-from backend.core.services import ollama as ollama_service
 from backend.core.services import settings as settings_service
+from backend.infra.ai import ollama as ollama_service
 from backend.schemas.ai import AiSettings, OllamaSettings
 from backend.schemas.settings import Settings
 

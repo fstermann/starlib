@@ -12,7 +12,7 @@ At app startup this module decides between three paths:
    ``alembic upgrade head`` (no-op if already at head).
 
 The legacy catch-up path is intentionally copied verbatim from the previous
-``cache_db._ensure_schema`` rather than re-derived from models — the point
+``cache._ensure_schema`` rather than re-derived from models — the point
 is to walk an arbitrary old DB up to the exact shape that revision ``0001``
 records, no more and no less.
 """
@@ -79,11 +79,11 @@ def _alembic_config(engine: Engine) -> Config:
     """Build an Alembic ``Config`` pointed at the in-package ``backend/alembic``.
 
     Resolving via ``importlib.resources`` is the key detail that makes the
-    sidecar work: PyInstaller bundles ``backend.alembic`` as a Python
+    sidecar work: PyInstaller bundles ``backend.infra.db.alembic`` as a Python
     package (see ``desktop/sidecar.spec``) and this is the one way to find
     its on-disk location both in dev and inside the frozen binary.
     """
-    alembic_dir = resources.files("backend.alembic")
+    alembic_dir = resources.files("backend.infra.db.alembic")
     # ``resources.files`` returns a Traversable; we need a real filesystem
     # path for Alembic's ScriptDirectory.  ``as_file`` would require a
     # context manager, but for our layout the files already live on disk
@@ -102,7 +102,7 @@ def _alembic_config(engine: Engine) -> Config:
 
 
 def _legacy_ensure_schema(db_path: Path) -> None:
-    """Run the pre-Alembic ``cache_db._ensure_schema`` against *db_path*.
+    """Run the pre-Alembic ``cache._ensure_schema`` against *db_path*.
 
     Copied verbatim (with cosmetic tweaks) from the pre-#286 implementation.
     It walks an arbitrary legacy DB forward to the exact shape captured in

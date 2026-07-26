@@ -12,8 +12,8 @@ from typing import Any
 from anthropic import AsyncAnthropic
 from anthropic import AuthenticationError as AnthropicAuthenticationError
 
-from backend.core.services import credentials
 from backend.core.services import settings as settings_service
+from backend.infra import keychain
 from backend.schemas.ai import AiModel
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class MissingApiKeyError(RuntimeError):
 
 
 def _client() -> AsyncAnthropic:
-    key = credentials.get_anthropic_api_key()
+    key = keychain.get_anthropic_api_key()
     if not key:
         raise MissingApiKeyError("Anthropic API key not configured.")
     return AsyncAnthropic(api_key=key)

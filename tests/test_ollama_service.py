@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from backend.core.services import ollama as ollama_service
+from backend.infra.ai import ollama as ollama_service
 from backend.schemas.ollama import OllamaModel
 
 

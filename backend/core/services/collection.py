@@ -14,8 +14,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from backend.core.services import cache_db
 from backend.domain.tags import TrackInfo
+from backend.infra import cache
 from backend.infra.audio.folders import FolderHandler, load_tracks, load_tracks_recursive
 from backend.infra.audio.track_handler import TrackHandler
 
@@ -36,7 +36,7 @@ def _index_one(root_folder: Path, file: Path) -> None:
     try:
         stat = file.stat()
         mtime = stat.st_mtime
-        if cache_db.get_track_mtime(file) == mtime:
+        if cache.get_track_mtime(file) == mtime:
             return  # unchanged
         handler = TrackHandler(root_folder=root_folder, file=file)
         track_info = handler.track_info
@@ -50,7 +50,7 @@ def _index_one(root_folder: Path, file: Path) -> None:
         if not track_info.artwork:
             missing.append("artwork")
         sc_id = track_info.starlib_meta.soundcloud_id if track_info.starlib_meta else None
-        cache_db.upsert_track(
+        cache.upsert_track(
             file_path=file,
             folder=file.parent.resolve(),
             title=track_info.title or None,
@@ -127,12 +127,12 @@ def is_cache_loading(folder: Path) -> bool:
 def get_collection_soundcloud_ids(folder: Path) -> list[int]:
     """Return all SoundCloud track IDs linked to collection tracks."""
     ensure_folder_indexed(folder)
-    return cache_db.get_soundcloud_ids(folder)
+    return cache.get_soundcloud_ids(folder)
 
 
 def invalidate_file(file_path: Path) -> None:
     """Remove a file from the cache so it gets re-indexed on next scan."""
-    cache_db.invalidate_file(file_path)
+    cache.invalidate_file(file_path)
     with _state_lock:
         _indexed_this_session.discard(file_path.parent.resolve())
 
@@ -150,7 +150,7 @@ def invalidate_cache(folder: Path | None = None) -> None:
             _indexing.clear()
     else:
         resolved = folder.resolve()
-        cache_db.invalidate_folder(resolved)
+        cache.invalidate_folder(resolved)
         with _state_lock:
             _indexed_this_session.discard(resolved)
 
@@ -334,7 +334,7 @@ def check_if_folder_has_audio(folder: Path) -> bool:
 def load_all_track_infos(folder: Path) -> list[TrackInfo]:
     """Return TrackInfo objects for all tracks in a folder (from DB cache)."""
     ensure_folder_indexed(folder)
-    rows = cache_db.get_all_tracks(folder.resolve())
+    rows = cache.get_all_tracks(folder.resolve())
     result: list[TrackInfo] = []
     for row in rows:
         try:
@@ -464,7 +464,7 @@ def get_collection_metadata_stats(folder: Path) -> dict:
         total_genres, missing_fields, genres, artists, keys, bpm_min, bpm_max
     """
     ensure_folder_indexed(folder)
-    return cache_db.get_stats(folder.resolve())
+    return cache.get_stats(folder.resolve())
 
 
 def list_and_filter_tracks(
@@ -521,7 +521,7 @@ def list_and_filter_tracks(
         Filtered and sorted track rows from the DB cache.
     """
     ensure_folder_indexed(folder)
-    return cache_db.get_tracks(
+    return cache.get_tracks(
         folder.resolve(),
         recursive=recursive,
         search_query=search_query,
@@ -580,7 +580,7 @@ def get_folder_filter_values(
         Keys: genres, genre_counts, artists, keys, key_counts, bpm_min, bpm_max
     """
     ensure_folder_indexed(folder)
-    return cache_db.get_filter_values(
+    return cache.get_filter_values(
         folder.resolve(),
         recursive=recursive,
         search_query=search_query,

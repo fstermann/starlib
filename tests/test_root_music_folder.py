@@ -183,7 +183,7 @@ def test_api_put_root_folder_valid(tmp_path: Path) -> None:
         settings_svc.load()
         with (
             patch("backend.core.services.app_settings.set_root_music_folder") as mock_set,
-            patch("backend.core.services.watcher.restart_watcher") as mock_restart,
+            patch("backend.infra.watcher.restart_watcher") as mock_restart,
         ):
             client = TestClient(app)
             resp = client.put("/api/settings/root-folder", json={"root_music_folder": str(tmp_path)})

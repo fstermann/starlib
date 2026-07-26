@@ -17,9 +17,10 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from backend.core.services import app_settings as app_settings_service
-from backend.core.services import cache_db, sc_auth_cache
-from backend.core.services.sc_oauth import OAuthManager
-from backend.sc_settings import get_settings
+from backend.infra import cache
+from backend.infra.soundcloud import token_cache
+from backend.infra.soundcloud.oauth import OAuthManager
+from backend.infra.soundcloud.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +99,11 @@ def _validate_library_folder(folder: str) -> Path:
 def get_local_candidates(folder: str, recursive: bool = True) -> LocalCandidatesResponse:
     """Return indexed-but-unanalyzed tracks in `folder` for the batch runner.
 
-    Filters to tracks with `bpm IS NULL` in cache_db. `recursive=True` (default)
+    Filters to tracks with `bpm IS NULL` in the cache DB. `recursive=True` (default)
     walks subdirectories, matching the library view's usual display scope.
     """
     safe_folder = _validate_library_folder(folder)
-    paths = cache_db.get_tracks_missing_bpm(safe_folder, recursive=recursive)
+    paths = cache.get_tracks_missing_bpm(safe_folder, recursive=recursive)
     return LocalCandidatesResponse(file_paths=paths)
 
 
@@ -120,7 +121,7 @@ def save_local_bpm(payload: LocalBpmPayload) -> LocalBpmResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="BPM rounds to a non-positive integer",
         )
-    updated = cache_db.update_track_bpm(Path(payload.file_path), bpm_int)
+    updated = cache.update_track_bpm(Path(payload.file_path), bpm_int)
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -166,7 +167,7 @@ def save_soundcloud_bpm(payload: SoundcloudBpmPayload) -> SoundcloudBpmResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="BPM rounds to a non-positive integer",
         )
-    cache_db.upsert_sc_bpm(
+    cache.upsert_sc_bpm(
         track_id=payload.track_id,
         bpm=bpm_int,
         analyzed_at=time.time(),
@@ -178,7 +179,7 @@ def save_soundcloud_bpm(payload: SoundcloudBpmPayload) -> SoundcloudBpmResponse:
 @router.get("/soundcloud/{track_id}", response_model=SoundcloudBpmResponse | None)
 def get_soundcloud_bpm(track_id: int) -> SoundcloudBpmResponse | None:
     """Return the cached BPM for a SoundCloud track, or 404 if not analyzed."""
-    row = cache_db.get_sc_bpm(track_id)
+    row = cache.get_sc_bpm(track_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No cached BPM for this track")
     return SoundcloudBpmResponse(track_id=int(row["track_id"]), bpm=int(row["bpm"]))
@@ -195,7 +196,7 @@ class BulkBpmResponse(BaseModel):
 @router.post("/soundcloud/bulk", response_model=BulkBpmResponse)
 def get_soundcloud_bpms_bulk(payload: BulkBpmRequest) -> BulkBpmResponse:
     """Bulk lookup of cached SoundCloud BPMs by track_id."""
-    hits = cache_db.get_sc_bpms(payload.track_ids)
+    hits = cache.get_sc_bpms(payload.track_ids)
     return BulkBpmResponse(bpms={str(k): v for k, v in hits.items()})
 
 
@@ -213,7 +214,7 @@ def get_soundcloud_client_token() -> ClientTokenResponse:
             detail="SoundCloud OAuth credentials not configured",
         )
     try:
-        token = sc_auth_cache.get_cached_access_token(settings, OAuthManager)
+        token = token_cache.get_cached_access_token(settings, OAuthManager)
     except Exception as exc:
         logger.exception("Failed to acquire SoundCloud client-credentials token")
         raise HTTPException(

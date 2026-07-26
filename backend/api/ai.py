@@ -8,11 +8,11 @@ import logging
 
 from fastapi import APIRouter, HTTPException, status
 
-from backend.core.services import anthropic as anthropic_service
-from backend.core.services import claude_code as claude_code_service
-from backend.core.services import credentials
-from backend.core.services import ollama as ollama_service
 from backend.core.services import settings as settings_service
+from backend.infra import keychain
+from backend.infra.ai import anthropic as anthropic_service
+from backend.infra.ai import claude_code as claude_code_service
+from backend.infra.ai import ollama as ollama_service
 from backend.schemas.ai import (
     AiCredentialsRequest,
     AiModel,
@@ -40,7 +40,7 @@ def _settings_response() -> AiSettingsResponse:
         ollama=ai.ollama,
         anthropic=ai.anthropic,
         claude_code=ai.claude_code,
-        anthropic_has_api_key=credentials.has_anthropic_api_key(),
+        anthropic_has_api_key=keychain.has_anthropic_api_key(),
     )
 
 
@@ -94,7 +94,7 @@ async def get_status() -> AiStatusResponse:
             available=installed,
             claude_cli_installed=installed,
         )
-    has_key = credentials.has_anthropic_api_key()
+    has_key = keychain.has_anthropic_api_key()
     available = await anthropic_service.validate_api_key() if has_key else False
     return AiStatusResponse(
         provider="anthropic",
@@ -188,7 +188,7 @@ async def set_anthropic_credentials(body: AiCredentialsRequest) -> AiSettingsRes
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="API key must not be empty.",
         )
-    if not credentials.set_anthropic_api_key(body.api_key.strip()):
+    if not keychain.set_anthropic_api_key(body.api_key.strip()):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Keychain unavailable on this system.",
@@ -199,5 +199,5 @@ async def set_anthropic_credentials(body: AiCredentialsRequest) -> AiSettingsRes
 @router.delete("/anthropic/credentials", response_model=AiSettingsResponse)
 def delete_anthropic_credentials() -> AiSettingsResponse:
     """Remove the Anthropic API key from the OS keychain."""
-    credentials.delete_anthropic_api_key()
+    keychain.delete_anthropic_api_key()
     return _settings_response()

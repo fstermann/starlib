@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.core.db import engine as db_engine
-from backend.core.services import cache_db
+from backend.infra import cache
+from backend.infra.db import engine as db_engine
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def _reset_engine():
 
 def _fake_upsert(folder: Path, i: int) -> None:
     f = folder / f"t{i}.mp3"
-    cache_db.upsert_track(
+    cache.upsert_track(
         file_path=f,
         folder=folder,
         title=f"Track {i}",
@@ -50,7 +50,7 @@ def _fake_upsert(folder: Path, i: int) -> None:
 
 def test_concurrent_writes_and_reads(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
-    cache_db.init_db(db)
+    cache.init_db(db)
     folder = tmp_path / "music"
     folder.mkdir()
 
@@ -70,8 +70,8 @@ def test_concurrent_writes_and_reads(tmp_path: Path) -> None:
     def reader() -> None:
         try:
             while not stop.is_set():
-                cache_db.get_tracks(folder)
-                cache_db.get_stats(folder)
+                cache.get_tracks(folder)
+                cache.get_stats(folder)
         except BaseException as e:
             errors.append(e)
 
@@ -94,5 +94,5 @@ def test_concurrent_writes_and_reads(tmp_path: Path) -> None:
     assert not errors, f"errors under concurrent access: {errors[:3]}"
 
     # Final row count matches what the writer claimed to produce.
-    rows = cache_db.get_tracks(folder)
+    rows = cache.get_tracks(folder)
     assert len(rows) == writes

@@ -14,7 +14,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from backend.config import get_backend_settings
-from backend.core.services import cache_db
+from backend.infra import cache
 from backend.infra.audio.track_handler import TrackHandler
 
 logger = logging.getLogger(__name__)
@@ -65,8 +65,8 @@ class _MusicFolderHandler(FileSystemEventHandler):
     def on_deleted(self, event: FileSystemEvent) -> None:
         if not event.is_directory and self._is_audio(event.src_path):
             p = Path(event.src_path)
-            cache_db.delete_track(p)
-            cache_db.delete_peaks(p)
+            cache.delete_track(p)
+            cache.delete_peaks(p)
             _delete_artwork_cache(p)
             logger.info("Removed from index: %s", p.name)
 
@@ -76,7 +76,7 @@ class _MusicFolderHandler(FileSystemEventHandler):
         src = Path(event.src_path)
         dest = Path(event.dest_path)
         if self._is_audio(str(src)):
-            cache_db.delete_track(src)
+            cache.delete_track(src)
         if self._is_audio(str(dest)) and not self._is_ignored(str(dest)):
             self._schedule(str(dest), lambda: self._index(dest))
 
@@ -100,7 +100,7 @@ class _MusicFolderHandler(FileSystemEventHandler):
             if not track_info.artwork:
                 missing.append("artwork")
             sc_id = track_info.starlib_meta.soundcloud_id if track_info.starlib_meta else None
-            cache_db.upsert_track(
+            cache.upsert_track(
                 file_path=path,
                 folder=path.parent.resolve(),
                 title=track_info.title or None,

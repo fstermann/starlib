@@ -15,8 +15,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from backend.core.services import cache_db, rule_engine
 from backend.core.services import folder_config as folder_config_service
+from backend.core.services import rule_engine
 from backend.core.services import ruleset as ruleset_service
 from backend.domain.tags import SIMPLE_TAG_FIELDS, StarlibMeta, TrackInfo
 from backend.domain.titles import (
@@ -26,6 +26,7 @@ from backend.domain.titles import (
     remove_remix,
     replace_underscores,
 )
+from backend.infra import cache
 from backend.infra.audio.track_handler import TrackHandler
 
 logger = logging.getLogger(__name__)
@@ -491,7 +492,7 @@ def get_waveform_peaks(file_path: Path, cache_dir: Path, num_peaks: int = 200) -
         Normalized amplitude peaks in range [0, 1]
     """
     mtime = file_path.stat().st_mtime
-    cached = cache_db.get_peaks(file_path, mtime, num_peaks)
+    cached = cache.get_peaks(file_path, mtime, num_peaks)
     if cached is not None:
         return cached
 
@@ -532,5 +533,5 @@ def get_waveform_peaks(file_path: Path, cache_dir: Path, num_peaks: int = 200) -
     max_val = max(peaks) or 1.0
     normalized = [p / max_val for p in peaks]
 
-    cache_db.upsert_peaks(file_path, normalized, mtime)
+    cache.upsert_peaks(file_path, normalized, mtime)
     return normalized

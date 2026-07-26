@@ -16,8 +16,9 @@ from fastapi_pagination import Page, paginate
 
 from backend.api.deps import get_root_folder, validate_file_path, validate_folder_mode
 from backend.api.metadata._helpers import resolve_folder
-from backend.core.services import cache_db, collection, metadata
+from backend.core.services import collection, metadata
 from backend.domain.tags import SIMPLE_TAG_FIELDS, TrackInfo
+from backend.infra import cache
 from backend.infra.audio.folders import FILETYPE_MAP, FolderHandler
 from backend.infra.audio.track_handler import TrackHandler
 from backend.schemas.metadata import (
@@ -297,14 +298,14 @@ def get_folder_tree(
     filters (``None`` otherwise).
     """
     root_str = str(root_folder.resolve())
-    folder_counts = cache_db.get_folder_track_counts()
+    folder_counts = cache.get_folder_track_counts()
 
     has_filters = any(
         v is not None
         for v in (search, genres, keys, bpm_min, bpm_max, has_soundcloud_id, file_formats, size_min, size_max)
     )
     filtered_counts = (
-        cache_db.get_folder_track_counts(
+        cache.get_folder_track_counts(
             search_query=search,
             genres=genres,
             keys=keys,
@@ -771,7 +772,7 @@ def update_file_info(
 
     # Targeted cache update: remove old entry and re-index the (possibly renamed) file
     if new_path != resolved_path:
-        cache_db.delete_track(resolved_path)
+        cache.delete_track(resolved_path)
     collection.reindex_file(root_folder, new_path)
 
     return OperationResponse(
@@ -831,7 +832,7 @@ def batch_update_file_info(
                 metadata.add_artwork_to_track(new_path, root_folder, artwork_bytes)
 
             if new_path != resolved_path:
-                cache_db.delete_track(resolved_path)
+                cache.delete_track(resolved_path)
             collection.reindex_file(root_folder, new_path)
 
             results.append(
@@ -969,7 +970,7 @@ async def apply_rules_to_file(
         ) from e
 
     # Remove the old file from cache (it's been moved/converted)
-    cache_db.delete_track(resolved_path)
+    cache.delete_track(resolved_path)
 
     return ApplyRulesResponse(
         success=result["success"],
@@ -1011,7 +1012,7 @@ def delete_file(
         logger.exception("Failed to delete file")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file") from e
 
-    cache_db.delete_track(resolved_path)
+    cache.delete_track(resolved_path)
 
     return OperationResponse(
         success=True,

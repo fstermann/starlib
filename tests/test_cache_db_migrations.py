@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.core.db import engine as db_engine
-from backend.core.services import cache_db
+from backend.infra import cache
+from backend.infra.db import engine as db_engine
 
 
 @pytest.fixture(autouse=True)
@@ -46,7 +46,7 @@ def _cols(db: Path, table: str) -> set[str]:
 
 def test_fresh_db_upgrades_to_head(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
-    cache_db.init_db(db)
+    cache.init_db(db)
     assert _rev(db) == "0004"
     assert {"tracks", "peaks", "alembic_version"} <= _tables(db)
 
@@ -54,9 +54,9 @@ def test_fresh_db_upgrades_to_head(tmp_path: Path) -> None:
 def test_idempotent_restart(tmp_path: Path) -> None:
     """Running ``init_db`` twice must not raise or duplicate migrations."""
     db = tmp_path / "cache.db"
-    cache_db.init_db(db)
+    cache.init_db(db)
     first_rev = _rev(db)
-    cache_db.init_db(db)
+    cache.init_db(db)
     assert _rev(db) == first_rev
 
 
@@ -94,7 +94,7 @@ def test_legacy_db_bootstrap_then_head(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
     _write_legacy_db(db)
 
-    cache_db.init_db(db)
+    cache.init_db(db)
 
     # All post-#285 flat columns must have landed.
     tracks_cols = _cols(db, "tracks")
@@ -114,21 +114,21 @@ def test_legacy_db_bootstrap_then_head(tmp_path: Path) -> None:
 def test_backup_created_on_bootstrap(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
     _write_legacy_db(db)
-    cache_db.init_db(db)
+    cache.init_db(db)
     backups = list(tmp_path.glob("cache.bak-*.db"))
     assert len(backups) == 1, f"expected exactly one backup, got {backups}"
 
 
 def test_upsert_and_get_track_round_trip(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
-    cache_db.init_db(db)
+    cache.init_db(db)
 
     folder = tmp_path / "music"
     folder.mkdir()
     file_path = folder / "song.mp3"
     file_path.write_bytes(b"")
 
-    cache_db.upsert_track(
+    cache.upsert_track(
         file_path=file_path,
         folder=folder,
         title="Song",
@@ -152,7 +152,7 @@ def test_upsert_and_get_track_round_trip(tmp_path: Path) -> None:
         soundcloud_id=42,
     )
 
-    rows = cache_db.get_tracks(folder)
+    rows = cache.get_tracks(folder)
     assert len(rows) == 1
     row = rows[0]
     assert row["title"] == "Song"
@@ -165,13 +165,13 @@ def test_upsert_and_get_track_round_trip(tmp_path: Path) -> None:
 
 def test_search_filter_hits_flat_tag_columns(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
-    cache_db.init_db(db)
+    cache.init_db(db)
     folder = tmp_path / "music"
     folder.mkdir()
     (folder / "a.mp3").write_bytes(b"")
     (folder / "b.mp3").write_bytes(b"")
 
-    cache_db.upsert_track(
+    cache.upsert_track(
         file_path=folder / "a.mp3",
         folder=folder,
         title="One",
@@ -191,7 +191,7 @@ def test_search_filter_hits_flat_tag_columns(tmp_path: Path) -> None:
         remixer="x",
         mix_name=None,
     )
-    cache_db.upsert_track(
+    cache.upsert_track(
         file_path=folder / "b.mp3",
         folder=folder,
         title="Two",
@@ -213,11 +213,11 @@ def test_search_filter_hits_flat_tag_columns(tmp_path: Path) -> None:
     )
 
     # original_artist is in _SEARCH_COLS (registry.searchable = True)
-    hits_needle = cache_db.get_tracks(folder, search_query="Needle")
+    hits_needle = cache.get_tracks(folder, search_query="Needle")
     assert len(hits_needle) == 1 and hits_needle[0]["title"] == "One"
 
     # remixer is also searchable
-    hits_hay = cache_db.get_tracks(folder, search_query="Haystack")
+    hits_hay = cache.get_tracks(folder, search_query="Haystack")
     assert len(hits_hay) == 1 and hits_hay[0]["title"] == "Two"
 
 
@@ -231,7 +231,7 @@ def test_migration_0004_downgrade_upgrade_round_trip(tmp_path: Path) -> None:
     from alembic.config import Config
 
     db = tmp_path / "cache.db"
-    cache_db.init_db(db)
+    cache.init_db(db)
     assert _rev(db) == "0004"
 
     # Confirm the column is gone at head.
@@ -240,7 +240,7 @@ def test_migration_0004_downgrade_upgrade_round_trip(tmp_path: Path) -> None:
 
     # Point alembic at this scratch DB and go 0004 -> 0003 -> 0004.
     cfg = Config()
-    cfg.set_main_option("script_location", "backend/alembic")
+    cfg.set_main_option("script_location", "backend/infra/db/alembic")
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
 
     command.downgrade(cfg, "0003")
@@ -263,10 +263,10 @@ def test_migration_0004_downgrade_upgrade_round_trip(tmp_path: Path) -> None:
 
 def test_peaks_round_trip(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
-    cache_db.init_db(db)
+    cache.init_db(db)
     f = tmp_path / "a.mp3"
     f.write_bytes(b"")
-    cache_db.upsert_peaks(f, [0.1, 0.2, 0.3], 1.0)
-    assert cache_db.get_peaks(f, 1.0, num_peaks=3) == [0.1, 0.2, 0.3]
-    cache_db.delete_peaks(f)
-    assert cache_db.get_peaks(f, 1.0, num_peaks=3) is None
+    cache.upsert_peaks(f, [0.1, 0.2, 0.3], 1.0)
+    assert cache.get_peaks(f, 1.0, num_peaks=3) == [0.1, 0.2, 0.3]
+    cache.delete_peaks(f)
+    assert cache.get_peaks(f, 1.0, num_peaks=3) is None
