@@ -37,8 +37,8 @@ from typing import Any
 
 import requests
 
-from backend.core.services.sc_oauth import OAuthManager
-from backend.sc_settings import get_settings
+from backend.infra.soundcloud.oauth import OAuthManager
+from backend.infra.soundcloud.settings import get_settings
 
 logger = logging.getLogger("build_bpm_fixture")
 

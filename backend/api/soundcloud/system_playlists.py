@@ -4,7 +4,7 @@ Exposes the user's generated mixes (Weekly Wave, Daily Drops, Your Mix 1..N)
 to the frontend. These live exclusively on SoundCloud's internal
 ``api-v2.soundcloud.com``; the public API does not index them. Access
 requires the web-session ``oauth_token`` cookie, which the desktop shell
-captures via :func:`backend.api.auth.save_session_cookie`.
+captures via :func:`backend.api.soundcloud.auth.save_session_cookie`.
 
 If no ``OAUTH_TOKEN`` is configured, every endpoint here returns 404 so
 the frontend can cleanly hide the "Mixes" section.
