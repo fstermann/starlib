@@ -26,23 +26,31 @@ _TIMEOUT = 5.0  # seconds for health/model requests
 
 # One client for the process — a fresh AsyncClient per call discards the
 # connection pool and re-handshakes against the local Ollama server.
+#
+# Keyed on the running loop, not merely cached: pooled connections belong to
+# the loop that opened them, so reusing a client across loops raises
+# "Event loop is closed".
 _client: httpx.AsyncClient | None = None
+_client_loop: asyncio.AbstractEventLoop | None = None
 
 
 def get_client() -> httpx.AsyncClient:
-    """Return the shared client, creating it on first use."""
-    global _client
-    if _client is None or _client.is_closed:
+    """Return the shared client for the running loop, creating it on first use."""
+    global _client, _client_loop
+    loop = asyncio.get_running_loop()
+    if _client is None or _client.is_closed or _client_loop is not loop:
         _client = httpx.AsyncClient(timeout=_TIMEOUT)
+        _client_loop = loop
     return _client
 
 
 async def close_client() -> None:
     """Close the shared client. Called on application shutdown."""
-    global _client
+    global _client, _client_loop
     if _client is not None and not _client.is_closed:
         await _client.aclose()
     _client = None
+    _client_loop = None
 
 
 # Process lifecycle — only set when *we* spawned Ollama.
