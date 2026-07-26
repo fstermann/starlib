@@ -32,20 +32,31 @@ The backend is a **FastAPI** application responsible for:
 - SoundCloud OAuth 2.1 token exchange and refresh (keeps `client_secret` server-side)
 - Proxying SoundCloud API requests
 - Metadata editing and track management
-- Audio file handling and caching
+- Reading the Rekordbox library (local install or mounted USB export)
+- Rulesets, metadata suggestions, and AI provider configuration
+- Audio file handling and caching, backed by a SQLite database
 
 ```
 backend/
-├── api/           # Route handlers
-│   ├── auth.py    # OAuth endpoints
-│   ├── deps.py    # Dependency injection
-│   └── metadata/  # Metadata editing routes
-├── core/          # Business logic
-│   └── services/  # Domain services
-├── schemas/       # Pydantic request/response models
-├── config.py      # Settings (env vars)
-└── main.py        # Application entry point
+├── api/               # Route handlers
+│   ├── auth.py        # OAuth endpoints
+│   ├── deps.py        # Dependency injection
+│   ├── rekordbox.py   # Rekordbox browse source
+│   ├── ai.py          # AI provider configuration
+│   └── metadata/      # Metadata editing routes
+├── core/              # Business logic
+│   ├── audio/         # Tags, folders, titles
+│   ├── db/            # SQLite engine, models, migrations
+│   ├── domain/        # Domain types
+│   └── services/      # Domain services
+├── schemas/           # Pydantic request/response models
+├── alembic/           # Database migrations
+├── soundcloud_tools/  # Vendored SoundCloud client + models
+├── config.py          # Settings (env vars)
+└── main.py            # Application entry point
 ```
+
+See the [Backend](backend.md) page for the full module map.
 
 ## Frontend (`frontend/`)
 
@@ -54,12 +65,13 @@ The frontend is a **Next.js / React** application built with TypeScript and shad
 ```
 frontend/src/
 ├── app/           # Next.js app router pages
-│   ├── auth/      # OAuth callback handling
-│   ├── library/   # Library — filesystem + SoundCloud sources
+│   ├── auth/      # Login + OAuth callback handling
+│   ├── library/   # Library — filesystem, SoundCloud, Rekordbox sources
 │   ├── weekly/    # Weekly favorites
+│   ├── design/    # Dev-only design system showcase
 │   └── setup/     # Initial setup flow
 ├── components/    # Reusable UI components
-├── generated/     # Auto-generated SoundCloud API types
+├── generated/     # Auto-generated SoundCloud + backend API types
 └── lib/           # Utilities and helpers
 ```
 

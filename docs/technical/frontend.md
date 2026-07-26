@@ -19,12 +19,22 @@ frontend/src/
 ├── app/               # Next.js app router
 │   ├── layout.tsx     # Root layout
 │   ├── page.tsx       # Home page
-│   ├── auth/          # OAuth callback page
-│   ├── library/       # Library page (filesystem + SoundCloud sources)
+│   ├── auth/          # Login + OAuth callback pages
+│   ├── library/       # Library page (filesystem, SoundCloud, Rekordbox sources)
 │   ├── weekly/        # Weekly favorites
+│   ├── design/        # Dev-only design system showcase
 │   └── setup/         # Initial setup flow
 ├── components/        # UI components (shadcn/ui based)
-├── generated/         # Auto-generated types from SoundCloud API
+│   ├── command-palette/  # Palette shell, useCommand hook, providers
+│   ├── track-table/      # Shared table used by every library source
+│   ├── track-editor/     # Metadata editor
+│   ├── filters/          # Filter toolbar + per-source adapters
+│   ├── columns/          # Column visibility and sorting
+│   ├── rulesets/         # Ruleset editor
+│   ├── tree/             # Folder / playlist tree views
+│   ├── layout/           # Top bar and navigation chrome
+│   └── ui/               # shadcn primitives — leave their token vocabulary alone
+├── generated/         # Auto-generated types (SoundCloud + backend OpenAPI)
 └── lib/               # Utilities and helpers
 ```
 
@@ -32,25 +42,34 @@ frontend/src/
 
 The SoundCloud API types in `src/generated/soundcloud.ts` are auto-generated from the [SoundCloud OpenAPI spec](https://developers.soundcloud.com/docs/api/explorer/api.json) using [openapi-typescript](https://openapi-ts.dev/).
 
+The backend's own types in `src/generated/backend.ts` are generated the same way, from the FastAPI OpenAPI schema.
+
 To regenerate:
 
 ```bash
-npm run generate
+npm run generate              # SoundCloud + backend
+npm run generate:soundcloud   # SoundCloud only
 ```
 
 !!! warning
 
-    Do not edit `src/generated/soundcloud.ts` manually; it will be overwritten on regeneration.
+    Do not edit anything under `src/generated/` manually; it will be overwritten on regeneration.
+
+!!! note "The spec beats the generated types"
+
+    The [SoundCloud OpenAPI explorer](https://developers.soundcloud.com/docs/api/explorer/open-api) is authoritative. The generated types can lag or simplify the real schema (e.g. omitting envelope fields like a like/repost `created_at`) — trust the spec and hand-write the missing shape if needed.
 
 ## Key pages
 
 | Route | Description |
 |-------|-------------|
 | `/` | Home / collection browser |
+| `/auth/login` | SoundCloud login entry point |
 | `/auth/soundcloud/callback` | OAuth callback handler |
-| `/library` | Library — filesystem metadata editor + SoundCloud likes/playlists browser (source chosen via `?source=filesystem\|soundcloud`) |
+| `/library` | Library — filesystem metadata editor, SoundCloud likes/playlists browser, or Rekordbox collection (source chosen via `?source=filesystem\|soundcloud\|rekordbox`) |
 | `/weekly` | Weekly favorites from followed artists |
 | `/setup` | Initial setup and SoundCloud connection |
+| `/design` | Dev-only showcase of the design system (see `DESIGN.md`) |
 
 ## Command palette
 
