@@ -16,11 +16,11 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from backend.core.services import app_settings as app_settings_service
 from backend.infra import cache
 from backend.infra.soundcloud import token_cache
 from backend.infra.soundcloud.oauth import OAuthManager
 from backend.infra.soundcloud.settings import get_settings
+from backend.services import app_settings as app_settings_service
 
 logger = logging.getLogger(__name__)
 

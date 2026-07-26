@@ -45,7 +45,7 @@ def test_moves_recent_audio_into_destination(
 
     dest = tmp_music_folder / "prepare"
 
-    with patch("backend.api.metadata.files.collection.reindex_file"):
+    with patch("backend.api.metadata.files.indexing.reindex_file"):
         resp = patched_client.post(
             "/api/metadata/folders/fetch-from-downloads",
             json={"dest_path": str(dest), "window_days": 1},
@@ -73,7 +73,7 @@ def test_skips_files_already_present(
     dest = tmp_music_folder / "prepare"
     _touch(dest / "track.mp3")  # collision
 
-    with patch("backend.api.metadata.files.collection.reindex_file"):
+    with patch("backend.api.metadata.files.indexing.reindex_file"):
         resp = patched_client.post(
             "/api/metadata/folders/fetch-from-downloads",
             json={"dest_path": str(dest), "window_days": 7},
@@ -121,7 +121,7 @@ def test_post_with_file_names_only_moves_selected(
     _touch(downloads / "drop.mp3")
     dest = tmp_music_folder / "prepare"
 
-    with patch("backend.api.metadata.files.collection.reindex_file"):
+    with patch("backend.api.metadata.files.indexing.reindex_file"):
         resp = patched_client.post(
             "/api/metadata/folders/fetch-from-downloads",
             json={

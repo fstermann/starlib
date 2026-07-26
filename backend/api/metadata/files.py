@@ -16,7 +16,6 @@ from fastapi_pagination import Page, paginate
 
 from backend.api.deps import get_root_folder, validate_file_path, validate_folder_mode
 from backend.api.metadata._helpers import resolve_folder
-from backend.core.services import collection, metadata
 from backend.domain.tags import SIMPLE_TAG_FIELDS, TrackInfo
 from backend.infra import cache
 from backend.infra.audio.folders import FILETYPE_MAP, FolderHandler
@@ -41,6 +40,8 @@ from backend.schemas.metadata import (
     TrackInfoUpdateRequest,
 )
 from backend.schemas.tree import TreeNode
+from backend.services import metadata
+from backend.services.collection import folders, indexing, query
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +230,7 @@ def fetch_from_downloads(
             continue
 
         try:
-            collection.reindex_file(resolved_root, target)
+            indexing.reindex_file(resolved_root, target)
         except Exception:
             logger.exception("Failed to reindex %s after move", target)
         moved.append(src.name)
@@ -375,10 +376,10 @@ def browse_by_path(
             detail="Path is outside the music library root.",
         ) from e
 
-    collection.ensure_folder_indexed(folder_path, root_folder=resolved_root)
+    indexing.ensure_folder_indexed(folder_path, root_folder=resolved_root)
 
     try:
-        pairs = collection.list_and_filter_tracks(
+        pairs = query.list_and_filter_tracks(
             folder=folder_path,
             search_query=search,
             genres=genres,
@@ -417,7 +418,7 @@ def browse_by_path(
             **_row_to_browse_dict(row),
         )
 
-    if collection.is_indexing(folder_path):
+    if indexing.is_indexing(folder_path):
         response.headers["X-Cache-Loading"] = "true"
 
     return paginate(pairs, transformer=lambda items: [to_browse_response(p) for p in items])
@@ -449,9 +450,9 @@ def browse_path_filter_values(
             detail="Path is outside the music library root.",
         ) from e
 
-    collection.ensure_folder_indexed(folder_path, root_folder=resolved_root)
+    indexing.ensure_folder_indexed(folder_path, root_folder=resolved_root)
 
-    result = collection.get_folder_filter_values(
+    result = query.get_folder_filter_values(
         folder_path,
         recursive=recursive,
         search_query=search,
@@ -509,14 +510,14 @@ def list_folder_files(
     else:
         folder_path = root_folder
 
-    is_valid, _ = collection.validate_folder(folder_path)
+    is_valid, _ = folders.validate_folder(folder_path)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Folder does not exist",
         )
 
-    files = [f for f in collection.list_audio_files(folder_path) if f.suffix != ".asd"]
+    files = [f for f in folders.list_audio_files(folder_path) if f.suffix != ".asd"]
 
     def to_file_info(f: Path) -> FileInfoResponse:
         return FileInfoResponse(
@@ -567,7 +568,7 @@ def browse_folder_files(
     folder_path = resolve_folder(mode, root_folder)
 
     try:
-        pairs = collection.list_and_filter_tracks(
+        pairs = query.list_and_filter_tracks(
             folder=folder_path,
             search_query=search,
             genres=genres,
@@ -605,7 +606,7 @@ def browse_folder_files(
             **_row_to_browse_dict(row),
         )
 
-    if collection.is_indexing(folder_path):
+    if indexing.is_indexing(folder_path):
         response.headers["X-Cache-Loading"] = "true"
 
     return paginate(pairs, transformer=lambda items: [to_browse_response(p) for p in items])
@@ -641,7 +642,7 @@ def get_folder_filter_values(
     folder_path = resolve_folder(mode, root_folder)
 
     try:
-        values = collection.get_folder_filter_values(
+        values = query.get_folder_filter_values(
             folder_path,
             search_query=search,
             genres=genres,
@@ -773,7 +774,7 @@ def update_file_info(
     # Targeted cache update: remove old entry and re-index the (possibly renamed) file
     if new_path != resolved_path:
         cache.delete_track(resolved_path)
-    collection.reindex_file(root_folder, new_path)
+    indexing.reindex_file(root_folder, new_path)
 
     return OperationResponse(
         success=True,
@@ -833,7 +834,7 @@ def batch_update_file_info(
 
             if new_path != resolved_path:
                 cache.delete_track(resolved_path)
-            collection.reindex_file(root_folder, new_path)
+            indexing.reindex_file(root_folder, new_path)
 
             results.append(
                 BatchResultItem(

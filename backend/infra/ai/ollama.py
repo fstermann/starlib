@@ -17,8 +17,8 @@ import subprocess
 
 import httpx
 
-from backend.core.services import settings as settings_service
 from backend.schemas.ollama import OllamaModel
+from backend.services import settings_store as settings_service
 
 logger = logging.getLogger(__name__)
 

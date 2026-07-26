@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from backend.core.services import ruleset as svc
 from backend.schemas.ruleset import Rule
+from backend.services import ruleset as svc
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -19,7 +19,7 @@ def _patch_paths(tmp_path: Path):
     config_dir.mkdir()
     settings_file = config_dir / "settings.json"
     return patch.multiple(
-        "backend.core.services.settings",
+        "backend.services.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
     )
@@ -52,7 +52,7 @@ def test_load_rulesets_always_includes_classic(tmp_path: Path) -> None:
     )
 
     with patch.multiple(
-        "backend.core.services.settings",
+        "backend.services.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
     ):

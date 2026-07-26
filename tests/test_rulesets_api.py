@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.api.rulesets import router as rulesets_router
-from backend.core.services import ruleset as svc
+from backend.services import ruleset as svc
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -22,7 +22,7 @@ def patched_paths(tmp_path: Path):
     config_dir.mkdir()
     settings_file = config_dir / "settings.json"
     with patch.multiple(
-        "backend.core.services.settings",
+        "backend.services.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
     ):

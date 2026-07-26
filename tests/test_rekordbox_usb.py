@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.core.services.rekordbox import RekordboxUnavailable, UsbExportSource
-from backend.core.services.rekordbox.usb import _DEVICE_LIBRARY_KEY
+from backend.services.rekordbox import RekordboxUnavailable, UsbExportSource
+from backend.services.rekordbox.usb import _DEVICE_LIBRARY_KEY
 
 sqlite = pytest.importorskip("sqlcipher3").dbapi2
 
@@ -220,7 +220,7 @@ def usb_client(device: Path, monkeypatch: pytest.MonkeyPatch):
     from starlette.testclient import TestClient
 
     from backend.api.rekordbox import router
-    from backend.core.services import rekordbox as rb_service
+    from backend.services import rekordbox as rb_service
 
     dev = rb_service.UsbDevice(id=str(device), label=device.name, mount_path=str(device))
     monkeypatch.setattr(rb_service, "discover_usb_devices", lambda: [dev])
@@ -262,7 +262,7 @@ def test_api_unknown_device_is_503(usb_client) -> None:
 
 def test_api_eject_success_forgets_cached_source(usb_client, monkeypatch) -> None:
     client, dev_id = usb_client
-    from backend.core.services import rekordbox as rb_service
+    from backend.services import rekordbox as rb_service
 
     calls: list[str] = []
     monkeypatch.setattr(rb_service, "eject_device", calls.append)
@@ -278,7 +278,7 @@ def test_api_eject_success_forgets_cached_source(usb_client, monkeypatch) -> Non
 
 def test_api_eject_busy_is_409(usb_client, monkeypatch) -> None:
     client, dev_id = usb_client
-    from backend.core.services import rekordbox as rb_service
+    from backend.services import rekordbox as rb_service
 
     def boom(_: str) -> None:
         raise rb_service.EjectError("Volume in use")
@@ -296,8 +296,8 @@ def test_api_eject_unknown_device_is_404(usb_client) -> None:
 
 
 def test_eject_device_raises_on_nonzero_exit(monkeypatch) -> None:
-    from backend.core.services.rekordbox import EjectError
-    from backend.core.services.rekordbox import devices as dev_mod
+    from backend.services.rekordbox import EjectError
+    from backend.services.rekordbox import devices as dev_mod
 
     class _Result:
         returncode = 1

@@ -8,9 +8,9 @@ The three legacy service modules ([app_settings.py][1], [ruleset.py][2],
 [folder_config.py][3]) are now thin facades that read/write through this
 module. Centralising the file lets us load and persist all sections atomically.
 
-[1]: backend/core/services/app_settings.py
-[2]: backend/core/services/ruleset.py
-[3]: backend/core/services/folder_config.py
+[1]: backend/services/app_settings.py
+[2]: backend/services/ruleset.py
+[3]: backend/services/folder_config.py
 """
 
 import json

@@ -27,11 +27,11 @@ from backend.api.soundcloud import router as soundcloud_router
 from backend.api.suggestions import router as suggestions_router
 from backend.api.system_playlists import router as system_playlists_router
 from backend.config import get_backend_settings
-from backend.core.services import app_settings as app_settings_service
-from backend.core.services import folder_config as folder_config_service
-from backend.core.services.collection import ensure_folder_indexed
 from backend.infra import cache, watcher
 from backend.infra.ai import ollama as ollama_service
+from backend.services import app_settings as app_settings_service
+from backend.services import folder_config as folder_config_service
+from backend.services.collection.indexing import ensure_folder_indexed
 
 # Log to stdout so the Tauri sidecar captures and writes everything to backend.log.
 logging.basicConfig(

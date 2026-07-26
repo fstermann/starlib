@@ -10,8 +10,8 @@ import struct
 
 from pyrekordbox.anlz.file import XOR_MASK
 
-from backend.core.services.rekordbox import analysis as A
-from backend.core.services.rekordbox.base import extract_pwv3, extract_pwv5
+from backend.services.rekordbox import analysis as A
+from backend.services.rekordbox.base import extract_pwv3, extract_pwv5
 
 
 def _anlz(*tags: bytes) -> bytes:

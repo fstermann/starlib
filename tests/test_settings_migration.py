@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.core.services import settings as settings_service
+from backend.services import settings_store as settings_service
 
 
 def test_legacy_ollama_block_moves_under_ai(tmp_path: Path) -> None:

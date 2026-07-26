@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from backend.core.services import profile_group as svc
 from backend.schemas.profile_group import ProfileGroupMember
+from backend.services import profile_group as svc
 
 
 def _patch_paths(tmp_path: Path):
@@ -15,7 +15,7 @@ def _patch_paths(tmp_path: Path):
     config_dir.mkdir()
     settings_file = config_dir / "settings.json"
     return patch.multiple(
-        "backend.core.services.settings",
+        "backend.services.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
     )

@@ -9,10 +9,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.api.ai import router
-from backend.core.services import settings as settings_service
 from backend.infra.ai import ollama as ollama_service
 from backend.schemas.ai import AiSettings, OllamaSettings
 from backend.schemas.settings import Settings
+from backend.services import settings_store as settings_service
 
 pytestmark = pytest.mark.integration
 

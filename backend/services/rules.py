@@ -102,7 +102,7 @@ def _dispatch(rule: Rule, input_path: Path, root_folder: Path, messages: list[st
 def _run_convert(input_path: Path, root_folder: Path, params: dict, messages: list[str]) -> dict[str, Path]:
     from typing import Literal, cast
 
-    from backend.core.services import app_settings as app_settings_service
+    from backend.services import app_settings as app_settings_service
 
     AudioFormat = Literal["mp3", "aiff"]
     raw_format: str = params.get("format", "preferred")

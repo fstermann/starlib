@@ -3,8 +3,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from backend.core.services.rule_engine import execute_ruleset
 from backend.schemas.ruleset import Rule, Ruleset
+from backend.services.rules import execute_ruleset
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -26,7 +26,7 @@ def test_rule_skipped_when_input_unavailable(tmp_path: Path) -> None:
     audio.write_bytes(b"fake")
 
     move_mock = MagicMock()
-    with patch("backend.core.services.rule_engine._run_move", move_mock):
+    with patch("backend.services.rules._run_move", move_mock):
         result = execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,
@@ -51,8 +51,8 @@ def test_rule_runs_when_input_resolves(tmp_path: Path) -> None:
     handler_mock.move_to.return_value = tmp_path / "cleaned" / "track.aiff"
 
     with (
-        patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock),
-        patch("backend.core.services.app_settings.get_preferred_output_format", return_value="aiff"),
+        patch("backend.services.rules.TrackHandler", return_value=handler_mock),
+        patch("backend.services.app_settings.get_preferred_output_format", return_value="aiff"),
     ):
         result = execute_ruleset(
             file_path=audio,
@@ -75,7 +75,7 @@ def test_rule_skipped_when_required_ref_missing(tmp_path: Path) -> None:
 
     handler_mock = MagicMock()  # convert is a no-op (already aiff) → no `converted` output
 
-    with patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock):
+    with patch("backend.services.rules.TrackHandler", return_value=handler_mock):
         result = execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,
@@ -108,8 +108,8 @@ def test_rule_runs_when_required_ref_present(tmp_path: Path) -> None:
     handler_mock.copy_to.return_value = tmp_path / "archive" / "track.wav"
 
     with (
-        patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock),
-        patch("backend.core.services.app_settings.get_preferred_output_format", return_value="aiff"),
+        patch("backend.services.rules.TrackHandler", return_value=handler_mock),
+        patch("backend.services.app_settings.get_preferred_output_format", return_value="aiff"),
     ):
         execute_ruleset(
             file_path=audio,
@@ -135,7 +135,7 @@ def test_source_input_runs_unconditionally(tmp_path: Path) -> None:
     audio.write_bytes(b"fake")
 
     move_mock = MagicMock(return_value={"moved": tmp_path / "cleaned" / "track.aiff"})
-    with patch("backend.core.services.rule_engine._run_move", move_mock):
+    with patch("backend.services.rules._run_move", move_mock):
         execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,
@@ -158,7 +158,7 @@ def test_convert_exposes_original_alias(tmp_path: Path) -> None:
     audio.write_bytes(b"fake")
 
     handler_mock = MagicMock()
-    with patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock):
+    with patch("backend.services.rules.TrackHandler", return_value=handler_mock):
         result = execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,
@@ -183,7 +183,7 @@ def test_convert_exposes_converted_on_success(tmp_path: Path) -> None:
     handler_mock = MagicMock()
     handler_mock.convert.return_value = converted
 
-    with patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock):
+    with patch("backend.services.rules.TrackHandler", return_value=handler_mock):
         result = execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,
@@ -206,7 +206,7 @@ def test_convert_skips_when_handler_returns_none(tmp_path: Path) -> None:
     handler_mock = MagicMock()
     handler_mock.convert.return_value = None
 
-    with patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock):
+    with patch("backend.services.rules.TrackHandler", return_value=handler_mock):
         result = execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,
@@ -229,7 +229,7 @@ def test_copy_exposes_original_and_copy(tmp_path: Path) -> None:
     handler_mock = MagicMock()
     handler_mock.copy_to.return_value = tmp_path / "archive" / "track.aiff"
 
-    with patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock):
+    with patch("backend.services.rules.TrackHandler", return_value=handler_mock):
         result = execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,
@@ -251,7 +251,7 @@ def test_move_produces_moved_output(tmp_path: Path) -> None:
     handler_mock = MagicMock()
     handler_mock.move_to.return_value = new_path
 
-    with patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock):
+    with patch("backend.services.rules.TrackHandler", return_value=handler_mock):
         result = execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,
@@ -279,9 +279,9 @@ def test_convert_resolves_preferred_from_app_settings(tmp_path: Path) -> None:
     handler_mock.copy_tags_to.return_value = None
 
     with (
-        patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock),
+        patch("backend.services.rules.TrackHandler", return_value=handler_mock),
         patch(
-            "backend.core.services.app_settings.get_preferred_output_format",
+            "backend.services.app_settings.get_preferred_output_format",
             return_value="mp3",
         ),
     ):
@@ -304,7 +304,7 @@ def test_convert_uses_explicit_format(tmp_path: Path) -> None:
     handler_mock = MagicMock()
     handler_mock.convert.return_value = converted
 
-    with patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock):
+    with patch("backend.services.rules.TrackHandler", return_value=handler_mock):
         execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,
@@ -368,7 +368,7 @@ def test_classic_workflow_conversion_happened(tmp_path: Path) -> None:
     handler_mock.copy_tags_to.return_value = None
     handler_mock.move_to.side_effect = lambda folder: folder / "track.aiff"
 
-    with patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock):
+    with patch("backend.services.rules.TrackHandler", return_value=handler_mock):
         result = execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,
@@ -392,7 +392,7 @@ def test_classic_workflow_no_conversion(tmp_path: Path) -> None:
     handler_mock = MagicMock()
     handler_mock.move_to.return_value = cleaned_path
 
-    with patch("backend.core.services.rule_engine.TrackHandler", return_value=handler_mock):
+    with patch("backend.services.rules.TrackHandler", return_value=handler_mock):
         result = execute_ruleset(
             file_path=audio,
             root_folder=tmp_path,

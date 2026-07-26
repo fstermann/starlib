@@ -10,8 +10,9 @@ from fastapi.responses import FileResponse
 
 from backend.api.deps import get_root_folder, validate_file_path
 from backend.config import get_backend_settings
-from backend.core.services import collection, metadata
 from backend.schemas.metadata import OperationResponse
+from backend.services import metadata
+from backend.services.collection import indexing
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ async def update_file_artwork(
             detail="Failed to embed artwork",
         ) from e
 
-    collection.invalidate_cache()
+    indexing.invalidate_cache()
 
     return OperationResponse(
         success=True,
@@ -164,7 +165,7 @@ def delete_file_artwork(
             detail="Failed to remove artwork",
         ) from e
 
-    collection.invalidate_cache()
+    indexing.invalidate_cache()
 
     return OperationResponse(
         success=True,

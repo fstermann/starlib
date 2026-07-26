@@ -8,8 +8,8 @@ from pathlib import Path
 
 from fastapi import HTTPException, status
 
-from backend.core.services import app_settings as app_settings_service
 from backend.infra import cache
+from backend.services import app_settings as app_settings_service
 
 
 def get_root_folder() -> Path:

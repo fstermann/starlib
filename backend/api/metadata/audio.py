@@ -13,10 +13,10 @@ from fastapi.responses import FileResponse
 
 from backend.api.deps import get_root_folder, validate_file_path
 from backend.config import get_backend_settings
-from backend.core.services import metadata
-from backend.core.services.metadata import _find_ffmpeg
 from backend.infra import cache
 from backend.schemas.metadata import PeaksResponse
+from backend.services import metadata
+from backend.services.metadata import _find_ffmpeg
 
 logger = logging.getLogger(__name__)
 

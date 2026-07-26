@@ -7,12 +7,12 @@ groups; deleting the active group clears ``active_group_id``.
 import uuid
 from datetime import UTC, datetime
 
-from backend.core.services import settings as settings_service
 from backend.schemas.profile_group import (
     ProfileGroup,
     ProfileGroupMember,
     ProfileGroupsConfig,
 )
+from backend.services import settings_store as settings_service
 
 __all__ = [
     "create_group",

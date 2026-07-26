@@ -6,9 +6,9 @@ Persists into ``settings.json`` via [settings.py](settings.py). The built-in
 
 import uuid
 
-from backend.core.services import settings as settings_service
-from backend.core.services.settings import _CLASSIC_RULESET, CLASSIC_RULESET_ID
 from backend.schemas.ruleset import RequiredAttribute, Rule, Ruleset, RulesetsConfig
+from backend.services import settings_store as settings_service
+from backend.services.settings_store import _CLASSIC_RULESET, CLASSIC_RULESET_ID
 
 __all__ = [
     "CLASSIC_RULESET_ID",

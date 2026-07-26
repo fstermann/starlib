@@ -15,9 +15,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from backend.core.services import folder_config as folder_config_service
-from backend.core.services import rule_engine
-from backend.core.services import ruleset as ruleset_service
 from backend.domain.tags import SIMPLE_TAG_FIELDS, StarlibMeta, TrackInfo
 from backend.domain.titles import (
     remove_double_spaces,
@@ -28,6 +25,9 @@ from backend.domain.titles import (
 )
 from backend.infra import cache
 from backend.infra.audio.track_handler import TrackHandler
+from backend.services import folder_config as folder_config_service
+from backend.services import rules as rule_engine
+from backend.services import ruleset as ruleset_service
 
 logger = logging.getLogger(__name__)
 

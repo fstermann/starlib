@@ -3,8 +3,8 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.core.services import app_settings as app_settings_svc
-from backend.core.services import settings as settings_svc
+from backend.services import app_settings as app_settings_svc
+from backend.services import settings_store as settings_svc
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -16,7 +16,7 @@ def _patch_paths(tmp_path: Path):
     config_dir.mkdir()
     settings_file = config_dir / "settings.json"
     return patch.multiple(
-        "backend.core.services.settings",
+        "backend.services.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
         _LEGACY_CONFIG_FILE=config_dir / "config.env",
@@ -44,7 +44,7 @@ def test_migration_reads_root_from_config_env(tmp_path: Path) -> None:
     )
 
     with patch.multiple(
-        "backend.core.services.settings",
+        "backend.services.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
         _LEGACY_CONFIG_FILE=config_env,
@@ -69,7 +69,7 @@ def test_migration_removes_key_from_config_env(tmp_path: Path) -> None:
     )
 
     with patch.multiple(
-        "backend.core.services.settings",
+        "backend.services.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
         _LEGACY_CONFIG_FILE=config_env,
@@ -97,7 +97,7 @@ def test_migration_skipped_when_root_already_set(tmp_path: Path) -> None:
     )
 
     with patch.multiple(
-        "backend.core.services.settings",
+        "backend.services.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
         _LEGACY_CONFIG_FILE=config_env,
@@ -122,7 +122,7 @@ def test_migration_falls_back_to_home_music_when_config_env_missing(tmp_path: Pa
     )
 
     with patch.multiple(
-        "backend.core.services.settings",
+        "backend.services.settings_store",
         _CONFIG_DIR=config_dir,
         _SETTINGS_FILE=settings_file,
         _LEGACY_CONFIG_FILE=config_env,
@@ -166,7 +166,7 @@ def test_api_get_root_folder(tmp_path: Path) -> None:
 
     with _patch_paths(tmp_path):
         settings_svc.load()  # init defaults
-        with patch("backend.core.services.app_settings.get_root_music_folder", return_value="/test/music"):
+        with patch("backend.services.app_settings.get_root_music_folder", return_value="/test/music"):
             client = TestClient(app)
             resp = client.get("/api/settings/root-folder")
 
@@ -182,7 +182,7 @@ def test_api_put_root_folder_valid(tmp_path: Path) -> None:
     with _patch_paths(tmp_path):
         settings_svc.load()
         with (
-            patch("backend.core.services.app_settings.set_root_music_folder") as mock_set,
+            patch("backend.services.app_settings.set_root_music_folder") as mock_set,
             patch("backend.infra.watcher.restart_watcher") as mock_restart,
         ):
             client = TestClient(app)

@@ -12,8 +12,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.core.services import app_settings as app_settings_service
-from backend.core.services import settings as settings_service
+from backend.services import app_settings as app_settings_service
+from backend.services import settings_store as settings_service
 
 
 def _patched(tmp_path: Path):
