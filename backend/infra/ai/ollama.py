@@ -24,6 +24,27 @@ logger = logging.getLogger(__name__)
 
 _TIMEOUT = 5.0  # seconds for health/model requests
 
+# One client for the process — a fresh AsyncClient per call discards the
+# connection pool and re-handshakes against the local Ollama server.
+_client: httpx.AsyncClient | None = None
+
+
+def get_client() -> httpx.AsyncClient:
+    """Return the shared client, creating it on first use."""
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=_TIMEOUT)
+    return _client
+
+
+async def close_client() -> None:
+    """Close the shared client. Called on application shutdown."""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+
+
 # Process lifecycle — only set when *we* spawned Ollama.
 _process: subprocess.Popen | None = None
 
@@ -50,9 +71,8 @@ def is_installed() -> bool:
 async def is_available() -> bool:
     """Return True if the Ollama server is reachable."""
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(f"{_base_url()}/api/tags")
-            return resp.status_code == 200
+        resp = await get_client().get(f"{_base_url()}/api/tags")
+        return resp.status_code == 200
     except (httpx.HTTPError, OSError):
         return False
 
@@ -152,18 +172,17 @@ for _sig in (signal.SIGTERM, signal.SIGINT):
 async def list_models() -> list[OllamaModel]:
     """Return models installed on the Ollama server."""
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(f"{_base_url()}/api/tags")
-            resp.raise_for_status()
-            data = resp.json()
-            return [
-                OllamaModel(
-                    name=m["name"],
-                    size=m.get("size", 0),
-                    digest=m.get("digest", ""),
-                )
-                for m in data.get("models", [])
-            ]
+        resp = await get_client().get(f"{_base_url()}/api/tags")
+        resp.raise_for_status()
+        data = resp.json()
+        return [
+            OllamaModel(
+                name=m["name"],
+                size=m.get("size", 0),
+                digest=m.get("digest", ""),
+            )
+            for m in data.get("models", [])
+        ]
     except (httpx.HTTPError, OSError) as exc:
         logger.warning("Failed to list Ollama models: %s", exc)
         return []
@@ -199,8 +218,9 @@ async def chat(
     if format:
         body["format"] = format
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(url, json=body)
-        resp.raise_for_status()
-        data = resp.json()
-        return data["message"]["content"]
+    # Generation is far slower than the metadata calls, so this one call
+    # overrides the client-wide timeout.
+    resp = await get_client().post(url, json=body, timeout=120.0)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["message"]["content"]

@@ -26,6 +26,27 @@ API_V2_BASE = "https://api-v2.soundcloud.com"
 # HTTP timeout for upstream SoundCloud calls. Overridable via env var for ops.
 TIMEOUT_SECONDS: float = float(os.environ.get("STARLIB_SC_HTTP_TIMEOUT", "15"))
 
+# One client for the process, so connections (and their TLS handshakes) are
+# reused across calls. Building a fresh AsyncClient per request throws the
+# pool away every time and makes every call pay a new handshake.
+_client: httpx.AsyncClient | None = None
+
+
+def get_client() -> httpx.AsyncClient:
+    """Return the shared client, creating it on first use."""
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=TIMEOUT_SECONDS)
+    return _client
+
+
+async def close_client() -> None:
+    """Close the shared client. Called on application shutdown."""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+
 
 def _headers(token: str, *, accept_json: bool) -> dict[str, str]:
     headers = {"Authorization": f"OAuth {token}"}
@@ -50,14 +71,13 @@ async def request(
     public API drops the Authorization header and returns 401 when those are
     present.
     """
-    async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
-        return await client.request(
-            method,
-            url,
-            params=params or None,
-            headers=_headers(token, accept_json=accept_json),
-            follow_redirects=follow_redirects,
-        )
+    return await get_client().request(
+        method,
+        url,
+        params=params or None,
+        headers=_headers(token, accept_json=accept_json),
+        follow_redirects=follow_redirects,
+    )
 
 
 async def get(
