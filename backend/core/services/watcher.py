@@ -13,6 +13,7 @@ from pathlib import Path
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from backend.config import get_backend_settings
 from backend.core.audio.tags import TrackHandler
 from backend.core.services import cache_db
 
@@ -159,8 +160,6 @@ def restart_watcher(new_root: Path) -> None:
 
 def _delete_artwork_cache(file_path: Path) -> None:
     """Remove the cached artwork file for *file_path*, if any."""
-    from backend.config import get_backend_settings
-
     settings = get_backend_settings()
     key = hashlib.sha256(str(file_path).encode()).hexdigest()
     cached = settings.cache_dir / "artwork" / f"{key}.jpg"

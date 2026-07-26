@@ -16,7 +16,7 @@ from mutagen.id3 import APIC, COMM, ID3, TBPM, TCON, TDRC, TDRL, TIT2, TIT3, TKE
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from backend.core.audio.folders import FILETYPE_MAP, load_tracks
-from backend.core.audio.titles import parse_date
+from backend.core.audio.titles import parse_date, rank_artists
 
 logger = logging.getLogger(__name__)
 
@@ -260,8 +260,6 @@ class TrackInfo(BaseModel):
     def sort_artists(
         cls, artists: set[str], title: str, type: Literal["artist", "original_artist", "remixer"]
     ) -> list[str]:
-        from backend.core.audio.titles import rank_artists
-
         return rank_artists(artists, title=title, role=type)
 
 
