@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   Ban,
+  Check,
   ChevronDown,
   Download,
   FolderCheck,
@@ -99,7 +100,20 @@ type SortKey =
   | "duration"
   | "playback_count"
   | "uploaded"
-  | "added";
+  | "added"
+  | "key_signature"
+  | "label_name"
+  | "released"
+  | "favoritings_count"
+  | "reposts_count"
+  | "comment_count"
+  | "download_count"
+  | "user_playback_count"
+  | "isrc"
+  | "license"
+  | "access"
+  | "sharing"
+  | "metadata_artist";
 type SortOrder = "asc" | "desc";
 
 /** A single source of truth for likes-table columns. Drives both the header
@@ -110,6 +124,9 @@ interface LikesCol {
   header: string;
   sortKey?: SortKey;
   required?: boolean;
+  /** Columns default to visible; the extended metadata columns opt out so the
+   *  table stays readable until the user enables them. */
+  defaultVisible?: boolean;
   defaultWidth: number;
   /** Style classes applied to the cell (no width — that's inline). */
   cellClassName: string;
@@ -243,6 +260,168 @@ const LIKES_COLUMNS: LikesCol[] = [
     renderBody: ({ track }) => <>{formatDate(track.addedAt)}</>,
   },
   {
+    id: "key_signature",
+    header: "Key",
+    sortKey: "key_signature",
+    defaultVisible: false,
+    defaultWidth: 64,
+    cellClassName: "text-muted-foreground shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.key_signature || "—"}</>,
+  },
+  {
+    id: "label_name",
+    header: "Label",
+    sortKey: "label_name",
+    defaultVisible: false,
+    defaultWidth: 140,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.label_name || "—"}</>,
+  },
+  {
+    id: "metadata_artist",
+    header: "Metadata artist",
+    sortKey: "metadata_artist",
+    defaultVisible: false,
+    defaultWidth: 160,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.metadata_artist || "—"}</>,
+  },
+  {
+    id: "tag_list",
+    header: "Tags",
+    defaultVisible: false,
+    defaultWidth: 200,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => {
+      const tags = parseTagList(track.tag_list);
+      if (!tags.length) return <>—</>;
+      return <span title={tags.join(", ")}>{tags.join(", ")}</span>;
+    },
+  },
+  {
+    id: "released",
+    header: "Released",
+    sortKey: "released",
+    defaultVisible: false,
+    defaultWidth: 96,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatRelease(track)}</>,
+  },
+  {
+    id: "favoritings_count",
+    header: "Likes",
+    sortKey: "favoritings_count",
+    defaultVisible: false,
+    defaultWidth: 64,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.favoritings_count)}</>,
+  },
+  {
+    id: "reposts_count",
+    header: "Reposts",
+    sortKey: "reposts_count",
+    defaultVisible: false,
+    defaultWidth: 72,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.reposts_count)}</>,
+  },
+  {
+    id: "comment_count",
+    header: "Comments",
+    sortKey: "comment_count",
+    defaultVisible: false,
+    defaultWidth: 80,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.comment_count)}</>,
+  },
+  {
+    id: "download_count",
+    header: "Downloads",
+    sortKey: "download_count",
+    defaultVisible: false,
+    defaultWidth: 84,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.download_count)}</>,
+  },
+  {
+    id: "user_playback_count",
+    header: "My plays",
+    sortKey: "user_playback_count",
+    defaultVisible: false,
+    defaultWidth: 72,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.user_playback_count)}</>,
+  },
+  {
+    id: "downloadable",
+    header: "DL",
+    defaultVisible: false,
+    defaultWidth: 40,
+    cellClassName: "text-muted-foreground shrink-0 flex justify-center",
+    renderBody: ({ track }) =>
+      track.downloadable || track.download_url ? (
+        <Check className="text-primary size-3.5" aria-label="Downloadable" />
+      ) : (
+        <>—</>
+      ),
+  },
+  {
+    id: "access",
+    header: "Access",
+    sortKey: "access",
+    defaultVisible: false,
+    defaultWidth: 80,
+    cellClassName: "text-muted-foreground shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.access || "—"}</>,
+  },
+  {
+    id: "sharing",
+    header: "Sharing",
+    sortKey: "sharing",
+    defaultVisible: false,
+    defaultWidth: 72,
+    cellClassName: "text-muted-foreground shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.sharing || "—"}</>,
+  },
+  {
+    id: "license",
+    header: "License",
+    sortKey: "license",
+    defaultVisible: false,
+    defaultWidth: 110,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.license || "—"}</>,
+  },
+  {
+    id: "isrc",
+    header: "ISRC",
+    sortKey: "isrc",
+    defaultVisible: false,
+    defaultWidth: 120,
+    cellClassName: "text-muted-foreground shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.isrc || "—"}</>,
+  },
+  {
+    id: "description",
+    header: "Description",
+    defaultVisible: false,
+    defaultWidth: 240,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => {
+      // Collapse newlines — SC descriptions are multi-line and a raw value
+      // would blow out the single-line row.
+      const text = track.description?.replace(/\s+/g, " ").trim();
+      if (!text) return <>—</>;
+      return <span title={track.description}>{text}</span>;
+    },
+  },
+  {
     id: "links",
     header: "Links",
     defaultWidth: 84,
@@ -293,6 +472,7 @@ export const LIKES_COLUMN_DEFS: ColumnDef[] = LIKES_COLUMNS.filter(
   id: c.id,
   header: c.header,
   required: c.required,
+  defaultVisible: c.defaultVisible,
 }));
 
 const LIKES_COLUMNS_BY_ID = new Map(LIKES_COLUMNS.map((c) => [c.id, c]));
@@ -330,6 +510,57 @@ function formatDate(value: string | undefined): string {
 
 function dateValue(value: string | undefined): number {
   return parseSCTimestamp(value) ?? 0;
+}
+
+/** Sort value per key. String accessors sort alphabetically, numeric ones
+ *  numerically; missing values collapse to `""`/`0` so they group together. */
+const SORT_ACCESSORS: Record<SortKey, (t: SCTrack) => string | number> = {
+  title: (t) => t.title ?? "",
+  artist: (t) => t.user?.username ?? "",
+  genre: (t) => t.genre ?? "",
+  duration: (t) => t.duration ?? 0,
+  playback_count: (t) => t.playback_count ?? 0,
+  uploaded: (t) => dateValue(t.created_at),
+  added: (t) => dateValue(t.addedAt),
+  key_signature: (t) => t.key_signature ?? "",
+  label_name: (t) => t.label_name ?? "",
+  released: releaseValue,
+  favoritings_count: (t) => t.favoritings_count ?? 0,
+  reposts_count: (t) => t.reposts_count ?? 0,
+  comment_count: (t) => t.comment_count ?? 0,
+  download_count: (t) => t.download_count ?? 0,
+  user_playback_count: (t) => t.user_playback_count ?? 0,
+  isrc: (t) => t.isrc ?? "",
+  license: (t) => t.license ?? "",
+  access: (t) => t.access ?? "",
+  sharing: (t) => t.sharing ?? "",
+  metadata_artist: (t) => t.metadata_artist ?? "",
+};
+
+/** Split SoundCloud's `tag_list` (space-separated, quotes around multi-word
+ *  tags) into individual tags. */
+function parseTagList(value: string | undefined): string[] {
+  if (!value) return [];
+  return Array.from(value.matchAll(/"([^"]*)"|(\S+)/g))
+    .map((m) => (m[1] ?? m[2] ?? "").trim())
+    .filter(Boolean);
+}
+
+/** Release date from SC's split `release_year`/`release_month`/`release_day`
+ *  fields. Falls back to just the year when month/day are missing. */
+function formatRelease(track: SCTrack): string {
+  const { release_year: y, release_month: m, release_day: d } = track;
+  if (!y) return "—";
+  if (!m) return String(y);
+  const mm = String(m).padStart(2, "0");
+  if (!d) return `${mm}.${y}`;
+  return `${String(d).padStart(2, "0")}.${mm}.${y}`;
+}
+
+function releaseValue(track: SCTrack): number {
+  const { release_year: y, release_month: m, release_day: d } = track;
+  if (!y) return 0;
+  return y * 10000 + (m ?? 0) * 100 + (d ?? 0);
 }
 
 function formatPlays(count: number | undefined): string {
@@ -755,6 +986,7 @@ function TrackRowInner({
           {visibleColumns.map((col) => (
             <div
               key={col.id}
+              data-column-id={col.id}
               className={col.cellClassName}
               style={{ width: col.width }}
             >
@@ -1050,7 +1282,10 @@ export function LikesTable({
       // true from isColumnVisible. Without this guard, callers that don't
       // pass a predicate would see an empty 32px column on every row.
       if (id === "source") return isColumnVisible?.(id) === true;
-      return isColumnVisible ? isColumnVisible(id) : true;
+      if (isColumnVisible) return isColumnVisible(id);
+      // No predicate (e.g. the weekly view): fall back to the column's own
+      // default so the extended metadata columns stay hidden.
+      return LIKES_COLUMNS_BY_ID.get(id)?.defaultVisible !== false;
     },
     [isColumnVisible],
   );
@@ -1088,31 +1323,14 @@ export function LikesTable({
 
   const sortedTracks = useMemo(() => {
     if (!sortBy) return tracks;
+    const accessor = SORT_ACCESSORS[sortBy];
     const sorted = [...tracks].sort((a, b) => {
-      let cmp = 0;
-      switch (sortBy) {
-        case "title":
-          cmp = (a.title ?? "").localeCompare(b.title ?? "");
-          break;
-        case "artist":
-          cmp = (a.user?.username ?? "").localeCompare(b.user?.username ?? "");
-          break;
-        case "genre":
-          cmp = (a.genre ?? "").localeCompare(b.genre ?? "");
-          break;
-        case "duration":
-          cmp = (a.duration ?? 0) - (b.duration ?? 0);
-          break;
-        case "playback_count":
-          cmp = (a.playback_count ?? 0) - (b.playback_count ?? 0);
-          break;
-        case "uploaded":
-          cmp = dateValue(a.created_at) - dateValue(b.created_at);
-          break;
-        case "added":
-          cmp = dateValue(a.addedAt) - dateValue(b.addedAt);
-          break;
-      }
+      const va = accessor(a);
+      const vb = accessor(b);
+      const cmp =
+        typeof va === "string"
+          ? va.localeCompare(vb as string)
+          : va - (vb as number);
       return sortOrder === "asc" ? cmp : -cmp;
     });
     return sorted;

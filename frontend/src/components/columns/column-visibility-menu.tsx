@@ -18,7 +18,7 @@ export interface ColumnVisibilityMenuProps {
   columns: ColumnDef[];
   isVisible: (id: string) => boolean;
   setHidden: (id: string, hidden: boolean) => void;
-  /** Restore all columns to visible. */
+  /** Restore every column to its default visibility. */
   onResetVisibility: () => void;
   /** Optional: reset the column order. Only shown when drag-reorder is wired. */
   onResetOrder?: () => void;

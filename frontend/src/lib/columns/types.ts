@@ -18,13 +18,21 @@ export interface ColumnDef {
 export interface ColumnPrefs {
   /** IDs of columns the user has explicitly hidden. */
   hidden: string[];
+  /** IDs of columns the user has explicitly shown. Only meaningful for
+   *  columns with `defaultVisible: false`. */
+  shown: string[];
   /** User-chosen column order by id. Empty means "use the defs' natural order". */
   order: string[];
   /** User-resized column widths by id (pixels). Missing = use default. */
   widths: Record<string, number>;
 }
 
-export const emptyPrefs: ColumnPrefs = { hidden: [], order: [], widths: {} };
+export const emptyPrefs: ColumnPrefs = {
+  hidden: [],
+  shown: [],
+  order: [],
+  widths: {},
+};
 
 /**
  * Applies a user order to a column list. Unknown ids in `order` are ignored;
@@ -55,5 +63,6 @@ export function applyOrder<T extends { id: string }>(
 export function isColumnVisible(col: ColumnDef, prefs: ColumnPrefs): boolean {
   if (col.required) return true;
   if (prefs.hidden.includes(col.id)) return false;
+  if (prefs.shown.includes(col.id)) return true;
   return col.defaultVisible !== false;
 }
