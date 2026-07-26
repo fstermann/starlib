@@ -22,8 +22,9 @@ nav = [
     { "Installation" = "guide/installation.md" },
     { "Setup" = "guide/setup.md" },
     { "Features" = "guide/features.md" },
+    { "Player" = "guide/player.md" },
     { "Command palette" = "guide/command-palette.md" },
-    { "Ollama" = "guide/ollama.md" },
+    { "AI providers" = "guide/ai.md" },
   ] },
   { "Technical" = [
     { "Overview" = "technical/index.md" },
