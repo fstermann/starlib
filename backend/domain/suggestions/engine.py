@@ -6,19 +6,24 @@ to the current value, sorts by confidence (with a deterministic source-priority
 tiebreak), and dedupes.
 
 Adding a new field = drop a suggester module under
-``backend.core.services.suggesters`` and register it in that package's
-``__init__``.
+``backend.domain.suggestions.suggesters`` and register it in
+``backend.domain.suggestions.registry``.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
 
+from backend.domain.filenames import parse_filename
+from backend.domain.suggestions.registry import REGISTRY
+from backend.domain.suggestions.types import (
+    ParsedFilename,
+    ParsedSCTitle,
+    SuggestionContext,
+)
+from backend.domain.titles import get_first_artist, get_mix_arist, get_mix_name, is_remix
 from backend.schemas.suggestions import (
-    FieldName,
     FieldSuggestion,
     SCTrackPayload,
     SuggestionResponse,
@@ -26,62 +31,6 @@ from backend.schemas.suggestions import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Context
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ParsedFilename:
-    """Best-effort decomposition of a local audio file's stem."""
-
-    artist: str | None = None
-    title: str | None = None
-    remixer: str | None = None
-    mix_name: str | None = None
-
-
-@dataclass(frozen=True)
-class ParsedSCTitle:
-    """Heuristic parse of an SC track title (delegates to backend.core.audio.titles)."""
-
-    first_artist: str | None = None
-    mix_artist: str | None = None
-    mix_name: str | None = None
-    is_remix: bool = False
-
-
-@dataclass
-class SuggestionContext:
-    """Bundle of inputs handed to every suggester.
-
-    `current` is a plain dict of field → value pulled off the in-flight
-    `TrackInfoUpdateRequest`. Suggesters use it for two things: (a) to skip
-    proposing a value that already matches what's in the editor, and
-    (b) optionally to inform their heuristics (e.g. `is_remix(current.title)`).
-    """
-
-    file_path: Path
-    filename_parsed: ParsedFilename
-    current: dict[str, object]
-    sc_track: SCTrackPayload | None
-    sc_parsed: ParsedSCTitle | None
-
-
-# ---------------------------------------------------------------------------
-# Suggester protocol
-# ---------------------------------------------------------------------------
-
-
-class FieldSuggester(Protocol):
-    """One suggester per field. Field name is declared as a class attribute
-    so the registry stays trivial — no decorator dance."""
-
-    field: FieldName
-
-    def suggest(self, ctx: SuggestionContext) -> list[FieldSuggestion]: ...
 
 
 # Source-priority tiebreak. Lower value wins when confidences are equal.
@@ -150,10 +99,6 @@ def compute_suggestions(
     `.model_dump()` — we coerce to a plain dict so suggesters don't need to
     know about pydantic.
     """
-    # Local imports break a circular dep: suggesters import the engine for
-    # types, and the engine imports them for the registry.
-    from backend.core.services.suggesters import REGISTRY
-
     current_dict = current.model_dump(exclude_none=False) if hasattr(current, "model_dump") else dict(current or {})
 
     sc_parsed = _parse_sc_title(sc_track.title) if sc_track and sc_track.title else None
@@ -189,19 +134,12 @@ def compute_suggestions(
 
 
 # ---------------------------------------------------------------------------
-# Parsing entrypoints (defined here as thin wrappers so the engine has a
-# single import surface; real heuristics live in dedicated modules).
+# Parsing entrypoints — thin wrappers; the heuristics live in
+# backend.domain.titles and backend.domain.filenames.
 # ---------------------------------------------------------------------------
 
 
 def _parse_sc_title(title: str) -> ParsedSCTitle:
-    from backend.core.audio.titles import (
-        get_first_artist,
-        get_mix_arist,
-        get_mix_name,
-        is_remix,
-    )
-
     return ParsedSCTitle(
         first_artist=get_first_artist(title),
         mix_artist=get_mix_arist(title),
@@ -211,6 +149,4 @@ def _parse_sc_title(title: str) -> ParsedSCTitle:
 
 
 def _parse_filename_for_path(path: Path) -> ParsedFilename:
-    from backend.core.services.filename_parser import parse_filename
-
     return parse_filename(path.stem)

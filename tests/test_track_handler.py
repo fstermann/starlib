@@ -11,13 +11,13 @@ from pathlib import Path
 import pytest
 from mutagen.id3 import COMM, ID3, TIT2
 
-from backend.core.audio.tags import (
+from backend.domain.tags import (
     SIMPLE_TAG_FIELDS,
     SIMPLE_TAG_FIELDS_BY_NAME,
     StarlibMeta,
-    TrackHandler,
     TrackInfo,
 )
+from backend.infra.audio.track_handler import TrackHandler
 
 
 def _make_silent_mp3(path: Path) -> None:

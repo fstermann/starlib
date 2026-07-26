@@ -14,8 +14,8 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from backend.config import get_backend_settings
-from backend.core.audio.tags import TrackHandler
 from backend.core.services import cache_db
+from backend.infra.audio.track_handler import TrackHandler
 
 logger = logging.getLogger(__name__)
 

@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import re
 
-from backend.core.services.suggesters._base import candidate, compact
-from backend.core.services.suggestion_engine import SuggestionContext
+from backend.domain.suggestions.helpers import candidate, compact
+from backend.domain.suggestions.types import SuggestionContext
 from backend.schemas.suggestions import FieldName, FieldSuggestion
 
 # Strip any trailing paren group containing one of the mix keywords. Uses a

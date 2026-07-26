@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from backend.core.audio.tags import TrackHandler
+from backend.infra.audio.track_handler import TrackHandler
 from backend.schemas.ruleset import Rule, Ruleset
 
 logger = logging.getLogger(__name__)

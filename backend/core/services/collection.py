@@ -14,9 +14,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from backend.core.audio.folders import FolderHandler, load_tracks, load_tracks_recursive
-from backend.core.audio.tags import TrackHandler, TrackInfo
 from backend.core.services import cache_db
+from backend.domain.tags import TrackInfo
+from backend.infra.audio.folders import FolderHandler, load_tracks, load_tracks_recursive
+from backend.infra.audio.track_handler import TrackHandler
 
 logger = logging.getLogger(__name__)
 

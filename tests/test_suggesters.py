@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.core.services.suggestion_engine import compute_suggestions
+from backend.domain.suggestions.engine import compute_suggestions
 from backend.schemas.metadata import TrackInfoUpdateRequest
 from backend.schemas.suggestions import SCTrackPayload, SCUserPayload
 

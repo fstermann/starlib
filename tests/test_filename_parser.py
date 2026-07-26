@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend.core.services.filename_parser import parse_filename
+from backend.domain.filenames import parse_filename
 
 
 def test_simple_artist_title() -> None:

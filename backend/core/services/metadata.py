@@ -15,17 +15,18 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from backend.core.audio.tags import SIMPLE_TAG_FIELDS, StarlibMeta, TrackHandler, TrackInfo
-from backend.core.audio.titles import (
+from backend.core.services import cache_db, rule_engine
+from backend.core.services import folder_config as folder_config_service
+from backend.core.services import ruleset as ruleset_service
+from backend.domain.tags import SIMPLE_TAG_FIELDS, StarlibMeta, TrackInfo
+from backend.domain.titles import (
     remove_double_spaces,
     remove_free_dl,
     remove_mix,
     remove_remix,
     replace_underscores,
 )
-from backend.core.services import cache_db, rule_engine
-from backend.core.services import folder_config as folder_config_service
-from backend.core.services import ruleset as ruleset_service
+from backend.infra.audio.track_handler import TrackHandler
 
 logger = logging.getLogger(__name__)
 

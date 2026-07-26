@@ -9,8 +9,8 @@ existing ``artwork_data`` field on the metadata-update endpoint.
 
 from __future__ import annotations
 
-from backend.core.services.suggesters._base import candidate, compact
-from backend.core.services.suggestion_engine import SuggestionContext
+from backend.domain.suggestions.helpers import candidate, compact
+from backend.domain.suggestions.types import SuggestionContext
 from backend.schemas.suggestions import FieldName, FieldSuggestion
 
 

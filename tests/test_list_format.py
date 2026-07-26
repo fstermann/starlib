@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend.core.services.list_format import (
+from backend.domain.formatting import (
     aggregate_distinct,
     normalize_list,
     split_list,

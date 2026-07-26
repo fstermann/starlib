@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.core.audio.titles import rank_artists
+from backend.domain.titles import rank_artists
 
 
 def test_role_artist_non_remix_prefers_dash_prefix() -> None:
@@ -60,7 +60,7 @@ def test_blank_candidate_strings_score_zero() -> None:
 def test_legacy_wrapper_delegates() -> None:
     """``TrackInfo.sort_artists`` is now a thin wrapper around ``rank_artists``
     — make sure the contract still matches."""
-    from backend.core.audio.tags import TrackInfo
+    from backend.domain.tags import TrackInfo
 
     direct = rank_artists({"Foo", "Baz"}, title="Foo - Bar (Baz Remix)", role="artist")
     via = TrackInfo.sort_artists({"Foo", "Baz"}, "Foo - Bar (Baz Remix)", "artist")

@@ -16,9 +16,10 @@ from fastapi_pagination import Page, paginate
 
 from backend.api.deps import get_root_folder, validate_file_path, validate_folder_mode
 from backend.api.metadata._helpers import resolve_folder
-from backend.core.audio.folders import FILETYPE_MAP, FolderHandler
-from backend.core.audio.tags import SIMPLE_TAG_FIELDS, TrackHandler, TrackInfo
 from backend.core.services import cache_db, collection, metadata
+from backend.domain.tags import SIMPLE_TAG_FIELDS, TrackInfo
+from backend.infra.audio.folders import FILETYPE_MAP, FolderHandler
+from backend.infra.audio.track_handler import TrackHandler
 from backend.schemas.metadata import (
     ApplyRulesRequest,
     ApplyRulesResponse,
