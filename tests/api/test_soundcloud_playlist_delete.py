@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.api import soundcloud as soundcloud_api
+from backend.api.soundcloud import tracks as soundcloud_api
 
 
 class _MockAsyncClient:

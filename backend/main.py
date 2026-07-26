@@ -6,34 +6,15 @@ Configures FastAPI app with CORS, routes, and middleware.
 
 import logging
 import sys
-from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_pagination import add_pagination
 
-from backend.api.ai import router as ai_router
-from backend.api.app_settings import router as app_settings_router
-from backend.api.auth import router as auth_router
-from backend.api.bpm import router as bpm_router
-from backend.api.folder_config import router as folder_config_router
-from backend.api.metadata import router as metadata_router
-from backend.api.profile_groups import router as profile_groups_router
-from backend.api.rekordbox import router as rekordbox_router
-from backend.api.rulesets import router as rulesets_router
-from backend.api.setup import router as setup_router
-from backend.api.soundcloud import router as soundcloud_router
-from backend.api.suggestions import router as suggestions_router
-from backend.api.system_playlists import router as system_playlists_router
+from backend.api import router as api_router
 from backend.config import get_backend_settings
-from backend.infra import cache, watcher
-from backend.infra.ai import ollama as ollama_service
-from backend.services import app_settings as app_settings_service
-from backend.services import folder_config as folder_config_service
-from backend.services.collection.indexing import ensure_folder_indexed
+from backend.lifespan import lifespan
 
-# Log to stdout so the Tauri sidecar captures and writes everything to backend.log.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -41,32 +22,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    settings = get_backend_settings()
-    root = Path(app_settings_service.get_root_music_folder()).expanduser()
-
-    # Initialise SQLite cache (creates tables if first run)
-    cache.init_db(settings.cache_dir / "metadata.db")
-    cache.prune_missing_files()
-
-    # Start watchdog observer for real-time file change detection
-    watcher.start_watcher(root)
-
-    # Kick off initial mtime-comparison scan for each configured folder
-    folders_config = folder_config_service.load_folders()
-    for fc in folders_config.folders:
-        folder = Path(fc.path) if fc.path else root / fc.name
-        if folder.is_dir():
-            logger.info("Starting index scan for %s", folder)
-            ensure_folder_indexed(folder)
-
-    yield
-
-    ollama_service.shutdown()
-    watcher.stop_watcher()
 
 
 def create_app() -> FastAPI:
@@ -100,20 +55,7 @@ def create_app() -> FastAPI:
         expose_headers=["X-Cache-Loading"],
     )
 
-    # Register routers
-    app.include_router(setup_router)
-    app.include_router(auth_router)
-    app.include_router(metadata_router)
-    app.include_router(rulesets_router)
-    app.include_router(profile_groups_router)
-    app.include_router(folder_config_router)
-    app.include_router(app_settings_router)
-    app.include_router(ai_router)
-    app.include_router(soundcloud_router)
-    app.include_router(system_playlists_router)
-    app.include_router(bpm_router)
-    app.include_router(suggestions_router)
-    app.include_router(rekordbox_router)
+    app.include_router(api_router)
 
     add_pagination(app)
 
