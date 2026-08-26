@@ -40,3 +40,6 @@ site/
 /playwright-report/
 /blob-report/
 .claude/
+
+# ui-review local session artifacts
+.ui-review/

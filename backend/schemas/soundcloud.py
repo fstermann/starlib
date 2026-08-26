@@ -35,3 +35,15 @@ class SystemPlaylistsResponse(BaseModel):
 
 class SystemPlaylistTracksResponse(BaseModel):
     tracks: list[dict[str, Any]]
+
+
+class StationTracksResponse(BaseModel):
+    """Tracks of a track-station, in play order.
+
+    ``title`` is nullable: the api-v2 ``/related`` feed carries no station
+    name, so the backend leaves it ``None`` and the frontend supplies the
+    seed track's title for the header.
+    """
+
+    title: str | None = None
+    tracks: list[dict[str, Any]]

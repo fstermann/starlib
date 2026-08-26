@@ -220,7 +220,7 @@ export interface paths {
          *     handler exchanges the code for OAuth2 tokens as usual. *In addition*,
          *     the webview's cookie jar now holds the web-session ``oauth_token``,
          *     which the shell posts here. We persist it to ``config.env`` as
-         *     ``OAUTH_TOKEN`` so :class:`backend.sc_settings.Settings` picks
+         *     ``OAUTH_TOKEN`` so :class:`backend.infra.soundcloud.settings.Settings` picks
          *     it up on the next ``get_settings()`` call.
          */
         post: operations["save_session_cookie_auth_soundcloud_session_cookie_post"];
@@ -1561,6 +1561,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/soundcloud/stations/{seed_track_id}/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Station Tracks
+         * @description Return the tracks of the track-station seeded by ``seed_track_id``.
+         *
+         *     One api-v2 call bootstraps the station's slim track list; a second
+         *     ``/tracks?ids=`` call hydrates them to full Track payloads (title,
+         *     artwork, user), preserving the station's play order.
+         */
+        get: operations["get_station_tracks_api_soundcloud_stations__seed_track_id__tracks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/bpm/local/candidates": {
         parameters: {
             query?: never;
@@ -1572,7 +1596,7 @@ export interface paths {
          * Get Local Candidates
          * @description Return indexed-but-unanalyzed tracks in `folder` for the batch runner.
          *
-         *     Filters to tracks with `bpm IS NULL` in cache_db. `recursive=True` (default)
+         *     Filters to tracks with `bpm IS NULL` in the cache DB. `recursive=True` (default)
          *     walks subdirectories, matching the library view's usual display scope.
          */
         get: operations["get_local_candidates_api_bpm_local_candidates_get"];
@@ -2985,6 +3009,21 @@ export interface components {
             track_id: number;
             /** Bpm */
             bpm: number;
+        };
+        /**
+         * StationTracksResponse
+         * @description Tracks of a track-station, in play order.
+         *
+         *     ``title`` is the station's display name (SoundCloud names it after the
+         *     seed track, e.g. "Track station: <seed title>").
+         */
+        StationTracksResponse: {
+            /** Title */
+            title?: string | null;
+            /** Tracks */
+            tracks: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * StreamUrlResponse
@@ -5376,6 +5415,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemPlaylistTracksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_station_tracks_api_soundcloud_stations__seed_track_id__tracks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric id of the seed track */
+                seed_track_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StationTracksResponse"];
                 };
             };
             /** @description Validation Error */

@@ -16,6 +16,7 @@ from backend.api.rekordbox import router as rekordbox_router
 from backend.api.rulesets import router as rulesets_router
 from backend.api.setup import router as setup_router
 from backend.api.soundcloud.auth import router as auth_router
+from backend.api.soundcloud.stations import router as stations_router
 from backend.api.soundcloud.system_playlists import router as system_playlists_router
 from backend.api.soundcloud.tracks import router as soundcloud_router
 from backend.api.suggestions import router as suggestions_router
@@ -35,6 +36,7 @@ for _r in (
     ai_router,
     soundcloud_router,
     system_playlists_router,
+    stations_router,
     bpm_router,
     suggestions_router,
     rekordbox_router,
