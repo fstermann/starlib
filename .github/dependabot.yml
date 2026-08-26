@@ -6,46 +6,72 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 3
     groups:
       backend:
+        applies-to: version-updates
         patterns: ["*"]
         update-types: ["minor", "patch"]
+      backend-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   # npm - frontend
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 3
     groups:
       frontend:
+        applies-to: version-updates
         patterns: ["*"]
         update-types: ["minor", "patch"]
+      frontend-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   # npm - desktop
   - package-ecosystem: "npm"
     directory: "/desktop"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 3
     groups:
       desktop:
+        applies-to: version-updates
         patterns: ["*"]
         update-types: ["minor", "patch"]
+      desktop-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   # Cargo - Rust/Tauri
   - package-ecosystem: "cargo"
     directory: "/desktop/src-tauri"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 3
     groups:
       cargo:
+        applies-to: version-updates
         patterns: ["*"]
         update-types: ["minor", "patch"]
+      cargo-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 3
     groups:
       github-actions:
         patterns: ["*"]
@@ -56,6 +82,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 3
     groups:
       pre-commit:
         patterns: ["*"]
