@@ -17,7 +17,7 @@ dependencies = [
     "python-multipart>=0.0.32",
     "fastapi-pagination>=0.15.16",
     "watchdog>=4.0.0",
-    "platformdirs>=4.11.3",
+    "platformdirs>=4.11.5",
     "sqlmodel>=0.0.39",
     "alembic>=1.19.1",
     "anthropic>=0.120.0",
@@ -27,7 +27,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.16.4",
+    "ruff>=0.16.5",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
