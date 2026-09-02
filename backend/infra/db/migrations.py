@@ -28,7 +28,8 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import Engine, inspect
+from sqlalchemy import Connection, Engine, inspect
+from sqlalchemy.engine.reflection import Inspector
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,17 @@ def run_migrations(engine: Engine, db_path: Path) -> None:
         if has_legacy:
             logger.info("stamping cache DB at revision %s", _BASELINE_REV)
             command.stamp(cfg, _BASELINE_REV)
+        elif _current_revision(conn) == "0004":
+            adopted_revision = _detect_unstamped_analyser_revision(conn)
+            if adopted_revision is not None:
+                # Early analyser builds created these tables before their
+                # Alembic revision was recorded. Adopt the schema in place so
+                # upgrading does not try to recreate tables or discard jobs.
+                logger.info(
+                    "adopting existing analyser schema at revision %s",
+                    adopted_revision,
+                )
+                command.stamp(cfg, adopted_revision)
         command.upgrade(cfg, "head")
 
     # Log what we landed on — useful in crash reports and helps users verify
@@ -68,6 +80,66 @@ def run_migrations(engine: Engine, db_path: Path) -> None:
     with engine.connect() as conn:
         rev = MigrationContext.configure(conn).get_current_revision()
     logger.info("cache DB migrations complete; current revision %s", rev)
+
+
+def _current_revision(conn: Connection) -> str | None:
+    """Return the database's currently stamped Alembic revision."""
+    return MigrationContext.configure(conn).get_current_revision()
+
+
+def _detect_unstamped_analyser_revision(conn: Connection) -> str | None:
+    """Infer a complete PR-era analyser schema that was never stamped.
+
+    Detection is intentionally conservative: every table introduced by 0005
+    must exist before a later revision is adopted. A partial migration is left
+    alone so Alembic surfaces it instead of silently blessing unknown state.
+    """
+    inspector = inspect(conn)
+    tables = set(inspector.get_table_names())
+    base = {"analyser_jobs", "analyser_window_bpm", "analyser_sections"}
+    if not base <= tables:
+        return None
+
+    if "analyser_tracks" in tables and "analyser_shazam_scans" in tables:
+        return _detect_track_schema_revision(inspector)
+    if "analyser_track_overrides" in tables and "analyser_shazam_scans" in tables:
+        return _detect_override_schema_revision(inspector)
+    if "analyser_shazam_scans" in tables:
+        return _detect_scan_schema_revision(inspector)
+    if "analyser_track_ids" in tables:
+        return "0005"
+    return None
+
+
+def _columns(inspector: Inspector, table: str) -> set[str]:
+    """Return column names for an inspected table."""
+    return {column["name"] for column in inspector.get_columns(table)}
+
+
+def _detect_track_schema_revision(inspector: Inspector) -> str:
+    """Infer revision 0010-0013 from the mutable track table."""
+    track_columns = _columns(inspector, "analyser_tracks")
+    if "preview_url" in track_columns:
+        return "0013"
+    if {"set_bpm", "pitch_offset"} <= track_columns:
+        return "0012"
+    if "tier" in _columns(inspector, "analyser_shazam_scans"):
+        return "0011"
+    return "0010"
+
+
+def _detect_override_schema_revision(inspector: Inspector) -> str:
+    """Infer revision 0008-0009 from the legacy override table."""
+    if "duration_s" in _columns(inspector, "analyser_track_overrides"):
+        return "0009"
+    return "0008"
+
+
+def _detect_scan_schema_revision(inspector: Inspector) -> str:
+    """Infer revision 0006-0007 from the Shazam scan table."""
+    if {"preview_url", "artwork_url"} <= _columns(inspector, "analyser_shazam_scans"):
+        return "0007"
+    return "0006"
 
 
 # ---------------------------------------------------------------------------
