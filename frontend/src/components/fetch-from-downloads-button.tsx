@@ -172,7 +172,7 @@ export function FetchFromDownloadsButton({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2">
+          <div className="min-w-0 space-y-3 py-2">
             <Label className="text-muted-foreground text-xs">Time window</Label>
             <ToggleGroup
               type="single"
@@ -245,7 +245,10 @@ export function FetchFromDownloadsButton({
                         data-testid="fetch-preview-item"
                         data-excluded={isExcluded ? "true" : "false"}
                       >
-                        <span className="flex-1 truncate" title={c.name}>
+                        <span
+                          className="min-w-0 flex-1 truncate"
+                          title={c.name}
+                        >
                           {c.name}
                         </span>
                         <button
@@ -258,7 +261,7 @@ export function FetchFromDownloadsButton({
                               return next;
                             })
                           }
-                          className="text-muted-foreground hover:text-foreground rounded p-0.5"
+                          className="text-muted-foreground hover:text-foreground shrink-0 rounded p-0.5"
                           aria-label={
                             isExcluded
                               ? `Include ${c.name}`

@@ -15,7 +15,14 @@ import {
   type ScBpmUpdatedDetail,
 } from "@/components/soundcloud-batch-analyze-button";
 import { claimPlayback, releasePlayback } from "@/lib/exclusive-audio";
+import {
+  DEFAULT_MIX_CONFIG,
+  MIX_CONFIG_KEY,
+  normalizeMixConfig,
+  type MixConfig,
+} from "@/lib/mix/config";
 import { useIsScUnplayable } from "@/lib/sc-unplayable";
+import { getRaw, setRaw } from "@/lib/settings";
 
 export interface PlayerTrack {
   filePath: string;
@@ -42,17 +49,66 @@ export interface PlayerTrack {
    * SoundCloud tracks, the CDN `artwork_url`. Surfaced to the OS media
    * widget via the Media Session API. */
   artworkUrl?: string;
+  /** Rekordbox track id with an analyzed waveform. When set, the player
+   * derives its peaks from the Rekordbox PWV4 preview (a ~2ms fetch)
+   * instead of decoding the audio file via ffmpeg. */
+  rekordboxId?: string;
+  /** Selected Rekordbox USB device id, if this track comes from a mounted
+   * export. Threads through to the PWV4 waveform fetch so it targets the
+   * device rather than the local install. */
+  rekordboxDevice?: string;
+  /** Musical key (e.g. "8A", "Fm"), when known. Shown next to the BPM. */
+  musicalKey?: string;
 }
 
 interface PlayerContextValue {
   currentTrack: PlayerTrack | null;
+  /** The track that is actually audible right now. Equals `currentTrack`
+   * except during the second half of an auto-mix crossfade, when the next
+   * queue entry is already playing at (or past) equal gain while
+   * `currentTrack` — which keys the player's own decode/init — stays put until
+   * the fade completes. Track lists mark their "now playing" row from this so
+   * the highlight follows the sound instead of lagging a whole fade behind. */
+  activeTrack: PlayerTrack | null;
+  /** The full play queue (past + current + upcoming). Consumed by the queue
+   * panel to render the "next up" list; slice from `queueIndex + 1` for the
+   * not-yet-played tail. Per-entry identity is `${index}:${filePath}` — the
+   * same file can appear more than once, so filePath alone is not unique. */
+  queue: PlayerTrack[];
+  /** Position of `currentTrack` in the queue (-1 when nothing is loaded).
+   * Queues can hold the same file twice in a row, so per-entry identity is
+   * `${queueIndex}:${filePath}` — filePath alone is not unique. */
+  queueIndex: number;
   isPlaying: boolean;
   /** Load a single track without playing. Replaces the queue with [track]. */
   load: (track: PlayerTrack) => void;
   /** Play a single track. Replaces the queue with [track]. */
   play: (track: PlayerTrack) => void;
-  /** Replace the queue with `tracks` and start playback at `index`. */
-  playQueue: (tracks: PlayerTrack[], index: number) => void;
+  /** Replace the queue with `tracks` and start playback at `index`. When
+   * `startRatio` is provided, playback begins at that offset (0–1) — applied
+   * as soon as the new track is decoded. */
+  playQueue: (
+    tracks: PlayerTrack[],
+    index: number,
+    startRatio?: number,
+  ) => void;
+  /** Replace the not-yet-played tail of the queue (every entry after the
+   * current index) without disturbing the current track or its index, and mark
+   * the queue user-managed. Used by the queue panel's reorder/remove — a
+   * deliberate hand-edit that should stick, so it also freezes out
+   * `reconcileUpcoming`. No-op when nothing is loaded. */
+  replaceUpcoming: (upcoming: PlayerTrack[]) => void;
+  /** Like `replaceUpcoming`, but a no-op once the queue has been hand-edited
+   * (add/play-next/reorder/remove). The visible-list views call this to keep
+   * autoplay in step with sort/filter changes — without clobbering a queue the
+   * user has taken manual control of. A fresh `playQueue` re-enables it. */
+  reconcileUpcoming: (upcoming: PlayerTrack[]) => void;
+  /** Append a track to the end of the queue; starts playback if nothing is
+   * loaded. Marks the queue user-managed. */
+  enqueue: (track: PlayerTrack) => void;
+  /** Insert a track immediately after the current one; starts playback if
+   * nothing is loaded. Marks the queue user-managed. */
+  playNext: (track: PlayerTrack) => void;
   pause: () => void;
   toggle: (track?: PlayerTrack) => void;
   stop: () => void;
@@ -60,6 +116,9 @@ interface PlayerContextValue {
   seek: (ratio: number) => void;
   /** Advance to the next track in the queue. No-op at end. */
   next: () => void;
+  /** Jump playback to an arbitrary queue index and play. No-op when the index
+   * is out of range or already current. Used by the queue panel's click-to-play. */
+  jumpTo: (index: number) => void;
   /** Go to previous track, or restart current if playback is past 3s. */
   previous: () => void;
   /** Peek at the next queued track without advancing. Used by the player
@@ -87,6 +146,13 @@ interface PlayerContextValue {
   /** When true, playback is pitched to `targetBpm / currentBpm`. Persisted. */
   pitchEnabled: boolean;
   setPitchEnabled: (enabled: boolean) => void;
+  /** Auto-mix (crossfade) configuration. Persisted to the UI store. */
+  mixConfig: MixConfig;
+  setMixConfig: (config: MixConfig) => void;
+  /** WaveformPlayer reports whether a running crossfade has passed its
+   * midpoint — the point where the incoming (next) queue entry becomes the
+   * audible track. Drives `activeTrack`. */
+  reportCrossfadeMidpoint: (reached: boolean) => void;
 }
 
 const PITCH_TARGET_KEY = "starlib.pitcher.targetBpm";
@@ -108,6 +174,25 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [currentBpm, setCurrentBpmState] = useState<number | null>(null);
   const [targetBpm, setTargetBpmState] = useState<number>(DEFAULT_TARGET_BPM);
   const [pitchEnabled, setPitchEnabledState] = useState<boolean>(false);
+  const [mixConfig, setMixConfigState] =
+    useState<MixConfig>(DEFAULT_MIX_CONFIG);
+  // True while a crossfade is past its midpoint: the next queue entry is the
+  // audible track, but `queueIndex` hasn't advanced yet (that happens when the
+  // fade completes and the rebuilt player adopts the incoming deck).
+  const [crossfadePastMid, setCrossfadePastMid] = useState(false);
+
+  // Hydrate the auto-mix config from the UI store on mount.
+  useEffect(() => {
+    getRaw<MixConfig | null>(MIX_CONFIG_KEY, null)
+      .then((raw) => setMixConfigState(normalizeMixConfig(raw)))
+      .catch(() => {});
+  }, []);
+
+  const setMixConfig = useCallback((config: MixConfig) => {
+    const next = normalizeMixConfig(config);
+    setMixConfigState(next);
+    setRaw(MIX_CONFIG_KEY, next).catch(() => {});
+  }, []);
 
   // Hydrate pitcher prefs from localStorage. Done in an effect to keep SSR
   // safe — the initial server render gets the defaults and the client
@@ -144,11 +229,28 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const queueRef = useRef<PlayerTrack[]>([]);
   const queueIndexRef = useRef(-1);
+  // True once the user has hand-edited the queue (add/play-next/reorder/remove).
+  // Freezes out `reconcileUpcoming` so the visible-list views stop rewriting a
+  // queue the user is curating. Reset by `playQueue` (a fresh auto queue).
+  const userManagedRef = useRef(false);
   const progressRef = useRef(0);
   const progressCallbacksRef = useRef<Set<(p: number) => void>>(new Set());
   const seekFnRef = useRef<((ratio: number) => void) | null>(null);
+  // Seek that was requested before the next track finished decoding. Applied
+  // by `registerSeek` once the player wires the real seek fn.
+  const pendingSeekRef = useRef<number | null>(null);
 
   const currentTrack = queueIndex >= 0 ? (queue[queueIndex] ?? null) : null;
+  // See `activeTrack` on PlayerContextValue: the audible track, which leads
+  // `currentTrack` by one entry during a crossfade's second half.
+  const activeTrack =
+    crossfadePastMid && queueIndex >= 0 && queueIndex + 1 < queue.length
+      ? (queue[queueIndex + 1] ?? currentTrack)
+      : currentTrack;
+
+  const reportCrossfadeMidpoint = useCallback((reached: boolean) => {
+    setCrossfadePastMid(reached);
+  }, []);
 
   // Re-seed `currentBpm` whenever the loaded track changes. If the caller
   // supplied a `bpm` hint on the PlayerTrack, use it; otherwise reset to
@@ -171,21 +273,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return Number.isFinite(n) && n > 0 ? n : null;
   })();
 
-  // Keep `currentBpm` in sync with manual edits/reanalysis from the SC table
-  // cells. Without this the pitcher keeps using the stale value and the
-  // playback rate doesn't track the user's correction.
-  useEffect(() => {
-    if (currentScId == null) return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<ScBpmUpdatedDetail>).detail;
-      if (detail?.trackId === currentScId) {
-        setCurrentBpmState(detail.bpm);
-      }
-    };
-    window.addEventListener(SC_BPM_UPDATED_EVENT, handler);
-    return () => window.removeEventListener(SC_BPM_UPDATED_EVENT, handler);
-  }, [currentScId]);
-
   const setQueueState = useCallback((tracks: PlayerTrack[], index: number) => {
     queueRef.current = tracks;
     queueIndexRef.current = index;
@@ -193,11 +280,121 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setQueueIndex(index);
   }, []);
 
+  // Keep `currentBpm` AND queue-entry BPM hints in sync with edits/reanalysis
+  // from the SC table cells or the auto-mix arm step. Without the queue patch,
+  // a track whose BPM was resolved while queued (to pitch the incoming
+  // crossfade deck) would reseed to "unknown" when it becomes current — and
+  // the pitcher would audibly snap the rate to 1 before re-detecting.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<ScBpmUpdatedDetail>).detail;
+      if (!detail) return;
+      let changed = false;
+      const patched = queueRef.current.map((t) => {
+        const k = t.streamRefreshKey;
+        const n = typeof k === "number" ? k : Number(k);
+        if (
+          Number.isFinite(n) &&
+          n === detail.trackId &&
+          t.bpm !== detail.bpm
+        ) {
+          changed = true;
+          return { ...t, bpm: detail.bpm };
+        }
+        return t;
+      });
+      if (changed) setQueueState(patched, queueIndexRef.current);
+      if (currentScId != null && detail.trackId === currentScId) {
+        setCurrentBpmState(detail.bpm);
+      }
+    };
+    window.addEventListener(SC_BPM_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(SC_BPM_UPDATED_EVENT, handler);
+  }, [currentScId, setQueueState]);
+
   const playQueue = useCallback(
-    (tracks: PlayerTrack[], index: number) => {
+    (tracks: PlayerTrack[], index: number, startRatio?: number) => {
       if (tracks.length === 0 || index < 0 || index >= tracks.length) return;
+      // The about-to-unmount player's seek fn isn't valid for the new track,
+      // so drop it here. The new fn lands via `registerSeek` once ready.
+      seekFnRef.current = null;
+      pendingSeekRef.current =
+        startRatio != null && startRatio > 0
+          ? Math.max(0, Math.min(1, startRatio))
+          : null;
+      // A fresh queue from a play action returns to auto mode: the visible-list
+      // views may reconcile its tail again.
+      userManagedRef.current = false;
       setQueueState(tracks, index);
       setIsPlaying(true);
+    },
+    [setQueueState],
+  );
+
+  // Swap the tail after the current entry, keeping the current track and its
+  // index untouched so the player never re-decodes (its init effect keys on
+  // `${queueIndex}:${filePath}`). The preserved head is sliced from the live
+  // queue, so `currentTrack`'s object identity is unchanged too.
+  const setUpcoming = useCallback(
+    (upcoming: PlayerTrack[]) => {
+      const idx = queueIndexRef.current;
+      if (idx < 0) return;
+      const currentTail = queueRef.current.slice(idx + 1);
+      const unchanged =
+        currentTail.length === upcoming.length &&
+        currentTail.every((t, i) => t.filePath === upcoming[i]?.filePath);
+      if (unchanged) return;
+      const head = queueRef.current.slice(0, idx + 1);
+      setQueueState([...head, ...upcoming], idx);
+    },
+    [setQueueState],
+  );
+
+  // A deliberate hand-edit: apply it and freeze out auto-reconciliation.
+  const replaceUpcoming = useCallback(
+    (upcoming: PlayerTrack[]) => {
+      userManagedRef.current = true;
+      setUpcoming(upcoming);
+    },
+    [setUpcoming],
+  );
+
+  // Auto-reconcile from the visible list — skipped once the user is curating.
+  const reconcileUpcoming = useCallback(
+    (upcoming: PlayerTrack[]) => {
+      if (userManagedRef.current) return;
+      setUpcoming(upcoming);
+    },
+    [setUpcoming],
+  );
+
+  const enqueue = useCallback(
+    (track: PlayerTrack) => {
+      userManagedRef.current = true;
+      const idx = queueIndexRef.current;
+      if (idx < 0 || queueRef.current.length === 0) {
+        seekFnRef.current = null;
+        setQueueState([track], 0);
+        setIsPlaying(true);
+        return;
+      }
+      setQueueState([...queueRef.current, track], idx);
+    },
+    [setQueueState],
+  );
+
+  const playNext = useCallback(
+    (track: PlayerTrack) => {
+      userManagedRef.current = true;
+      const idx = queueIndexRef.current;
+      if (idx < 0 || queueRef.current.length === 0) {
+        seekFnRef.current = null;
+        setQueueState([track], 0);
+        setIsPlaying(true);
+        return;
+      }
+      const q = queueRef.current;
+      setQueueState([...q.slice(0, idx + 1), track, ...q.slice(idx + 1)], idx);
     },
     [setQueueState],
   );
@@ -244,7 +441,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [setQueueState]);
 
   const seek = useCallback((ratio: number) => {
-    seekFnRef.current?.(ratio);
+    const clamped = Math.max(0, Math.min(1, ratio));
+    if (seekFnRef.current) {
+      seekFnRef.current(clamped);
+    } else {
+      // Defer until the next track's seek fn is wired by `registerSeek`.
+      pendingSeekRef.current = clamped;
+    }
   }, []);
 
   const next = useCallback(() => {
@@ -252,6 +455,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (nextIdx < 0 || nextIdx >= queueRef.current.length) return;
     queueIndexRef.current = nextIdx;
     setQueueIndex(nextIdx);
+    setIsPlaying(true);
+  }, []);
+
+  const jumpTo = useCallback((index: number) => {
+    if (
+      index < 0 ||
+      index >= queueRef.current.length ||
+      index === queueIndexRef.current
+    ) {
+      return;
+    }
+    // Drop the outgoing player's seek fn — it isn't valid for the new track.
+    seekFnRef.current = null;
+    queueIndexRef.current = index;
+    setQueueIndex(index);
     setIsPlaying(true);
   }, []);
 
@@ -285,6 +503,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const registerSeek = useCallback((fn: ((ratio: number) => void) | null) => {
     seekFnRef.current = fn;
+    if (fn && pendingSeekRef.current != null) {
+      const ratio = pendingSeekRef.current;
+      pendingSeekRef.current = null;
+      fn(ratio);
+    }
   }, []);
 
   const reportDuration = useCallback((d: number) => {
@@ -328,15 +551,23 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<PlayerContextValue>(
     () => ({
       currentTrack,
+      activeTrack,
+      queue,
+      queueIndex,
       isPlaying,
       load,
       play,
       playQueue,
+      replaceUpcoming,
+      reconcileUpcoming,
+      enqueue,
+      playNext,
       pause,
       toggle,
       stop,
       seek,
       next,
+      jumpTo,
       previous,
       peekNext,
       hasNext,
@@ -352,18 +583,29 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setTargetBpm,
       pitchEnabled,
       setPitchEnabled,
+      mixConfig,
+      setMixConfig,
+      reportCrossfadeMidpoint,
     }),
     [
       currentTrack,
+      activeTrack,
+      queue,
+      queueIndex,
       isPlaying,
       load,
       play,
       playQueue,
+      replaceUpcoming,
+      reconcileUpcoming,
+      enqueue,
+      playNext,
       pause,
       toggle,
       stop,
       seek,
       next,
+      jumpTo,
       previous,
       peekNext,
       hasNext,
@@ -379,6 +621,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setTargetBpm,
       pitchEnabled,
       setPitchEnabled,
+      mixConfig,
+      setMixConfig,
+      reportCrossfadeMidpoint,
     ],
   );
 

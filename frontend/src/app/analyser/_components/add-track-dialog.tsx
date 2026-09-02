@@ -265,7 +265,10 @@ export function AddTrackDialog({
           </div>
 
           {submitError && (
-            <p className="text-destructive text-xs" data-testid="add-track-error">
+            <p
+              className="text-destructive text-xs"
+              data-testid="add-track-error"
+            >
               {submitError}
             </p>
           )}

@@ -21,7 +21,10 @@ import {
 } from "@/components/create-playlist-dialog";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { GroupBar } from "@/components/group-bar";
-import { useTopBar } from "@/components/layout/top-bar-context";
+import {
+  useReloadHandler,
+  useTopBar,
+} from "@/components/layout/top-bar-context";
 import { LIKES_COLUMN_DEFS, LikesTable } from "@/components/likes-table";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { ProfileGroupDialog } from "@/components/profile-group-dialog";
@@ -47,15 +50,19 @@ import {
   type ProfileGroup,
   type ProfileGroupMember,
 } from "@/lib/profile-groups";
-import type { SCTrack } from "@/lib/soundcloud";
+import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
+import { useScBpmMap } from "@/lib/sources/use-sc-bpm-map";
 import { cn } from "@/lib/utils";
 
+import { useFollowingsTracks } from "../weekly/use-followings-tracks";
 import { LibraryTitle } from "./library-title";
 import {
   LIKES_NODE_ID,
   LikesTreePanel,
   MIXES_GROUP_ID,
   mixNodeId,
+  NEW_TODAY_NODE_ID,
+  NEW_WEEK_NODE_ID,
   playlistNodeId,
   PLAYLISTS_GROUP_ID,
   REPOSTS_NODE_ID,
@@ -91,11 +98,17 @@ function filterSchemaForTab(
   // your own likes from that list would always empty it. Everywhere else
   // (Mixes, Playlists, Discover, Search) the filter is useful.
   const onLikesNode = tab === "me" && nodeId === LIKES_NODE_ID;
+  // The "include unknown BPM" toggle is only meaningful once a BPM range is
+  // available — hide it until the source tracks yield real BPM values.
+  const bpmAttr = schema.attributes.find((a) => a.id === "bpm");
+  const hasBpmRange =
+    bpmAttr?.kind === "range" && (bpmAttr.max ?? 0) > (bpmAttr.min ?? 0);
   return {
     ...schema,
     attributes: schema.attributes.filter((a) => {
       if (a.id === "exclude_my_likes") return !onLikesNode;
       if (a.id === "in_collection") return hasCollection;
+      if (a.id === "bpm_include_unknown") return hasBpmRange;
       return true;
     }),
   };
@@ -178,6 +191,55 @@ export function SoundcloudView() {
   const myLikes = useLikes("me");
   const myReposts = useReposts("me");
   const myTracks = useTracks("me");
+
+  // "New Today" / "New This Week" smart lists: tracks from the personal
+  // followings feed (posts + reposts by people you follow), narrowed to those
+  // whose own release date falls inside today / the current week. The feed is
+  // personal, so only fetch it on the "me" tab. A repost can't predate the
+  // track's release, so the feed hook's ~2-week activity window fully contains
+  // anything released this week — we just filter that set by release date.
+  const feed = useFollowingsTracks(tab === "me");
+  const { newTodayTracks, newWeekTracks } = useMemo(() => {
+    // Window anchored to "now" (UTC), matching the /weekly view's day math.
+    const now = new Date();
+    const startToday = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+    );
+    const startWeek = startToday - now.getUTCDay() * 86_400_000; // prev Sunday
+    const today: SCTrack[] = [];
+    const week: SCTrack[] = [];
+    for (const track of feed.tracks) {
+      const released = parseSCTimestamp(track.created_at);
+      if (released == null) continue;
+      if (released >= startWeek) week.push(track);
+      if (released >= startToday) today.push(track);
+    }
+    return { newTodayTracks: today, newWeekTracks: week };
+  }, [feed.tracks]);
+  const newToday = useMemo(
+    () => ({
+      tracks: newTodayTracks,
+      loading: feed.loading,
+      hasMore: false,
+      loaded: newTodayTracks.length,
+      error: feed.error,
+      reload: feed.reload,
+    }),
+    [newTodayTracks, feed.loading, feed.error, feed.reload],
+  );
+  const newWeek = useMemo(
+    () => ({
+      tracks: newWeekTracks,
+      loading: feed.loading,
+      hasMore: false,
+      loaded: newWeekTracks.length,
+      error: feed.error,
+      reload: feed.reload,
+    }),
+    [newWeekTracks, feed.loading, feed.error, feed.reload],
+  );
   const groupLikes = useGroupLikes(tab === "discover" ? activeGroup : null);
   const groupReposts = useGroupReposts(tab === "discover" ? activeGroup : null);
   const groupTracks = useGroupTracks(tab === "discover" ? activeGroup : null);
@@ -306,6 +368,8 @@ export function SoundcloudView() {
   const isMixesGroupView = nodeId === MIXES_GROUP_ID;
   const isRepostsView = nodeId === REPOSTS_NODE_ID;
   const isTracksView = nodeId === TRACKS_NODE_ID;
+  const isNewTodayView = nodeId === NEW_TODAY_NODE_ID;
+  const isNewWeekView = nodeId === NEW_WEEK_NODE_ID;
 
   const selectedPlaylist = useMemo(() => {
     if (!isPlaylistView) return null;
@@ -356,6 +420,44 @@ export function SoundcloudView() {
       .catch(() => {});
   }, []);
 
+  // Cached BPMs for every list that feeds a count or the visible table, in one
+  // bulk request. Lifted above the filter so the BPM range predicate and the
+  // schema's BPM range see real (analysed/manual) BPMs — `track.bpm` metadata
+  // is null for most SoundCloud uploads. Deduped so the same id isn't sent
+  // twice across, e.g., Likes and a playlist.
+  const bpmSourceTracks = useMemo(() => {
+    const seen = new Set<number>();
+    const out: SCTrack[] = [];
+    const push = (list: SCTrack[] | undefined) => {
+      for (const t of list ?? []) {
+        const id = extractId(t);
+        if (id != null && !seen.has(id)) {
+          seen.add(id);
+          out.push(t);
+        }
+      }
+    };
+    push(activeLikes.tracks);
+    push(activeReposts?.tracks);
+    push(activeTracks?.tracks);
+    push(newTodayTracks);
+    push(newWeekTracks);
+    push(combinedPlaylistTracks.tracks);
+    push(playlistTracks.tracks);
+    push(mixTracks.tracks);
+    return out;
+  }, [
+    activeLikes.tracks,
+    activeReposts?.tracks,
+    activeTracks?.tracks,
+    newTodayTracks,
+    newWeekTracks,
+    combinedPlaylistTracks.tracks,
+    playlistTracks.tracks,
+    mixTracks.tracks,
+  ]);
+  const bpmMap = useScBpmMap(bpmSourceTracks);
+
   // Reset selection to Likes when the user switches tab or active group.
   // Skip the initial mount so a `?node=` URL param survives — otherwise
   // this effect would clobber it back to Likes before the page rendered.
@@ -384,6 +486,20 @@ export function SoundcloudView() {
           max: 0,
           step: 15,
           formatHint: "duration",
+        },
+        {
+          id: "bpm",
+          label: "BPM",
+          kind: "range",
+          min: 0,
+          max: 0,
+          step: 1,
+          formatHint: "bpm",
+        },
+        {
+          id: "bpm_include_unknown",
+          label: "Include unknown BPM",
+          kind: "bool",
         },
         {
           id: "track_type",
@@ -421,8 +537,14 @@ export function SoundcloudView() {
   // and Playlists as well. Scoping the Set by tab silently no-op'd the
   // filter on those views.
   const filterPredicate = useMemo(
-    () => makeLikesFilterPredicate(filterOptions, myLikedIds, collectionIds),
-    [filterOptions, myLikedIds, collectionIds],
+    () =>
+      makeLikesFilterPredicate(
+        filterOptions,
+        myLikedIds,
+        collectionIds,
+        bpmMap,
+      ),
+    [filterOptions, myLikedIds, collectionIds, bpmMap],
   );
 
   // Filtered counts for tree nodes
@@ -433,6 +555,14 @@ export function SoundcloudView() {
   const repostsCount = useMemo(
     () => (activeReposts?.tracks ?? []).filter(filterPredicate).length,
     [activeReposts, filterPredicate],
+  );
+  const newTodayCount = useMemo(
+    () => newTodayTracks.filter(filterPredicate).length,
+    [newTodayTracks, filterPredicate],
+  );
+  const newWeekCount = useMemo(
+    () => newWeekTracks.filter(filterPredicate).length,
+    [newWeekTracks, filterPredicate],
   );
   const tracksCount = useMemo(
     () => (activeTracks?.tracks ?? []).filter(filterPredicate).length,
@@ -669,6 +799,9 @@ export function SoundcloudView() {
             selectedId={nodeId ?? LIKES_NODE_ID}
             onSelect={setNodeId}
             storageKey={storageKey}
+            newTodayCount={newTodayCount}
+            newWeekCount={newWeekCount}
+            showNew={tab === "me"}
             likesCount={likesCount}
             repostsCount={repostsCount}
             tracksCount={tracksCount}
@@ -677,6 +810,10 @@ export function SoundcloudView() {
             mixes={mixes}
             perMixFilteredCount={perMixCount}
             showMixes={tab === "me"}
+            editable={tab === "me"}
+            onPlaylistDeleted={(urn) => {
+              if (nodeId === playlistNodeId(urn)) setNodeId(LIKES_NODE_ID);
+            }}
           />
         )}
 
@@ -686,11 +823,16 @@ export function SoundcloudView() {
             activeLikes={activeLikes}
             activeReposts={activeReposts}
             activeTracks={activeTracks}
+            newToday={newToday}
+            newWeek={newWeek}
+            isNewTodayView={isNewTodayView}
+            isNewWeekView={isNewWeekView}
             playlistTracks={playlistTracks}
             combinedPlaylistTracks={combinedPlaylistTracks}
             mixTracks={mixTracks}
             nodeId={nodeId ?? LIKES_NODE_ID}
             isPlaylistView={isPlaylistView}
+            selectedPlaylistUrn={selectedPlaylist?.urn ?? null}
             isAllPlaylistsView={isAllPlaylistsView}
             isMixView={isMixView}
             isMixesGroupView={isMixesGroupView}
@@ -709,6 +851,7 @@ export function SoundcloudView() {
             onFilterChange={setFilter}
             onClearFilters={clearFilters}
             filterOptions={filterOptions}
+            bpmMap={bpmMap}
           />
         </div>
       </div>
@@ -721,11 +864,18 @@ interface LikesViewProps {
   activeLikes: ReturnType<typeof useLikes>;
   activeReposts: ReturnType<typeof useLikes> | null;
   activeTracks: ReturnType<typeof useLikes> | null;
+  newToday: ReturnType<typeof useLikes>;
+  newWeek: ReturnType<typeof useLikes>;
+  isNewTodayView: boolean;
+  isNewWeekView: boolean;
   playlistTracks: ReturnType<typeof usePlaylistTracks>;
   combinedPlaylistTracks: ReturnType<typeof useCombinedPlaylistsTracks>;
   mixTracks: ReturnType<typeof useSystemPlaylistTracks>;
   nodeId: string;
   isPlaylistView: boolean;
+  /** URN of the playlist currently being viewed (null unless in a playlist
+   *  node). Non-null + tab "me" ⇒ an editable, owned playlist. */
+  selectedPlaylistUrn: string | null;
   isAllPlaylistsView: boolean;
   isMixView: boolean;
   isMixesGroupView: boolean;
@@ -746,6 +896,7 @@ interface LikesViewProps {
   ) => void;
   onClearFilters: () => void;
   filterOptions: import("./use-likes-filter").LikesFilterOptions;
+  bpmMap: Map<number, number>;
 }
 
 function LikesView({
@@ -753,11 +904,16 @@ function LikesView({
   activeLikes,
   activeReposts,
   activeTracks,
+  newToday,
+  newWeek,
+  isNewTodayView,
+  isNewWeekView,
   playlistTracks,
   combinedPlaylistTracks,
   mixTracks,
   nodeId,
   isPlaylistView,
+  selectedPlaylistUrn,
   isAllPlaylistsView,
   isMixView,
   isMixesGroupView,
@@ -774,6 +930,7 @@ function LikesView({
   onFilterChange,
   onClearFilters,
   filterOptions,
+  bpmMap,
 }: LikesViewProps) {
   // Selection state stays local — filters live at the page level.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -781,30 +938,61 @@ function LikesView({
 
   const columnPrefs = useColumnPrefs("library.soundcloud", LIKES_COLUMN_DEFS);
 
-  const sourceTracks = isMixView
-    ? mixTracks.tracks
-    : isPlaylistView
-      ? playlistTracks.tracks
-      : isAllPlaylistsView
-        ? combinedPlaylistTracks.tracks
-        : isRepostsView
-          ? (activeReposts?.tracks ?? EMPTY_TRACKS)
-          : isTracksView
-            ? (activeTracks?.tracks ?? EMPTY_TRACKS)
-            : activeLikes.tracks;
+  // Optimistic "removed from playlist" set — a removed row disappears at once,
+  // before the playlist re-fetch. Cleared whenever the viewed node changes.
+  const [removedUrns, setRemovedUrns] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset optimistic removals when the viewed node changes
+    setRemovedUrns(new Set());
+  }, [nodeId]);
+
+  const baseTracks = isNewTodayView
+    ? newToday.tracks
+    : isNewWeekView
+      ? newWeek.tracks
+      : isMixView
+        ? mixTracks.tracks
+        : isPlaylistView
+          ? playlistTracks.tracks
+          : isAllPlaylistsView
+            ? combinedPlaylistTracks.tracks
+            : isRepostsView
+              ? (activeReposts?.tracks ?? EMPTY_TRACKS)
+              : isTracksView
+                ? (activeTracks?.tracks ?? EMPTY_TRACKS)
+                : activeLikes.tracks;
+  const sourceTracks = useMemo(
+    () =>
+      removedUrns.size === 0
+        ? baseTracks
+        : baseTracks.filter((t) => !t.urn || !removedUrns.has(t.urn)),
+    [baseTracks, removedUrns],
+  );
+
+  // Editable when viewing one of the user's OWN playlists (tab "me").
+  const removeFromPlaylist =
+    tab === "me" && isPlaylistView && selectedPlaylistUrn
+      ? {
+          playlistUrn: selectedPlaylistUrn,
+          onRemoved: (urn: string) =>
+            setRemovedUrns((prev) => new Set(prev).add(urn)),
+        }
+      : undefined;
 
   const { filteredTracks } = useLikesFilter(
     sourceTracks,
     filterOptions,
     myLikedIds,
     collectionIds,
+    bpmMap,
   );
 
   // Data-derived schema: enriches the seed with genre options/counts and a
-  // real duration range computed from the current sourceTracks.
+  // real duration + BPM range computed from the current sourceTracks.
   const { schema: enrichedSchema } = useFilterSchema({
     source: "soundcloud",
     tracks: sourceTracks,
+    bpmByTrack: bpmMap,
   });
   const schema = useMemo<FilterSchemaResponse>(() => {
     if (!enrichedSchema) return seedSchema;
@@ -854,39 +1042,51 @@ function LikesView({
     [sourceTracks, selectedIds],
   );
 
-  const loading = isMixView
-    ? mixTracks.loading
-    : isPlaylistView
-      ? playlistTracks.loading
-      : isAllPlaylistsView
-        ? combinedPlaylistTracks.loading
-        : isRepostsView
-          ? (activeReposts?.loading ?? false)
-          : isTracksView
-            ? (activeTracks?.loading ?? false)
-            : activeLikes.loading;
-  const error = isMixView
-    ? mixTracks.error
-    : isPlaylistView
-      ? playlistTracks.error
-      : isAllPlaylistsView
-        ? combinedPlaylistTracks.error
-        : isRepostsView
-          ? (activeReposts?.error ?? null)
-          : isTracksView
-            ? (activeTracks?.error ?? null)
-            : activeLikes.error;
-  const loadedCount = isMixView
-    ? mixTracks.tracks.length
-    : isPlaylistView
-      ? playlistTracks.tracks.length
-      : isAllPlaylistsView
-        ? combinedPlaylistTracks.tracks.length
-        : isRepostsView
-          ? (activeReposts?.loaded ?? 0)
-          : isTracksView
-            ? (activeTracks?.loaded ?? 0)
-            : activeLikes.loaded;
+  const loading = isNewTodayView
+    ? newToday.loading
+    : isNewWeekView
+      ? newWeek.loading
+      : isMixView
+        ? mixTracks.loading
+        : isPlaylistView
+          ? playlistTracks.loading
+          : isAllPlaylistsView
+            ? combinedPlaylistTracks.loading
+            : isRepostsView
+              ? (activeReposts?.loading ?? false)
+              : isTracksView
+                ? (activeTracks?.loading ?? false)
+                : activeLikes.loading;
+  const error = isNewTodayView
+    ? newToday.error
+    : isNewWeekView
+      ? newWeek.error
+      : isMixView
+        ? mixTracks.error
+        : isPlaylistView
+          ? playlistTracks.error
+          : isAllPlaylistsView
+            ? combinedPlaylistTracks.error
+            : isRepostsView
+              ? (activeReposts?.error ?? null)
+              : isTracksView
+                ? (activeTracks?.error ?? null)
+                : activeLikes.error;
+  const loadedCount = isNewTodayView
+    ? newToday.loaded
+    : isNewWeekView
+      ? newWeek.loaded
+      : isMixView
+        ? mixTracks.tracks.length
+        : isPlaylistView
+          ? playlistTracks.tracks.length
+          : isAllPlaylistsView
+            ? combinedPlaylistTracks.tracks.length
+            : isRepostsView
+              ? (activeReposts?.loaded ?? 0)
+              : isTracksView
+                ? (activeTracks?.loaded ?? 0)
+                : activeLikes.loaded;
 
   // Contextual palette commands — registered only while this view is mounted
   // and a selection/filter context applies.
@@ -906,12 +1106,16 @@ function LikesView({
     ),
   });
 
-  const reloadActiveLikes =
-    isRepostsView && activeReposts
-      ? activeReposts.reload
-      : isTracksView && activeTracks
-        ? activeTracks.reload
-        : activeLikes.reload;
+  const reloadActiveLikes = isNewTodayView
+    ? newToday.reload
+    : isNewWeekView
+      ? newWeek.reload
+      : isRepostsView && activeReposts
+        ? activeReposts.reload
+        : isTracksView && activeTracks
+          ? activeTracks.reload
+          : activeLikes.reload;
+  useReloadHandler(reloadActiveLikes);
   useCommand({
     id: "sc:reload",
     label:
@@ -1043,24 +1247,29 @@ function LikesView({
         ) : sourceTracks.length === 0 && !loading ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-muted-foreground text-sm">
-              {isMixView
-                ? "This mix is empty"
-                : isPlaylistView
-                  ? "This playlist is empty"
-                  : isAllPlaylistsView
-                    ? "No playlists"
-                    : tab === "search"
-                      ? "No tracks matched your search"
-                      : isRepostsView
-                        ? "No reposted tracks found"
-                        : isTracksView
-                          ? "No tracks found"
-                          : "No liked tracks found"}
+              {isNewTodayView
+                ? "Nothing released today on your feed yet"
+                : isNewWeekView
+                  ? "Nothing released this week on your feed yet"
+                  : isMixView
+                    ? "This mix is empty"
+                    : isPlaylistView
+                      ? "This playlist is empty"
+                      : isAllPlaylistsView
+                        ? "No playlists"
+                        : tab === "search"
+                          ? "No tracks matched your search"
+                          : isRepostsView
+                            ? "No reposted tracks found"
+                            : isTracksView
+                              ? "No tracks found"
+                              : "No liked tracks found"}
             </p>
           </div>
         ) : (
           <LikesTable
             tracks={filteredTracks}
+            bpmCache={bpmMap}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onRangeSelect={selectRange}
@@ -1076,6 +1285,8 @@ function LikesView({
             columnWidths={columnPrefs.prefs.widths}
             onColumnWidthChange={columnPrefs.setWidth}
             onColumnWidthReset={columnPrefs.resetWidth}
+            showAddToPlaylist
+            removeFromPlaylist={removeFromPlaylist}
           />
         )}
 

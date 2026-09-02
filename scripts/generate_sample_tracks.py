@@ -30,7 +30,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from soundcloud_tools.handler.track import StarlibMeta, TrackHandler, TrackInfo
+from backend.domain.tags import StarlibMeta, TrackInfo
+from backend.infra.audio.track_handler import TrackHandler
 
 logger = logging.getLogger(__name__)
 

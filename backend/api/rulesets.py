@@ -4,13 +4,13 @@ import logging
 
 from fastapi import APIRouter, HTTPException, status
 
-from backend.core.services import ruleset as ruleset_service
 from backend.schemas.ruleset import (
     Ruleset,
     RulesetCreate,
     RulesetsResponse,
     RulesetUpdate,
 )
+from backend.services import ruleset as ruleset_service
 
 logger = logging.getLogger(__name__)
 

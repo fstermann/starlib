@@ -311,7 +311,7 @@ export function PreviewPopover({
             onClick={toggle}
             disabled={!ready}
             aria-label={playing ? "Pause preview" : "Play preview"}
-            className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active grid size-8 shrink-0 cursor-pointer place-items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            className="bg-brand text-text-on-accent hover:bg-brand-hover active:bg-brand-active grid size-8 shrink-0 cursor-pointer place-items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             data-testid="preview-toggle"
           >
             {!ready && !error ? (
@@ -355,7 +355,7 @@ export function PreviewPopover({
               {error}
             </span>
           ) : (
-            <span className="text-text-subtle text-[10px] tabular-nums">
+            <span className="text-text-subtle text-xs tabular-nums">
               {formatTimecode(progressS)} / {formatTimecode(durationS)}
             </span>
           )}

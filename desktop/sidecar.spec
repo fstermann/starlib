@@ -12,7 +12,7 @@ Notes
 -----
 - reload=False is enforced via the BACKEND_RELOAD=false env var baked in.
 - The binary binds to 127.0.0.1:8000 (localhost only).
-- All data files (soundcloud_tools, backend) are included via collect_all.
+- All data files (backend) are included via collect_all.
 """
 
 import sys
@@ -32,7 +32,6 @@ binaries = [(str(_ffmpeg_bin), ".")] if _ffmpeg_bin.exists() else []
 hiddenimports = []
 
 for pkg in [
-    "soundcloud_tools",
     "backend",
     "fastapi",
     "uvicorn",
@@ -54,10 +53,10 @@ for pkg in [
 # Alembic's scripts directory lives inside the backend package, but
 # collect_all("backend") does not pick up non-.py files (like script.py.mako
 # or the generated revision modules). Bundle it explicitly so
-# importlib.resources.files("backend.alembic") finds versions/ at runtime.
-_alembic_dir = root / "backend" / "alembic"
+# importlib.resources.files("backend.infra.db.alembic") finds versions/ at runtime.
+_alembic_dir = root / "backend" / "infra" / "db" / "alembic"
 if _alembic_dir.exists():
-    datas.append((str(_alembic_dir), "backend/alembic"))
+    datas.append((str(_alembic_dir), "backend/infra/db/alembic"))
 
 # ── Entry-point analysis ───────────────────────────────────────────────────
 a = Analysis(

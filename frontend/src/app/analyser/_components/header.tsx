@@ -194,7 +194,7 @@ export function AnalyserHeader({ state, cancelling = false }: HeaderProps) {
           )}
         </div>
         <div className="min-w-0">
-          <div className="text-text-subtle text-[11px] tracking-wider uppercase">
+          <div className="text-text-subtle text-xs tracking-wider uppercase">
             Set
           </div>
           <div className="text-text flex min-w-0 items-center gap-1.5 text-lg font-semibold">
@@ -234,7 +234,7 @@ export function AnalyserHeader({ state, cancelling = false }: HeaderProps) {
           className={cn(
             "rounded-full px-2 py-0.5 text-xs font-medium",
             state.status === "error"
-              ? "bg-destructive/10 text-destructive"
+              ? "bg-danger/10 text-danger"
               : state.status === "complete"
                 ? "bg-brand-soft text-text"
                 : "bg-surface-3 text-text-muted",
@@ -284,7 +284,7 @@ export function AnalyserHeader({ state, cancelling = false }: HeaderProps) {
         </div>
       )}
       {state.errorMessage && (
-        <div className="bg-destructive/10 text-destructive w-full rounded p-2 text-xs">
+        <div className="bg-danger/10 text-danger w-full rounded p-2 text-xs">
           {state.errorMessage}
         </div>
       )}

@@ -3,7 +3,10 @@ import { expect, test } from "./fixtures";
 /**
  * #382: when a SoundCloud track has no `download_url`, parse the description
  * for a known fallback platform link (bandcamp / beatport / hypeddit) and
- * surface it through the existing download icon slot.
+ * surface it through the download icon.
+ *
+ * The download and store-search icons are each collapsed into a single icon:
+ * one link opens directly, multiple links open a popover selector.
  */
 
 async function setup(page: import("@playwright/test").Page) {
@@ -65,6 +68,19 @@ async function setup(page: import("@playwright/test").Page) {
             download_url: null,
             description: "Just some text, no link here.",
           },
+          {
+            id: 400,
+            urn: "soundcloud:tracks:400",
+            title: "Download and description link",
+            user: { id: 1, username: "me" },
+            duration: 180_000,
+            created_at: "2024-04-01T00:00:00Z",
+            permalink_url: "https://soundcloud.com/me/both",
+            download_url:
+              "https://api.soundcloud.com/tracks/400/download?direct=1",
+            description:
+              "Also grab it on Beatport: https://www.beatport.com/track/x/123",
+          },
         ],
         next_href: null,
       }),
@@ -96,45 +112,73 @@ async function setup(page: import("@playwright/test").Page) {
   );
 }
 
-test.describe("SoundCloud fallback download", () => {
-  test("renders parsed description link when download_url is missing", async ({
-    page,
-  }) => {
+test.describe("SoundCloud download & search links", () => {
+  test.beforeEach(async ({ page }) => {
     await setup(page);
     await page.goto("/library?source=soundcloud");
-
-    await expect(page.locator("[data-index]")).toHaveCount(3, {
+    await expect(page.locator("[data-index]")).toHaveCount(4, {
       timeout: 5000,
     });
+  });
 
-    // Track with direct download → uses the standard download icon, not the fallback.
+  test("single download link opens directly (no popover)", async ({ page }) => {
+    // Direct download → the download icon is a plain link to download_url.
     const directRow = page.locator('[data-index="0"]');
-    await expect(
-      directRow.locator('[data-testid="sc-download-link"]'),
-    ).toHaveCount(1);
-    await expect(
-      directRow.locator('[data-testid="sc-download-fallback"]'),
-    ).toHaveCount(0);
+    const download = directRow.locator('[data-testid="sc-download"]');
+    await expect(download).toHaveAttribute(
+      "href",
+      "https://api.soundcloud.com/tracks/100/download?direct=1",
+    );
 
     // Bandcamp track has no download_url but the description gives us a link.
     const bandcampRow = page.locator('[data-index="1"]');
-    const fallback = bandcampRow.locator(
-      '[data-testid="sc-download-fallback"]',
-    );
-    await expect(fallback).toHaveCount(1);
-    await expect(fallback).toHaveAttribute(
-      "href",
-      "https://artist.bandcamp.com/track/the-song",
-    );
-    await expect(fallback.locator("img")).toHaveAttribute("alt", "Bandcamp");
+    await expect(
+      bandcampRow.locator('[data-testid="sc-download"]'),
+    ).toHaveAttribute("href", "https://artist.bandcamp.com/track/the-song");
 
-    // Track with no download and no description link → empty slot, no link.
+    // No download and no description link → no download icon at all.
     const emptyRow = page.locator('[data-index="2"]');
-    await expect(
-      emptyRow.locator('[data-testid="sc-download-fallback"]'),
-    ).toHaveCount(0);
-    await expect(
-      emptyRow.locator('[data-testid="sc-download-link"]'),
-    ).toHaveCount(0);
+    await expect(emptyRow.locator('[data-testid="sc-download"]')).toHaveCount(
+      0,
+    );
+  });
+
+  test("two download links open a popover with both options", async ({
+    page,
+  }) => {
+    const bothRow = page.locator('[data-index="3"]');
+    // With two links the trigger is a button, not an anchor.
+    const trigger = bothRow.locator('[data-testid="sc-download"]');
+    await expect(trigger).toHaveCount(1);
+    await trigger.click();
+
+    const options = page.locator('[data-testid="sc-download-option"]');
+    await expect(options).toHaveCount(2);
+    await expect(options.nth(0)).toHaveAttribute(
+      "href",
+      "https://api.soundcloud.com/tracks/400/download?direct=1",
+    );
+    await expect(options.nth(1)).toHaveAttribute(
+      "href",
+      "https://www.beatport.com/track/x/123",
+    );
+  });
+
+  test("store search opens a popover with Bandcamp and Beatport", async ({
+    page,
+  }) => {
+    const directRow = page.locator('[data-index="0"]');
+    await directRow.locator('[data-testid="sc-search"]').click();
+
+    const options = page.locator('[data-testid="sc-search-option"]');
+    await expect(options).toHaveCount(2);
+    await expect(options.nth(0)).toHaveAttribute(
+      "href",
+      /bandcamp\.com\/search\?q=/,
+    );
+    await expect(options.nth(1)).toHaveAttribute(
+      "href",
+      /beatport\.com\/search\?q=/,
+    );
   });
 });

@@ -4,7 +4,7 @@ Given a local track and (optionally) a linked SoundCloud track, return ranked
 candidate values for every editor field. The endpoint is read-only — accepting
 a suggestion is a separate, normal metadata update on the client side.
 
-The actual ranking lives in :mod:`backend.core.services.suggestion_engine`;
+The actual ranking lives in :mod:`backend.domain.suggestions.engine`;
 this router is just the HTTP shell.
 """
 
@@ -17,7 +17,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.api.deps import get_root_folder, validate_file_path
-from backend.core.services import suggestion_engine
+from backend.domain.suggestions import engine as suggestion_engine
 from backend.schemas.suggestions import SuggestionRequest, SuggestionResponse
 
 logger = logging.getLogger(__name__)

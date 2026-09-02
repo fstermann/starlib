@@ -39,8 +39,7 @@ function paramsFromState(state: FilterState) {
   ];
   const fileFormats = (state.file_format as string[] | undefined) ?? [];
   const size = (state.file_size as
-    | [number | null, number | null]
-    | undefined) ?? [null, null];
+    [number | null, number | null] | undefined) ?? [null, null];
   return {
     search: search || undefined,
     genres: genres.length ? genres : undefined,

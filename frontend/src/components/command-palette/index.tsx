@@ -2,8 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Spinner } from "@/components/spinner";
+import { TrackQueueMenu } from "@/components/track-queue-menu";
 import {
   CommandDialog,
   CommandEmpty,
@@ -13,6 +15,9 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import { usePlayer } from "@/lib/player-context";
+import { scTrackToPlayerTrack } from "@/lib/sc-player-track";
+import type { SCTrack } from "@/lib/soundcloud";
 
 import { useCommandPalette } from "./provider";
 import { LocalTracksProvider } from "./providers/local-tracks";
@@ -37,6 +42,7 @@ function groupBy(items: CommandItem[]): Map<string, CommandItem[]> {
 export function CommandPalette() {
   const { open, setOpen, providers, dynamicCommands } = useCommandPalette();
   const router = useRouter();
+  const { enqueue, playNext } = usePlayer();
 
   const [query, setQuery] = useState("");
   const [asyncResults, setAsyncResults] = useState<CommandItem[]>([]);
@@ -67,6 +73,23 @@ export function CommandPalette() {
       router.push(`/library?${params.toString()}`);
     },
     [router],
+  );
+  // Right-click queue actions on SoundCloud track results. These don't close
+  // the palette, so the user can queue several tracks in a row; a toast
+  // confirms since the list itself doesn't change.
+  const onAddTrackToQueue = useCallback(
+    (track: SCTrack) => {
+      enqueue(scTrackToPlayerTrack(track));
+      toast(`Added to queue: ${track.title ?? "track"}`);
+    },
+    [enqueue],
+  );
+  const onPlayTrackNext = useCallback(
+    (track: SCTrack) => {
+      playNext(scTrackToPlayerTrack(track));
+      toast(`Playing next: ${track.title ?? "track"}`);
+    },
+    [playNext],
   );
   const onSelectUser = useCallback(
     (user: { permalink?: string | null } | null | undefined) => {
@@ -259,7 +282,11 @@ export function CommandPalette() {
       <NavProvider onNavigate={onNavigate} />
       <PinnedFoldersProvider onSelect={onSelectPinnedFolder} />
       <LocalTracksProvider onSelect={onSelectLocalTrack} />
-      <SoundcloudTracksProvider onSelect={onSelectTrack} />
+      <SoundcloudTracksProvider
+        onSelect={onSelectTrack}
+        onAddToQueue={onAddTrackToQueue}
+        onPlayNext={onPlayTrackNext}
+      />
       <SoundcloudUsersProvider onSelect={onSelectUser} />
 
       <CommandDialog open={open} onOpenChange={setOpen} shouldFilter={false}>
@@ -294,7 +321,7 @@ export function CommandPalette() {
                   ]
                     .filter(Boolean)
                     .join(" ");
-                  return (
+                  const node = (
                     <CommandItemUI
                       key={item.id}
                       data-command-id={item.id}
@@ -326,6 +353,18 @@ export function CommandPalette() {
                       )}
                     </CommandItemUI>
                   );
+                  if (item.onAddToQueue && item.onPlayNext) {
+                    return (
+                      <TrackQueueMenu
+                        key={item.id}
+                        onAddToQueue={item.onAddToQueue}
+                        onPlayNext={item.onPlayNext}
+                      >
+                        {node}
+                      </TrackQueueMenu>
+                    );
+                  }
+                  return node;
                 })}
               </CommandGroup>
             );

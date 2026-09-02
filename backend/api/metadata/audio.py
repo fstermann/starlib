@@ -6,19 +6,35 @@ import logging
 import subprocess
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 
 from backend.api.deps import get_root_folder, validate_file_path
 from backend.config import get_backend_settings
-from backend.core.services import cache_db, metadata
-from backend.core.services.metadata import _find_ffmpeg
+from backend.infra import cache
 from backend.schemas.metadata import PeaksResponse
+from backend.services import metadata
+from backend.services.metadata import _find_ffmpeg
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _content_disposition(filename: str) -> str:
+    """Build an RFC 6266 Content-Disposition value safe for non-ASCII filenames.
+
+    HTTP headers are latin-1 only, so any character outside that range (e.g. a
+    typographic apostrophe, U+2019) blows up Starlette's response encoding. We
+    emit both the legacy ASCII-fallback ``filename=...`` and the RFC 5987
+    ``filename*=UTF-8''...`` form so modern clients get the original name.
+    """
+    ascii_fallback = filename.encode("ascii", "replace").decode("ascii").replace('"', "")
+    encoded = quote(filename, safe="")
+    return f"inline; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
+
 
 AUDIO_MIME_TYPES = {
     ".mp3": "audio/mpeg",
@@ -41,7 +57,12 @@ _peaks_semaphore = asyncio.Semaphore(4)
 async def get_file_peaks(
     file_path: str,
     root_folder: Annotated[Path, Depends(get_root_folder)],
-    num_peaks: int = Query(200, ge=50, le=2000, description="Number of amplitude peaks to return"),
+    num_peaks: int = Query(
+        200,
+        ge=50,
+        le=50000,
+        description="Number of amplitude peaks to return (up to ~150/s for zoom).",
+    ),
 ) -> PeaksResponse:
     """Get waveform amplitude peak data for a file.
 
@@ -71,7 +92,7 @@ async def get_file_peaks(
     # Fast path — serve from SQLite cache without touching the semaphore.
     try:
         mtime = resolved_path.stat().st_mtime
-        cached = cache_db.get_peaks(resolved_path, mtime, num_peaks)
+        cached = cache.get_peaks(resolved_path, mtime, num_peaks)
         if cached is not None:
             return PeaksResponse(peaks=cached)
     except OSError:
@@ -95,37 +116,24 @@ async def get_file_peaks(
     return PeaksResponse(peaks=peaks)
 
 
-@router.get("/files/{file_path:path}/audio", response_model=None)
-async def stream_audio(
-    file_path: str,
-    root_folder: Annotated[Path, Depends(get_root_folder)],
-) -> FileResponse:
-    """Stream an audio file.
+async def stream_local_file(resolved_path: Path) -> FileResponse:
+    """Return a browser-playable :class:`FileResponse` for a local audio file.
 
-    Formats not natively supported by browsers (e.g. AIFF) are transcoded to
-    WAV via ffmpeg and cached.  Transcoding is awaited before responding so
-    that the browser always receives a real file with Content-Length and range
-    support, which is required for seeking to work.
+    Formats not natively supported by browsers (e.g. AIFF) are transcoded to WAV
+    via ffmpeg and cached. Transcoding is awaited before responding so the
+    browser always receives a real file with Content-Length and range support,
+    which is required for seeking to work. The path must already be resolved and
+    security-checked by the caller.
 
-    Parameters
-    ----------
-    file_path : str
-        Relative or absolute path to audio file
-    root_folder : Path
-        Root music folder (injected)
+    Args:
+        resolved_path: An existing, caller-validated audio file path.
 
-    Returns
-    -------
-    FileResponse
-        Audio file bytes
+    Returns:
+        A ``FileResponse`` serving the audio (native or transcoded WAV).
 
-    Raises
-    ------
-    HTTPException
-        If the file doesn't exist or transcoding fails
+    Raises:
+        HTTPException: If the file is missing or transcoding fails.
     """
-    resolved_path = validate_file_path(file_path, root_folder)
-
     if not resolved_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
 
@@ -145,7 +153,7 @@ async def stream_audio(
         return FileResponse(
             wav_path,
             media_type="audio/wav",
-            headers={"Content-Disposition": f'inline; filename="{resolved_path.stem}.wav"'},
+            headers={"Content-Disposition": _content_disposition(f"{resolved_path.stem}.wav")},
         )
 
     mime_type = AUDIO_MIME_TYPES.get(resolved_path.suffix.lower(), "application/octet-stream")
@@ -153,8 +161,36 @@ async def stream_audio(
     return FileResponse(
         resolved_path,
         media_type=mime_type,
-        headers={"Content-Disposition": f'inline; filename="{resolved_path.name}"'},
+        headers={"Content-Disposition": _content_disposition(resolved_path.name)},
     )
+
+
+@router.get("/files/{file_path:path}/audio", response_model=None)
+async def stream_audio(
+    file_path: str,
+    root_folder: Annotated[Path, Depends(get_root_folder)],
+) -> FileResponse:
+    """Stream an audio file.
+
+    Parameters
+    ----------
+    file_path : str
+        Relative or absolute path to audio file
+    root_folder : Path
+        Root music folder (injected)
+
+    Returns
+    -------
+    FileResponse
+        Audio file bytes
+
+    Raises
+    ------
+    HTTPException
+        If the file doesn't exist or transcoding fails
+    """
+    resolved_path = validate_file_path(file_path, root_folder)
+    return await stream_local_file(resolved_path)
 
 
 def _cached_wav_path(path: Path, cache_dir: Path) -> Path:
@@ -171,16 +207,26 @@ def _cached_wav_path(path: Path, cache_dir: Path) -> Path:
 
 
 def _transcode_to_wav(path: Path, wav_path: Path) -> None:
-    """Transcode *path* to a WAV file at *wav_path* using ffmpeg."""
+    """Transcode *path* to a WAV file at *wav_path* using ffmpeg.
+
+    ffmpeg's stderr is captured and logged on failure so a transcode error
+    (the usual cause of a 500 from the audio endpoint) is diagnosable instead
+    of vanishing into ``/dev/null``.
+    """
     tmp_path = wav_path.with_suffix(".tmp")
     try:
         subprocess.run(
             [_find_ffmpeg(), "-i", str(path), "-f", "wav", str(tmp_path), "-y"],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             check=True,
         )
         tmp_path.rename(wav_path)
+    except subprocess.CalledProcessError as e:
+        tmp_path.unlink(missing_ok=True)
+        stderr = (e.stderr or b"").decode("utf-8", "replace").strip()
+        logger.error("ffmpeg failed to transcode %s: %s", path.name, stderr[-2000:] or "(no stderr)")
+        raise
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise

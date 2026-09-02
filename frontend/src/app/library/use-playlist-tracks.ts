@@ -16,6 +16,14 @@ function getCached(urn: string): SCTrack[] | null {
   return entry.tracks;
 }
 
+/** Drop a playlist's cached track list so the next fetch is fresh. Call after
+ *  mutating the playlist (add/remove) so membership checks and the playlist
+ *  view re-read the real contents. */
+export function invalidatePlaylistTracks(urn: string) {
+  cache.delete(urn);
+  inflight.delete(urn);
+}
+
 /**
  * Fetches all tracks for a playlist, paginating through all pages.
  * Results are cached per-urn for CACHE_TTL; concurrent callers share the

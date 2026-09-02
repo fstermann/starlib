@@ -338,11 +338,18 @@ export function FilesystemTreePanel({
             </TooltipContent>
           </Tooltip>
         )}
-        {node.track_count > 0 && (
-          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-            {node.track_count}
-          </span>
-        )}
+        {(() => {
+          // filtered_count is set when a filter is active; fall back to the
+          // unfiltered total otherwise. Zero renders nothing.
+          const count = node.filtered_count ?? node.track_count;
+          return (
+            count > 0 && (
+              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                {count}
+              </span>
+            )
+          );
+        })()}
       </>
     );
   };

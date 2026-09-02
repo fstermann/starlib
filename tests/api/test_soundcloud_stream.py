@@ -17,7 +17,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.api import soundcloud as soundcloud_api
+from backend.api.soundcloud import tracks as soundcloud_api
 
 
 def _mock_response(status_code: int = 200, json_data: dict | None = None, headers: dict | None = None):

@@ -13,6 +13,22 @@ from fastapi_pagination import add_pagination
 from backend.api.deps import get_root_folder
 from backend.api.metadata import router as metadata_router
 from backend.api.setup import router as setup_router
+from backend.infra.ai import ollama as ollama_service
+from backend.infra.soundcloud import client as sc_client
+
+
+@pytest.fixture(autouse=True)
+def _reset_http_clients():
+    """Drop the cached httpx clients between tests.
+
+    Both adapters memoise one client per event loop. A test that patches
+    ``httpx.AsyncClient`` would otherwise leave its stand-in in the cache for
+    every test that runs after it.
+    """
+    yield
+    for module in (sc_client, ollama_service):
+        module._client = None
+        module._client_loop = None
 
 
 @pytest.fixture

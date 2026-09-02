@@ -1,1 +1,0 @@
-"""Domain logic - pure functions."""

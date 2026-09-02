@@ -51,9 +51,10 @@ import {
   type Ruleset,
 } from "@/lib/api";
 import { onRulesetsChanged } from "@/lib/rulesets-events";
-import { getSetting, setSetting } from "@/lib/settings";
+import { getSetting, setSetting, type WaveformStyle } from "@/lib/settings";
 import { isTauri } from "@/lib/tauri";
 import { checkForUpdate, type UpdateResult } from "@/lib/updater";
+import { saveWaveformStyle } from "@/lib/use-waveform-style";
 import { cn } from "@/lib/utils";
 
 type SectionId =
@@ -114,6 +115,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [preferredOutputFormat, setPreferredOutputFormat] = useState<
     "aiff" | "mp3"
   >("aiff");
+  const [waveformStyle, setWaveformStyleState] =
+    useState<WaveformStyle>("starlib");
   const [loaded, setLoaded] = useState(false);
   const [checking, setChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateResult | null>(null);
@@ -168,7 +171,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     if (!open) return;
     Promise.all([
       getSetting("autoUpdate"),
-      getSetting("preferredOutputFormat"),
+      api.getAppSettings(),
+      getSetting("waveformStyle"),
       api.getRootMusicFolder(),
       api.getAiSettings(),
       api.getAiStatus(),
@@ -177,7 +181,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     ]).then(
       ([
         autoUpdate,
-        outputFormat,
+        appSettings,
+        waveform,
         rootPath,
         settings,
         status,
@@ -185,7 +190,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         rulesetsData,
       ]) => {
         setAutoUpdate(autoUpdate);
-        setPreferredOutputFormat(outputFormat);
+        setPreferredOutputFormat(
+          appSettings.preferred_output_format === "mp3" ? "mp3" : "aiff",
+        );
+        setWaveformStyleState(waveform);
         setRootFolder(rootPath);
         setRootFolderDraft(rootPath);
         setAiSettings(settings);
@@ -220,11 +228,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   async function handlePreferredOutputFormatChange(format: "aiff" | "mp3") {
     setPreferredOutputFormat(format);
-    await setSetting("preferredOutputFormat", format);
     await api.updateAppSettings({ preferred_output_format: format });
     window.dispatchEvent(
       new CustomEvent("preferred-format-changed", { detail: format }),
     );
+  }
+
+  async function handleWaveformStyleChange(style: WaveformStyle) {
+    setWaveformStyleState(style);
+    await saveWaveformStyle(style);
   }
 
   async function handleSaveRootFolder() {
@@ -463,6 +475,32 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </ToggleGroupItem>
                     <ToggleGroupItem value="mp3" className="font-mono">
                       MP3
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label className="text-sm">Rekordbox waveform</Label>
+                  <p className="text-muted-foreground text-xs">
+                    Which waveform the player shows for Rekordbox tracks.
+                    Rekordbox styles use its own analysis; other sources always
+                    use the Starlib waveform.
+                  </p>
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    value={waveformStyle}
+                    onValueChange={(val) => {
+                      if (val) handleWaveformStyleChange(val as WaveformStyle);
+                    }}
+                    className="w-fit"
+                  >
+                    <ToggleGroupItem value="starlib">Starlib</ToggleGroupItem>
+                    <ToggleGroupItem value="rekordbox_rgb">
+                      Rekordbox RGB
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="rekordbox_blue">
+                      Rekordbox Blue
                     </ToggleGroupItem>
                   </ToggleGroup>
                 </div>

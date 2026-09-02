@@ -291,6 +291,8 @@ export interface TreeNode {
   name: string;
   children: TreeNode[];
   track_count: number;
+  // Recursive count under the active filters; null/undefined when unfiltered.
+  filtered_count?: number | null;
 }
 
 export interface FolderRulesetBinding {
@@ -423,6 +425,57 @@ export const api = {
   getArtworkUrl(filePath: string): string {
     const encoded = encodeURIComponent(filePath);
     return `${API_BASE_URL}/api/metadata/files/${encoded}/artwork`;
+  },
+
+  // Rekordbox artwork (cached JPEG). `device` selects a mounted USB export;
+  // omit for the local install.
+  getRekordboxArtworkUrl(
+    trackId: string,
+    small = true,
+    device?: string,
+  ): string {
+    const params = new URLSearchParams({ small: String(small) });
+    if (device) params.set("device", device);
+    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/artwork?${params}`;
+  },
+
+  // Rekordbox waveform bytes. Preview variants span the whole track (`color` =
+  // PWV4 1200×6, `blue` = PWAV 400×1); detail variants carry ~150 columns/second
+  // for zoom (`color_detail` = PWV5, `blue_detail` = PWV3).
+  getRekordboxWaveformUrl(
+    trackId: string,
+    device?: string,
+    variant: "color" | "blue" | "color_detail" | "blue_detail" = "color",
+  ): string {
+    const params = new URLSearchParams();
+    if (device) params.set("device", device);
+    if (variant !== "color") params.set("variant", variant);
+    const q = params.toString();
+    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/waveform${q ? `?${q}` : ""}`;
+  },
+
+  // Rekordbox beatgrid / phrase sections / cues as JSON.
+  async getRekordboxAnalysis(
+    trackId: string,
+    device?: string,
+  ): Promise<components["schemas"]["TrackAnalysisResponse"]> {
+    const q = device ? `?device=${encodeURIComponent(device)}` : "";
+    return fetchApi<components["schemas"]["TrackAnalysisResponse"]>(
+      `/api/rekordbox/tracks/${encodeURIComponent(trackId)}/analysis${q}`,
+    );
+  },
+
+  // Audio stream for a track on a mounted USB export.
+  getRekordboxUsbAudioUrl(trackId: string, device: string): string {
+    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/audio?device=${encodeURIComponent(device)}`;
+  },
+
+  // Safely eject a mounted USB export. Rejects (409) if the volume is busy.
+  async ejectRekordboxUsb(device: string): Promise<void> {
+    await fetchApi(
+      `/api/rekordbox/usb/eject?device=${encodeURIComponent(device)}`,
+      { method: "POST" },
+    );
   },
 
   // Audio streaming
@@ -634,8 +687,32 @@ export const api = {
 
   // ==================== Folder Tree ====================
 
-  async getFolderTree(): Promise<TreeNode> {
-    return fetchApi("/api/metadata/folders/tree");
+  async getFolderTree(params?: {
+    search?: string;
+    genres?: string[];
+    keys?: string[];
+    bpmMin?: number;
+    bpmMax?: number;
+    fileFormats?: string[];
+    sizeMin?: number;
+    sizeMax?: number;
+    hasSoundcloudId?: boolean;
+  }): Promise<TreeNode> {
+    const qs = new URLSearchParams();
+    if (params?.search) qs.set("search", params.search);
+    params?.genres?.forEach((g) => qs.append("genres", g));
+    params?.keys?.forEach((k) => qs.append("keys", k));
+    if (params?.bpmMin !== undefined) qs.set("bpm_min", String(params.bpmMin));
+    if (params?.bpmMax !== undefined) qs.set("bpm_max", String(params.bpmMax));
+    params?.fileFormats?.forEach((f) => qs.append("file_formats", f));
+    if (params?.sizeMin !== undefined)
+      qs.set("size_min", String(params.sizeMin));
+    if (params?.sizeMax !== undefined)
+      qs.set("size_max", String(params.sizeMax));
+    if (params?.hasSoundcloudId !== undefined)
+      qs.set("has_soundcloud_id", String(params.hasSoundcloudId));
+    const q = qs.toString();
+    return fetchApi(`/api/metadata/folders/tree${q ? `?${q}` : ""}`);
   },
 
   async browsePath(

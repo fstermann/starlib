@@ -15,12 +15,7 @@ import type {
 } from "@/lib/analyser";
 
 export type JobStatus =
-  | "idle"
-  | "loading"
-  | "pending"
-  | "running"
-  | "complete"
-  | "error";
+  "idle" | "loading" | "pending" | "running" | "complete" | "error";
 
 export interface AnalyserUiState {
   jobId: string | null;

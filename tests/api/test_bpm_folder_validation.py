@@ -52,7 +52,7 @@ def test_rejects_traversal(tmp_path: Path, client: TestClient) -> None:
 
 
 def test_accepts_folder_inside_root(tmp_path: Path, client: TestClient) -> None:
-    """A valid sub-path succeeds and reaches cache_db."""
+    """A valid sub-path succeeds and reaches cache."""
     root = tmp_path / "library"
     sub = root / "prepare"
     sub.mkdir(parents=True)
@@ -62,7 +62,7 @@ def test_accepts_folder_inside_root(tmp_path: Path, client: TestClient) -> None:
             "backend.api.bpm.app_settings_service.get_root_music_folder",
             return_value=str(root),
         ),
-        patch("backend.api.bpm.cache_db.get_tracks_missing_bpm", return_value=[]) as mock,
+        patch("backend.api.bpm.cache.get_tracks_missing_bpm", return_value=[]) as mock,
     ):
         resp = client.get(f"/api/bpm/local/candidates?folder={sub}")
 

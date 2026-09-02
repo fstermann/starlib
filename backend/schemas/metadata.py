@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 # ============================================================================
-# Tag-field mixin (mirrors SIMPLE_TAG_FIELDS in soundcloud_tools.handler.track)
+# Tag-field mixin (mirrors SIMPLE_TAG_FIELDS in backend.domain.tags)
 # ============================================================================
 
 

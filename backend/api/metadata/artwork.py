@@ -10,8 +10,9 @@ from fastapi.responses import FileResponse
 
 from backend.api.deps import get_root_folder, validate_file_path
 from backend.config import get_backend_settings
-from backend.core.services import collection, metadata
 from backend.schemas.metadata import OperationResponse
+from backend.services import metadata
+from backend.services.collection import indexing
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,9 @@ async def update_file_artwork(
             detail="Failed to embed artwork",
         ) from e
 
-    collection.invalidate_cache()
+    # Only this file changed — a bare invalidate_cache() would drop the
+    # whole session index and force a full re-scan of every folder.
+    indexing.reindex_file(root_folder, resolved_path)
 
     return OperationResponse(
         success=True,
@@ -164,7 +167,7 @@ def delete_file_artwork(
             detail="Failed to remove artwork",
         ) from e
 
-    collection.invalidate_cache()
+    indexing.reindex_file(root_folder, resolved_path)
 
     return OperationResponse(
         success=True,

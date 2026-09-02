@@ -45,6 +45,7 @@ export function useColumnPrefs(
         // Normalize older stored shapes that may lack fields added later.
         setPrefs({
           hidden: Array.isArray(loaded.hidden) ? loaded.hidden : [],
+          shown: Array.isArray(loaded.shown) ? loaded.shown : [],
           order: Array.isArray(loaded.order) ? loaded.order : [],
           widths:
             loaded.widths && typeof loaded.widths === "object"
@@ -70,11 +71,16 @@ export function useColumnPrefs(
     (id: string, hidden: boolean) => {
       const col = columns.find((c) => c.id === id);
       if (col?.required) return;
+      // Both lists are maintained so the choice survives a change to the
+      // column's own default: an explicit toggle always wins.
       persist({
         ...prefs,
         hidden: hidden
           ? Array.from(new Set([...prefs.hidden, id]))
           : prefs.hidden.filter((h) => h !== id),
+        shown: hidden
+          ? prefs.shown.filter((s) => s !== id)
+          : Array.from(new Set([...prefs.shown, id])),
       });
     },
     [columns, prefs, persist],
@@ -103,7 +109,7 @@ export function useColumnPrefs(
   );
 
   const resetVisibility = React.useCallback(
-    () => persist({ ...prefs, hidden: [] }),
+    () => persist({ ...prefs, hidden: [], shown: [] }),
     [prefs, persist],
   );
 

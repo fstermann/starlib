@@ -9,6 +9,7 @@ import {
 import type { ComponentType, SVGProps } from "react";
 
 import { LibraryIcon } from "@/components/icons/library-icon";
+import { RekordboxLogo } from "@/components/icons/rekordbox-logo";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 
 export type NavIcon = ComponentType<
@@ -28,7 +29,7 @@ export const NAV_LINKS: NavLink[] = [
     href: "/library",
     label: "Library",
     icon: LibraryIcon,
-    keywords: ["tracks", "filesystem", "soundcloud", "likes"],
+    keywords: ["tracks", "filesystem", "soundcloud", "likes", "rekordbox"],
   },
   {
     href: "/weekly",
@@ -69,6 +70,12 @@ export const QUICK_JUMPS: NavLink[] = [
     label: "Library: SoundCloud — Search",
     icon: Search,
     keywords: ["find", "tracks"],
+  },
+  {
+    href: "/library?source=rekordbox",
+    label: "Library: Rekordbox",
+    icon: RekordboxLogo,
+    keywords: ["rekordbox", "playlists", "pioneer", "dj"],
   },
   {
     href: "/weekly",

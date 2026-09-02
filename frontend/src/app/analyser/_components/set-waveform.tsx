@@ -215,7 +215,7 @@ export function SetAudioPlayButton({ audio }: { audio: SetAudio }) {
       title={isPlaying ? "Pause" : "Play"}
       onClick={togglePlay}
       data-testid="set-waveform-toggle"
-      className="bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active absolute top-1/2 left-1/2 grid size-7 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+      className="bg-brand text-text-on-accent hover:bg-brand-hover active:bg-brand-active absolute top-1/2 left-1/2 grid size-7 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50"
     >
       {!ready && !error ? (
         <Loader2 className="size-3 animate-spin" />
@@ -236,7 +236,7 @@ export function SetAudioCurrentTime({ audio }: { audio: SetAudio }) {
   return (
     <div className="group absolute inset-0">
       <span
-        className="text-text-subtle pointer-events-none absolute inset-0 grid place-items-center text-[10px] leading-none tabular-nums opacity-100 transition-opacity duration-150 group-hover:opacity-0"
+        className="text-text-subtle pointer-events-none absolute inset-0 grid place-items-center text-xs leading-none tabular-nums opacity-100 transition-opacity duration-150 group-hover:opacity-0"
         data-testid="set-audio-current-time"
       >
         {formatTimecode(progressS)}

@@ -1,7 +1,7 @@
 /**
  * Analyser API client + SSE event types.
  *
- * Mirrors the wire format of `backend.core.services.analyser.events`. SSE
+ * Mirrors the wire format of `backend.schemas.analyser`. SSE
  * is consumed via native `EventSource`; the helper here just narrows the
  * `event.data` payload to the right discriminated-union variant.
  */

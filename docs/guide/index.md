@@ -35,13 +35,23 @@ Explore the Library and Weekly Favorites.
 </div>
 
 <div class="hero-card" markdown>
+:material-play-circle:{ .hero-icon }
+
+### Player
+
+Waveforms, queue, BPM pitching, and auto-mix.
+
+[Player :material-arrow-right:](player.md){ .md-button }
+</div>
+
+<div class="hero-card" markdown>
 :material-robot:{ .hero-icon }
 
-### Ollama
+### AI providers
 
-Set up a local LLM for AI-powered features.
+Set up Ollama, Claude Code, or the Anthropic API.
 
-[Ollama :material-arrow-right:](ollama.md){ .md-button }
+[AI providers :material-arrow-right:](ai.md){ .md-button }
 </div>
 
 </div>

@@ -6,7 +6,7 @@ Music management app for DJs and producers: edit local audio metadata, explore S
 
 | Component  | Stack                         | Directory   |
 |------------|-------------------------------|-------------|
-| Backend    | FastAPI · Python (uv)         | `backend/`, `soundcloud_tools/`, `starlib/` |
+| Backend    | FastAPI · Python (uv)         | `backend/` |
 | Frontend   | Next.js · React · TypeScript · Tailwind v4 · shadcn | `frontend/` |
 | Desktop    | Tauri v2 · Rust               | `desktop/`  |
 | Docs       | Zensical (mkdocs-style)       | `docs/`     |
@@ -33,7 +33,7 @@ Frontend routes: `/library` (filesystem + SoundCloud sources via `?source=`), `/
 - **All git hooks** are managed by the Python `pre-commit` framework via `.pre-commit-config.yaml` at the repo root. Install once with `pre-commit install`. Python hooks (ruff, mypy, pydoclint) and frontend hooks (prettier, tsc) live side by side — do not introduce a second hook runner.
 - **Frontend formatter**: Prettier owns all formatting. Don't hand-sort imports or Tailwind classes — `@ianvs/prettier-plugin-sort-imports` and `prettier-plugin-tailwindcss` handle both. `cn` and `cva` are registered as Tailwind functions. Config: `frontend/.prettierrc.json`.
 - **Frontend scripts**: `npm run lint`, `npm run format`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`.
-- **Playwright e2e** lives in `frontend/e2e/`, config in `frontend/playwright.config.ts`, fixtures in `frontend/e2e/fixtures.ts` (mocks the backend so tests don't need a running API). Run with `npx playwright test` from `frontend/`.
+- **Playwright e2e** lives in `frontend/e2e/`, config in `frontend/playwright.config.ts`, fixtures in `frontend/e2e/fixtures.ts` (mocks the backend so tests don't need a running API). Run with `npx playwright test` from `frontend/`. During dev prefer a targeted run — `npm run test:e2e:changed` (only specs affected by the git diff) or a named spec — over the whole suite. The slow real-time audio specs (crossfade) are tagged `@slow`: `npm run test:e2e:fast` skips them, `npm run test:e2e:slow` runs only them.
 - **CI** should run: `lint`, `format:check`, `typecheck`, `test`, `build`, and `playwright test`.
 
 ### Rule: any user-visible feature needs a Playwright test
@@ -84,6 +84,10 @@ cd frontend && npm run generate               # SC + backend types
 # Backend
 
 - Use Google-style docstrings.
+- The package is layered: **`api` → `services` → `domain`**, with **`infra`** holding the adapters (db, cache, SoundCloud HTTP, AI providers, keychain, watcher, settings store). `schemas/` is layer-neutral.
+- Dependencies point inward only. `domain/` is pure — no `fastapi`, `httpx`, `sqlmodel`, `keyring`, and no imports of `api`/`services`/`infra`. `scripts/check_layering.py` runs in pre-commit and fails the commit otherwise.
+- Put new code in the layer that matches what it does, not next to whatever called it: pure logic in `domain/`, anything touching the network/disk/DB in `infra/`, orchestration in `services/`, HTTP handling in `api/` (register the router in `api/__init__.py`).
+- `tests/` mirrors the same four directories.
 
 # Design
 

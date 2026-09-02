@@ -1054,15 +1054,15 @@ function TracksLane({
   );
 }
 
-/** Stable hue (0–360) per track so the band's tint visually identifies
- *  the track even when artwork isn't available yet. */
-function trackHue(t: DerivedRun): number {
+/** Stable chart token per track so bands remain distinct without inventing
+ *  component-local colours outside the design-system palette. */
+function trackColour(t: DerivedRun): string {
   const seed = t.shazam_id ?? `${t.title}|${t.artist ?? ""}`;
   let h = 0;
   for (let i = 0; i < seed.length; i++) {
     h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   }
-  return h % 360;
+  return `var(--chart-${(h % 5) + 1})`;
 }
 
 /** Pixel width the band expands to on hover so the cover is fully
@@ -1111,7 +1111,7 @@ function TrackBand({
 }) {
   const [hovered, setHovered] = useState(false);
   const primary = tracks[0];
-  const tint = `oklch(0.62 0.14 ${trackHue(primary)})`;
+  const tint = trackColour(primary);
   // Match the tracklist's per-row key so a band-click scrolls the
   // matching row into view. Persisted tracks key by id; the live-scan
   // ``DerivedRun`` fallback uses start+title (no row to focus yet).
@@ -1134,7 +1134,7 @@ function TrackBand({
   // pattern, so the lane stays calm.
   const echoArt =
     tracks.map((t) => artworks.get(trackKey(t)) ?? null).find(Boolean) ?? null;
-  const laneBg = "oklch(0.18 0.01 260)";
+  const laneBg = "var(--surface-2)";
   const fallbackBg = isConfirmed
     ? tint
     : `color-mix(in oklch, ${tint} 30%, ${laneBg})`;
@@ -1335,7 +1335,7 @@ function TrackBand({
       )}
       {tracks.length > 1 && !isConfirmed && (
         <span
-          className="text-text pointer-events-none absolute right-0.5 bottom-0.5 rounded bg-black/55 px-1 text-[9px] font-semibold tabular-nums backdrop-blur-sm"
+          className="text-text-on-danger text-2xs pointer-events-none absolute right-0.5 bottom-0.5 rounded bg-[var(--overlay)] px-1 font-semibold tabular-nums backdrop-blur-sm"
           aria-hidden="true"
         >
           ×{tracks.length}

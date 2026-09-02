@@ -1,16 +1,6 @@
 "use client";
 
-import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  Check,
-  ChevronDown,
-  ChevronsUpDown,
-  ChevronUp,
-  Eraser,
-  Music,
-  PencilLine,
-  Workflow,
-} from "lucide-react";
+import { Check, Eraser, PencilLine, Workflow } from "lucide-react";
 import {
   parseAsArrayOf,
   parseAsInteger,
@@ -25,15 +15,19 @@ import {
   formatFileSize,
   serializeComment,
 } from "@/app/library/utils";
-import {
-  SortableColumnHeader,
-  SortableHeaderCell,
-} from "@/components/columns/sortable-columns";
+import { CoverPlayButton } from "@/components/cover-play-button";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { MiniWaveform } from "@/components/mini-waveform";
 import { RulesetPreview } from "@/components/rulesets/ruleset-preview";
 import { Spinner } from "@/components/spinner";
+import { TrackQueueMenu } from "@/components/track-queue-menu";
+import {
+  TrackTable,
+  TrailingSortButton,
+  type TrackTableColumn,
+  type TrackTableHandle,
+} from "@/components/track-table/track-table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,7 +65,7 @@ import {
   type TrackBrowse,
   type TrackInfoUpdateRequest,
 } from "@/lib/api";
-import { usePlayer } from "@/lib/player-context";
+import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import { searchParams } from "@/lib/search-params";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
 import { parseRemix, removeMix } from "@/lib/string-utils";
@@ -142,6 +136,8 @@ const COLUMN_FIELDS: {
 ];
 
 type ResolvedField = (typeof COLUMN_FIELDS)[number] & { width: number };
+
+const COLUMN_FIELDS_BY_KEY = new Map(COLUMN_FIELDS.map((f) => [f.key, f]));
 
 export const FILESYSTEM_COLUMN_DEFS: import("@/lib/columns/types").ColumnDef[] =
   [
@@ -216,6 +212,16 @@ const SORTABLE_FIELDS: Partial<Record<FieldKey, SortBy>> = {
   duration: "duration",
 };
 
+/** Bridges COLUMN_FIELDS into TrackTable's column shape. The wrapper still
+ *  drives editable-vs-static behavior off COLUMN_FIELDS_BY_KEY in EditRow. */
+const TRACK_TABLE_COLUMNS: TrackTableColumn[] = COLUMN_FIELDS.map((f) => ({
+  id: f.key,
+  header: f.label,
+  defaultWidth: f.defaultWidth,
+  sortKey: SORTABLE_FIELDS[f.key],
+  required: f.key === "title",
+}));
+
 function getMissingAttributes(
   item: TrackBrowse,
   required: RequiredAttribute[],
@@ -280,23 +286,6 @@ function RulesetBadge({ ruleset }: { ruleset: Ruleset }) {
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
-  );
-}
-
-function SortIcon({
-  col,
-  sortBy,
-  sortOrder,
-}: {
-  col: SortBy;
-  sortBy: SortBy;
-  sortOrder: SortOrder;
-}) {
-  if (col !== sortBy) return <ChevronsUpDown className="size-3 opacity-30" />;
-  return sortOrder === "asc" ? (
-    <ChevronUp className="text-primary size-3" />
-  ) : (
-    <ChevronDown className="text-primary size-3" />
   );
 }
 
@@ -382,7 +371,13 @@ function EditableCell({
 interface EditRowProps {
   item: TrackBrowse;
   isSelected: boolean;
+  /** The row whose single-track editor is open — drives the inline
+   * click-to-edit affordance, not playback. */
   isCurrent: boolean;
+  /** This row's file is the one playing in the shared player. Drives the green
+   * "now playing" highlight + the cover's persistent Pause, consistent with
+   * the SoundCloud and Rekordbox tables. */
+  isPlaying: boolean;
   changes: Partial<Record<EditableField, string>>;
   hasChanges: boolean;
   onToggleSelect: (shiftKey: boolean) => void;
@@ -403,6 +398,7 @@ function EditRow({
   item,
   isSelected,
   isCurrent,
+  isPlaying,
   changes,
   onToggleSelect,
   onFieldChange,
@@ -414,6 +410,17 @@ function EditRow({
   folderPath,
   visibleFields,
 }: EditRowProps) {
+  const { enqueue, playNext } = usePlayer();
+  const playerTrack: PlayerTrack = {
+    filePath: item.file_path,
+    fileName: item.file_name,
+    title: item.title ?? undefined,
+    artist: Array.isArray(item.artist)
+      ? item.artist.join(", ")
+      : (item.artist ?? undefined),
+    bpm: item.bpm ?? null,
+  };
+
   const artworkUrl = item.has_artwork
     ? api.getArtworkUrl(item.file_path)
     : pendingArtworkB64
@@ -431,191 +438,192 @@ function EditRow({
   const isChanged = (field: EditableField): boolean => field in changes;
 
   return (
-    <div
-      role="row"
-      aria-current={isCurrent ? "true" : undefined}
-      className={cn(
-        "group/row border-border relative flex h-10 cursor-pointer items-center gap-1.5 border-b pr-0 pl-3 transition-colors",
-        isCurrent && "bg-[var(--brand-soft)]",
-        isSelected && !isCurrent && "bg-[var(--surface-3)]",
-        !isCurrent && !isSelected && "hover:bg-[var(--surface-3)]",
-        justSaved && "saved-pulse",
-      )}
-      onClick={(e) => {
-        // Row click only opens the single-track editor / player.
-        // Multi-select is exclusively driven by the checkbox column.
-        const t = e.target as HTMLElement;
-        if (
-          t.closest(
-            'input, textarea, button, [role="menuitem"], [role="menuitemcheckbox"], [data-row-noselect]',
-          )
-        ) {
-          return;
-        }
-        onSelect();
-      }}
+    <TrackQueueMenu
+      onPlayNext={() => playNext(playerTrack)}
+      onAddToQueue={() => enqueue(playerTrack)}
     >
-      {isCurrent && (
-        <span
-          aria-hidden
-          className="bg-primary absolute inset-y-0 left-0 w-0.5"
-        />
-      )}
-      {/* Checkbox */}
       <div
-        className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
+        role="row"
+        aria-current={isPlaying ? "true" : undefined}
+        className={cn(
+          "group/row border-border relative flex h-10 cursor-pointer items-center gap-1.5 border-b pr-0 pl-3 transition-colors",
+          isPlaying && "bg-[var(--brand-soft)]",
+          !isPlaying && (isCurrent || isSelected) && "bg-[var(--surface-3)]",
+          !isPlaying &&
+            !isCurrent &&
+            !isSelected &&
+            "hover:bg-[var(--surface-3)]",
+          justSaved && "saved-pulse",
+        )}
         onClick={(e) => {
-          e.stopPropagation();
-          onToggleSelect(e.shiftKey);
+          // Row click only opens the single-track editor / player.
+          // Multi-select is exclusively driven by the checkbox column.
+          const t = e.target as HTMLElement;
+          if (
+            t.closest(
+              'input, textarea, button, [role="menuitem"], [role="menuitemcheckbox"], [data-row-noselect]',
+            )
+          ) {
+            return;
+          }
+          onSelect();
         }}
       >
-        <Checkbox
-          checked={isSelected}
-          tabIndex={-1}
-          className="cursor-pointer"
-        />
-      </div>
-
-      {/* Artwork thumbnail */}
-      <div
-        className={`bg-muted flex size-7 shrink-0 items-center justify-center overflow-hidden rounded ring-1 ${pendingArtworkB64 ? "ring-primary/40" : "ring-transparent"}`}
-      >
-        {artworkUrl ? (
-          <img
-            src={artworkUrl}
-            alt=""
-            className="size-7 object-cover"
-            loading="lazy"
+        {isPlaying && (
+          <span
+            aria-hidden
+            className="bg-primary absolute inset-y-0 left-0 w-0.5"
           />
-        ) : (
-          <Music className="text-muted-foreground size-3" />
         )}
-      </div>
-
-      {/* Mini waveform (top-half) */}
-      <div className="h-6 w-20 shrink-0">
-        <MiniWaveform
-          track={{
-            filePath: item.file_path,
-            fileName: item.file_name,
-            title: item.title ?? undefined,
-            artist: Array.isArray(item.artist)
-              ? item.artist.join(", ")
-              : (item.artist ?? undefined),
+        {/* Checkbox */}
+        <div
+          className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect(e.shiftKey);
           }}
-          halfHeight
-          onStartPlay={onStartPlay}
-        />
-      </div>
-
-      {/* Column cells — order driven by visibleFields (user-reorderable). */}
-      {visibleFields.map((f) => {
-        if (f.key === "folder") {
-          return (
-            <span
-              key={f.key}
-              className="text-muted-foreground min-w-0 shrink-0 truncate text-xs"
-              style={{ width: f.width }}
-              title={item.folder ?? ""}
-            >
-              {item.folder && folderPath
-                ? item.folder.startsWith(folderPath)
-                  ? item.folder.slice(folderPath.length + 1) || "."
-                  : item.folder
-                : "—"}
-            </span>
-          );
-        }
-        if (f.key === "file_size") {
-          const bytes = item.file_size ?? 0;
-          return (
-            <span
-              key={f.key}
-              data-size-cell
-              className="text-muted-foreground min-w-0 shrink-0 truncate text-right text-xs tabular-nums"
-              style={{ width: f.width }}
-              title={bytes ? `${bytes.toLocaleString()} bytes` : ""}
-            >
-              {bytes ? formatFileSize(bytes) : "—"}
-            </span>
-          );
-        }
-        if (f.key === "duration") {
-          const secs = item.duration ?? null;
-          return (
-            <span
-              key={f.key}
-              data-duration-cell
-              className="text-muted-foreground min-w-0 shrink-0 truncate text-right text-xs tabular-nums"
-              style={{ width: f.width }}
-            >
-              {secs != null ? formatDuration(secs) : "—"}
-            </span>
-          );
-        }
-        if (f.key === "file_format") {
-          const fmt = item.file_format
-            ? item.file_format.replace(/^\./, "").toLowerCase()
-            : "";
-          return (
-            <span
-              key={f.key}
-              data-format-cell
-              className="text-muted-foreground min-w-0 shrink-0 truncate text-xs tabular-nums"
-              style={{ width: f.width }}
-              title={item.file_format ?? ""}
-            >
-              {fmt || "—"}
-            </span>
-          );
-        }
-        if (f.key === "soundcloud_linked") {
-          return (
-            <div
-              key={f.key}
-              className="flex shrink-0 items-center justify-center"
-              style={{ width: f.width }}
-              title={isScLinked ? "Linked to SoundCloud" : "Not linked"}
-            >
-              <SoundCloudLogo
-                className={cn(
-                  "size-3.5",
-                  isScLinked ? "text-primary" : "text-muted-foreground/40",
-                )}
-              />
-            </div>
-          );
-        }
-        return (
-          <EditableCell
-            key={f.key}
-            value={getValue(f.key as EditableField)}
-            onCommit={(v) => onFieldChange(f.key as EditableField, v)}
-            onActivate={onSelect}
-            isCurrent={isCurrent}
-            placeholder={f.label}
-            isChanged={isChanged(f.key as EditableField)}
-            width={f.width}
+        >
+          <Checkbox
+            checked={isSelected}
+            tabIndex={-1}
+            className="cursor-pointer"
           />
-        );
-      })}
+        </div>
 
-      {/* Added date (read-only) */}
-      <span className="text-muted-foreground w-20 shrink-0 text-xs tabular-nums">
-        {item.mtime
-          ? new Date(item.mtime * 1000).toISOString().slice(0, 10)
-          : "—"}
-      </span>
+        {/* Artwork thumbnail with hover play/pause overlay */}
+        <CoverPlayButton
+          artworkUrl={artworkUrl}
+          isCurrent={isPlaying}
+          onStartPlay={onStartPlay}
+          label={item.title ?? item.file_name}
+          className={`ring-1 ${pendingArtworkB64 ? "ring-primary/40" : "ring-transparent"}`}
+        />
 
-      {/* File name — moved to the end; folder is more relevant in tree view */}
-      <span
-        data-file-path={item.file_path}
-        className="text-muted-foreground w-32 shrink-0 truncate text-xs"
-        title={item.file_name}
-      >
-        {item.file_name}
-      </span>
-    </div>
+        {/* Mini waveform (top-half) */}
+        <div className="h-6 w-20 shrink-0">
+          <MiniWaveform
+            track={{
+              filePath: item.file_path,
+              fileName: item.file_name,
+              title: item.title ?? undefined,
+              artist: Array.isArray(item.artist)
+                ? item.artist.join(", ")
+                : (item.artist ?? undefined),
+            }}
+            halfHeight
+            onStartPlay={onStartPlay}
+          />
+        </div>
+
+        {/* Column cells — order driven by visibleFields (user-reorderable). */}
+        {visibleFields.map((f) => {
+          if (f.key === "folder") {
+            return (
+              <span
+                key={f.key}
+                className="text-muted-foreground min-w-0 shrink-0 truncate text-xs"
+                style={{ width: f.width }}
+                title={item.folder ?? ""}
+              >
+                {item.folder && folderPath
+                  ? item.folder.startsWith(folderPath)
+                    ? item.folder.slice(folderPath.length + 1) || "."
+                    : item.folder
+                  : "—"}
+              </span>
+            );
+          }
+          if (f.key === "file_size") {
+            const bytes = item.file_size ?? 0;
+            return (
+              <span
+                key={f.key}
+                data-size-cell
+                className="text-muted-foreground min-w-0 shrink-0 truncate text-right text-xs tabular-nums"
+                style={{ width: f.width }}
+                title={bytes ? `${bytes.toLocaleString()} bytes` : ""}
+              >
+                {bytes ? formatFileSize(bytes) : "—"}
+              </span>
+            );
+          }
+          if (f.key === "duration") {
+            const secs = item.duration ?? null;
+            return (
+              <span
+                key={f.key}
+                data-duration-cell
+                className="text-muted-foreground min-w-0 shrink-0 truncate text-right text-xs tabular-nums"
+                style={{ width: f.width }}
+              >
+                {secs != null ? formatDuration(secs) : "—"}
+              </span>
+            );
+          }
+          if (f.key === "file_format") {
+            const fmt = item.file_format
+              ? item.file_format.replace(/^\./, "").toLowerCase()
+              : "";
+            return (
+              <span
+                key={f.key}
+                data-format-cell
+                className="text-muted-foreground min-w-0 shrink-0 truncate text-xs tabular-nums"
+                style={{ width: f.width }}
+                title={item.file_format ?? ""}
+              >
+                {fmt || "—"}
+              </span>
+            );
+          }
+          if (f.key === "soundcloud_linked") {
+            return (
+              <div
+                key={f.key}
+                className="flex shrink-0 items-center justify-center"
+                style={{ width: f.width }}
+                title={isScLinked ? "Linked to SoundCloud" : "Not linked"}
+              >
+                <SoundCloudLogo
+                  className={cn(
+                    "size-3.5",
+                    isScLinked ? "text-primary" : "text-muted-foreground/40",
+                  )}
+                />
+              </div>
+            );
+          }
+          return (
+            <EditableCell
+              key={f.key}
+              value={getValue(f.key as EditableField)}
+              onCommit={(v) => onFieldChange(f.key as EditableField, v)}
+              onActivate={onSelect}
+              isCurrent={isCurrent}
+              placeholder={f.label}
+              isChanged={isChanged(f.key as EditableField)}
+              width={f.width}
+            />
+          );
+        })}
+
+        {/* Added date (read-only) */}
+        <span className="text-muted-foreground w-20 shrink-0 text-xs tabular-nums">
+          {item.mtime
+            ? new Date(item.mtime * 1000).toISOString().slice(0, 10)
+            : "—"}
+        </span>
+
+        {/* File name — moved to the end; folder is more relevant in tree view */}
+        <span
+          data-file-path={item.file_path}
+          className="text-muted-foreground w-32 shrink-0 truncate text-xs"
+          title={item.file_name}
+        >
+          {item.file_name}
+        </span>
+      </div>
+    </TrackQueueMenu>
   );
 }
 
@@ -661,41 +669,32 @@ export function CollectionTable({
   onColumnWidthChange,
   onColumnWidthReset,
 }: CollectionTableProps) {
-  const colVisible = useCallback(
-    (id: string) => (isColumnVisible ? isColumnVisible(id) : true),
-    [isColumnVisible],
+  // The folder column only makes sense when browsing by absolute folder path —
+  // overlay the caller's visibility predicate so TrackTable hides it otherwise.
+  const isVisibleForTable = useCallback(
+    (id: string) => {
+      if (id === "folder" && !folderPath) return false;
+      return isColumnVisible ? isColumnVisible(id) : true;
+    },
+    [isColumnVisible, folderPath],
   );
-  const orderedFields = useMemo(() => {
-    if (!columnOrder?.length) return COLUMN_FIELDS;
-    const byId = new Map(COLUMN_FIELDS.map((f) => [f.key, f]));
+
+  // Toolbar-only projection of the column list (order + visibility, no widths).
+  // The batch-edit field selector lists the same columns the table renders.
+  const visibleFields = useMemo(() => {
+    const byKey = new Map(COLUMN_FIELDS.map((f) => [f.key, f]));
     const seen = new Set<string>();
-    const out: typeof COLUMN_FIELDS = [];
-    for (const id of columnOrder) {
-      const f = byId.get(id as FieldKey);
+    const ordered: typeof COLUMN_FIELDS = [];
+    for (const id of columnOrder ?? []) {
+      const f = byKey.get(id as FieldKey);
       if (f && !seen.has(id)) {
-        out.push(f);
+        ordered.push(f);
         seen.add(id);
       }
     }
-    for (const f of COLUMN_FIELDS) {
-      if (!seen.has(f.key)) out.push(f);
-    }
-    return out;
-  }, [columnOrder]);
-  // Live widths during an active resize drag. Overlays `columnWidths` until
-  // the drag commits (pointer-up), which then persists via onColumnWidthChange.
-  const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
-  const visibleFields = useMemo<ResolvedField[]>(
-    () =>
-      orderedFields
-        .filter((f) => f.key !== "folder" || !!folderPath)
-        .filter((f) => colVisible(f.key))
-        .map((f) => ({
-          ...f,
-          width: liveWidths[f.key] ?? columnWidths?.[f.key] ?? f.defaultWidth,
-        })),
-    [orderedFields, colVisible, columnWidths, liveWidths, folderPath],
-  );
+    for (const f of COLUMN_FIELDS) if (!seen.has(f.key)) ordered.push(f);
+    return ordered.filter((f) => isVisibleForTable(f.key));
+  }, [columnOrder, isVisibleForTable]);
   const [sortBy, setSortBy] = useQueryState("sort", searchParams.sort);
   const [sortOrder, setSortOrder] = useQueryState("order", searchParams.order);
   // Filter state: URL-backed via the shared filter hook. Keys match attribute
@@ -734,9 +733,9 @@ export function CollectionTable({
   const abortRef = useRef<AbortController | null>(null);
   const itemsRef = useRef<TrackBrowse[]>([]);
 
-  const { playQueue, load } = usePlayer();
+  const { playQueue, load, activeTrack } = usePlayer();
 
-  const scrollParentRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<TrackTableHandle>(null);
 
   // Pending field edits live on the parent (page.tsx) so the single-track
   // editor and the table share state.  Aliased here so the rest of the file
@@ -805,14 +804,10 @@ export function CollectionTable({
   const [scAutoFill, setScAutoFill] = useState(false);
   const scProcessedRef = useRef<Set<string>>(new Set());
 
-  const rowHeight = EDIT_ROW_HEIGHT;
-
-  const virtualizer = useVirtualizer({
-    count: total > 0 ? total : items.length,
-    getScrollElement: () => scrollParentRef.current,
-    estimateSize: () => rowHeight,
-    overscan: 12,
-  });
+  // Tracks the virtualizer's visible window so we can fetch the next page as
+  // the user scrolls past the loaded boundary. Updated via TrackTable's
+  // onVisibleRangeChange.
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 0 });
 
   const loadPage = useCallback(
     async (
@@ -926,28 +921,27 @@ export function CollectionTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheLoading, filtersKey]);
 
-  // Fetch next page when virtualizer reaches near the loaded boundary
+  // Fetch next page when the visible window reaches the loaded boundary
   useEffect(() => {
-    const virtualItems = virtualizer.getVirtualItems();
-    if (!virtualItems.length || !hasMore || loading) return;
-    const lastVirtualItem = virtualItems[virtualItems.length - 1];
-    if (lastVirtualItem.index >= items.length - PAGE_SIZE / 2) {
+    if (!hasMore || loading) return;
+    if (visibleRange.end >= items.length - PAGE_SIZE / 2) {
       loadPage(page + 1, false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [virtualizer.getVirtualItems()]);
+  }, [visibleRange.end, hasMore, loading, items.length]);
 
   // Scroll to a specific track when switching to view mode
   useEffect(() => {
     if (!scrollToFilePath || !items.length) return;
     const idx = items.findIndex((item) => item.file_path === scrollToFilePath);
     if (idx >= 0) {
-      virtualizer.scrollToIndex(idx, { align: "center" });
+      tableRef.current?.scrollToIndex(idx, { align: "center" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollToFilePath, items.length]);
 
-  function handleSort(col: SortBy) {
+  function handleSort(key: string) {
+    const col = key as SortBy;
     if (col !== sortBy) {
       setSortBy(col);
       // Date-like columns default to newest-first; everything else asc-first.
@@ -1407,7 +1401,6 @@ export function CollectionTable({
       : items
   ).filter((i) => resolveApplyRulesEligibility(i).eligible).length;
 
-  const virtualItems = virtualizer.getVirtualItems();
   const allChangedPaths = new Set([
     ...changes.keys(),
     ...pendingArtwork.keys(),
@@ -1615,20 +1608,26 @@ export function CollectionTable({
         </Button>
       </div>
 
-      {/* Scrollable table area — single container owns both axes so the
-          vertical scrollbar stays on the viewport edge even when the row
-          content is wider than the viewport. */}
-      <div
-        ref={scrollParentRef}
-        className={`min-h-0 flex-1 overflow-auto overscroll-contain transition-opacity duration-150 ${reloading ? "opacity-40" : "opacity-100"}`}
-      >
-        <div className="w-max min-w-full">
-          {/* Header row — sticky to the top of the scroll container */}
-          <div
-            role="row"
-            className="border-border text-muted-foreground sticky top-0 z-20 flex h-9 items-center gap-1.5 border-b bg-[var(--surface-2)] pr-0 pl-3 text-xs font-medium"
-          >
-            {/* Select all checkbox */}
+      <TrackTable<TrackBrowse>
+        tableRef={tableRef}
+        items={items}
+        columns={TRACK_TABLE_COLUMNS}
+        totalCount={total > 0 ? total : items.length}
+        estimateRowSize={EDIT_ROW_HEIGHT}
+        getItemKey={(index, item) => item?.file_path ?? `__idx_${index}`}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+        onSort={handleSort}
+        columnOrder={columnOrder}
+        onColumnOrderChange={onColumnOrderChange}
+        columnWidths={columnWidths}
+        onColumnWidthChange={onColumnWidthChange}
+        onColumnWidthReset={onColumnWidthReset}
+        isColumnVisible={isVisibleForTable}
+        reloading={reloading}
+        onVisibleRangeChange={setVisibleRange}
+        renderHeaderLead={() => (
+          <>
             <div className="flex w-6 shrink-0 items-center justify-center">
               <Checkbox
                 checked={
@@ -1650,158 +1649,85 @@ export function CollectionTable({
                 className="cursor-pointer"
               />
             </div>
-            {/* Artwork spacer */}
             <div className="w-7 shrink-0" />
-            {/* Waveform spacer */}
             <div className="w-20 shrink-0" />
-            {/* Field headers — drag-reorderable; sortable where applicable.
-                Folder participates here too (when in tree/path mode). */}
-            <SortableColumnHeader
-              ids={visibleFields.map((f) => f.key)}
-              onOrderChange={(nextIds) => {
-                if (!onColumnOrderChange) return;
-                // Merge the reordered visible ids with any hidden ids so
-                // hidden columns retain their relative position.
-                const hidden = COLUMN_FIELDS.map((f) => f.key).filter(
-                  (k) => !visibleFields.some((v) => v.key === k),
-                );
-                onColumnOrderChange([...nextIds, ...hidden]);
-              }}
-            >
-              {visibleFields.map((f) => {
-                const sortKey = SORTABLE_FIELDS[f.key];
-                return (
-                  <SortableHeaderCell
-                    key={f.key}
-                    id={f.key}
-                    className="min-w-0 shrink-0"
-                    style={{ width: f.width }}
-                    onResize={(w, phase) => {
-                      if (phase === "drag") {
-                        setLiveWidths((p) => ({ ...p, [f.key]: w }));
-                      } else {
-                        onColumnWidthChange?.(f.key, w);
-                        setLiveWidths((p) => {
-                          const { [f.key]: _omit, ...rest } = p;
-                          return rest;
-                        });
-                      }
-                    }}
-                    onResetWidth={() => onColumnWidthReset?.(f.key)}
-                  >
-                    {sortKey ? (
-                      <button
-                        className="hover:text-foreground flex w-full cursor-pointer items-center gap-0.5 transition-colors"
-                        onClick={() => handleSort(sortKey)}
-                      >
-                        {f.label}
-                        <SortIcon
-                          col={sortKey}
-                          sortBy={sortBy}
-                          sortOrder={sortOrder}
-                        />
-                      </button>
-                    ) : (
-                      <span>{f.label}</span>
-                    )}
-                  </SortableHeaderCell>
-                );
-              })}
-            </SortableColumnHeader>
-            {/* Added date header — sortable by mtime */}
-            <button
-              className="hover:text-foreground flex w-20 shrink-0 cursor-pointer items-center gap-0.5 transition-colors"
-              onClick={() => handleSort("mtime")}
+          </>
+        )}
+        renderHeaderTrail={({ sortBy: sb, sortOrder: so }) => (
+          <>
+            <TrailingSortButton
+              sortKey="mtime"
+              sortBy={sb}
+              sortOrder={so}
+              onSort={handleSort}
+              className="w-20"
             >
               Added
-              <SortIcon col="mtime" sortBy={sortBy} sortOrder={sortOrder} />
-            </button>
-            {/* File name header — moved to the end */}
-            <button
-              className="hover:text-foreground flex w-32 shrink-0 cursor-pointer items-center gap-0.5 transition-colors"
-              onClick={() => handleSort("file_name")}
+            </TrailingSortButton>
+            <TrailingSortButton
+              sortKey="file_name"
+              sortBy={sb}
+              sortOrder={so}
+              onSort={handleSort}
+              className="w-32"
             >
               File
-              <SortIcon col="file_name" sortBy={sortBy} sortOrder={sortOrder} />
-            </button>
-          </div>
-
-          {/* Virtualized row surface */}
-          <div>
-            {/* Total height for virtual scroll */}
-            <div
-              style={{
-                height: `${virtualizer.getTotalSize()}px`,
-                position: "relative",
-              }}
-            >
-              {virtualItems.map((virtualRow) => {
-                const item = items[virtualRow.index];
-
-                return (
-                  <div
-                    key={item?.file_path ?? virtualRow.key}
-                    data-index={virtualRow.index}
-                    ref={virtualizer.measureElement}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    {item ? (
-                      <EditRow
-                        item={item}
-                        isSelected={selectedPaths.has(item.file_path)}
-                        isCurrent={selectedFilePath === item.file_path}
-                        changes={changes.get(item.file_path) ?? {}}
-                        hasChanges={
-                          changes.has(item.file_path) ||
-                          pendingArtwork.has(item.file_path) ||
-                          pendingScLinks.has(item.file_path)
-                        }
-                        onToggleSelect={(shiftKey) =>
-                          toggleSelect(
-                            item.file_path,
-                            virtualRow.index,
-                            shiftKey,
-                          )
-                        }
-                        onFieldChange={(field, value) =>
-                          updateField(item.file_path, field, value)
-                        }
-                        onSelect={() => handleSelect(item)}
-                        onStartPlay={() => handleStartPlay(virtualRow.index)}
-                        justSaved={pulseRows.has(item.file_path)}
-                        pendingArtworkB64={pendingArtwork.get(item.file_path)}
-                        isScLinked={
-                          !!item.soundcloud_id ||
-                          pendingScLinks.has(item.file_path)
-                        }
-                        folderPath={folderPath}
-                        visibleFields={visibleFields}
-                      />
-                    ) : (
-                      <SkeletonRow />
-                    )}
-                  </div>
-                );
-              })}
+            </TrailingSortButton>
+          </>
+        )}
+        renderSkeletonRow={() => <SkeletonRow />}
+        bodyTrailing={
+          loading && hasMore ? (
+            <div className="text-muted-foreground flex items-center justify-center py-4 text-xs">
+              Loading…
             </div>
-
-            {/* Loader at end */}
-            {loading && hasMore && (
-              <div className="text-muted-foreground flex items-center justify-center py-4 text-xs">
-                Loading…
-              </div>
-            )}
-          </div>
-        </div>
-        {/* min-w */}
-      </div>
-      {/* overflow-x-auto */}
+          ) : null
+        }
+        renderRow={({ item, index, visibleColumns }) => {
+          if (!item) return <SkeletonRow />;
+          // Project TrackTable's column shape back into the EditRow's
+          // ResolvedField (key/label/editable + width) by looking up the
+          // canonical metadata. Keeps EditRow's switching logic unchanged.
+          const visibleFieldsForRow: ResolvedField[] = visibleColumns
+            .map((col) => {
+              const cf = COLUMN_FIELDS_BY_KEY.get(col.id as FieldKey);
+              if (!cf) return null;
+              return { ...cf, width: col.width };
+            })
+            .filter((v): v is ResolvedField => v !== null);
+          return (
+            <EditRow
+              item={item}
+              isSelected={selectedPaths.has(item.file_path)}
+              isCurrent={selectedFilePath === item.file_path}
+              isPlaying={
+                !!activeTrack && activeTrack.filePath === item.file_path
+              }
+              changes={changes.get(item.file_path) ?? {}}
+              hasChanges={
+                changes.has(item.file_path) ||
+                pendingArtwork.has(item.file_path) ||
+                pendingScLinks.has(item.file_path)
+              }
+              onToggleSelect={(shiftKey) =>
+                toggleSelect(item.file_path, index, shiftKey)
+              }
+              onFieldChange={(field, value) =>
+                updateField(item.file_path, field, value)
+              }
+              onSelect={() => handleSelect(item)}
+              onStartPlay={() => handleStartPlay(index)}
+              justSaved={pulseRows.has(item.file_path)}
+              pendingArtworkB64={pendingArtwork.get(item.file_path)}
+              isScLinked={
+                !!item.soundcloud_id || pendingScLinks.has(item.file_path)
+              }
+              folderPath={folderPath}
+              visibleFields={visibleFieldsForRow}
+            />
+          );
+        }}
+      />
     </div>
   );
 }

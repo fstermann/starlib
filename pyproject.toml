@@ -1,49 +1,48 @@
 [project]
 name = "starlib"
-version = "0.5.0"
+version = "0.6.0"
 description = "DJ library management app."
 authors = [{name = "Fabian Stermann", email = "56961284+fstermann@users.noreply.github.com"}]
 readme = "README.md"
 requires-python = ">=3.13.0"
 dependencies = [
     "pydantic>=2.13.4",
-    "pydantic-settings>=2.14.1",
+    "pydantic-settings>=2.15.0",
     "httpx>=0.27.2",
-    "starlette>=1.2.1",
-    "devtools>=0.12.2",
-    "fake-useragent>=1.5.1",
+    "starlette>=1.6.0",
     "requests>=2.34.2",
-    "mutagen>=1.47.0",
-    "fastapi>=0.136.3",
-    "uvicorn[standard]>=0.49.0",
+    "mutagen>=1.48.1",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.4",
     "python-multipart>=0.0.32",
-    "fastapi-pagination>=0.15.14",
+    "fastapi-pagination>=0.15.16",
     "watchdog>=4.0.0",
-    "platformdirs>=4.10.0",
-    "sqlmodel>=0.0.22",
-    "alembic>=1.13",
-    "anthropic>=0.107.1",
+    "platformdirs>=4.11.3",
+    "sqlmodel>=0.0.39",
+    "alembic>=1.19.1",
+    "anthropic>=0.120.0",
     "keyring>=25.0.0",
     "shazamio>=0.7.0",
     "audioop-lts>=0.2.2",
+    "pyrekordbox>=0.4.0",
 ]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.16",
-    "pre-commit>=4.6.0",
-    "pytest>=9.0.3",
+    "ruff>=0.16.4",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "zensical>=0.0.44",
+    "zensical>=0.0.57",
     # pygments 2.20 added `filename` as a recognized HtmlFormatter option; pymdownx 10.21
     # passes filename=None when no code block title is given, which causes html.escape(None)
     # to fail and silently breaks all code block rendering. Pin until pymdownx is fixed.
-    "pygments<2.21",
+    "pygments<2.22",
 ]
 desktop = [
     # PyInstaller is used to package the FastAPI backend into a self-contained binary.
     # Run: pyinstaller desktop/sidecar.spec --distpath desktop/binaries
-    "pyinstaller>=6.20.0",
+    "pyinstaller>=6.22.2",
 ]
 
 [build-system]
@@ -51,7 +50,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["backend", "soundcloud_tools"]
+packages = ["backend"]
 
 [tool.ruff]
 line-length = 120
@@ -86,7 +85,7 @@ extend-immutable-calls = ["fastapi.Query", "fastapi.Depends", "Query", "Depends"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["backend.core.services.cache_db", "backend.core.db.*"]
+module = ["backend.infra.cache", "backend.infra.db.*"]
 disable_error_code = ["attr-defined", "union-attr", "arg-type", "operator", "call-arg"]
 
 [tool.pytest.ini_options]

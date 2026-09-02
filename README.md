@@ -28,14 +28,19 @@ Organise your tracks, edit metadata, and discover new music — all from a singl
 
 ### Library
 
-One view for your whole music library, with two sources you switch between at the top:
+One view for your whole music library, with three sources you switch between at the top:
 
 - **Filesystem** — edit ID3/AIFF metadata on local audio files. Pin any folder as a shortcut (drag to reorder, rename in place). Search SoundCloud to auto-fill title, artist, BPM, key, genre, and artwork.
-- **SoundCloud** — browse your own likes and playlists under **My Library**, or search a user under **Discover** to browse theirs. Filter by genre, duration, and collection status. Create playlists from your selections.
+- **SoundCloud** — browse your own likes, reposts, and playlists under **My Library**, or search a user under **Discover** to browse theirs. Filter by genre, duration, BPM, and collection status. Create playlists from your selections.
+- **Rekordbox** — browse your Rekordbox collection read-only, from the local install or a mounted USB/SD export, with the analysed waveforms and beatgrids.
 
 <div align="center"><img src="docs/assets/images/screenshots/library.png" alt="Library — Filesystem" width="90%"></div>
 
 <div align="center"><img src="docs/assets/images/screenshots/library-soundcloud.png" alt="Library — SoundCloud" width="90%"></div>
+
+### Player
+
+Play anything from any source in a shared player: waveforms, cue points, loops, a reorderable queue, target-BPM pitching, and auto-mix that beatgrid-blends one track into the next.
 
 ### Weekly Favorites
 

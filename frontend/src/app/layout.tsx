@@ -7,6 +7,7 @@ import { ThemeProvider } from "next-themes";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
 import { BackendGate } from "@/components/backend-gate";
+import { BackendStatusListener } from "@/components/backend-status-listener";
 import {
   CommandPalette,
   CommandPaletteProvider,
@@ -55,6 +56,10 @@ export default function RootLayout({
         <LogInit />
         <DeepLinkListener />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+          {/* Above BackendGate: sidecar failures must be visible while the
+              gate is still waiting for /health. */}
+          <Toaster />
+          <BackendStatusListener />
           <TooltipProvider>
             <BackendGate>
               <NuqsAdapter>
@@ -68,7 +73,6 @@ export default function RootLayout({
                         <SetupGate>{children}</SetupGate>
                       </LayoutShell>
                       <WaveformPlayer />
-                      <Toaster />
                       <CommandPalette />
                     </CommandPaletteProvider>
                   </TopBarProvider>

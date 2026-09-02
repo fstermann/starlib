@@ -220,7 +220,7 @@ export interface paths {
          *     handler exchanges the code for OAuth2 tokens as usual. *In addition*,
          *     the webview's cookie jar now holds the web-session ``oauth_token``,
          *     which the shell posts here. We persist it to ``config.env`` as
-         *     ``OAUTH_TOKEN`` so :class:`soundcloud_tools.settings.Settings` picks
+         *     ``OAUTH_TOKEN`` so :class:`backend.sc_settings.Settings` picks
          *     it up on the next ``get_settings()`` call.
          */
         post: operations["save_session_cookie_auth_soundcloud_session_cookie_post"];
@@ -342,10 +342,15 @@ export interface paths {
         };
         /**
          * Get Folder Tree
-         * @description Return the folder tree built from indexed tracks.
+         * @description Return the folder tree built from indexed tracks and on-disk directories.
          *
-         *     Only folders that contain at least one track (directly or in a
-         *     descendant) are included — empty directories are omitted.
+         *     Every directory under the root is included — empty folders too. Hidden
+         *     (dot-prefixed) directories are skipped, matching the indexer.
+         *
+         *     ``track_count`` is always the unfiltered recursive total, so the tree
+         *     structure is stable. When any filter argument is supplied, each node's
+         *     ``filtered_count`` carries the recursive count of tracks matching those
+         *     filters (``None`` otherwise).
          */
         get: operations["get_folder_tree_api_metadata_folders_tree_get"];
         put?: never;
@@ -848,11 +853,6 @@ export interface paths {
         /**
          * Stream Audio
          * @description Stream an audio file.
-         *
-         *     Formats not natively supported by browsers (e.g. AIFF) are transcoded to
-         *     WAV via ffmpeg and cached.  Transcoding is awaited before responding so
-         *     that the browser always receives a real file with Content-Length and range
-         *     support, which is required for seeking to work.
          *
          *     Parameters
          *     ----------
@@ -1491,6 +1491,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/soundcloud/playlists/{playlist_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Playlist
+         * @description Delete a SoundCloud playlist on behalf of the authenticated user.
+         *
+         *     The browser can't call ``DELETE /playlists/...`` directly — SoundCloud
+         *     doesn't expose that method in its CORS policy — so this endpoint forwards
+         *     the request with the user's own token.
+         */
+        delete: operations["delete_playlist_api_soundcloud_playlists__playlist_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/soundcloud/system-playlists": {
         parameters: {
             query?: never;
@@ -1681,6 +1705,211 @@ export interface paths {
          * @description Compute ranked metadata suggestions for a single local track.
          */
         post: operations["suggest_track_metadata_api_suggestions_track_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rekordbox/usb/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Devices
+         * @description List mounted Rekordbox USB/SD exports that carry a readable library.
+         */
+        get: operations["get_usb_devices_api_rekordbox_usb_devices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rekordbox/usb/eject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Eject Usb Device
+         * @description Safely eject a mounted Rekordbox USB/SD export.
+         */
+        post: operations["eject_usb_device_api_rekordbox_usb_eject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rekordbox/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Status
+         * @description Report whether the selected Rekordbox source is reachable.
+         */
+        get: operations["get_status_api_rekordbox_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rekordbox/playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Playlists */
+        get: operations["get_playlists_api_rekordbox_playlists_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rekordbox/playlists/{playlist_id}/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Playlist Tracks */
+        get: operations["get_playlist_tracks_api_rekordbox_playlists__playlist_id__tracks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rekordbox/tracks/{track_id}/artwork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Artwork
+         * @description Serve the cached artwork JPEG for a track.
+         */
+        get: operations["get_track_artwork_api_rekordbox_tracks__track_id__artwork_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rekordbox/tracks/{track_id}/waveform": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Waveform
+         * @description Serve a track's raw ANLZ waveform bytes for the frontend canvas.
+         *
+         *     Preview variants span the whole track: ``color`` = PWV4 (1200 x 6 bytes),
+         *     ``blue`` = PWAV (400 x 1). Detail variants carry ~150 columns/second for
+         *     zoomed playback: ``color_detail`` = PWV5 (2 bytes/column, ``.EXT``),
+         *     ``blue_detail`` = PWV3 (1 byte/column, ``.DAT``).
+         */
+        get: operations["get_track_waveform_api_rekordbox_tracks__track_id__waveform_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rekordbox/tracks/{track_id}/analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Analysis
+         * @description Return a track's beatgrid, phrase sections and cues as JSON.
+         *
+         *     Drives the zoomed player overlay: beat ticks, the phrase band and cue
+         *     markers. ``sections`` is ``null`` when the track has no phrase analysis;
+         *     beatgrid/cues degrade to empty lists rather than 404 when analysis is absent.
+         */
+        get: operations["get_track_analysis_api_rekordbox_tracks__track_id__analysis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rekordbox/tracks/{track_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Track Audio
+         * @description Stream a track's audio file from a mounted USB export.
+         *
+         *     Local-install tracks play through the metadata audio endpoint by their
+         *     absolute path; USB tracks live on the device, so their device-relative path
+         *     is resolved here (within the mount) and streamed with the same
+         *     transcode/range handling.
+         */
+        get: operations["stream_track_audio_api_rekordbox_tracks__track_id__audio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rekordbox/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tracks */
+        get: operations["get_tracks_api_rekordbox_tracks_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1889,6 +2118,15 @@ export interface components {
             /** Results */
             results: components["schemas"]["BatchResultItem"][];
         };
+        /** BeatModel */
+        BeatModel: {
+            /** Beat */
+            beat: number;
+            /** Bpm */
+            bpm: number;
+            /** Timems */
+            timeMs: number;
+        };
         /** Body_update_file_artwork_api_metadata_files__file_path__artwork_post */
         Body_update_file_artwork_api_metadata_files__file_path__artwork_post: {
             /** File */
@@ -1991,6 +2229,31 @@ export interface components {
             bpm_min?: number | null;
             /** Bpm Max */
             bpm_max?: number | null;
+        };
+        /** CueModel */
+        CueModel: {
+            /** Type */
+            type: string;
+            /** Index */
+            index?: number | null;
+            /** Timems */
+            timeMs: number;
+            /** Color */
+            color?: string | null;
+            /** Comment */
+            comment?: string | null;
+            /** Outms */
+            outMs?: number | null;
+        };
+        /** DevicesResponse */
+        DevicesResponse: {
+            /** Devices */
+            devices: components["schemas"]["UsbDevice"][];
+        };
+        /** EjectResponse */
+        EjectResponse: {
+            /** Ok */
+            ok: boolean;
         };
         /**
          * FetchCandidate
@@ -2351,6 +2614,11 @@ export interface components {
             /** Peaks */
             peaks: number[];
         };
+        /** PlaylistsResponse */
+        PlaylistsResponse: {
+            /** Playlists */
+            playlists: components["schemas"]["RekordboxPlaylist"][];
+        };
         /**
          * ProfileGroup
          * @description A persisted ProfileGroup.
@@ -2440,6 +2708,67 @@ export interface components {
             refresh_token: string | null;
             /** Expires In */
             expires_in?: number | null;
+        };
+        /** RekordboxPlaylist */
+        RekordboxPlaylist: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Is Folder */
+            is_folder: boolean;
+            /** Is Smart */
+            is_smart: boolean;
+            /** Track Count */
+            track_count: number;
+        };
+        /** RekordboxStatus */
+        RekordboxStatus: {
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** RekordboxTrack */
+        RekordboxTrack: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Artist */
+            artist?: string | null;
+            /** Album */
+            album?: string | null;
+            /** Genre */
+            genre?: string | null;
+            /** Bpm */
+            bpm?: number | null;
+            /** Key */
+            key?: string | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
+            /** File Path */
+            file_path?: string | null;
+            /** Comment */
+            comment?: string | null;
+            /** Soundcloud Id */
+            soundcloud_id?: number | null;
+            /** Date Added */
+            date_added?: string | null;
+            /** Release Date */
+            release_date?: string | null;
+            /**
+             * Has Artwork
+             * @default false
+             */
+            has_artwork: boolean;
+            /**
+             * Has Waveform
+             * @default false
+             */
+            has_waveform: boolean;
         };
         /** RootFolderRequest */
         RootFolderRequest: {
@@ -2576,6 +2905,17 @@ export interface components {
         SCUserPayload: {
             /** Username */
             username?: string | null;
+        };
+        /** SectionModel */
+        SectionModel: {
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Startms */
+            startMs: number;
+            /** Endms */
+            endMs: number;
         };
         /**
          * SessionCookieRequest
@@ -2725,6 +3065,15 @@ export interface components {
             /** Playlists */
             playlists: components["schemas"]["SystemPlaylistSummary"][];
         };
+        /** TrackAnalysisResponse */
+        TrackAnalysisResponse: {
+            /** Beatgrid */
+            beatgrid: components["schemas"]["BeatModel"][];
+            /** Sections */
+            sections?: components["schemas"]["SectionModel"][] | null;
+            /** Cues */
+            cues: components["schemas"]["CueModel"][];
+        };
         /**
          * TrackBrowseResponse
          * @description Lightweight response for collection browse/table view.
@@ -2856,6 +3205,11 @@ export interface components {
             /** Artwork Data */
             artwork_data?: string | null;
         };
+        /** TracksResponse */
+        TracksResponse: {
+            /** Tracks */
+            tracks: components["schemas"]["RekordboxTrack"][];
+        };
         /**
          * TreeNode
          * @description A node in the folder tree.
@@ -2875,6 +3229,17 @@ export interface components {
              * @default 0
              */
             track_count: number;
+            /** Filtered Count */
+            filtered_count?: number | null;
+        };
+        /** UsbDevice */
+        UsbDevice: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Mount Path */
+            mount_path: string;
         };
         /**
          * UserInfo
@@ -3266,7 +3631,17 @@ export interface operations {
     };
     get_folder_tree_api_metadata_folders_tree_get: {
         parameters: {
-            query?: never;
+            query?: {
+                search?: string | null;
+                genres?: string[] | null;
+                keys?: string[] | null;
+                bpm_min?: number | null;
+                bpm_max?: number | null;
+                has_soundcloud_id?: boolean | null;
+                file_formats?: string[] | null;
+                size_min?: number | null;
+                size_max?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3280,6 +3655,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TreeNode"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3852,7 +4236,7 @@ export interface operations {
     get_file_peaks_api_metadata_files__file_path__peaks_get: {
         parameters: {
             query?: {
-                /** @description Number of amplitude peaks to return */
+                /** @description Number of amplitude peaks to return (up to ~150/s for zoom). */
                 num_peaks?: number;
             };
             header?: never;
@@ -4922,6 +5306,37 @@ export interface operations {
             };
         };
     };
+    delete_playlist_api_soundcloud_playlists__playlist_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                playlist_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_system_playlists_api_soundcloud_system_playlists_get: {
         parameters: {
             query?: never;
@@ -5176,6 +5591,327 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuggestionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_usb_devices_api_rekordbox_usb_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevicesResponse"];
+                };
+            };
+        };
+    };
+    eject_usb_device_api_rekordbox_usb_eject_post: {
+        parameters: {
+            query: {
+                /** @description USB device id */
+                device: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_rekordbox_status_get: {
+        parameters: {
+            query?: {
+                /** @description USB device id; omit for the local install */
+                device?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RekordboxStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_playlists_api_rekordbox_playlists_get: {
+        parameters: {
+            query?: {
+                /** @description USB device id; omit for the local install */
+                device?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_playlist_tracks_api_rekordbox_playlists__playlist_id__tracks_get: {
+        parameters: {
+            query?: {
+                /** @description USB device id; omit for the local install */
+                device?: string | null;
+            };
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TracksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_artwork_api_rekordbox_tracks__track_id__artwork_get: {
+        parameters: {
+            query?: {
+                small?: boolean;
+                /** @description USB device id; omit for the local install */
+                device?: string | null;
+            };
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_waveform_api_rekordbox_tracks__track_id__waveform_get: {
+        parameters: {
+            query?: {
+                /** @description USB device id; omit for the local install */
+                device?: string | null;
+                variant?: string;
+            };
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_analysis_api_rekordbox_tracks__track_id__analysis_get: {
+        parameters: {
+            query?: {
+                /** @description USB device id; omit for the local install */
+                device?: string | null;
+            };
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackAnalysisResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_track_audio_api_rekordbox_tracks__track_id__audio_get: {
+        parameters: {
+            query: {
+                /** @description USB device id */
+                device: string;
+            };
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tracks_api_rekordbox_tracks_get: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+                /** @description USB device id; omit for the local install */
+                device?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TracksResponse"];
                 };
             };
             /** @description Validation Error */

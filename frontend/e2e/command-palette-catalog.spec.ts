@@ -26,6 +26,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "sc:create-playlist-from-selection",
   "sc:reload",
   "pitcher.toggle",
+  "mix.toggle",
   "library.fetch-from-downloads",
   // Nav / Go to
   "nav:/library",
@@ -35,6 +36,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "nav:/library?source=soundcloud&tab=me",
   "nav:/library?source=soundcloud&tab=discover",
   "nav:/library?source=soundcloud&tab=search",
+  "nav:/library?source=rekordbox",
   // Analyser feature commands
   "analyser.paste-url",
   "analyser.reanalyse-selection",

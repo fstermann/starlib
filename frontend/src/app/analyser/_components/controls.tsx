@@ -383,7 +383,7 @@ function TierButtons({
             // Brand-tinted outline — same vocabulary as the library's
             // "Apply rules" button so the analyser's primary action
             // reads as the affirmative one in this row.
-            className="text-primary hover:bg-primary/10 hover:text-primary rounded-r-none border-r-0"
+            className="text-brand hover:bg-brand-soft hover:text-brand rounded-r-none border-r-0"
           >
             <img
               src="/icons/shazam.svg"
@@ -406,7 +406,7 @@ function TierButtons({
             disabled={shazamDisabled}
             aria-label="Choose scan tier"
             data-testid="run-shazam-menu"
-            className="text-primary hover:bg-primary/10 hover:text-primary rounded-l-none px-1.5"
+            className="text-brand hover:bg-brand-soft hover:text-brand rounded-l-none px-1.5"
           >
             <ChevronDown className="size-3.5" />
           </Button>

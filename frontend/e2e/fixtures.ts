@@ -97,6 +97,25 @@ async function mockBackendApi(page: Page) {
     }),
   );
 
+  // App settings + root folder (needed when the settings dialog loads)
+  await page.route(/\/api\/settings$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        preferred_output_format: "aiff",
+        root_music_folder: "/music",
+      }),
+    }),
+  );
+  await page.route(/\/api\/settings\/root-folder$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ root_music_folder: "/music" }),
+    }),
+  );
+
   // AI settings (needed to avoid errors when settings dialog loads)
   await page.route("**/api/ai/settings", (route) =>
     route.fulfill({
@@ -181,6 +200,19 @@ async function mockBackendApi(page: Page) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ rulesets: [], active_ruleset_id: null }),
+    }),
+  );
+
+  // Rekordbox — default to "unavailable" so tests that don't opt in don't
+  // see a half-rendered Rekordbox view.
+  await page.route("**/api/rekordbox/status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        available: false,
+        reason: "Rekordbox not configured in tests",
+      }),
     }),
   );
 }

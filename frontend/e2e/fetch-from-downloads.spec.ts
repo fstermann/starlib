@@ -163,6 +163,47 @@ test.describe("Fetch from Downloads", () => {
     await expect.poll(() => posted?.file_names).toEqual(["keep.mp3"]);
   });
 
+  test("narrow window: long filenames truncate without overflowing the dialog", async ({
+    page,
+  }) => {
+    // Below Tailwind's `sm` breakpoint the dialog spans the window, so the
+    // preview list must stay within its box (regression: flex-1 truncation
+    // needs min-w-0, and the grid content wrapper must not force the track).
+    await page.setViewportSize({ width: 500, height: 900 });
+    await setupBrowse(page);
+    await setupPreview(page, {
+      candidates: [
+        {
+          name: "Some Artist - A Very Long Track Title That Exceeds The Dialog Width By A Lot (Extended Remaster).aiff",
+          size: 1,
+          mtime: 0,
+        },
+      ],
+      skipped: [],
+    });
+
+    await page.goto("/library");
+    await page.getByTestId("fetch-from-downloads-trigger").first().click();
+    const dialog = page.getByRole("dialog");
+    const item = dialog.getByTestId("fetch-preview-item");
+    await expect(item).toHaveCount(1);
+
+    const contentWidth = await dialog.evaluate(
+      (el) => el.getBoundingClientRect().width,
+    );
+    const listScroll = await dialog
+      .getByTestId("fetch-preview-list")
+      .evaluate((el) => (el as HTMLElement).scrollWidth);
+    expect(listScroll).toBeLessThanOrEqual(contentWidth);
+
+    // The name span clips (ellipsis) rather than pushing the row wide.
+    const span = item.locator("span").first();
+    const truncated = await span.evaluate(
+      (el) => el.scrollWidth > el.clientWidth,
+    );
+    expect(truncated).toBe(true);
+  });
+
   test("custom window posts the typed number of days", async ({ page }) => {
     await setupBrowse(page);
     await setupPreview(page, {

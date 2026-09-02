@@ -45,22 +45,45 @@ Once running, visit:
 
 ```
 backend/
-├── api/           # FastAPI route handlers
-│   ├── deps.py    # Dependency injection (SoundCloud client, etc.)
-│   └── metadata.py # Metadata editing endpoints
-├── core/          # Business logic (no framework deps)
-│   └── services/  # Domain services
-│       ├── metadata.py    # Metadata operations
-│       └── soundcloud.py  # SoundCloud API wrapper
-├── schemas/       # Pydantic models for API
-├── config.py      # Backend configuration
-└── main.py        # FastAPI application entry point
+├── main.py        # app factory
+├── lifespan.py    # startup/shutdown wiring
+├── config.py      # BackendSettings (process/env config)
+│
+├── api/           # HTTP layer — routers only, one aggregated router in __init__.py
+│   ├── deps.py
+│   ├── metadata/  # folders, browse, files, artwork, audio, collection, proxy
+│   └── soundcloud/# auth, tracks, system_playlists
+│
+├── domain/        # pure logic — no I/O, no frameworks (enforced in pre-commit)
+│   ├── tags.py    # tag registry + TrackInfo
+│   ├── titles.py  filenames.py  formatting.py
+│   └── suggestions/  # types, engine, registry, suggesters/
+│
+├── services/      # use cases — orchestrate domain + infra
+│   ├── collection/# indexing, folders, query
+│   ├── metadata.py  rules.py  ruleset.py  profile_group.py
+│   ├── folder_config.py  app_settings.py
+│   └── rekordbox/
+│
+├── infra/         # adapters to the outside world
+│   ├── db/        # engine, models, migrations, alembic/
+│   ├── cache.py   # SQLite derived-data cache
+│   ├── audio/     # track_handler (mutagen + ffmpeg), folders
+│   ├── soundcloud/# client, oauth, token_cache, settings
+│   ├── ai/        # anthropic, claude_code, ollama
+│   ├── settings_store.py  keychain.py  watcher.py
+│
+└── schemas/       # Pydantic contracts, layer-neutral
 ```
+
+Dependencies point inward: `api -> services -> domain`, with `infra` holding the
+adapters. `scripts/check_layering.py` fails the commit if an import points the
+other way.
 
 ## Key Features
 
 ### OAuth 2.1 Authentication
-- Automatically handled by `soundcloud_tools.client.Client`
+- Automatically handled by `backend.infra.soundcloud.oauth.OAuthManager`
 - Token refresh managed transparently
 - Falls back to manual `OAUTH_TOKEN` if OAuth credentials not available
 
@@ -75,9 +98,9 @@ backend/
 ### Adding New Endpoints
 
 1. **Define schema** in `schemas/` (request/response models)
-2. **Implement service** in `core/services/` (pure business logic)
-3. **Create route** in `api/` (HTTP handling)
-4. **Register router** in `main.py`
+2. **Put pure logic** in `domain/` (no I/O) and orchestration in `services/`
+3. **Put anything that talks to the outside world** in `infra/`
+4. **Create route** in `api/` and register it in `api/__init__.py`
 
 ### Testing
 

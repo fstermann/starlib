@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useState } from "react";
 
+import { useTopBar } from "@/components/layout/top-bar-context";
 import {
   buildTracklistText,
   cancelShazamScan,
@@ -37,6 +38,8 @@ function AnalyserPageInner() {
   // (palette "Open job", browser back, deep links to a different ?job=).
   const jobId = search.get("job");
   const initialUrl = search.get("url") ?? "";
+
+  useTopBar({ title: "Set Analyser" });
 
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] =
@@ -358,7 +361,7 @@ function AnalyserPageInner() {
   if (!jobId) {
     return (
       <main className="flex h-full min-h-0 w-full flex-1 justify-center overflow-y-auto">
-        <div className="flex w-full max-w-3xl flex-col gap-6 p-6">
+        <div className="flex w-full max-w-xl flex-col gap-6 px-6 py-4">
           <AnalyserCommands
             state={state}
             hasJob={false}
@@ -385,7 +388,7 @@ function AnalyserPageInner() {
       {/* The page itself does not scroll — the tracklist owns the only
           scroll region so its header stays put and scroll wheels there
           don't move the timeline. Upper sections sit at natural height. */}
-      <div className="flex h-full min-h-0 w-full max-w-6xl flex-col gap-4 p-6">
+      <div className="flex h-full min-h-0 w-full flex-col gap-4 px-6 py-4">
         <AnalyserCommands
           state={state}
           hasJob

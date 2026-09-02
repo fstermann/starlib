@@ -29,6 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  api,
   REQUIRED_ATTRIBUTES,
   RULE_OUTPUTS,
   type RequiredAttribute,
@@ -36,7 +37,6 @@ import {
   type Ruleset,
   type RuleType,
 } from "@/lib/api";
-import { getSetting } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 
 import { RULE_ICON_COLORS, RuleCard, type InputOption } from "./rule-card";
@@ -184,7 +184,9 @@ export function RulesetEditor({
   );
 
   useEffect(() => {
-    getSetting("preferredOutputFormat").then(setPreferredFormat);
+    api
+      .getAppSettings()
+      .then((s) => setPreferredFormat(s.preferred_output_format));
     function onFormatChanged(e: Event) {
       setPreferredFormat((e as CustomEvent<string>).detail);
     }

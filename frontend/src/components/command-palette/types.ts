@@ -20,6 +20,10 @@ export interface CommandItem {
   keywords?: string[];
   shortcut?: string[];
   run: (ctx: CommandRunContext) => void | Promise<void>;
+  /** When set, the item gains a right-click "Play next" / "Add to queue" menu.
+   * Both callbacks must be provided together. */
+  onPlayNext?: () => void;
+  onAddToQueue?: () => void;
 }
 
 export type CommandProvideResult = CommandItem[];

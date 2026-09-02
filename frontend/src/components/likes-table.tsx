@@ -17,33 +17,54 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Ban,
+  Check,
   ChevronDown,
-  ChevronsUpDown,
-  ChevronUp,
   Download,
   FolderCheck,
   GripVertical,
-  Music,
+  ListPlus,
+  ListX,
+  Search,
   ShoppingCart,
 } from "lucide-react";
 import * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import {
-  SortableColumnHeader,
-  SortableHeaderCell,
-} from "@/components/columns/sortable-columns";
+  fetchAllPlaylistTracks,
+  invalidatePlaylistTracks,
+} from "@/app/library/use-playlist-tracks";
+import {
+  mutateCachedUserPlaylists,
+  useUserPlaylists,
+} from "@/app/library/use-user-playlists";
+import { CoverPlayButton } from "@/components/cover-play-button";
+import { CreatePlaylistDialog } from "@/components/create-playlist-dialog";
 import {
   SoundcloudBpmCacheContext,
   SoundcloudBpmCell,
 } from "@/components/soundcloud-bpm-cell";
 import { SoundcloudLikeButton } from "@/components/soundcloud-like-button";
-import { SoundcloudRowPlayButton } from "@/components/soundcloud-row-play-button";
 import { SourceProfileAvatar } from "@/components/source-profile-avatar";
+import {
+  TrackPlaylistSubmenu,
+  type AddToPlaylistResult,
+} from "@/components/track-playlist-submenu";
+import { TrackQueueMenu } from "@/components/track-queue-menu";
+import {
+  TrackTable,
+  type TrackTableColumn,
+} from "@/components/track-table/track-table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ContextMenuItem } from "@/components/ui/context-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
@@ -53,9 +74,16 @@ import {
 import { api } from "@/lib/api";
 import type { ColumnDef } from "@/lib/columns/types";
 import { parseFallbackDownloadUrl } from "@/lib/parse-fallback-download";
-import { usePlayer, type PlayerTrack } from "@/lib/player-context";
+import { usePlayer } from "@/lib/player-context";
 import type { SourceProfile } from "@/lib/profile-groups";
-import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
+import { scTrackToPlayerTrack } from "@/lib/sc-player-track";
+import { useIsScUnplayable } from "@/lib/sc-unplayable";
+import {
+  addTracksToPlaylist,
+  parseSCTimestamp,
+  type SCPlaylist,
+  type SCTrack,
+} from "@/lib/soundcloud";
 import {
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
@@ -72,7 +100,20 @@ type SortKey =
   | "duration"
   | "playback_count"
   | "uploaded"
-  | "added";
+  | "added"
+  | "key_signature"
+  | "label_name"
+  | "released"
+  | "favoritings_count"
+  | "reposts_count"
+  | "comment_count"
+  | "download_count"
+  | "user_playback_count"
+  | "isrc"
+  | "license"
+  | "access"
+  | "sharing"
+  | "metadata_artist";
 type SortOrder = "asc" | "desc";
 
 /** A single source of truth for likes-table columns. Drives both the header
@@ -83,6 +124,9 @@ interface LikesCol {
   header: string;
   sortKey?: SortKey;
   required?: boolean;
+  /** Columns default to visible; the extended metadata columns opt out so the
+   *  table stays readable until the user enables them. */
+  defaultVisible?: boolean;
   defaultWidth: number;
   /** Style classes applied to the cell (no width — that's inline). */
   cellClassName: string;
@@ -216,9 +260,171 @@ const LIKES_COLUMNS: LikesCol[] = [
     renderBody: ({ track }) => <>{formatDate(track.addedAt)}</>,
   },
   {
+    id: "key_signature",
+    header: "Key",
+    sortKey: "key_signature",
+    defaultVisible: false,
+    defaultWidth: 64,
+    cellClassName: "text-muted-foreground shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.key_signature || "—"}</>,
+  },
+  {
+    id: "label_name",
+    header: "Label",
+    sortKey: "label_name",
+    defaultVisible: false,
+    defaultWidth: 140,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.label_name || "—"}</>,
+  },
+  {
+    id: "metadata_artist",
+    header: "Metadata artist",
+    sortKey: "metadata_artist",
+    defaultVisible: false,
+    defaultWidth: 160,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.metadata_artist || "—"}</>,
+  },
+  {
+    id: "tag_list",
+    header: "Tags",
+    defaultVisible: false,
+    defaultWidth: 200,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => {
+      const tags = parseTagList(track.tag_list);
+      if (!tags.length) return <>—</>;
+      return <span title={tags.join(", ")}>{tags.join(", ")}</span>;
+    },
+  },
+  {
+    id: "released",
+    header: "Released",
+    sortKey: "released",
+    defaultVisible: false,
+    defaultWidth: 96,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatRelease(track)}</>,
+  },
+  {
+    id: "favoritings_count",
+    header: "Likes",
+    sortKey: "favoritings_count",
+    defaultVisible: false,
+    defaultWidth: 64,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.favoritings_count)}</>,
+  },
+  {
+    id: "reposts_count",
+    header: "Reposts",
+    sortKey: "reposts_count",
+    defaultVisible: false,
+    defaultWidth: 72,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.reposts_count)}</>,
+  },
+  {
+    id: "comment_count",
+    header: "Comments",
+    sortKey: "comment_count",
+    defaultVisible: false,
+    defaultWidth: 80,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.comment_count)}</>,
+  },
+  {
+    id: "download_count",
+    header: "Downloads",
+    sortKey: "download_count",
+    defaultVisible: false,
+    defaultWidth: 84,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.download_count)}</>,
+  },
+  {
+    id: "user_playback_count",
+    header: "My plays",
+    sortKey: "user_playback_count",
+    defaultVisible: false,
+    defaultWidth: 72,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{formatPlays(track.user_playback_count)}</>,
+  },
+  {
+    id: "downloadable",
+    header: "DL",
+    defaultVisible: false,
+    defaultWidth: 40,
+    cellClassName: "text-muted-foreground shrink-0 flex justify-center",
+    renderBody: ({ track }) =>
+      track.downloadable || track.download_url ? (
+        <Check className="text-primary size-3.5" aria-label="Downloadable" />
+      ) : (
+        <>—</>
+      ),
+  },
+  {
+    id: "access",
+    header: "Access",
+    sortKey: "access",
+    defaultVisible: false,
+    defaultWidth: 80,
+    cellClassName: "text-muted-foreground shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.access || "—"}</>,
+  },
+  {
+    id: "sharing",
+    header: "Sharing",
+    sortKey: "sharing",
+    defaultVisible: false,
+    defaultWidth: 72,
+    cellClassName: "text-muted-foreground shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.sharing || "—"}</>,
+  },
+  {
+    id: "license",
+    header: "License",
+    sortKey: "license",
+    defaultVisible: false,
+    defaultWidth: 110,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.license || "—"}</>,
+  },
+  {
+    id: "isrc",
+    header: "ISRC",
+    sortKey: "isrc",
+    defaultVisible: false,
+    defaultWidth: 120,
+    cellClassName: "text-muted-foreground shrink-0 truncate text-xs",
+    renderBody: ({ track }) => <>{track.isrc || "—"}</>,
+  },
+  {
+    id: "description",
+    header: "Description",
+    defaultVisible: false,
+    defaultWidth: 240,
+    cellClassName: "text-muted-foreground min-w-0 shrink-0 truncate text-xs",
+    renderBody: ({ track }) => {
+      // Collapse newlines — SC descriptions are multi-line and a raw value
+      // would blow out the single-line row.
+      const text = track.description?.replace(/\s+/g, " ").trim();
+      if (!text) return <>—</>;
+      return <span title={track.description}>{text}</span>;
+    },
+  },
+  {
     id: "links",
     header: "Links",
-    defaultWidth: 112,
+    defaultWidth: 84,
     cellClassName: "shrink-0",
     renderHeader: () => (
       <div className="flex items-center justify-center gap-1">
@@ -242,122 +448,14 @@ const LIKES_COLUMNS: LikesCol[] = [
           ) : (
             <div className="size-5" />
           )}
-          {(() => {
-            if (track.download_url) {
-              return (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <a
-                      href={track.download_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
-                      onClick={(e) => e.stopPropagation()}
-                      data-testid="sc-download-link"
-                    >
-                      <Download className="size-3" />
-                    </a>
-                  </TooltipTrigger>
-                  <TooltipContent>Download</TooltipContent>
-                </Tooltip>
-              );
-            }
-            const fallback = parseFallbackDownloadUrl(track.description);
-            if (!fallback) return <div className="size-5" />;
-            const icon = purchaseIcon(fallback);
-            return (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <a
-                    href={fallback}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
-                    onClick={(e) => e.stopPropagation()}
-                    data-testid="sc-download-fallback"
-                  >
-                    {icon ? (
-                      <img src={icon.src} alt={icon.alt} className="size-3.5" />
-                    ) : (
-                      <Download className="size-3" />
-                    )}
-                  </a>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Download via {icon?.alt ?? "external link"}
-                </TooltipContent>
-              </Tooltip>
-            );
-          })()}
-          {track.purchase_url ? (
-            (() => {
-              const icon = purchaseIcon(track.purchase_url);
-              return (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <a
-                      href={track.purchase_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {icon ? (
-                        <img
-                          src={icon.src}
-                          alt={icon.alt}
-                          className="size-3.5"
-                        />
-                      ) : (
-                        <ShoppingCart className="size-3" />
-                      )}
-                    </a>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {track.purchase_title || icon?.alt || "Buy"}
-                  </TooltipContent>
-                </Tooltip>
-              );
-            })()
-          ) : (
-            <div className="size-5" />
-          )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <a
-                href={`https://bandcamp.com/search?q=${encodeURIComponent(searchQuery(track))}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex size-5 items-center justify-center opacity-40 transition-opacity hover:opacity-100"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <img
-                  src="/icons/bandcamp.svg"
-                  alt="Bandcamp"
-                  className="size-3.5"
-                />
-              </a>
-            </TooltipTrigger>
-            <TooltipContent>Search Bandcamp</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <a
-                href={`https://www.beatport.com/search?q=${encodeURIComponent(searchQuery(track))}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex size-5 items-center justify-center opacity-40 transition-opacity hover:opacity-100"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <img
-                  src="/icons/beatport.svg"
-                  alt="Beatport"
-                  className="size-3.5"
-                />
-              </a>
-            </TooltipTrigger>
-            <TooltipContent>Search Beatport</TooltipContent>
-          </Tooltip>
+          <DownloadMenu track={track} />
+          <LinkMenu
+            options={searchOptions(track)}
+            triggerIcon={<Search className="size-3" />}
+            tooltip="Search stores"
+            triggerClassName="flex size-5 items-center justify-center opacity-40 transition-opacity hover:opacity-100"
+            testId="sc-search"
+          />
         </TooltipProvider>
       </div>
     ),
@@ -374,24 +472,23 @@ export const LIKES_COLUMN_DEFS: ColumnDef[] = LIKES_COLUMNS.filter(
   id: c.id,
   header: c.header,
   required: c.required,
+  defaultVisible: c.defaultVisible,
 }));
 
-function SortIcon({
-  col,
-  sortBy,
-  sortOrder,
-}: {
-  col: SortKey;
-  sortBy: SortKey | null;
-  sortOrder: SortOrder;
-}) {
-  if (col !== sortBy) return <ChevronsUpDown className="size-3 opacity-30" />;
-  return sortOrder === "asc" ? (
-    <ChevronUp className="text-primary size-3" />
-  ) : (
-    <ChevronDown className="text-primary size-3" />
-  );
-}
+const LIKES_COLUMNS_BY_ID = new Map(LIKES_COLUMNS.map((c) => [c.id, c]));
+
+/** Projection of LIKES_COLUMNS into TrackTable's column shape. TrackTable owns
+ *  identity, ordering, widths, and the sortable header chrome; the renderRow
+ *  body looks each column back up via LIKES_COLUMNS_BY_ID for its renderBody. */
+const TRACK_TABLE_COLUMNS: TrackTableColumn[] = LIKES_COLUMNS.map((c) => ({
+  id: c.id,
+  header: c.header,
+  defaultWidth: c.defaultWidth,
+  sortKey: c.sortKey,
+  required: c.required,
+  className: c.cellClassName,
+  renderHeader: c.renderHeader,
+}));
 
 function formatDuration(ms: number | undefined): string {
   if (ms == null) return "—";
@@ -413,6 +510,57 @@ function formatDate(value: string | undefined): string {
 
 function dateValue(value: string | undefined): number {
   return parseSCTimestamp(value) ?? 0;
+}
+
+/** Sort value per key. String accessors sort alphabetically, numeric ones
+ *  numerically; missing values collapse to `""`/`0` so they group together. */
+const SORT_ACCESSORS: Record<SortKey, (t: SCTrack) => string | number> = {
+  title: (t) => t.title ?? "",
+  artist: (t) => t.user?.username ?? "",
+  genre: (t) => t.genre ?? "",
+  duration: (t) => t.duration ?? 0,
+  playback_count: (t) => t.playback_count ?? 0,
+  uploaded: (t) => dateValue(t.created_at),
+  added: (t) => dateValue(t.addedAt),
+  key_signature: (t) => t.key_signature ?? "",
+  label_name: (t) => t.label_name ?? "",
+  released: releaseValue,
+  favoritings_count: (t) => t.favoritings_count ?? 0,
+  reposts_count: (t) => t.reposts_count ?? 0,
+  comment_count: (t) => t.comment_count ?? 0,
+  download_count: (t) => t.download_count ?? 0,
+  user_playback_count: (t) => t.user_playback_count ?? 0,
+  isrc: (t) => t.isrc ?? "",
+  license: (t) => t.license ?? "",
+  access: (t) => t.access ?? "",
+  sharing: (t) => t.sharing ?? "",
+  metadata_artist: (t) => t.metadata_artist ?? "",
+};
+
+/** Split SoundCloud's `tag_list` (space-separated, quotes around multi-word
+ *  tags) into individual tags. */
+function parseTagList(value: string | undefined): string[] {
+  if (!value) return [];
+  return Array.from(value.matchAll(/"([^"]*)"|(\S+)/g))
+    .map((m) => (m[1] ?? m[2] ?? "").trim())
+    .filter(Boolean);
+}
+
+/** Release date from SC's split `release_year`/`release_month`/`release_day`
+ *  fields. Falls back to just the year when month/day are missing. */
+function formatRelease(track: SCTrack): string {
+  const { release_year: y, release_month: m, release_day: d } = track;
+  if (!y) return "—";
+  if (!m) return String(y);
+  const mm = String(m).padStart(2, "0");
+  if (!d) return `${mm}.${y}`;
+  return `${String(d).padStart(2, "0")}.${mm}.${y}`;
+}
+
+function releaseValue(track: SCTrack): number {
+  const { release_year: y, release_month: m, release_day: d } = track;
+  if (!y) return 0;
+  return y * 10000 + (m ?? 0) * 100 + (d ?? 0);
 }
 
 function formatPlays(count: number | undefined): string {
@@ -455,6 +603,190 @@ function purchaseIcon(url: string): { src: string; alt: string } | null {
   return null;
 }
 
+interface LinkOption {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  /** Detected store logo, when the URL points at a known platform. */
+  logo?: { src: string; alt: string };
+}
+
+function logoIcon(
+  logo: { src: string; alt: string } | null,
+  fallback: React.ReactNode,
+): React.ReactNode {
+  return logo ? (
+    <img src={logo.src} alt={logo.alt} className="size-3" />
+  ) : (
+    fallback
+  );
+}
+
+/** Every distinct download/purchase link for a track: the direct download, a
+ *  store link parsed from the description, and any purchase link. Deduped by
+ *  URL so a description that just restates the purchase link isn't listed twice. */
+function downloadOptions(track: SCTrack): LinkOption[] {
+  const opts: LinkOption[] = [];
+  const seen = new Set<string>();
+  const add = (o: LinkOption) => {
+    if (seen.has(o.href)) return;
+    seen.add(o.href);
+    opts.push(o);
+  };
+  if (track.download_url) {
+    add({
+      href: track.download_url,
+      label: "Direct download",
+      icon: <Download className="size-3" />,
+    });
+  }
+  const fallback = parseFallbackDownloadUrl(track.description);
+  if (fallback) {
+    const logo = purchaseIcon(fallback);
+    add({
+      href: fallback,
+      label: logo ? `${logo.alt} (in description)` : "Link in description",
+      icon: logoIcon(logo, <Download className="size-3" />),
+      logo: logo ?? undefined,
+    });
+  }
+  if (track.purchase_url) {
+    const logo = purchaseIcon(track.purchase_url);
+    add({
+      href: track.purchase_url,
+      label: track.purchase_title || (logo ? `Buy on ${logo.alt}` : "Buy"),
+      icon: logoIcon(logo, <ShoppingCart className="size-3" />),
+      logo: logo ?? undefined,
+    });
+  }
+  return opts;
+}
+
+/** Bandcamp + Beatport store searches for a track (always both). */
+function searchOptions(track: SCTrack): LinkOption[] {
+  const q = encodeURIComponent(searchQuery(track));
+  return [
+    {
+      href: `https://bandcamp.com/search?q=${q}`,
+      label: "Bandcamp",
+      icon: <img src="/icons/bandcamp.svg" alt="Bandcamp" className="size-3" />,
+    },
+    {
+      href: `https://www.beatport.com/search?q=${q}`,
+      label: "Beatport",
+      icon: <img src="/icons/beatport.svg" alt="Beatport" className="size-3" />,
+    },
+  ];
+}
+
+/** Render a cluster of related external links behind a single icon: nothing
+ *  when empty, a plain link for one option, or a popover selector for several. */
+function LinkMenu({
+  options,
+  triggerIcon,
+  tooltip,
+  triggerClassName,
+  testId,
+}: {
+  options: LinkOption[];
+  triggerIcon: React.ReactNode;
+  tooltip: string;
+  triggerClassName: string;
+  testId: string;
+}) {
+  if (options.length === 0) return <div className="size-5" />;
+  if (options.length === 1) {
+    const only = options[0];
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <a
+            href={only.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={triggerClassName}
+            onClick={(e) => e.stopPropagation()}
+            data-testid={testId}
+          >
+            {triggerIcon}
+          </a>
+        </TooltipTrigger>
+        <TooltipContent>{only.label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+  // No Tooltip on the multi-link trigger: a hover tooltip fights the popover
+  // for the same pointer target. The chevron badge + title carry the affordance.
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(triggerClassName, "relative")}
+          onClick={(e) => e.stopPropagation()}
+          data-testid={testId}
+          aria-label={tooltip}
+          title={tooltip}
+        >
+          {triggerIcon}
+          {/* Badge signalling the icon opens a menu of several links. */}
+          <ChevronDown
+            className="bg-background absolute -right-1 -bottom-1 size-2 rounded-full"
+            strokeWidth={3}
+            aria-hidden
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={2}
+        className="w-auto min-w-0 p-1"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {options.map((opt) => (
+          <a
+            key={`${opt.href}${opt.label}`}
+            href={opt.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            data-testid={`${testId}-option`}
+            className="hover:bg-accent flex items-center gap-2 rounded-sm px-2 py-1 text-xs whitespace-nowrap transition-colors"
+          >
+            <span className="flex size-3.5 shrink-0 items-center justify-center">
+              {opt.icon}
+            </span>
+            {opt.label}
+          </a>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Download/purchase links behind one icon. The trigger keeps the detected
+ *  store logo (Bandcamp/Beatport/Hypeddit) when there is one, falling back to
+ *  a generic download glyph, so the source stays recognizable at a glance. */
+function DownloadMenu({ track }: { track: SCTrack }) {
+  const options = downloadOptions(track);
+  const logo = options.find((o) => o.logo)?.logo;
+  return (
+    <LinkMenu
+      options={options}
+      triggerIcon={
+        logo ? (
+          <img src={logo.src} alt={logo.alt} className="size-3.5" />
+        ) : (
+          <Download className="size-3" />
+        )
+      }
+      tooltip="Downloads"
+      triggerClassName="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center transition-colors"
+      testId="sc-download"
+    />
+  );
+}
+
 /** A column enriched with its resolved pixel width. */
 type ResolvedLikesCol = LikesCol & { width: number };
 
@@ -469,6 +801,29 @@ interface TrackRowProps {
   onExpand: () => void;
   /** Install the queue starting at this row and begin playback. */
   onStartPlay: () => Promise<void> | void;
+  /** Append this track to the end of the play queue. */
+  onAddToQueue: () => void;
+  /** Insert this track right after the current one. */
+  onPlayNext: () => void;
+  /** When set, the row's context menu gains "Add to playlist" (submenu of the
+   *  user's own playlists) and "Create playlist" (SoundCloud view only).
+   *  `createCount` is how many tracks the create action would use — the current
+   *  checkbox selection when this row is part of it, otherwise just this row. */
+  addToPlaylist?: {
+    trackUrns: string[];
+    playlists: SCPlaylist[];
+    loading: boolean;
+    onAdd: (playlist: SCPlaylist) => Promise<AddToPlaylistResult>;
+    createCount: number;
+    onCreatePlaylist: () => void;
+  };
+  /** When set, the row's context menu gains a "Remove from playlist" item
+   *  (shown only when viewing one of the user's own playlists). Acts on the
+   *  selection when this row is part of it; `count` is how many. */
+  removeFromPlaylist?: {
+    count: number;
+    onRemove: () => void;
+  };
   /** Columns filtered and ordered per user preferences, with resolved widths. */
   visibleColumns: ResolvedLikesCol[];
   /** When set, the row renders a drag handle and participates in SortableContext. */
@@ -489,11 +844,18 @@ function TrackRowInner({
   onToggleSelect,
   onExpand,
   onStartPlay,
+  onAddToQueue,
+  onPlayNext,
+  addToPlaylist,
+  removeFromPlaylist,
   visibleColumns,
   dragHandle,
 }: TrackRowProps) {
   const imgUrl = artworkUrl(track);
   const scTrackId = extractId(track);
+  const { activeTrack } = usePlayer();
+  const isCurrent = activeTrack?.filePath === `soundcloud:${scTrackId}`;
+  const unplayable = useIsScUnplayable(scTrackId || null);
 
   // Hover prefetch: warm the stream URL + peaks cache after a short dwell.
   // Eliminates the 500–700ms cold SC resolve for rows the user is about
@@ -520,107 +882,135 @@ function TrackRowInner({
   }, []);
 
   return (
-    <div>
-      <div
-        role="row"
-        tabIndex={0}
-        className={`group border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isSelected ? "bg-[var(--brand-soft)]" : isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
-        onClick={onExpand}
-        onPointerEnter={onPointerEnter}
-        onPointerLeave={onPointerLeave}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") onExpand();
-          if (e.key === " ") {
-            e.preventDefault();
-            onToggleSelect(e.shiftKey);
-          }
-        }}
-      >
-        {/* Drag handle */}
-        {dragHandle && (
-          <button
-            {...dragHandle.attributes}
-            {...dragHandle.listeners}
-            tabIndex={-1}
-            aria-label="Drag to reorder"
-            data-testid="likes-row-drag-handle"
-            onClick={(e) => e.stopPropagation()}
-            className="text-muted-foreground/50 hover:text-foreground flex size-4 shrink-0 cursor-grab items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
-          >
-            <GripVertical className="size-3" />
-          </button>
-        )}
-
-        {/* Checkbox */}
+    <TrackQueueMenu
+      onPlayNext={onPlayNext}
+      onAddToQueue={onAddToQueue}
+      disabled={unplayable}
+      extraItems={
+        addToPlaylist || removeFromPlaylist ? (
+          <>
+            {addToPlaylist && (
+              <>
+                <TrackPlaylistSubmenu
+                  trackUrns={addToPlaylist.trackUrns}
+                  playlists={addToPlaylist.playlists}
+                  loading={addToPlaylist.loading}
+                  onAdd={addToPlaylist.onAdd}
+                />
+                <ContextMenuItem
+                  data-testid="playlist-create"
+                  onSelect={addToPlaylist.onCreatePlaylist}
+                  className="text-xs"
+                >
+                  <ListPlus className="size-3.5" />
+                  {addToPlaylist.createCount > 1
+                    ? `Create playlist (${addToPlaylist.createCount})`
+                    : "Create playlist"}
+                </ContextMenuItem>
+              </>
+            )}
+            {removeFromPlaylist && (
+              <ContextMenuItem
+                data-testid="playlist-remove"
+                variant="destructive"
+                onSelect={removeFromPlaylist.onRemove}
+                className="text-xs"
+              >
+                <ListX className="size-3.5" />
+                {removeFromPlaylist.count > 1
+                  ? `Remove from playlist (${removeFromPlaylist.count})`
+                  : "Remove from playlist"}
+              </ContextMenuItem>
+            )}
+          </>
+        ) : undefined
+      }
+    >
+      <div>
         <div
-          className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleSelect(e.shiftKey);
+          role="row"
+          tabIndex={0}
+          aria-current={isCurrent ? "true" : undefined}
+          className={`group border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isCurrent ? "bg-[var(--brand-soft)]" : isSelected || isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
+          onClick={onExpand}
+          onPointerEnter={onPointerEnter}
+          onPointerLeave={onPointerLeave}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onExpand();
+            if (e.key === " ") {
+              e.preventDefault();
+              onToggleSelect(e.shiftKey);
+            }
           }}
         >
-          <Checkbox
-            checked={isSelected}
-            className="pointer-events-none size-3.5"
-          />
-        </div>
-
-        {/* Artwork */}
-        <div className="bg-muted flex size-7 shrink-0 items-center justify-center overflow-hidden rounded">
-          {imgUrl ? (
-            <img
-              src={imgUrl}
-              alt=""
-              className="size-7 object-cover"
-              loading="lazy"
-            />
-          ) : (
-            <Music className="text-muted-foreground size-3.5" />
+          {/* Drag handle */}
+          {dragHandle && (
+            <button
+              {...dragHandle.attributes}
+              {...dragHandle.listeners}
+              tabIndex={-1}
+              aria-label="Drag to reorder"
+              data-testid="likes-row-drag-handle"
+              onClick={(e) => e.stopPropagation()}
+              className="text-muted-foreground/50 hover:text-foreground flex size-4 shrink-0 cursor-grab items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
+            >
+              <GripVertical className="size-3" />
+            </button>
           )}
-        </div>
 
-        {/* Play button — streams via the backend HLS endpoint. */}
-        {scTrackId ? (
-          <SoundcloudRowPlayButton
-            trackId={scTrackId}
-            title={track.title ?? undefined}
-            artist={track.user?.username ?? undefined}
-            waveformUrl={track.waveform_url ?? undefined}
-            permalinkUrl={track.permalink_url ?? undefined}
-            artworkUrl={imgUrl ?? undefined}
-            onStartPlay={onStartPlay}
-          />
-        ) : (
-          <div className="size-6 shrink-0" />
-        )}
-
-        {/* Reorderable column cells */}
-        {visibleColumns.map((col) => (
+          {/* Checkbox */}
           <div
-            key={col.id}
-            className={col.cellClassName}
-            style={{ width: col.width }}
+            className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect(e.shiftKey);
+            }}
           >
-            {col.renderBody({
-              track,
-              isExpanded,
-              inCollection,
-              isLiked,
-              isNew: isNew ?? false,
-            })}
+            <Checkbox
+              checked={isSelected}
+              className="pointer-events-none size-3.5"
+            />
           </div>
-        ))}
-      </div>
 
-      {/* Expanded detail: description */}
-      {isExpanded && track.description && (
-        <div className="border-border bg-muted border-b px-3 py-2">
-          <p className="text-muted-foreground max-w-prose text-xs whitespace-pre-line">
-            {track.description}
-          </p>
+          {/* Artwork with hover play/pause overlay — streams via the backend
+            HLS endpoint when playback starts. */}
+          <CoverPlayButton
+            artworkUrl={imgUrl}
+            isCurrent={isCurrent}
+            onStartPlay={scTrackId ? onStartPlay : undefined}
+            unplayable={unplayable}
+            label={track.title ?? undefined}
+          />
+
+          {/* Reorderable column cells */}
+          {visibleColumns.map((col) => (
+            <div
+              key={col.id}
+              data-column-id={col.id}
+              className={col.cellClassName}
+              style={{ width: col.width }}
+            >
+              {col.renderBody({
+                track,
+                isExpanded,
+                inCollection,
+                isLiked,
+                isNew: isNew ?? false,
+              })}
+            </div>
+          ))}
         </div>
-      )}
-    </div>
+
+        {/* Expanded detail: description */}
+        {isExpanded && track.description && (
+          <div className="border-border bg-muted border-b px-3 py-2">
+            <p className="text-muted-foreground max-w-prose text-xs whitespace-pre-line">
+              {track.description}
+            </p>
+          </div>
+        )}
+      </div>
+    </TrackQueueMenu>
   );
 }
 
@@ -663,6 +1053,10 @@ interface LikesTableProps {
   onSelectAll: () => void;
   onDeselectAll: () => void;
   collectionIds?: Set<number>;
+  /** Pre-fetched cached BPMs (track id → bpm). When provided, the table uses
+   *  it instead of making its own bulk request — pass it when a parent already
+   *  fetched BPMs (e.g. to drive a BPM filter) so there's a single source. */
+  bpmCache?: Map<number, number>;
   /** IDs of tracks the authenticated user has liked. When a track's id is in
    *  this set, the like button renders as active. */
   likedIds?: Set<number>;
@@ -686,6 +1080,17 @@ interface LikesTableProps {
   /** Reports the current *visible* URN order (after sort). Fires whenever
    *  the sorted display changes so callers can save whatever the user sees. */
   onVisibleOrderChange?: (orderedUrns: string[]) => void;
+  /** Opt-in: add an "Add to playlist" submenu to each row's context menu,
+   *  targeting the authenticated user's own SoundCloud playlists. */
+  showAddToPlaylist?: boolean;
+  /** When set, each row's context menu gains "Remove from playlist" acting on
+   *  this playlist. Only pass when viewing one of the user's own playlists.
+   *  `onRemoved` fires after a successful remove so the caller can drop the
+   *  row from the displayed list. */
+  removeFromPlaylist?: {
+    playlistUrn: string;
+    onRemoved: (trackUrn: string) => void;
+  };
 }
 
 export function LikesTable({
@@ -696,6 +1101,7 @@ export function LikesTable({
   onSelectAll,
   onDeselectAll,
   collectionIds,
+  bpmCache: externalBpmCache,
   likedIds,
   newTrackUrns,
   isColumnVisible,
@@ -706,15 +1112,144 @@ export function LikesTable({
   onColumnWidthReset,
   onReorderTracks,
   onVisibleOrderChange,
+  showAddToPlaylist,
+  removeFromPlaylist,
 }: LikesTableProps) {
   const reorderEnabled = !!onReorderTracks;
-  const { playQueue } = usePlayer();
+  const { playQueue, currentTrack, reconcileUpcoming, enqueue, playNext } =
+    usePlayer();
+
+  // "Add to playlist" submenu (SoundCloud view only). The user's own playlists
+  // are shared with the SoundCloud view's list via a module-level cache, so
+  // this is a cache hit rather than a second fetch.
+  const {
+    playlists: myPlaylists,
+    loading: playlistsLoading,
+    reload: reloadPlaylists,
+  } = useUserPlaylists(showAddToPlaylist ? "me" : null);
+  const handleAddToPlaylist = useCallback(
+    async (
+      playlist: SCPlaylist,
+      tracksToAdd: SCTrack[],
+    ): Promise<AddToPlaylistResult> => {
+      if (!playlist.urn) return "error";
+      const targetUrns = tracksToAdd
+        .map((t) => t.urn)
+        .filter((u): u is string => u != null);
+      if (targetUrns.length === 0) return "error";
+      try {
+        // SoundCloud's playlist PUT *replaces* the track set, so read the
+        // existing tracks first (cached, shared with the playlist view) and
+        // append to them — the playlist metadata carries no tracks.
+        const existing = await fetchAllPlaylistTracks(playlist.urn);
+        const existingUrns = existing
+          .map((t) => t.urn)
+          .filter((u): u is string => u != null);
+        const existingSet = new Set(existingUrns);
+        const toAdd = targetUrns.filter((u) => !existingSet.has(u));
+        if (toAdd.length === 0) {
+          toast.info(
+            targetUrns.length === 1
+              ? `Already in "${playlist.title}"`
+              : `All ${targetUrns.length} tracks already in "${playlist.title}"`,
+          );
+          return "exists";
+        }
+        const updated = await addTracksToPlaylist(playlist.urn, [
+          ...existingUrns,
+          ...toAdd,
+        ]);
+        invalidatePlaylistTracks(playlist.urn);
+        reloadPlaylists();
+        const url = (updated as Record<string, unknown>).permalink_url as
+          string | undefined;
+        toast.success(
+          toAdd.length === 1
+            ? `Added to "${playlist.title}"`
+            : `Added ${toAdd.length} tracks to "${playlist.title}"`,
+          {
+            action: url
+              ? { label: "Open", onClick: () => window.open(url, "_blank") }
+              : undefined,
+          },
+        );
+        return "added";
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to add to playlist",
+        );
+        return "error";
+      }
+    },
+    [reloadPlaylists],
+  );
+
+  // "Remove from playlist" — only wired when the caller is viewing one of the
+  // user's own playlists (see the `removeFromPlaylist` prop). Reads the current
+  // track set, drops the target, and writes the rest back.
+  const removePlaylistUrn = removeFromPlaylist?.playlistUrn;
+  const notifyRemoved = removeFromPlaylist?.onRemoved;
+  const handleRemoveFromPlaylist = useCallback(
+    async (tracksToRemove: SCTrack[]) => {
+      if (!removePlaylistUrn) return;
+      const targetUrns = tracksToRemove
+        .map((t) => t.urn)
+        .filter((u): u is string => u != null);
+      if (targetUrns.length === 0) return;
+      const targetSet = new Set(targetUrns);
+      try {
+        const existing = await fetchAllPlaylistTracks(removePlaylistUrn);
+        const kept = existing
+          .map((t) => t.urn)
+          .filter((u): u is string => u != null && !targetSet.has(u));
+        await addTracksToPlaylist(removePlaylistUrn, kept);
+        invalidatePlaylistTracks(removePlaylistUrn);
+        targetUrns.forEach((u) => notifyRemoved?.(u));
+        reloadPlaylists();
+        toast.success(
+          targetUrns.length === 1
+            ? `Removed "${tracksToRemove[0].title ?? "track"}" from playlist`
+            : `Removed ${targetUrns.length} tracks from playlist`,
+        );
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to remove from playlist",
+        );
+      }
+    },
+    [removePlaylistUrn, notifyRemoved, reloadPlaylists],
+  );
+
+  // "Create playlist" from the row context menu. Seeded with the tracks chosen
+  // at right-click time (selection or single row) and rendered once below.
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createTracks, setCreateTracks] = useState<SCTrack[]>([]);
+  const openCreatePlaylist = useCallback((tracksForPlaylist: SCTrack[]) => {
+    setCreateTracks(tracksForPlaylist);
+    setCreateDialogOpen(true);
+  }, []);
+
+  // Mirror the current track into a ref so the reconcile effect can read it
+  // without making it a dependency — otherwise reconciling (which changes
+  // `currentTrack`'s reference) would re-trigger the effect and loop. This
+  // effect is declared before the reconcile effect, so the ref is fresh by the
+  // time reconcile runs on the same render.
+  const currentTrackRef = useRef(currentTrack);
+  useEffect(() => {
+    currentTrackRef.current = currentTrack;
+  }, [currentTrack]);
 
   // Pre-fill cached BPMs for all tracks in this table in a single bulk
   // request, rather than making one GET per visible row. The map survives
-  // re-renders; cells read it via SoundcloudBpmCacheContext.
-  const [bpmCache, setBpmCache] = useState<Map<number, number>>(new Map());
+  // re-renders; cells read it via SoundcloudBpmCacheContext. A parent can
+  // instead supply `externalBpmCache` (e.g. the SoundCloud library, which
+  // fetches BPMs once to drive its BPM filter) — then we skip our own fetch.
+  const [internalBpmCache, setInternalBpmCache] = useState<Map<number, number>>(
+    new Map(),
+  );
+  const bpmCache = externalBpmCache ?? internalBpmCache;
   useEffect(() => {
+    if (externalBpmCache) return;
     const ids: number[] = [];
     for (const t of tracks) {
       if (t.urn) {
@@ -731,7 +1266,7 @@ export function LikesTable({
         if (cancelled) return;
         const next = new Map<number, number>();
         for (const [k, v] of Object.entries(resp.bpms)) next.set(Number(k), v);
-        setBpmCache(next);
+        setInternalBpmCache(next);
       })
       .catch(() => {
         /* Prefill is best-effort; cells fall back to metadata + Detect button. */
@@ -739,7 +1274,7 @@ export function LikesTable({
     return () => {
       cancelled = true;
     };
-  }, [tracks]);
+  }, [tracks, externalBpmCache]);
 
   const colVisible = React.useCallback(
     (id: string) => {
@@ -747,11 +1282,19 @@ export function LikesTable({
       // true from isColumnVisible. Without this guard, callers that don't
       // pass a predicate would see an empty 32px column on every row.
       if (id === "source") return isColumnVisible?.(id) === true;
-      return isColumnVisible ? isColumnVisible(id) : true;
+      if (isColumnVisible) return isColumnVisible(id);
+      // No predicate (e.g. the weekly view): fall back to the column's own
+      // default so the extended metadata columns stay hidden.
+      return LIKES_COLUMNS_BY_ID.get(id)?.defaultVisible !== false;
     },
     [isColumnVisible],
   );
-  const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
+  // Reference column list used by the DragOverlay (which lives outside
+  // TrackTable). TrackTable's renderRow body uses its own resolved
+  // visibleColumns (which can pick up an in-progress resize via live widths);
+  // a drag overlay rendered during a *resize* is not possible in practice
+  // (row DnD and column resize use different sensors), so a single stable
+  // projection here is fine.
   const visibleColumns = React.useMemo<ResolvedLikesCol[]>(() => {
     const byId = new Map(LIKES_COLUMNS.map((c) => [c.id, c]));
     const seen = new Set<string>();
@@ -770,46 +1313,35 @@ export function LikesTable({
       .filter((c) => colVisible(c.id))
       .map((c) => ({
         ...c,
-        width: liveWidths[c.id] ?? columnWidths?.[c.id] ?? c.defaultWidth,
+        width: columnWidths?.[c.id] ?? c.defaultWidth,
       }));
-  }, [columnOrder, colVisible, columnWidths, liveWidths]);
+  }, [columnOrder, colVisible, columnWidths]);
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const scrollParentRef = useRef<HTMLDivElement>(null);
   const lastSelectedIndexRef = useRef<number | null>(null);
 
   const sortedTracks = useMemo(() => {
     if (!sortBy) return tracks;
+    const accessor = SORT_ACCESSORS[sortBy];
     const sorted = [...tracks].sort((a, b) => {
-      let cmp = 0;
-      switch (sortBy) {
-        case "title":
-          cmp = (a.title ?? "").localeCompare(b.title ?? "");
-          break;
-        case "artist":
-          cmp = (a.user?.username ?? "").localeCompare(b.user?.username ?? "");
-          break;
-        case "genre":
-          cmp = (a.genre ?? "").localeCompare(b.genre ?? "");
-          break;
-        case "duration":
-          cmp = (a.duration ?? 0) - (b.duration ?? 0);
-          break;
-        case "playback_count":
-          cmp = (a.playback_count ?? 0) - (b.playback_count ?? 0);
-          break;
-        case "uploaded":
-          cmp = dateValue(a.created_at) - dateValue(b.created_at);
-          break;
-        case "added":
-          cmp = dateValue(a.addedAt) - dateValue(b.addedAt);
-          break;
-      }
+      const va = accessor(a);
+      const vb = accessor(b);
+      const cmp =
+        typeof va === "string"
+          ? va.localeCompare(vb as string)
+          : va - (vb as number);
       return sortOrder === "asc" ? cmp : -cmp;
     });
     return sorted;
   }, [tracks, sortBy, sortOrder]);
+
+  // Tracks currently checkbox-selected — the "Create playlist" context action
+  // uses these when the right-clicked row is part of the selection.
+  const selectedTracks = useMemo(
+    () => sortedTracks.filter((t) => selectedIds.has(extractId(t))),
+    [sortedTracks, selectedIds],
+  );
 
   // Row reordering is only active when no column sort is applied — otherwise
   // the user's drag target (sorted position) wouldn't map to a meaningful
@@ -817,30 +1349,37 @@ export function LikesTable({
   const reorderable = reorderEnabled && !sortBy;
 
   // Build a PlayerTrack queue from the currently visible (sorted) SC tracks
-  // and start playback at `index`. Every entry is a skeleton — the player
-  // resolves streamUrl on demand via the shared TTL cache, so the clicked
-  // row's URL is fetched in parallel with peaks + waveform init rather
-  // than serialised before the UI updates.
+  // and start playback at `index`. The clicked row's URL is fetched in
+  // parallel with peaks + waveform init rather than serialised before the UI
+  // updates.
   const handleStartPlay = useCallback(
     (index: number) => {
-      const queue: PlayerTrack[] = sortedTracks.map((t) => {
-        const id = extractId(t);
-        return {
-          filePath: `soundcloud:${id}`,
-          fileName: t.title ?? String(id),
-          title: t.title ?? undefined,
-          artist: t.user?.username ?? undefined,
-          waveformUrl: t.waveform_url ?? undefined,
-          streamRefreshKey: id,
-          permalinkUrl: t.permalink_url ?? undefined,
-          artworkUrl: artworkUrl(t) ?? undefined,
-          bpm: bpmCache.get(id) ?? t.bpm ?? null,
-        };
-      });
-      playQueue(queue, index);
+      playQueue(
+        sortedTracks.map((t) => scTrackToPlayerTrack(t, bpmCache)),
+        index,
+      );
     },
     [sortedTracks, playQueue, bpmCache],
   );
+
+  // Keep autoplay in step with the filtered/sorted view. The queue is a
+  // snapshot taken when playback starts, so a filter applied mid-playback
+  // would otherwise keep autoplaying tracks the user just filtered out. When
+  // the currently playing track is still visible here (so this table owns the
+  // queue), re-derive the upcoming tail from the current visible order after
+  // it — leaving the current entry and its index untouched so playback never
+  // restarts.
+  useEffect(() => {
+    const current = currentTrackRef.current;
+    if (!current) return;
+    const pos = sortedTracks.findIndex(
+      (t) => `soundcloud:${extractId(t)}` === current.filePath,
+    );
+    if (pos < 0) return;
+    reconcileUpcoming(
+      sortedTracks.slice(pos + 1).map((t) => scTrackToPlayerTrack(t, bpmCache)),
+    );
+  }, [sortedTracks, bpmCache, reconcileUpcoming]);
 
   // Report the current visible order (after sort) to callers so they can save
   // whatever the user currently sees.
@@ -892,33 +1431,23 @@ export function LikesTable({
     onReorderTracks(nextIds);
   }
 
-  // React Compiler can't memoize TanStack Virtual's returned functions safely; skip.
+  // Variable row height: expanded rows render an inline description, so the
+  // estimator returns a taller value for the currently-expanded row.
+  const estimateRowSize = useCallback(
+    (index: number) => {
+      const track = sortedTracks[index];
+      const id = track ? extractId(track) : 0;
+      if (id !== expandedId) return ROW_HEIGHT;
+      if (!track?.description) return ROW_HEIGHT;
+      return ROW_HEIGHT + 16 + DESCRIPTION_HEIGHT;
+    },
+    [sortedTracks, expandedId],
+  );
 
-  const virtualizer = useVirtualizer({
-    count: sortedTracks.length,
-    getScrollElement: () => scrollParentRef.current,
-    // Key rows by track identity so cell state (analyzed BPM, expanded, etc.)
-    // doesn't leak when the underlying tracks change — sort, reorder, or
-    // playlist switch would otherwise reuse the same cell instance for a
-    // different track and show its prior state on the wrong row.
-    getItemKey: useCallback(
-      (index: number) => sortedTracks[index]?.urn ?? `__idx_${index}`,
-      [sortedTracks],
-    ),
-    estimateSize: useCallback(
-      (index: number) => {
-        const track = sortedTracks[index];
-        const id = track ? extractId(track) : 0;
-        if (id !== expandedId) return ROW_HEIGHT;
-        if (!track?.description) return ROW_HEIGHT;
-        return ROW_HEIGHT + 16 + DESCRIPTION_HEIGHT;
-      },
-      [sortedTracks, expandedId],
-    ),
-    overscan: 12,
-  });
-
-  function handleSort(col: SortKey) {
+  // TrackTable's onSort fires with a string (the column's sortKey). LikesCol's
+  // sortKey is the typed SortKey, so the cast is safe here.
+  function handleSort(key: string) {
+    const col = key as SortKey;
     if (col !== sortBy) {
       setSortBy(col);
       setSortOrder("asc");
@@ -935,7 +1464,6 @@ export function LikesTable({
     setExpandedId((prev) => (prev === id ? null : id));
   }
 
-  const virtualItems = virtualizer.getVirtualItems();
   const someSelected = selectedIds.size > 0;
   const allSelected =
     sortedTracks.length > 0 &&
@@ -944,218 +1472,188 @@ export function LikesTable({
       return id != null && selectedIds.has(id);
     });
 
+  const table = (
+    <TrackTable<SCTrack>
+      items={sortedTracks}
+      columns={TRACK_TABLE_COLUMNS}
+      estimateRowSize={estimateRowSize}
+      getItemKey={(index, item) => item?.urn ?? `__idx_${index}`}
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      onSort={handleSort}
+      columnOrder={columnOrder}
+      onColumnOrderChange={onColumnOrderChange}
+      columnWidths={columnWidths}
+      onColumnWidthChange={onColumnWidthChange}
+      onColumnWidthReset={onColumnWidthReset}
+      isColumnVisible={colVisible}
+      headerClassName="gap-2 px-3"
+      renderHeaderLead={() => (
+        <>
+          {reorderable && <div className="size-4 shrink-0" aria-hidden />}
+          <div
+            className="flex w-6 shrink-0 items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Checkbox
+              checked={
+                allSelected ? true : someSelected ? "indeterminate" : false
+              }
+              onCheckedChange={(checked) =>
+                checked ? onSelectAll() : onDeselectAll()
+              }
+              aria-label="Select all"
+              className={cn(
+                "size-3.5 cursor-pointer",
+                "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
+                allSelected &&
+                  "data-[state=checked]:bg-primary data-[state=checked]:border-primary",
+              )}
+            />
+          </div>
+          <div className="size-7 shrink-0" aria-hidden />
+        </>
+      )}
+      renderRow={({ item, index, visibleColumns: tableCols }) => {
+        if (!item) return null;
+        const track = item;
+        const id = extractId(track);
+        const sortableId = reorderable
+          ? (track.urn ?? `__idx_${index}`)
+          : undefined;
+        // Project TrackTable's resolved columns back into LikesCol shape so
+        // the row keeps its existing renderBody-per-column logic.
+        const rowCols: ResolvedLikesCol[] = tableCols
+          .map((col) => {
+            const lc = LIKES_COLUMNS_BY_ID.get(col.id);
+            if (!lc) return null;
+            return { ...lc, width: col.width };
+          })
+          .filter((v): v is ResolvedLikesCol => v !== null);
+        // Tracks the playlist actions operate on: the checkbox selection when
+        // this row is part of it, otherwise just this row.
+        const rowTargets =
+          id != null && selectedIds.has(id) ? selectedTracks : [track];
+        return (
+          <TrackRow
+            sortableId={sortableId}
+            track={track}
+            isSelected={selectedIds.has(id)}
+            isExpanded={expandedId === id}
+            inCollection={collectionIds?.has(id) ?? false}
+            isLiked={likedIds?.has(id) ?? track.user_favorite === true}
+            isNew={
+              newTrackUrns
+                ? track.urn
+                  ? newTrackUrns.has(track.urn)
+                  : false
+                : undefined
+            }
+            onToggleSelect={(shiftKey) => {
+              if (shiftKey && lastSelectedIndexRef.current !== null) {
+                const start = Math.min(lastSelectedIndexRef.current, index);
+                const end = Math.max(lastSelectedIndexRef.current, index);
+                const rangeIds = sortedTracks
+                  .slice(start, end + 1)
+                  .map(extractId)
+                  .filter(Boolean);
+                onRangeSelect(rangeIds);
+              } else {
+                onToggleSelect(id);
+                lastSelectedIndexRef.current = index;
+              }
+            }}
+            onExpand={() => handleExpand(track)}
+            onStartPlay={() => handleStartPlay(index)}
+            onAddToQueue={() => enqueue(scTrackToPlayerTrack(track, bpmCache))}
+            onPlayNext={() => playNext(scTrackToPlayerTrack(track, bpmCache))}
+            addToPlaylist={
+              showAddToPlaylist
+                ? {
+                    // Act on the whole checkbox selection when this row is part
+                    // of it, otherwise just this row.
+                    trackUrns: rowTargets
+                      .map((t) => t.urn)
+                      .filter((u): u is string => u != null),
+                    playlists: myPlaylists,
+                    loading: playlistsLoading,
+                    onAdd: (playlist) =>
+                      handleAddToPlaylist(playlist, rowTargets),
+                    createCount: rowTargets.length,
+                    onCreatePlaylist: () => openCreatePlaylist(rowTargets),
+                  }
+                : undefined
+            }
+            removeFromPlaylist={
+              removeFromPlaylist
+                ? {
+                    count: rowTargets.length,
+                    onRemove: () => handleRemoveFromPlaylist(rowTargets),
+                  }
+                : undefined
+            }
+            visibleColumns={rowCols}
+          />
+        );
+      }}
+    />
+  );
+
   return (
     <SoundcloudBpmCacheContext.Provider value={bpmCache}>
-      <div className="flex h-full min-h-0 flex-col">
-        {/* Scrollable area — single container owns both axes so header and
-            rows share one horizontal scroll context and stay aligned. */}
-        <div
-          ref={scrollParentRef}
-          className="min-h-0 flex-1 overflow-auto overscroll-contain"
+      {reorderable ? (
+        <DndContext
+          sensors={dndSensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleReorderDragStart}
+          onDragEnd={handleReorderDragEnd}
+          onDragCancel={() => setActiveDragId(null)}
         >
-          <div className="w-max min-w-full">
-            {/* Header */}
-            <div
-              role="row"
-              className="border-border text-muted-foreground sticky top-0 z-20 flex h-9 items-center gap-2 border-b bg-[var(--surface-2)] px-3 text-xs font-medium"
-            >
-              {reorderable && <div className="size-4 shrink-0" aria-hidden />}
-              <div
-                className="flex w-6 shrink-0 items-center justify-center"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Checkbox
-                  checked={
-                    allSelected ? true : someSelected ? "indeterminate" : false
-                  }
-                  onCheckedChange={(checked) =>
-                    checked ? onSelectAll() : onDeselectAll()
-                  }
-                  aria-label="Select all"
-                  className={cn(
-                    "size-3.5 cursor-pointer",
-                    "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
-                    allSelected &&
-                      "data-[state=checked]:bg-primary data-[state=checked]:border-primary",
-                  )}
+          <SortableContext
+            items={sortableIds}
+            strategy={verticalListSortingStrategy}
+          >
+            {table}
+          </SortableContext>
+          <DragOverlay>
+            {activeDragTrack ? (
+              <div className="bg-[var(--surface-2)] opacity-95 shadow-lg">
+                <TrackRowInner
+                  track={activeDragTrack}
+                  isSelected={false}
+                  isExpanded={false}
+                  inCollection={false}
+                  isLiked={false}
+                  isNew={false}
+                  onToggleSelect={() => undefined}
+                  onExpand={() => undefined}
+                  onStartPlay={() => undefined}
+                  onAddToQueue={() => undefined}
+                  onPlayNext={() => undefined}
+                  visibleColumns={visibleColumns}
+                  dragHandle={{
+                    attributes: {},
+                    listeners: undefined,
+                    isDragging: false,
+                  }}
                 />
               </div>
-              <div className="size-7 shrink-0" aria-hidden />
-              <div className="size-6 shrink-0" aria-hidden />
-              <SortableColumnHeader
-                ids={visibleColumns.map((c) => c.id)}
-                onOrderChange={(nextIds) => {
-                  if (!onColumnOrderChange) return;
-                  const hidden = LIKES_COLUMNS.map((c) => c.id).filter(
-                    (id) => !visibleColumns.some((v) => v.id === id),
-                  );
-                  onColumnOrderChange([...nextIds, ...hidden]);
-                }}
-              >
-                {visibleColumns.map((col) => (
-                  <SortableHeaderCell
-                    key={col.id}
-                    id={col.id}
-                    className={col.cellClassName}
-                    style={{ width: col.width }}
-                    onResize={(w, phase) => {
-                      if (phase === "drag") {
-                        setLiveWidths((p) => ({ ...p, [col.id]: w }));
-                      } else {
-                        onColumnWidthChange?.(col.id, w);
-                        setLiveWidths((p) => {
-                          const { [col.id]: _omit, ...rest } = p;
-                          return rest;
-                        });
-                      }
-                    }}
-                    onResetWidth={() => onColumnWidthReset?.(col.id)}
-                  >
-                    {col.renderHeader ? (
-                      col.renderHeader()
-                    ) : col.sortKey ? (
-                      <button
-                        className="hover:text-foreground flex w-full cursor-pointer items-center gap-0.5 transition-colors"
-                        onClick={() => col.sortKey && handleSort(col.sortKey)}
-                      >
-                        {col.header}
-                        <SortIcon
-                          col={col.sortKey}
-                          sortBy={sortBy}
-                          sortOrder={sortOrder}
-                        />
-                      </button>
-                    ) : (
-                      <span>{col.header}</span>
-                    )}
-                  </SortableHeaderCell>
-                ))}
-              </SortableColumnHeader>
-            </div>
-
-            {/* Virtual scroll body */}
-            {(() => {
-              const body = (
-                <div
-                  style={{
-                    height: `${virtualizer.getTotalSize()}px`,
-                    position: "relative",
-                  }}
-                >
-                  {virtualItems.map((virtualRow) => {
-                    const track = sortedTracks[virtualRow.index];
-                    if (!track) return null;
-                    const id = extractId(track);
-                    const sortableId = reorderable
-                      ? (track.urn ?? `__idx_${virtualRow.index}`)
-                      : undefined;
-
-                    return (
-                      <div
-                        key={virtualRow.key}
-                        data-index={virtualRow.index}
-                        ref={virtualizer.measureElement}
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          transform: `translateY(${virtualRow.start}px)`,
-                        }}
-                      >
-                        <TrackRow
-                          sortableId={sortableId}
-                          track={track}
-                          isSelected={selectedIds.has(id)}
-                          isExpanded={expandedId === id}
-                          inCollection={collectionIds?.has(id) ?? false}
-                          isLiked={
-                            likedIds?.has(id) ?? track.user_favorite === true
-                          }
-                          isNew={
-                            newTrackUrns
-                              ? track.urn
-                                ? newTrackUrns.has(track.urn)
-                                : false
-                              : undefined
-                          }
-                          onToggleSelect={(shiftKey) => {
-                            const currentIndex = virtualRow.index;
-                            if (
-                              shiftKey &&
-                              lastSelectedIndexRef.current !== null
-                            ) {
-                              const start = Math.min(
-                                lastSelectedIndexRef.current,
-                                currentIndex,
-                              );
-                              const end = Math.max(
-                                lastSelectedIndexRef.current,
-                                currentIndex,
-                              );
-                              const rangeIds = sortedTracks
-                                .slice(start, end + 1)
-                                .map(extractId)
-                                .filter(Boolean);
-                              onRangeSelect(rangeIds);
-                            } else {
-                              onToggleSelect(id);
-                              lastSelectedIndexRef.current = currentIndex;
-                            }
-                          }}
-                          onExpand={() => handleExpand(track)}
-                          onStartPlay={() => handleStartPlay(virtualRow.index)}
-                          visibleColumns={visibleColumns}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-              if (!reorderable) return body;
-              return (
-                <DndContext
-                  sensors={dndSensors}
-                  collisionDetection={closestCenter}
-                  onDragStart={handleReorderDragStart}
-                  onDragEnd={handleReorderDragEnd}
-                  onDragCancel={() => setActiveDragId(null)}
-                >
-                  <SortableContext
-                    items={sortableIds}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {body}
-                  </SortableContext>
-                  <DragOverlay>
-                    {activeDragTrack ? (
-                      <div className="bg-[var(--surface-2)] opacity-95 shadow-lg">
-                        <TrackRowInner
-                          track={activeDragTrack}
-                          isSelected={false}
-                          isExpanded={false}
-                          inCollection={false}
-                          isLiked={false}
-                          isNew={false}
-                          onToggleSelect={() => undefined}
-                          onExpand={() => undefined}
-                          onStartPlay={() => undefined}
-                          visibleColumns={visibleColumns}
-                          dragHandle={{
-                            attributes: {},
-                            listeners: undefined,
-                            isDragging: false,
-                          }}
-                        />
-                      </div>
-                    ) : null}
-                  </DragOverlay>
-                </DndContext>
-              );
-            })()}
-          </div>
-        </div>
-      </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      ) : (
+        table
+      )}
+      {showAddToPlaylist && (
+        <CreatePlaylistDialog
+          tracks={createTracks}
+          open={createDialogOpen}
+          onOpenChange={setCreateDialogOpen}
+          onCreated={(playlist) =>
+            mutateCachedUserPlaylists("me", (pls) => [playlist, ...pls])
+          }
+        />
+      )}
     </SoundcloudBpmCacheContext.Provider>
   );
 }

@@ -19,7 +19,7 @@ import logging
 import sys
 from pathlib import Path
 
-from soundcloud_tools.handler.track import TrackHandler
+from backend.infra.audio.track_handler import TrackHandler
 
 logger = logging.getLogger(__name__)
 

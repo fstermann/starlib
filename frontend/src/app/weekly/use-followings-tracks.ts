@@ -84,7 +84,7 @@ async function fetchRecentPages(
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
-export function useFollowingsTracks(): UseFollowingsTracksResult {
+export function useFollowingsTracks(enabled = true): UseFollowingsTracksResult {
   const [tracks, setTracks] = useState<SCTrack[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,11 +128,12 @@ export function useFollowingsTracks(): UseFollowingsTracksResult {
   );
 
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     abortRef.current = controller;
     fetchAll(controller.signal);
     return () => controller.abort();
-  }, [fetchAll]);
+  }, [fetchAll, enabled]);
 
   const reload = useCallback(() => {
     abortRef.current?.abort();

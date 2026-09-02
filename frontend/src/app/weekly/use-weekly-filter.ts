@@ -21,8 +21,7 @@ export function filterStateToWeeklyOptions(
   state: FilterState,
 ): WeeklyFilterOptions {
   const duration = (state.duration as
-    | [number | null, number | null]
-    | undefined) ?? [null, null];
+    [number | null, number | null] | undefined) ?? [null, null];
   const trackTypes = (state.track_type as string[] | undefined) ?? [];
   const trackType =
     trackTypes.length === 1 &&

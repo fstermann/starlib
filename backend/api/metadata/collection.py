@@ -7,9 +7,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.api.deps import get_root_folder
-from backend.core.services import collection
+from backend.infra.audio.folders import FolderHandler
 from backend.schemas.metadata import CollectionSoundcloudIdsResponse, CollectionStatsResponse
-from soundcloud_tools.handler.folder import FolderHandler
+from backend.services.collection import query
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def get_collection_stats(
     collection_folder = folder_handler.get_collection_folder()
 
     try:
-        stats = collection.get_collection_metadata_stats(collection_folder)
+        stats = query.get_collection_metadata_stats(collection_folder)
     except Exception as e:
         logger.exception("Failed to get collection stats")
         raise HTTPException(
@@ -73,7 +73,7 @@ def get_collection_soundcloud_ids(
     collection_folder = folder_handler.get_collection_folder()
 
     try:
-        ids = collection.get_collection_soundcloud_ids(collection_folder)
+        ids = query.get_collection_soundcloud_ids(collection_folder)
     except Exception as e:
         logger.exception("Failed to get collection SoundCloud IDs")
         raise HTTPException(

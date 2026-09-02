@@ -164,6 +164,26 @@ Chart series colors do **not** use the accent. They come from a distinct 5-step 
 | `--chart-4` | Orchid           | `oklch(0.68 0.16 305)`      | `#a877c1` |
 | `--chart-5` | Olive            | `oklch(0.70 0.13 105)`      | `#9eaa49` |
 
+### 2.7.1 Phrase-band sections
+
+The player's phrase band colors song-structure sections. One distinct hue per
+kind (the backend normalizes to these eight), light enough to carry black
+labels, spread around the wheel and ordered roughly by energy so the band reads
+at a glance. Theme-independent — the band paints its own color under black text
+in either theme. Adjacent sections are separated by a `color-mix(… 55%, black)`
+same-hue inset border.
+
+| Token              | Kind     | Value                  |
+| ------------------ | -------- | ---------------------- |
+| `--section-intro`  | intro    | `oklch(0.78 0.10 195)` |
+| `--section-verse`  | verse    | `oklch(0.74 0.12 245)` |
+| `--section-up`     | up       | `oklch(0.82 0.13  80)` |
+| `--section-chorus` | chorus   | `oklch(0.72 0.15  15)` |
+| `--section-down`   | down     | `oklch(0.72 0.12 285)` |
+| `--section-bridge` | bridge   | `oklch(0.74 0.14 330)` |
+| `--section-outro`  | outro    | `oklch(0.77 0.12 150)` |
+| `--section-other`  | other    | `oklch(0.72 0.02 260)` |
+
 ---
 
 ## 3. Typography

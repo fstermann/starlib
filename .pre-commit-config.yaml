@@ -29,14 +29,14 @@ repos:
         exclude_types:
           - plain-text
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.16
+    rev: v0.15.22
     hooks:
       - id: ruff
         args:
           - --fix
       - id: ruff-format
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.1.0
+    rev: v2.3.1
     hooks:
       - id: mypy
         args:
@@ -44,7 +44,7 @@ repos:
           - "--install-types"
           - "--non-interactive"
   - repo: https://github.com/jsh9/pydoclint
-    rev: 0.8.6
+    rev: 0.9.1
     hooks:
       - id: pydoclint
         args:
@@ -56,6 +56,12 @@ repos:
         # https://jsh9.github.io/pydoclint/config_options.html
   - repo: local
     hooks:
+      - id: backend-layering
+        name: Backend layer boundaries
+        # stdlib-only, so pre-commit's own interpreter is enough — CI has no uv
+        language: python
+        entry: python scripts/check_layering.py
+        files: ^backend/.*\.py$
       - id: tsc
         name: TypeScript type check
         language: system

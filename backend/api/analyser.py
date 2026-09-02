@@ -9,7 +9,7 @@ Endpoints:
 
 The router is intentionally thin: validation + dependency injection for the
 audio fetcher (so tests can pass local files), then delegates to the
-``backend.core.services.analyser`` controller.
+``backend.services.analyser`` controller.
 """
 
 from __future__ import annotations
@@ -24,7 +24,12 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
-from backend.core.services.analyser import (
+from backend.infra.analyser import cache as audio_cache
+from backend.infra.soundcloud import token_cache
+from backend.infra.soundcloud.oauth import OAuthManager
+from backend.infra.soundcloud.settings import get_settings
+from backend.schemas.analyser import event_to_sse
+from backend.services.analyser import (
     AnalyserJobOptions,
     JobNotFoundError,
     cancel_shazam_scan,
@@ -36,11 +41,6 @@ from backend.core.services.analyser import (
     start_shazam_scan,
     subscribe_to_job,
 )
-from backend.core.services.analyser import cache as audio_cache
-from backend.core.services.analyser.events import event_to_sse
-from backend.core.services.sc_auth_cache import get_cached_access_token
-from soundcloud_tools.oauth import OAuthManager
-from soundcloud_tools.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +177,7 @@ async def _resolve_soundcloud_url(url: str) -> int:
     # not the api-v2 path that ``soundcloud_tools.Client`` would hit — those
     # require the web-session cookie token and aren't authorised for this
     # router's use case.
-    from backend.api.soundcloud import _resolve_track_id
+    from backend.api.soundcloud.tracks import _resolve_track_id
 
     try:
         resolved = await _resolve_track_id(url)
@@ -201,11 +201,11 @@ async def _fetch_track_meta(soundcloud_id: int, title: str | None, artist: str |
     """Fill in title/artist from the public SoundCloud API. Failures are non-fatal."""
     if title and artist:
         return title, artist
-    from backend.api.soundcloud import _fetch_track_meta as fetch_public_track
+    from backend.api.soundcloud.tracks import _fetch_track_meta as fetch_public_track
 
     try:
         track = await fetch_public_track(soundcloud_id)
-    except Exception as exc:  # metadata is best-effort — never fail the job for this.
+    except Exception as exc:  # Metadata is best-effort; keep job creation alive.
         logger.warning("analyser: track metadata fetch failed for %s: %s", soundcloud_id, exc)
         return title, artist
     if not isinstance(track, dict):
@@ -265,7 +265,7 @@ async def reanalyse(job_id: str, payload: ReanalyseRequest) -> dict:
     # Flip the row to ``running`` before scheduling so a frontend that
     # re-fetches the snapshot right after this response sees the new pass
     # in progress (rather than the previous pass's terminal status).
-    from backend.core.services.analyser import db as analyser_db
+    from backend.infra.analyser import db as analyser_db
 
     analyser_db.update_job_status(job_id, status="running")
 
@@ -288,7 +288,7 @@ def update_windows_bpm(job_id: str, payload: UpdateWindowsBpmRequest) -> dict:
     snap = get_job_snapshot(job_id)
     if snap is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-    from backend.core.services.analyser import db as analyser_db
+    from backend.infra.analyser import db as analyser_db
 
     updated = analyser_db.update_windows_bpm_in_range(job_id, payload.start_s, payload.end_s, payload.bpm)
     return {"job_id": job_id, "updated": updated}
@@ -341,7 +341,7 @@ async def shazam_scan(job_id: str, payload: ShazamScanRequest) -> dict:
     # re-fetches the snapshot or re-opens the SSE stream right after this
     # response sees the scan in progress (otherwise it would still see
     # ``complete`` from the prior pass and not bother subscribing).
-    from backend.core.services.analyser import db as analyser_db
+    from backend.infra.analyser import db as analyser_db
 
     analyser_db.update_job_status(job_id, status="running")
 
@@ -378,7 +378,7 @@ def _count_confirmed_in_region(job_id: str, region: tuple[float, float] | None) 
 
     With ``region=None`` (whole-mix scan) every confirmed track is excluded.
     """
-    from backend.core.services.analyser import db as analyser_db
+    from backend.infra.analyser import db as analyser_db
 
     ranges = analyser_db.list_confirmed_ranges(job_id)
     if region is None:
@@ -468,7 +468,7 @@ def add_track(job_id: str, payload: AddTrackRequest) -> dict:
     snap = get_job_snapshot(job_id)
     if snap is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-    from backend.core.services.analyser import db as analyser_db
+    from backend.infra.analyser import db as analyser_db
 
     row = analyser_db.insert_track(
         job_id=job_id,
@@ -493,7 +493,7 @@ def update_track(job_id: str, track_id: int, payload: UpdateTrackRequest) -> dic
     snap = get_job_snapshot(job_id)
     if snap is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-    from backend.core.services.analyser import db as analyser_db
+    from backend.infra.analyser import db as analyser_db
 
     # ``confirmed`` toggles aren't user edits in the "Shazam should not
     # overwrite this" sense — they don't change the track's identity.
@@ -532,7 +532,7 @@ def delete_track(job_id: str, track_id: int) -> dict:
     snap = get_job_snapshot(job_id)
     if snap is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-    from backend.core.services.analyser import db as analyser_db
+    from backend.infra.analyser import db as analyser_db
 
     # Look the row up so we know whether to dismiss or hard-delete.
     rows = analyser_db.list_tracks(job_id, include_dismissed=True)
@@ -556,8 +556,8 @@ def reset_job(job_id: str) -> dict:
     snap = get_job_snapshot(job_id)
     if snap is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-    from backend.core.services.analyser import controller as analyser_controller
-    from backend.core.services.analyser import db as analyser_db
+    from backend.infra.analyser import db as analyser_db
+    from backend.services.analyser import controller as analyser_controller
 
     analyser_db.reset_job_data(job_id)
     # Drop the in-memory job state so a resubscribe replays cleanly from
@@ -661,14 +661,14 @@ def _make_soundcloud_fetcher(soundcloud_id: int):
     async def fetch() -> Path:
         # Dodging an inline import so the analyser package stays decoupled
         # from the soundcloud router module's globals during tests.
-        from backend.api.soundcloud import _fetch_stream_url  # local import
+        from backend.api.soundcloud.tracks import _fetch_stream_url  # local import
 
         existing = audio_cache.cached_set_path(soundcloud_id)
         if existing is not None:
             return existing
 
         hls_url, _expires = await _fetch_stream_url(soundcloud_id)
-        token = get_cached_access_token(get_settings(), OAuthManager)
+        token = token_cache.get_cached_access_token(get_settings(), OAuthManager)
         return await audio_cache.fetch_set_audio(
             soundcloud_id,
             hls_url=hls_url,

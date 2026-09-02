@@ -72,8 +72,7 @@ export function AppendTracksDialog({
         ...newUrns,
       ]);
       const url = (updatedPlaylist as Record<string, unknown>).permalink_url as
-        | string
-        | undefined;
+        string | undefined;
       onAppended?.();
       setOpen(false);
       toast.success(
