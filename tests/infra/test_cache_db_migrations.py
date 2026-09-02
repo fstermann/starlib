@@ -15,6 +15,7 @@ import pytest
 
 from backend.infra import cache
 from backend.infra.db import engine as db_engine
+from backend.infra.db.models import AnalyserTrack
 
 
 @pytest.fixture(autouse=True)
@@ -89,6 +90,15 @@ def test_fresh_db_upgrades_to_head(tmp_path: Path) -> None:
     } <= _cols(db, "analyser_tracks")
     # 0012 added set_bpm + pitch_offset (set→original BPM display).
     assert {"set_bpm", "pitch_offset"} <= _cols(db, "analyser_tracks")
+
+
+def test_analyser_partial_unique_index_is_in_model_metadata() -> None:
+    """Keep Alembic autogeneration aligned with the partial index in 0010."""
+    index = next(index for index in AnalyserTrack.__table__.indexes if index.name == "ix_analyser_tracks_job_shazam")
+
+    assert index.unique
+    assert [column.name for column in index.columns] == ["job_id", "shazam_id"]
+    assert str(index.dialect_options["sqlite"]["where"]) == "shazam_id IS NOT NULL"
 
 
 def test_idempotent_restart(tmp_path: Path) -> None:

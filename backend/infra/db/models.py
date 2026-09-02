@@ -13,6 +13,7 @@ derived-data view).
 
 from __future__ import annotations
 
+from sqlalchemy import text
 from sqlmodel import Field, Index, SQLModel
 
 from backend.domain.tags import SIMPLE_TAG_FIELDS
@@ -166,6 +167,15 @@ class AnalyserTrack(SQLModel, table=True):
     """
 
     __tablename__ = "analyser_tracks"  # type: ignore[assignment]
+    __table_args__ = (
+        Index(
+            "ix_analyser_tracks_job_shazam",
+            "job_id",
+            "shazam_id",
+            unique=True,
+            sqlite_where=text("shazam_id IS NOT NULL"),
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     job_id: str = Field(index=True)
