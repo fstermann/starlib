@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from backend.config import get_backend_settings
 from backend.infra import cache, watcher
 from backend.infra.ai import ollama as ollama_service
+from backend.infra.analyser import db as analyser_db
 from backend.infra.soundcloud import client as sc_client
 from backend.services import app_settings as app_settings_service
 from backend.services import folder_config as folder_config_service
@@ -29,6 +30,10 @@ async def lifespan(app: FastAPI):
 
     # Initialise SQLite cache (creates tables if first run)
     cache.init_db(settings.cache_dir / "metadata.db")
+
+    stale = analyser_db.mark_running_jobs_as_error("backend restarted; please re-run analysis")
+    if stale:
+        logger.info("analyser: marked %d stale running job(s) as error", stale)
 
     # Pruning stat()s every cached path; on a large library that is tens of
     # thousands of syscalls. Off the startup path — nothing below depends on it.

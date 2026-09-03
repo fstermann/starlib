@@ -7,6 +7,7 @@ so adding a feature means editing one list here rather than the app factory.
 from fastapi import APIRouter
 
 from backend.api.ai import router as ai_router
+from backend.api.analyser import router as analyser_router
 from backend.api.app_settings import router as app_settings_router
 from backend.api.bpm import router as bpm_router
 from backend.api.folder_config import router as folder_config_router
@@ -40,5 +41,6 @@ for _r in (
     bpm_router,
     suggestions_router,
     rekordbox_router,
+    analyser_router,
 ):
     router.include_router(_r)

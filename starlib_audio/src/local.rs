@@ -9,19 +9,11 @@ use std::path::Path;
 
 use anyhow::{anyhow, Result};
 
-use super::tempo::consensus;
-use super::types::AnalysisMode;
-use super::{decode, tempo, types::BpmOptions, types::BpmResult};
+use crate::tempo::consensus;
+use crate::types::AnalysisMode;
+use crate::{decode, tempo, types::BpmOptions, types::BpmResult};
 
 /// Offsets (as percent of track length) used in consensus mode.
-///
-/// Consensus mode is a *robustness* technique, not a precision one: by
-/// sampling three windows spaced across the track and taking the median,
-/// we avoid landing entirely inside a breakdown / intro / outro and
-/// reporting that section's tempo (or none at all). It does **not** produce
-/// a higher-resolution BPM value than single-shot — the per-window estimator
-/// is the same code path, and the final answer is one of the three window
-/// medians, not an average.
 const CONSENSUS_OFFSETS_PCT: &[f32] = &[25.0, 50.0, 75.0];
 
 /// Analyse a snippet of `path` and return a BPM estimate.
@@ -72,7 +64,6 @@ fn analyze_window(
     let start = ((start_s * sr as f32) as usize).min(total_samples);
     let end = (((start_s + snippet_s) * sr as f32) as usize).min(total_samples);
     let window: &[f32] = if start >= end {
-        // Track shorter than the requested window / offset — analyse what we have.
         pcm
     } else {
         &pcm[start..end]
@@ -88,28 +79,24 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    /// Build a tiny WAV (RIFF) file with the given mono f32 samples at `sr`.
     fn write_wav(path: &Path, samples: &[f32], sr: u32) {
         use std::fs::File;
         let mut f = File::create(path).expect("create wav");
         let n = samples.len();
-        let byte_rate = sr * 2; // 16-bit mono
+        let byte_rate = sr * 2;
         let data_size = (n * 2) as u32;
         let chunk_size = 36 + data_size;
-        // RIFF header
         f.write_all(b"RIFF").unwrap();
         f.write_all(&chunk_size.to_le_bytes()).unwrap();
         f.write_all(b"WAVE").unwrap();
-        // fmt chunk
         f.write_all(b"fmt ").unwrap();
-        f.write_all(&16u32.to_le_bytes()).unwrap(); // PCM header size
-        f.write_all(&1u16.to_le_bytes()).unwrap(); // PCM format
-        f.write_all(&1u16.to_le_bytes()).unwrap(); // mono
+        f.write_all(&16u32.to_le_bytes()).unwrap();
+        f.write_all(&1u16.to_le_bytes()).unwrap();
+        f.write_all(&1u16.to_le_bytes()).unwrap();
         f.write_all(&sr.to_le_bytes()).unwrap();
         f.write_all(&byte_rate.to_le_bytes()).unwrap();
-        f.write_all(&2u16.to_le_bytes()).unwrap(); // block align
-        f.write_all(&16u16.to_le_bytes()).unwrap(); // bits per sample
-                                                    // data chunk
+        f.write_all(&2u16.to_le_bytes()).unwrap();
+        f.write_all(&16u16.to_le_bytes()).unwrap();
         f.write_all(b"data").unwrap();
         f.write_all(&data_size.to_le_bytes()).unwrap();
         for s in samples {
@@ -150,7 +137,6 @@ mod tests {
 
     #[test]
     fn analyze_local_file_window_shorter_than_snippet_is_tolerated() {
-        // 5-second track, ask for a 15-second window at 30% offset.
         let dir = std::env::temp_dir().join("starlib-bpm-local-test");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("click_short.wav");

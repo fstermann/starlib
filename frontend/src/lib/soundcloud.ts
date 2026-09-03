@@ -68,6 +68,26 @@ export async function searchTracks(
   return (data as SCTrack[]) ?? [];
 }
 
+/** Search tracks long enough to be DJ sets/mixes.
+ *
+ * Same as ``searchTracks`` but with a minimum-duration filter so short
+ * single tracks don't drown out the actual sets. */
+export async function searchSets(
+  query: string,
+  minDurationMs: number,
+  limit = 20,
+): Promise<SCTrack[]> {
+  const client = await getClient();
+  const { data, error } = await client.GET("/tracks", {
+    params: {
+      query: { q: query, limit, duration: { from: minDurationMs } },
+    },
+  });
+  if (error)
+    throw new Error(`SoundCloud search failed: ${JSON.stringify(error)}`);
+  return (data as SCTrack[]) ?? [];
+}
+
 export async function resolveUrl(
   url: string,
 ): Promise<SCTrack | SCPlaylist | SCUser | null> {

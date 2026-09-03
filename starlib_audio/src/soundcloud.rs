@@ -1,33 +1,28 @@
 //! SoundCloud HLS → BPM pipeline.
 //!
-//! Mirrors what `bpm_bench_rs` proved out: hit `/tracks/{id}/streams`,
-//! follow the redirect from api.soundcloud.com to the signed CDN m3u8,
-//! download init.mp4 + a window of segments, hand bytes to symphonia,
-//! run tempo detection on the decoded PCM.
+//! Hits `/tracks/{id}/streams`, follows the redirect from api.soundcloud.com
+//! to the signed CDN m3u8, downloads init.mp4 + a window of segments, hands
+//! bytes to symphonia, runs tempo detection on the decoded PCM.
 //!
 //! Takes the OAuth token from the caller — this module doesn't touch
-//! credentials. The Python backend owns auth state and hands the Rust
-//! side a fresh Client-Credentials token for each analysis.
+//! credentials. The Python backend owns auth state and hands the Rust side
+//! a fresh Client-Credentials token for each analysis.
 
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
 use reqwest::Client;
 use serde::Deserialize;
 use url::Url;
 
-use super::tempo::consensus;
-use super::types::AnalysisMode;
-use super::{analyze_bytes, types::BpmOptions, types::BpmResult};
+use crate::tempo::consensus;
+use crate::types::AnalysisMode;
+use crate::{analyze_bytes, types::BpmOptions, types::BpmResult};
 
 const API_BASE: &str = "https://api.soundcloud.com";
-/// Single-shot offset. 30% lands past the intro on typical electronic tracks.
 const DEFAULT_OFFSET_PCT: f32 = 30.0;
-/// Consensus-mode offsets. Catch intro-heavy, breakdown-in-middle, and
-/// outro-fade tracks by sampling spread across the body.
 const CONSENSUS_OFFSETS_PCT: &[f32] = &[25.0, 50.0, 75.0];
-/// Analysis window length in seconds (per window).
 const SNIPPET_SECONDS: f32 = 15.0;
 
 #[derive(Deserialize)]
@@ -37,18 +32,16 @@ struct StreamsResponse {
 }
 
 /// Analyze a SoundCloud track via its HLS stream and return a BPM estimate.
-///
-/// When `options.mode == Consensus`, runs the pipeline three times at
-/// different offsets through the track (25% / 50% / 75%) and returns the
-/// median — ~3× network cost, more robust against breakdowns and intro
-/// sections. Single mode (default) hits a single ~15 s window at 30%.
-pub async fn analyze_sc_track(track_id: u64, token: &str, options: &BpmOptions) -> Result<BpmResult> {
+pub async fn analyze_sc_track(
+    track_id: u64,
+    token: &str,
+    options: &BpmOptions,
+) -> Result<BpmResult> {
     let http = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .context("reqwest client build")?;
 
-    // Resolve the playlist once; reuse across offsets in consensus mode.
     let playlist = resolve_playlist(&http, token, track_id).await?;
     let offsets: &[f32] = match options.mode {
         AnalysisMode::Single => &[DEFAULT_OFFSET_PCT],
@@ -69,7 +62,16 @@ pub async fn analyze_sc_track(track_id: u64, token: &str, options: &BpmOptions) 
     }
 }
 
-/// Hit /streams, follow the redirect to the signed CDN m3u8, parse it.
+/// Download the HLS playlist and segment list for a track. Public so the
+/// backend chunked-streaming path can reuse it without re-resolving per chunk.
+pub async fn resolve_playlist_for_track(
+    http: &Client,
+    token: &str,
+    track_id: u64,
+) -> Result<Playlist> {
+    resolve_playlist(http, token, track_id).await
+}
+
 async fn resolve_playlist(http: &Client, token: &str, track_id: u64) -> Result<Playlist> {
     let streams_url = format!("{API_BASE}/tracks/{track_id}/streams");
     let streams: StreamsResponse = sc_get(http, token, &streams_url)
@@ -88,10 +90,11 @@ async fn resolve_playlist(http: &Client, token: &str, track_id: u64) -> Result<P
     Ok(parse_m3u8(&m3u8_text, &final_url))
 }
 
-/// Download `init.mp4` + the segments covering a window starting at
-/// `offset_pct` of the track, concatenated into one byte buffer ready for
-/// the symphonia fMP4 decoder.
-async fn fetch_window_bytes(http: &Client, playlist: &Playlist, offset_pct: f32) -> Result<Vec<u8>> {
+async fn fetch_window_bytes(
+    http: &Client,
+    playlist: &Playlist,
+    offset_pct: f32,
+) -> Result<Vec<u8>> {
     let seg_urls = select_segments(&playlist.entries, offset_pct, SNIPPET_SECONDS);
     if seg_urls.is_empty() {
         return Err(anyhow!("no segments selected from m3u8 at offset {offset_pct}%"));
@@ -123,11 +126,7 @@ async fn fetch_window_bytes(http: &Client, playlist: &Playlist, offset_pct: f32)
     Ok(raw)
 }
 
-// ---------- SC API helpers ----------
-
 async fn sc_get(http: &Client, token: &str, url: &str) -> Result<reqwest::Response> {
-    // Plain OAuth header only — the public API (api.soundcloud.com) rejects
-    // requests that include the web-client `client_id` query param.
     for attempt in 0..2 {
         let resp = http
             .get(url)
@@ -147,11 +146,18 @@ async fn sc_get(http: &Client, token: &str, url: &str) -> Result<reqwest::Respon
     Err(anyhow!("sc_get exhausted retries without returning"))
 }
 
-// ---------- m3u8 parsing ----------
+/// Parsed HLS playlist: ordered (duration_s, absolute_url) entries plus
+/// the optional fMP4 init segment URL.
+pub struct Playlist {
+    pub entries: Vec<(f32, String)>,
+    pub init_url: Option<String>,
+}
 
-struct Playlist {
-    entries: Vec<(f32, String)>, // (duration_s, absolute_url)
-    init_url: Option<String>,
+impl Playlist {
+    /// Total duration in seconds (sum of all `EXTINF` durations).
+    pub fn total_seconds(&self) -> f32 {
+        self.entries.iter().map(|(d, _)| *d).sum()
+    }
 }
 
 fn parse_m3u8(text: &str, base: &Url) -> Playlist {
@@ -188,7 +194,9 @@ fn absolute(u: &str, base: &Url) -> String {
     if u.starts_with("http") {
         u.to_string()
     } else {
-        base.join(u).map(|v| v.to_string()).unwrap_or_else(|_| u.to_string())
+        base.join(u)
+            .map(|v| v.to_string())
+            .unwrap_or_else(|_| u.to_string())
     }
 }
 
@@ -219,8 +227,6 @@ fn select_segments(entries: &[(f32, String)], offset_pct: f32, snippet_s: f32) -
     out
 }
 
-// ---------- Unit tests ----------
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,9 +243,8 @@ mod tests {
 
     #[test]
     fn select_segments_covers_requested_window() {
-        let entries: Vec<(f32, String)> = (0..6)
-            .map(|i| (10.0, format!("seg{i}.m4s")))
-            .collect();
+        let entries: Vec<(f32, String)> =
+            (0..6).map(|i| (10.0, format!("seg{i}.m4s"))).collect();
         let picked = select_segments(&entries, 30.0, 15.0);
         assert_eq!(picked, vec!["seg1.m4s", "seg2.m4s"]);
     }
