@@ -26,6 +26,7 @@ import {
   GripVertical,
   ListPlus,
   ListX,
+  Radio,
   Search,
   ShoppingCart,
 } from "lucide-react";
@@ -805,6 +806,9 @@ interface TrackRowProps {
   onAddToQueue: () => void;
   /** Insert this track right after the current one. */
   onPlayNext: () => void;
+  /** When set, the row's context menu gains "Open track station" — navigate to
+   *  the track-station stream seeded by this track. */
+  onOpenStation?: () => void;
   /** When set, the row's context menu gains "Add to playlist" (submenu of the
    *  user's own playlists) and "Create playlist" (SoundCloud view only).
    *  `createCount` is how many tracks the create action would use — the current
@@ -846,6 +850,7 @@ function TrackRowInner({
   onStartPlay,
   onAddToQueue,
   onPlayNext,
+  onOpenStation,
   addToPlaylist,
   removeFromPlaylist,
   visibleColumns,
@@ -887,8 +892,18 @@ function TrackRowInner({
       onAddToQueue={onAddToQueue}
       disabled={unplayable}
       extraItems={
-        addToPlaylist || removeFromPlaylist ? (
+        onOpenStation || addToPlaylist || removeFromPlaylist ? (
           <>
+            {onOpenStation && (
+              <ContextMenuItem
+                data-testid="open-station"
+                onSelect={onOpenStation}
+                className="text-xs"
+              >
+                <Radio className="size-3.5" />
+                Open track station
+              </ContextMenuItem>
+            )}
             {addToPlaylist && (
               <>
                 <TrackPlaylistSubmenu
@@ -1080,6 +1095,9 @@ interface LikesTableProps {
   /** Reports the current *visible* URN order (after sort). Fires whenever
    *  the sorted display changes so callers can save whatever the user sees. */
   onVisibleOrderChange?: (orderedUrns: string[]) => void;
+  /** When set, each row's context menu gains "Open track station", called with
+   *  the row's track so the caller can navigate to its station. */
+  onOpenStation?: (track: SCTrack) => void;
   /** Opt-in: add an "Add to playlist" submenu to each row's context menu,
    *  targeting the authenticated user's own SoundCloud playlists. */
   showAddToPlaylist?: boolean;
@@ -1112,6 +1130,7 @@ export function LikesTable({
   onColumnWidthReset,
   onReorderTracks,
   onVisibleOrderChange,
+  onOpenStation,
   showAddToPlaylist,
   removeFromPlaylist,
 }: LikesTableProps) {
@@ -1567,6 +1586,9 @@ export function LikesTable({
             onStartPlay={() => handleStartPlay(index)}
             onAddToQueue={() => enqueue(scTrackToPlayerTrack(track, bpmCache))}
             onPlayNext={() => playNext(scTrackToPlayerTrack(track, bpmCache))}
+            onOpenStation={
+              onOpenStation ? () => onOpenStation(track) : undefined
+            }
             addToPlaylist={
               showAddToPlaylist
                 ? {

@@ -29,6 +29,9 @@ export const MIXES_GROUP_ID = "mixes";
 export const playlistNodeId = (urn: string) => `pl:${urn}`;
 export const mixNodeId = (urn: string) => `mix:${urn}`;
 export const memberNodeId = (userUrn: string) => `member:${userUrn}`;
+/** Transient "track station" node — seeded from a track id, not a tree entry. */
+export const stationNodeId = (seedTrackId: number | string) =>
+  `station:${seedTrackId}`;
 
 export type LikesTreeNodeKind =
   | "root"

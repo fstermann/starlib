@@ -275,7 +275,7 @@
           "authentication"
         ],
         "summary": "Save Session Cookie",
-        "description": "Persist the api-v2 web-session ``oauth_token`` captured by the desktop shell.\n\nThe Tauri login window opens SoundCloud's OAuth2 authorize URL in an\nin-app webview; after consent the backend's existing ``/redirect``\nhandler exchanges the code for OAuth2 tokens as usual. *In addition*,\nthe webview's cookie jar now holds the web-session ``oauth_token``,\nwhich the shell posts here. We persist it to ``config.env`` as\n``OAUTH_TOKEN`` so :class:`backend.sc_settings.Settings` picks\nit up on the next ``get_settings()`` call.",
+        "description": "Persist the api-v2 web-session ``oauth_token`` captured by the desktop shell.\n\nThe Tauri login window opens SoundCloud's OAuth2 authorize URL in an\nin-app webview; after consent the backend's existing ``/redirect``\nhandler exchanges the code for OAuth2 tokens as usual. *In addition*,\nthe webview's cookie jar now holds the web-session ``oauth_token``,\nwhich the shell posts here. We persist it to ``config.env`` as\n``OAUTH_TOKEN`` so :class:`backend.infra.soundcloud.settings.Settings` picks\nit up on the next ``get_settings()`` call.",
         "operationId": "save_session_cookie_auth_soundcloud_session_cookie_post",
         "requestBody": {
           "content": {
@@ -3731,13 +3731,58 @@
         }
       }
     },
+    "/api/soundcloud/stations/{seed_track_id}/tracks": {
+      "get": {
+        "tags": [
+          "soundcloud"
+        ],
+        "summary": "Get Station Tracks",
+        "description": "Return the track-station stream seeded by ``seed_track_id``.\n\nReads the documented public ``/tracks/{track_urn}/related`` endpoint and\nreturns the full Track payloads in SoundCloud's order.",
+        "operationId": "get_station_tracks_api_soundcloud_stations__seed_track_id__tracks_get",
+        "parameters": [
+          {
+            "name": "seed_track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Numeric id of the seed track",
+              "title": "Seed Track Id"
+            },
+            "description": "Numeric id of the seed track"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationTracksResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/bpm/local/candidates": {
       "get": {
         "tags": [
           "bpm"
         ],
         "summary": "Get Local Candidates",
-        "description": "Return indexed-but-unanalyzed tracks in `folder` for the batch runner.\n\nFilters to tracks with `bpm IS NULL` in cache_db. `recursive=True` (default)\nwalks subdirectories, matching the library view's usual display scope.",
+        "description": "Return indexed-but-unanalyzed tracks in `folder` for the batch runner.\n\nFilters to tracks with `bpm IS NULL` in the cache DB. `recursive=True` (default)\nwalks subdirectories, matching the library view's usual display scope.",
         "operationId": "get_local_candidates_api_bpm_local_candidates_get",
         "parameters": [
           {
@@ -7086,6 +7131,35 @@
           "bpm"
         ],
         "title": "SoundcloudBpmResponse"
+      },
+      "StationTracksResponse": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "tracks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tracks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tracks"
+        ],
+        "title": "StationTracksResponse",
+        "description": "Tracks of a track-station, in play order.\n\n``title`` is nullable: the public API's ``/related`` feed carries no\nstation name, so the backend leaves it ``None`` and the frontend supplies\nthe seed track's title for the header."
       },
       "StreamUrlResponse": {
         "properties": {
