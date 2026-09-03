@@ -21,9 +21,8 @@ interface UseStationTracksResult {
   error: string | null;
 }
 
-/** Load a track-station's tracks by seed track id. The backend proxies
- * api-v2 and returns SCTrack-shaped objects; needs the SoundCloud session
- * cookie, so this 404s (surfaced as an error) when Mixes are unavailable. */
+/** Load a track-station's tracks by seed track id. The backend proxies the
+ * public SoundCloud related-tracks endpoint and returns SCTrack-shaped objects. */
 export function useStationTracks(
   seedTrackId: string | null,
 ): UseStationTracksResult {

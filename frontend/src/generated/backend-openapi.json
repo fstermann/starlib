@@ -3737,7 +3737,7 @@
           "soundcloud"
         ],
         "summary": "Get Station Tracks",
-        "description": "Return the tracks of the track-station seeded by ``seed_track_id``.\n\nOne api-v2 call bootstraps the station's slim track list; a second\n``/tracks?ids=`` call hydrates them to full Track payloads (title,\nartwork, user), preserving the station's play order.",
+        "description": "Return the track-station stream seeded by ``seed_track_id``.\n\nReads the documented public ``/tracks/{track_urn}/related`` endpoint and\nreturns the full Track payloads in SoundCloud's order.",
         "operationId": "get_station_tracks_api_soundcloud_stations__seed_track_id__tracks_get",
         "parameters": [
           {
@@ -7159,7 +7159,7 @@
           "tracks"
         ],
         "title": "StationTracksResponse",
-        "description": "Tracks of a track-station, in play order.\n\n``title`` is the station's display name (SoundCloud names it after the\nseed track, e.g. \"Track station: <seed title>\")."
+        "description": "Tracks of a track-station, in play order.\n\n``title`` is nullable: the public API's ``/related`` feed carries no\nstation name, so the backend leaves it ``None`` and the frontend supplies\nthe seed track's title for the header."
       },
       "StreamUrlResponse": {
         "properties": {

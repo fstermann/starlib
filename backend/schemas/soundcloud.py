@@ -40,9 +40,9 @@ class SystemPlaylistTracksResponse(BaseModel):
 class StationTracksResponse(BaseModel):
     """Tracks of a track-station, in play order.
 
-    ``title`` is nullable: the api-v2 ``/related`` feed carries no station
-    name, so the backend leaves it ``None`` and the frontend supplies the
-    seed track's title for the header.
+    ``title`` is nullable: the public API's ``/related`` feed carries no
+    station name, so the backend leaves it ``None`` and the frontend supplies
+    the seed track's title for the header.
     """
 
     title: str | None = None

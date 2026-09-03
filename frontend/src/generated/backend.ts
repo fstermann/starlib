@@ -1570,11 +1570,10 @@ export interface paths {
         };
         /**
          * Get Station Tracks
-         * @description Return the tracks of the track-station seeded by ``seed_track_id``.
+         * @description Return the track-station stream seeded by ``seed_track_id``.
          *
-         *     One api-v2 call bootstraps the station's slim track list; a second
-         *     ``/tracks?ids=`` call hydrates them to full Track payloads (title,
-         *     artwork, user), preserving the station's play order.
+         *     Reads the documented public ``/tracks/{track_urn}/related`` endpoint and
+         *     returns the full Track payloads in SoundCloud's order.
          */
         get: operations["get_station_tracks_api_soundcloud_stations__seed_track_id__tracks_get"];
         put?: never;
@@ -3014,8 +3013,9 @@ export interface components {
          * StationTracksResponse
          * @description Tracks of a track-station, in play order.
          *
-         *     ``title`` is the station's display name (SoundCloud names it after the
-         *     seed track, e.g. "Track station: <seed title>").
+         *     ``title`` is nullable: the public API's ``/related`` feed carries no
+         *     station name, so the backend leaves it ``None`` and the frontend supplies
+         *     the seed track's title for the header.
          */
         StationTracksResponse: {
             /** Title */
