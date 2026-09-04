@@ -195,6 +195,9 @@ class AnalyserTrack(SQLModel, table=True):
     preview_url: str | None = None
     duration_s: float | None = None
     confirmed: bool = Field(default=False)
+    # Higher tier than ``confirmed`` — the user verified the start
+    # alignment (implies ``confirmed``).
+    aligned: bool = Field(default=False)
     dismissed: bool = Field(default=False)
     user_edited: bool = Field(default=False)
     # Mix tempo at the matched scan point (median of overlapping BPM
@@ -223,6 +226,23 @@ class SoundcloudTrackBpm(SQLModel, table=True):
     track_id: int = Field(primary_key=True)
     bpm: int
     analyzed_at: float  # unix epoch seconds
+
+
+class SoundcloudBpmOverride(SQLModel, table=True):
+    """User-set tempo correction for an original SoundCloud track.
+
+    Set in the alignment dialog when server-side detection got the original's
+    BPM wrong (usually a half/double-time octave error). Kept apart from the
+    peaks cache (re-decode invalidates it) and ``soundcloud_track_bpm`` (an
+    algorithm-bump migration wipes it) so the correction survives both. When a
+    row exists it overrides the detected BPM.
+    """
+
+    __tablename__ = "soundcloud_bpm_override"  # type: ignore[assignment]
+
+    track_id: int = Field(primary_key=True)
+    bpm: float
+    updated_at: float  # unix epoch seconds
 
 
 # ---------------------------------------------------------------------------

@@ -44,7 +44,9 @@ function useTrackArtworks(
     shazam_id: string | null;
     title: string;
     artist: string | null;
+    artwork_url?: string | null;
   }>,
+  scans: AnalyserUiState["scans"],
 ): Map<string, string | null> {
   // Identity-stable key set for the dependency check — when this string
   // doesn't change, the effect doesn't refire, so a flurry of scan
@@ -54,9 +56,38 @@ function useTrackArtworks(
 
   const [version, setVersion] = useState(0);
 
+  // Artwork recovered from the raw scan grid, keyed like ``trackKey`` —
+  // the same source the tracklist uses. Preferred over a fresh search so
+  // the band shows the track's real cover, not a fuzzy top hit.
+  const scanArtwork = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of scans) {
+      if (s.title == null || s.artwork_url == null) continue;
+      const k = s.shazam_id ?? `${s.title}|${s.artist ?? ""}`;
+      if (!m.has(k)) m.set(k, s.artwork_url);
+    }
+    return m;
+  }, [scans]);
+
+  // Identity of the scan-derived covers, so the fetch effect re-runs when
+  // late-arriving scan artwork lands and can prune tracks that no longer need
+  // a fuzzy search (presence is all that matters, so key off the covered set).
+  const scanArtSig = [...scanArtwork.keys()].sort().join("|");
+
+  // The track's own persisted cover, else the scan-grid cover.
+  const knownArtwork = (t: {
+    shazam_id: string | null;
+    title: string;
+    artist: string | null;
+    artwork_url?: string | null;
+  }): string | null => t.artwork_url ?? scanArtwork.get(trackKey(t)) ?? null;
+
   useEffect(() => {
     let cancelled = false;
+    // Only search for tracks that expose no cover of their own — the
+    // fuzzy fallback is a last resort, not the default.
     const pending = tracks.filter((t) => {
+      if (knownArtwork(t)) return false;
       const k = trackKey(t);
       return !ARTWORK_CACHE.has(k) && !ARTWORK_INFLIGHT.has(k);
     });
@@ -88,9 +119,12 @@ function useTrackArtworks(
     };
     // ``keysSig`` captures the relevant identity of ``tracks`` — using
     // it instead of ``tracks`` itself avoids re-firing this effect when
-    // the parent re-renders without actually adding new tracks.
+    // the parent re-renders without actually adding new tracks. ``scanArtSig``
+    // re-runs it when scan artwork lands so newly-covered tracks are pruned
+    // from ``pending`` instead of firing a redundant search (the CACHE +
+    // INFLIGHT guards keep already-searched tracks from repeating).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keysSig]);
+  }, [keysSig, scanArtSig]);
 
   // Build the consumer view from the cache on every render. ``version``
   // is read so that resolving a search re-runs this without needing
@@ -99,7 +133,9 @@ function useTrackArtworks(
   const view = new Map<string, string | null>();
   for (const t of tracks) {
     const k = trackKey(t);
-    if (ARTWORK_CACHE.has(k)) view.set(k, ARTWORK_CACHE.get(k) ?? null);
+    const known = knownArtwork(t);
+    if (known) view.set(k, known);
+    else if (ARTWORK_CACHE.has(k)) view.set(k, ARTWORK_CACHE.get(k) ?? null);
   }
   return view;
 }
@@ -117,6 +153,10 @@ interface TimelineProps {
    *  small checkmark badge so the timeline reflects the same review
    *  state as the tracklist below. */
   confirmed?: Set<string>;
+  /** Track keys marked alignment-correct — a higher tier than
+   *  ``confirmed``. Aligned bands render in amber instead of the green
+   *  confirmed styling. */
+  aligned?: Set<string>;
   /** Drag-edit handler: the page receives the original track + the
    *  newly-dragged bounds, decides whether to PATCH a manual override
    *  or convert a Shazam run via hide + add manually. */
@@ -168,6 +208,7 @@ export function AnalyserTimeline({
   onSelectRange,
   onFocusTrack,
   confirmed,
+  aligned,
   onEditBounds,
   minMatches = 1,
 }: TimelineProps) {
@@ -338,6 +379,7 @@ export function AnalyserTimeline({
           selection={state.selection}
           onFocusTrack={onFocusTrack}
           confirmed={confirmed}
+          aligned={aligned}
           onEditBounds={onEditBounds}
           minMatches={minMatches}
         />
@@ -867,13 +909,17 @@ function groupOverlappingTracks(
   const groups: DerivedRun[][] = [[sorted[0]]];
   for (let i = 1; i < sorted.length; i++) {
     const prev = groups[groups.length - 1];
-    const prevEnd = Math.max(...prev.map((t) => t.end_s));
+    // Cluster on start-to-start proximity: two bands are only visually
+    // indistinguishable when their start markers are close. Comparing
+    // against the previous run's ``end_s`` merged distinct tracks
+    // whenever a long Shazam run's end abutted the next track's start.
+    const prevStart = prev[prev.length - 1].start_s;
     const cur = sorted[i];
     // Manuals are always their own band — they're the user's
     // explicit placements, so squashing them into a Shazam group
     // would defeat the point of the edit.
     const breakGroup =
-      isManual(cur) || prev.some(isManual) || cur.start_s - prevEnd >= gap;
+      isManual(cur) || prev.some(isManual) || cur.start_s - prevStart >= gap;
     if (breakGroup) {
       groups.push([cur]);
     } else {
@@ -950,6 +996,17 @@ function isGroupConfirmed(
   );
 }
 
+/** True when every track in a group is alignment-verified (a strict
+ *  higher tier than confirmed). */
+function isGroupAligned(
+  group: DerivedRun[],
+  aligned: Set<string> | undefined,
+): boolean {
+  return (
+    !!aligned && group.every((t) => "id" in t && aligned.has(String(t.id)))
+  );
+}
+
 function TracksLane({
   scans,
   timeline,
@@ -957,6 +1014,7 @@ function TracksLane({
   selection,
   onFocusTrack,
   confirmed,
+  aligned,
   onEditBounds,
   minMatches = 1,
 }: {
@@ -966,6 +1024,7 @@ function TracksLane({
   selection: AnalyserUiState["selection"];
   onFocusTrack?: (trackKey: string) => void;
   confirmed?: Set<string>;
+  aligned?: Set<string>;
   onEditBounds?: (
     track: DerivedRun,
     bounds: { start_s: number | null; end_s: number | null },
@@ -989,7 +1048,7 @@ function TracksLane({
           }),
     [allTracks, minMatches, support, confirmed],
   );
-  const artworks = useTrackArtworks(tracks);
+  const artworks = useTrackArtworks(tracks, scans);
   const groups = useMemo(
     () => groupOverlappingTracks(tracks, duration),
     [tracks, duration],
@@ -1045,6 +1104,7 @@ function TracksLane({
             selected={isSelected}
             onFocusTrack={onFocusTrack}
             confirmed={confirmed}
+            aligned={aligned}
             duration={duration}
             onEditBounds={onEditBounds}
           />
@@ -1087,6 +1147,7 @@ function TrackBand({
   selected,
   onFocusTrack,
   confirmed,
+  aligned,
   duration,
   onEditBounds,
 }: {
@@ -1097,6 +1158,7 @@ function TrackBand({
   selected: boolean;
   onFocusTrack?: (trackKey: string) => void;
   confirmed?: Set<string>;
+  aligned?: Set<string>;
   /** Set duration in seconds — needed to translate the drag handle's
    *  pixel delta into a time offset. */
   duration: number;
@@ -1120,6 +1182,7 @@ function TrackBand({
       ? String((primary as TrackTimelineEntry).id)
       : `${primary.start_s}-${primary.title}`;
   const isConfirmed = isGroupConfirmed(tracks, confirmed);
+  const isAligned = isGroupAligned(tracks, aligned);
 
   const tooltip = tracks
     .map(
@@ -1236,9 +1299,11 @@ function TrackBand({
         "absolute top-1 bottom-1 flex cursor-pointer items-stretch overflow-hidden rounded-md shadow-sm ring-1 transition-[width,min-width,box-shadow] duration-150",
         selected
           ? "ring-brand shadow-brand/30 shadow-md"
-          : isConfirmed
-            ? "ring-brand/30 hover:ring-brand/60"
-            : "ring-text-subtle/30 hover:ring-text-subtle/60",
+          : isAligned
+            ? "ring-warning/60 hover:ring-warning"
+            : isConfirmed
+              ? "ring-brand/30 hover:ring-brand/60"
+              : "ring-text-subtle/30 hover:ring-text-subtle/60",
         hovered && "z-10",
       )}
       style={{
@@ -1248,6 +1313,7 @@ function TrackBand({
         background: echoArt ? laneBg : fallbackBg,
       }}
       data-confirmed={isConfirmed ? "true" : "false"}
+      data-aligned={isAligned ? "true" : "false"}
       data-dragging={dragSide ?? "none"}
       title={tooltip}
       data-testid="track-band"

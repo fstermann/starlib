@@ -93,6 +93,9 @@ class TrackTimelineEvent(BaseModel):
     # the user just toggled (the event is the authoritative payload for
     # the row, so omitting these would clobber them).
     confirmed: bool = False
+    # A higher tier than ``confirmed``: the user verified the start
+    # alignment, not just the identity. ``aligned`` implies ``confirmed``.
+    aligned: bool = False
     user_edited: bool = False
 
 

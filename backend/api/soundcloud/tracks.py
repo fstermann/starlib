@@ -21,7 +21,12 @@ from fastapi import APIRouter, Header, HTTPException, Response, status
 from backend.infra.soundcloud import client, token_cache
 from backend.infra.soundcloud.oauth import OAuthManager  # re-exported for tests
 from backend.infra.soundcloud.settings import get_settings  # re-exported for tests
-from backend.schemas.soundcloud import StreamUrlResponse
+from backend.schemas.soundcloud import (
+    StreamUrlResponse,
+    TrackBpmRequest,
+    TrackBpmResponse,
+    TrackPeaksResponse,
+)
 
 __all__ = ["OAuthManager", "get_settings", "router"]
 
@@ -35,6 +40,10 @@ _PUBLIC_API_BASE = client.PUBLIC_API_BASE
 _DEFAULT_TTL_SECONDS = 30 * 60
 
 _HTTP_TIMEOUT_SECONDS: float = client.TIMEOUT_SECONDS
+
+# Accepted range for a manual BPM correction — wide enough for any dance genre.
+_BPM_MIN = 40.0
+_BPM_MAX = 300.0
 
 # Allowlist of hosts the `/streams` endpoint may redirect us to. We follow
 # only these on the redirect hop so a spoofed upstream can't bounce us to a
@@ -359,6 +368,127 @@ async def get_track_stream(track_id: int, force_refresh: bool = False) -> Stream
 
     expires_dt = datetime.fromtimestamp(capped_expires, tz=UTC)
     return StreamUrlResponse(url=url, expires_at=expires_dt.isoformat())
+
+
+async def _resolve_track_audio_path(track_id: int):
+    """Return the cached audio path for a track, fetching it if not yet cached."""
+    from backend.infra.analyser import cache as audio_cache
+
+    path = audio_cache.cached_set_path(track_id)
+    if path is None:
+        hls_url, _expires = await _fetch_stream_url(track_id)
+        token = token_cache.get_cached_access_token(get_settings(), OAuthManager)
+        path = await audio_cache.fetch_set_audio(track_id, hls_url=hls_url, auth_header=f"OAuth {token}")
+    return path
+
+
+@router.get("/tracks/{track_id}/peaks", response_model=TrackPeaksResponse)
+async def get_track_peaks(track_id: int) -> TrackPeaksResponse:
+    """Return high-resolution waveform peaks for a SoundCloud track.
+
+    Downloads the track's audio (reusing the analyser set cache) and decodes
+    it to a normalized amplitude envelope — far finer than SoundCloud's
+    ``waveform_url``, which is too coarse for kick-level alignment. Results
+    are cached on disk keyed by track id. A user BPM correction, if one
+    exists, overrides the detected tempo in the returned ``bpm``.
+
+    Parameters
+    ----------
+    track_id : int
+        SoundCloud track id.
+
+    Returns
+    -------
+    TrackPeaksResponse
+        Normalized peaks in ``[0, 1]`` and the audio duration in seconds.
+    """
+    from backend.infra import cache as db_cache
+    from backend.infra.analyser import peaks as peaks_infra
+
+    path = await _resolve_track_audio_path(track_id)
+
+    try:
+        peaks, duration_s, detected_bpm = await peaks_infra.get_or_compute_peaks(path, track_id)
+    except Exception as exc:
+        logger.exception("Failed to compute peaks for track %s", track_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to decode track audio",
+        ) from exc
+
+    override = db_cache.get_sc_bpm_override(track_id)
+    return TrackPeaksResponse(
+        peaks=peaks,
+        duration_s=duration_s,
+        bpm=override if override is not None else detected_bpm,
+        bpm_overridden=override is not None,
+    )
+
+
+@router.put("/tracks/{track_id}/bpm", response_model=TrackBpmResponse)
+async def set_track_bpm(track_id: int, body: TrackBpmRequest) -> TrackBpmResponse:
+    """Set a user BPM correction for a SoundCloud track's original tempo.
+
+    Persisted independently of the peaks/detection caches so it survives a
+    re-decode. The correction wins over detection wherever the original BPM
+    is shown.
+    """
+    from backend.infra import cache as db_cache
+
+    if not (_BPM_MIN <= body.bpm <= _BPM_MAX):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"BPM must be between {_BPM_MIN:g} and {_BPM_MAX:g}",
+        )
+    db_cache.upsert_sc_bpm_override(track_id, body.bpm, time.time())
+    return TrackBpmResponse(bpm=body.bpm, bpm_overridden=True)
+
+
+@router.delete("/tracks/{track_id}/bpm", response_model=TrackBpmResponse)
+async def clear_track_bpm(track_id: int) -> TrackBpmResponse:
+    """Remove the user BPM correction, reverting to the detected tempo."""
+    from backend.infra import cache as db_cache
+    from backend.infra.analyser import peaks as peaks_infra
+
+    db_cache.delete_sc_bpm_override(track_id)
+    # The detected tempo is already in the peaks cache; read it directly rather
+    # than re-resolving the audio path (which can re-download an evicted set)
+    # and re-decoding just to fetch a value we already have.
+    cached, detected_bpm = peaks_infra.read_cached_bpm(track_id)
+    if not cached:
+        path = await _resolve_track_audio_path(track_id)
+        try:
+            _peaks, _duration_s, detected_bpm = await peaks_infra.get_or_compute_peaks(path, track_id)
+        except Exception as exc:
+            logger.exception("Failed to compute peaks for track %s", track_id)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to decode track audio",
+            ) from exc
+    return TrackBpmResponse(bpm=detected_bpm, bpm_overridden=False)
+
+
+@router.post("/tracks/{track_id}/bpm/reanalyse", response_model=TrackBpmResponse)
+async def reanalyse_track_bpm(track_id: int) -> TrackBpmResponse:
+    """Re-run tempo detection for a track, bypassing caches and any correction.
+
+    Detection is deterministic, so this returns the same value as before unless
+    the cached result was stale or detection had previously failed.
+    """
+    from backend.infra import cache as db_cache
+    from backend.infra.analyser import peaks as peaks_infra
+
+    db_cache.delete_sc_bpm_override(track_id)
+    path = await _resolve_track_audio_path(track_id)
+    try:
+        _peaks, _duration_s, detected_bpm = await peaks_infra.get_or_compute_peaks(path, track_id, force=True)
+    except Exception as exc:
+        logger.exception("Failed to reanalyse track %s", track_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to decode track audio",
+        ) from exc
+    return TrackBpmResponse(bpm=detected_bpm, bpm_overridden=False)
 
 
 def _user_token_from_authorization(authorization: str | None) -> str:

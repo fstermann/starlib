@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Plus, Search } from "lucide-react";
+import { ImageIcon, Loader2, Play, Plus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { addTrack, formatTimecode } from "@/lib/analyser";
-import { searchTracks, type SCTrack } from "@/lib/soundcloud";
+import { resolveUrl, searchTracks, type SCTrack } from "@/lib/soundcloud";
+
+import { PreviewPopover, type PreviewSource } from "./preview-popover";
 
 interface AddTrackDialogProps {
   jobId: string;
@@ -35,6 +37,19 @@ function scTrackId(track: SCTrack): number | null {
     if (tail && /^\d+$/.test(tail)) return Number(tail);
   }
   return null;
+}
+
+/** SoundCloud preview source for a result row, or null when the track has
+ *  no resolvable numeric id. */
+function previewSourceFor(track: SCTrack): PreviewSource | null {
+  const id = scTrackId(track);
+  if (id == null) return null;
+  return {
+    kind: "soundcloud",
+    trackId: id,
+    waveformUrl: track.waveform_url ?? null,
+    durationS: track.duration != null ? track.duration / 1000 : null,
+  };
 }
 
 /** Parse "mm:ss" or "h:mm:ss" or a bare number of seconds. */
@@ -61,6 +76,7 @@ export function AddTrackDialog({
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [picked, setPicked] = useState<SCTrack | null>(null);
+  const [previewId, setPreviewId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [start, setStart] = useState(formatTimecode(defaultStartS));
@@ -69,33 +85,52 @@ export function AddTrackDialog({
   // Bumped each time the dialog opens to throw away any stale debounce
   // result that comes back after the user has typed something new.
   const queryTokenRef = useRef(0);
+  // The playhead moves ~60x/sec during playback. Read it from a ref so
+  // the reset-on-open effect can snapshot it without re-running (and
+  // wiping the search box) on every frame while the set plays.
+  const defaultStartRef = useRef(defaultStartS);
+  defaultStartRef.current = defaultStartS;
 
   useEffect(() => {
     if (!open) return;
-    setStart(formatTimecode(defaultStartS));
+    setStart(formatTimecode(defaultStartRef.current));
     setQuery("");
     setResults([]);
     setPicked(null);
+    setPreviewId(null);
     setTitle("");
     setArtist("");
     setSubmitError(null);
     setSearchError(null);
-  }, [open, defaultStartS]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
-    if (query.trim().length < 2) {
+    const q = query.trim();
+    const isUrl = /^https?:\/\//i.test(q);
+    if (!isUrl && q.length < 2) {
       setResults([]);
       return;
     }
     const token = ++queryTokenRef.current;
     setSearching(true);
     const t = setTimeout(() => {
-      searchTracks(query.trim(), 8)
+      // A pasted URL resolves to a single track (mirrors the track
+      // editor); anything else is a text search.
+      const request = isUrl
+        ? resolveUrl(q).then((res) =>
+            res && "title" in res ? [res as SCTrack] : [],
+          )
+        : searchTracks(q, 8);
+      request
         .then((hits) => {
           if (queryTokenRef.current !== token) return;
           setResults(hits);
-          setSearchError(null);
+          setSearchError(
+            isUrl && hits.length === 0
+              ? "URL did not resolve to a track"
+              : null,
+          );
         })
         .catch((err: unknown) => {
           if (queryTokenRef.current !== token) return;
@@ -184,7 +219,7 @@ export function AddTrackDialog({
                 id="add-track-search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="title, artist…"
+                placeholder="title, artist, or paste a URL…"
                 className="pl-8"
                 data-testid="add-track-search"
               />
@@ -199,34 +234,76 @@ export function AddTrackDialog({
               <ul
                 className="border-border bg-surface-1 max-h-48 overflow-y-auto rounded border"
                 data-testid="add-track-results"
+                onScroll={() => setPreviewId(null)}
               >
                 {results.map((r) => {
                   const id = scTrackId(r);
                   const isPicked =
                     picked != null && id != null && id === scTrackId(picked);
+                  const preview = previewSourceFor(r);
                   return (
-                    <li key={r.urn ?? String(id)}>
+                    <li
+                      key={r.urn ?? String(id)}
+                      className={`hover:bg-surface-2 flex items-center gap-1 pr-1 ${
+                        isPicked ? "bg-brand-soft/40" : ""
+                      }`}
+                    >
                       <button
                         type="button"
                         onClick={() => pickResult(r)}
                         data-testid="add-track-result"
                         data-picked={isPicked ? "true" : "false"}
-                        className={`hover:bg-surface-2 flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs ${
-                          isPicked ? "bg-brand-soft/40" : ""
-                        }`}
+                        className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-xs"
                       >
-                        <span className="min-w-0 flex-1 truncate">
-                          <span className="text-text font-medium">
+                        <span className="border-border bg-surface-2 size-8 shrink-0 overflow-hidden rounded border">
+                          {r.artwork_url ? (
+                            <img
+                              src={r.artwork_url}
+                              alt=""
+                              className="size-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span className="flex size-full items-center justify-center">
+                              <ImageIcon className="text-text-subtle size-3" />
+                            </span>
+                          )}
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="text-text truncate font-medium">
                             {r.title}
                           </span>
                           {r.user?.username && (
-                            <span className="text-text-muted">
-                              {" "}
-                              — {r.user.username}
+                            <span className="text-text-muted truncate">
+                              {r.user.username}
                             </span>
                           )}
                         </span>
                       </button>
+                      {preview && id != null && (
+                        <PreviewPopover
+                          open={previewId === id}
+                          onOpenChange={(o) => setPreviewId(o ? id : null)}
+                          source={preview}
+                          title={r.title ?? ""}
+                          subtitle={r.user?.username ?? null}
+                          contentTestId="add-track-preview-popover"
+                          openUrl={r.permalink_url ?? null}
+                          openLabel="Open on SoundCloud"
+                          openTestId="add-track-soundcloud-link"
+                          likeUrn={`soundcloud:tracks:${id}`}
+                        >
+                          <button
+                            type="button"
+                            aria-label="Preview track"
+                            title="Preview track"
+                            data-testid="add-track-preview"
+                            className="text-text-subtle hover:text-text grid size-6 shrink-0 place-items-center rounded transition-colors"
+                          >
+                            <Play className="size-3.5 translate-x-px" />
+                          </button>
+                        </PreviewPopover>
+                      )}
                     </li>
                   );
                 })}

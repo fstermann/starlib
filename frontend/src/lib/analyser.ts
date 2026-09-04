@@ -130,6 +130,9 @@ export interface TrackTimelineEntry {
   preview_url?: string | null;
   duration_s?: number | null;
   confirmed?: boolean;
+  /** Higher tier than ``confirmed``: the user verified the start
+   *  alignment. Implies ``confirmed``. */
+  aligned?: boolean;
   user_edited?: boolean;
   /** Mix tempo (BPM) at the matched scan point. ``null`` for legacy /
    *  manual rows. Combined with ``pitch_offset`` it derives the original
@@ -158,11 +161,15 @@ export interface UpdateTrackInput {
   end_s?: number | null;
   title?: string | null;
   artist?: string | null;
+  shazam_id?: string | null;
   soundcloud_id?: number | null;
   soundcloud_permalink_url?: string | null;
   artwork_url?: string | null;
+  preview_url?: string | null;
   duration_s?: number | null;
+  pitch_offset?: number | null;
   confirmed?: boolean | null;
+  aligned?: boolean | null;
 }
 
 export interface JobSnapshot {
@@ -247,6 +254,7 @@ export type AnalyserEvent =
       set_bpm?: number | null;
       pitch_offset?: number | null;
       confirmed?: boolean;
+      aligned?: boolean;
       user_edited?: boolean;
     }
   | { type: "job.complete"; job_id: string }

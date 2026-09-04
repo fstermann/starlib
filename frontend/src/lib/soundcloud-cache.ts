@@ -49,6 +49,65 @@ export function invalidateSoundcloudStreamUrl(id: string | number): void {
   streamCache.delete(String(id));
 }
 
+/* Decoded high-res peaks — keyed by track id, deduped across callers. The
+ * backend decodes the actual audio (not the coarse waveform_url), so this is
+ * the fidelity source for alignment. Cached for the session. */
+export interface DecodedPeaks {
+  peaks: number[];
+  durationS: number;
+  /** Effective tempo: the user's correction if set, else the detected value. */
+  bpm: number | null;
+  /** True when ``bpm`` is a user correction rather than the detected value. */
+  overridden: boolean;
+}
+
+interface DecodedPeaksEntry {
+  result?: DecodedPeaks | null;
+  inflight?: Promise<DecodedPeaks | null>;
+}
+
+const decodedPeaksCache = new Map<string, DecodedPeaksEntry>();
+
+export function getCachedSoundcloudDecodedPeaks(
+  id: string | number,
+): Promise<DecodedPeaks | null> {
+  const key = String(id);
+  const hit = decodedPeaksCache.get(key);
+  if (hit) {
+    if (hit.inflight) return hit.inflight;
+    return Promise.resolve(hit.result ?? null);
+  }
+  const inflight = api
+    .getSoundcloudTrackPeaks(id)
+    .then((r) => {
+      const result: DecodedPeaks = {
+        peaks: r.peaks,
+        durationS: r.duration_s,
+        bpm: r.bpm,
+        overridden: r.bpm_overridden,
+      };
+      decodedPeaksCache.set(key, { result });
+      return result;
+    })
+    .catch(() => {
+      decodedPeaksCache.delete(key);
+      return null;
+    });
+  decodedPeaksCache.set(key, { inflight });
+  return inflight;
+}
+
+/* Update the cached BPM after a correction or reanalyse so reopening the
+ * dialog reflects it without re-decoding. No-op if peaks aren't cached yet. */
+export function updateCachedSoundcloudBpm(
+  id: string | number,
+  bpm: number | null,
+  overridden: boolean,
+): void {
+  const hit = decodedPeaksCache.get(String(id));
+  if (hit?.result) hit.result = { ...hit.result, bpm, overridden };
+}
+
 /* Peaks cache — keyed by `${waveformUrl}::${numPeaks}` so we can reuse
  * across tracks when the bar count is the same (common, since the waveform
  * container width is stable). Also dedupes concurrent fetches. */

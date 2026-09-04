@@ -111,6 +111,67 @@ def test_update_track_marks_user_edited() -> None:
     assert after.user_edited is True
 
 
+def test_update_track_clears_artwork_with_explicit_none() -> None:
+    _seed_job()
+    row = analyser_db.insert_track(
+        job_id="job-1",
+        origin="shazam",
+        start_s=0.0,
+        title="X",
+        shazam_id="shz-x",
+        artwork_url="https://cdn/old.jpg",
+        preview_url="https://cdn/old.mp3",
+    )
+
+    # Explicit None clears the columns (switching to an alternative with no
+    # cached preview), while UNSET (the default, here via omission) leaves them.
+    analyser_db.update_track("job-1", row.id, artwork_url=None, preview_url=None)
+    after = analyser_db.list_tracks("job-1")[0]
+    assert after.artwork_url is None
+    assert after.preview_url is None
+
+
+def test_update_track_leaves_artwork_untouched_when_omitted() -> None:
+    _seed_job()
+    row = analyser_db.insert_track(
+        job_id="job-1",
+        origin="shazam",
+        start_s=0.0,
+        title="X",
+        shazam_id="shz-x",
+        artwork_url="https://cdn/keep.jpg",
+        preview_url="https://cdn/keep.mp3",
+    )
+
+    analyser_db.update_track("job-1", row.id, start_s=5.0)
+    after = analyser_db.list_tracks("job-1")[0]
+    assert after.start_s == 5.0
+    assert after.artwork_url == "https://cdn/keep.jpg"
+    assert after.preview_url == "https://cdn/keep.mp3"
+
+
+def test_patch_route_clears_artwork_with_explicit_null(http_client: TestClient) -> None:
+    _seed_job()
+    row = analyser_db.insert_track(
+        job_id="job-1",
+        origin="shazam",
+        start_s=0.0,
+        title="X",
+        shazam_id="shz-x",
+        artwork_url="https://cdn/old.jpg",
+        preview_url="https://cdn/old.mp3",
+    )
+
+    resp = http_client.patch(
+        f"/api/analyser/sets/job-1/tracks/{row.id}",
+        json={"artwork_url": None, "preview_url": None},
+    )
+    assert resp.status_code == 200
+    after = analyser_db.list_tracks("job-1")[0]
+    assert after.artwork_url is None
+    assert after.preview_url is None
+
+
 def test_dismissed_rows_hidden_by_default() -> None:
     _seed_job()
     row = analyser_db.insert_track(
@@ -262,6 +323,58 @@ def test_confirmed_toggle_is_not_a_user_edit(http_client: TestClient) -> None:
     snap = http_client.get("/api/analyser/sets/job-1").json()
     assert snap["timeline"][0]["confirmed"] is True
     assert snap["timeline"][0]["user_edited"] is False
+
+
+def test_aligned_tier_persists_and_is_not_a_user_edit(
+    http_client: TestClient,
+) -> None:
+    """The higher ``aligned`` tier (set from the alignment dialog) survives a
+    snapshot reload and, like ``confirmed``, doesn't flip ``user_edited``."""
+    _seed_job()
+    _seed_shazam_run("job-1", 0.0, "T", "shz-t")
+    snap = http_client.get("/api/analyser/sets/job-1").json()
+    track_id = snap["timeline"][0]["id"]
+
+    r = http_client.patch(
+        f"/api/analyser/sets/job-1/tracks/{track_id}",
+        json={"confirmed": True, "aligned": True},
+    )
+    assert r.status_code == 200, r.text
+    snap = http_client.get("/api/analyser/sets/job-1").json()
+    row = snap["timeline"][0]
+    assert row["confirmed"] is True
+    assert row["aligned"] is True
+    assert row["user_edited"] is False
+
+
+def test_switch_track_identity_persists(http_client: TestClient) -> None:
+    """Picking an alternative match PATCHes the row's shazam identity and
+    the switch survives a snapshot reload (bug: switch was frontend-only)."""
+    _seed_job()
+    _seed_shazam_run("job-1", 0.0, "Original", "shz-original")
+    snap = http_client.get("/api/analyser/sets/job-1").json()
+    track_id = snap["timeline"][0]["id"]
+
+    r = http_client.patch(
+        f"/api/analyser/sets/job-1/tracks/{track_id}",
+        json={
+            "title": "Switched",
+            "artist": "Alt Artist",
+            "shazam_id": "shz-alt",
+            "pitch_offset": 2.0,
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    # Reload the snapshot: the row now carries the alternative's identity.
+    snap = http_client.get("/api/analyser/sets/job-1").json()
+    row = next(t for t in snap["timeline"] if t["id"] == track_id)
+    assert row["title"] == "Switched"
+    assert row["artist"] == "Alt Artist"
+    assert row["shazam_id"] == "shz-alt"
+    assert row["pitch_offset"] == 2.0
+    # Switching identity counts as a user edit so a re-sync leaves it alone.
+    assert row["user_edited"] is True
 
 
 def test_routes_404(http_client: TestClient) -> None:

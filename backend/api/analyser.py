@@ -425,11 +425,15 @@ class UpdateTrackRequest(BaseModel):
     end_s: float | None = Field(default=None, ge=0)
     title: str | None = Field(default=None, min_length=1)
     artist: str | None = None
+    shazam_id: str | None = None
     soundcloud_id: int | None = None
     soundcloud_permalink_url: str | None = None
     artwork_url: str | None = None
+    preview_url: str | None = None
     duration_s: float | None = Field(default=None, gt=0)
+    pitch_offset: float | None = None
     confirmed: bool | None = None
+    aligned: bool | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> UpdateTrackRequest:
@@ -453,6 +457,7 @@ def _track_dict(row) -> dict:  # type: ignore[no-untyped-def]
         "preview_url": row.preview_url,
         "duration_s": row.duration_s,
         "confirmed": row.confirmed,
+        "aligned": row.aligned,
         "dismissed": row.dismissed,
         "user_edited": row.user_edited,
         "set_bpm": row.set_bpm,
@@ -504,8 +509,13 @@ def update_track(job_id: str, track_id: int, payload: UpdateTrackRequest) -> dic
             payload.end_s,
             payload.title,
             payload.artist,
+            payload.shazam_id,
         )
     )
+    # ``artwork_url``/``preview_url`` are clearable: only forward them when the
+    # client actually sent the field, so an omitted field leaves the column
+    # alone while an explicit ``null`` clears it (see db.update_track's UNSET).
+    sent = payload.model_fields_set
     ok = analyser_db.update_track(
         job_id,
         track_id,
@@ -513,11 +523,15 @@ def update_track(job_id: str, track_id: int, payload: UpdateTrackRequest) -> dic
         end_s=payload.end_s,
         title=payload.title,
         artist=payload.artist,
+        shazam_id=payload.shazam_id,
         soundcloud_id=payload.soundcloud_id,
         soundcloud_permalink_url=payload.soundcloud_permalink_url,
-        artwork_url=payload.artwork_url,
+        artwork_url=payload.artwork_url if "artwork_url" in sent else analyser_db.UNSET,
+        preview_url=payload.preview_url if "preview_url" in sent else analyser_db.UNSET,
         duration_s=payload.duration_s,
+        pitch_offset=payload.pitch_offset,
         confirmed=payload.confirmed,
+        aligned=payload.aligned,
         mark_user_edited=edits_identity,
     )
     if not ok:
