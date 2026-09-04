@@ -101,7 +101,12 @@ def _detect_unstamped_analyser_revision(conn: Connection) -> str | None:
         return None
 
     if "analyser_tracks" in tables and "analyser_shazam_scans" in tables:
-        return _detect_track_schema_revision(inspector)
+        revision = _detect_track_schema_revision(inspector)
+        # 0015 added a non-analyser table; a full track schema plus that table
+        # is really at head, so adopt there rather than re-running its create.
+        if revision == "0014" and "soundcloud_bpm_override" in tables:
+            return "0015"
+        return revision
     if "analyser_track_overrides" in tables and "analyser_shazam_scans" in tables:
         return _detect_override_schema_revision(inspector)
     if "analyser_shazam_scans" in tables:
@@ -117,8 +122,10 @@ def _columns(inspector: Inspector, table: str) -> set[str]:
 
 
 def _detect_track_schema_revision(inspector: Inspector) -> str:
-    """Infer revision 0010-0013 from the mutable track table."""
+    """Infer revision 0010-0014 from the mutable track table."""
     track_columns = _columns(inspector, "analyser_tracks")
+    if "aligned" in track_columns:
+        return "0014"
     if "preview_url" in track_columns:
         return "0013"
     if {"set_bpm", "pitch_offset"} <= track_columns:

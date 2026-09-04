@@ -922,6 +922,41 @@ export const api = {
     return fetchApi(`/api/soundcloud/tracks/${trackId}/stream${qs}`);
   },
 
+  async getSoundcloudTrackPeaks(trackId: number | string): Promise<{
+    peaks: number[];
+    duration_s: number;
+    bpm: number | null;
+    bpm_overridden: boolean;
+  }> {
+    return fetchApi(`/api/soundcloud/tracks/${trackId}/peaks`);
+  },
+
+  async setSoundcloudTrackBpm(
+    trackId: number | string,
+    bpm: number,
+  ): Promise<{ bpm: number | null; bpm_overridden: boolean }> {
+    return fetchApi(`/api/soundcloud/tracks/${trackId}/bpm`, {
+      method: "PUT",
+      body: JSON.stringify({ bpm }),
+    });
+  },
+
+  async clearSoundcloudTrackBpm(
+    trackId: number | string,
+  ): Promise<{ bpm: number | null; bpm_overridden: boolean }> {
+    return fetchApi(`/api/soundcloud/tracks/${trackId}/bpm`, {
+      method: "DELETE",
+    });
+  },
+
+  async reanalyseSoundcloudTrackBpm(
+    trackId: number | string,
+  ): Promise<{ bpm: number | null; bpm_overridden: boolean }> {
+    return fetchApi(`/api/soundcloud/tracks/${trackId}/bpm/reanalyse`, {
+      method: "POST",
+    });
+  },
+
   // ==================== BPM ====================
 
   async getSoundcloudClientToken(): Promise<{ token: string }> {

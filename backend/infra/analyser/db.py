@@ -27,6 +27,18 @@ from backend.infra.db.models import (
 logger = logging.getLogger(__name__)
 
 
+class _Unset:
+    """Sentinel distinguishing 'argument omitted' from an explicit ``None``.
+
+    Partial updates use ``None`` to mean "leave this column alone", which makes
+    a column impossible to clear to ``NULL``. Fields that must be clearable
+    default to :data:`UNSET` instead, so ``None`` can mean "set to NULL".
+    """
+
+
+UNSET = _Unset()
+
+
 # ---------------------------------------------------------------------------
 # Plain dataclasses returned to callers (decoupled from SQLModel rows so the
 # API layer can map directly to pydantic without coupling to ORM internals).
@@ -527,6 +539,7 @@ class TrackRow:
     preview_url: str | None
     duration_s: float | None
     confirmed: bool
+    aligned: bool
     dismissed: bool
     user_edited: bool
     set_bpm: float | None
@@ -550,6 +563,7 @@ _TRACK_COLS = (
     AnalyserTrack.__table__.c.preview_url,
     AnalyserTrack.__table__.c.duration_s,
     AnalyserTrack.__table__.c.confirmed,
+    AnalyserTrack.__table__.c.aligned,
     AnalyserTrack.__table__.c.dismissed,
     AnalyserTrack.__table__.c.user_edited,
     AnalyserTrack.__table__.c.set_bpm,
@@ -575,6 +589,7 @@ def _row_to_track(row) -> TrackRow:
         preview_url=row.preview_url,
         duration_s=None if row.duration_s is None else float(row.duration_s),
         confirmed=bool(row.confirmed),
+        aligned=bool(row.aligned),
         dismissed=bool(row.dismissed),
         user_edited=bool(row.user_edited),
         set_bpm=None if row.set_bpm is None else float(row.set_bpm),
@@ -618,6 +633,7 @@ def insert_track(
         "preview_url": preview_url,
         "duration_s": duration_s,
         "confirmed": False,
+        "aligned": False,
         "dismissed": False,
         "user_edited": user_edited,
         "set_bpm": set_bpm,
@@ -693,12 +709,14 @@ def update_track(
     end_s: float | None = None,
     title: str | None = None,
     artist: str | None = None,
+    shazam_id: str | None = None,
     soundcloud_id: int | None = None,
     soundcloud_permalink_url: str | None = None,
-    artwork_url: str | None = None,
-    preview_url: str | None = None,
+    artwork_url: str | _Unset | None = UNSET,
+    preview_url: str | _Unset | None = UNSET,
     duration_s: float | None = None,
     confirmed: bool | None = None,
+    aligned: bool | None = None,
     dismissed: bool | None = None,
     set_bpm: float | None = None,
     pitch_offset: float | None = None,
@@ -709,23 +727,31 @@ def update_track(
     ``mark_user_edited=True`` flips the row's ``user_edited`` flag so a
     later Shazam re-sync skips it. Pass it for every drag/rename op,
     skip it for purely admin updates (sync, dismiss).
+
+    ``artwork_url`` and ``preview_url`` accept an explicit ``None`` to clear
+    the column to ``NULL`` (e.g. switching to an alternative with no cached
+    preview); pass :data:`UNSET` (the default) to leave them untouched.
     """
     updates = {
         "start_s": start_s,
         "end_s": end_s,
         "title": title,
         "artist": artist,
+        "shazam_id": shazam_id,
         "soundcloud_id": soundcloud_id,
         "soundcloud_permalink_url": soundcloud_permalink_url,
-        "artwork_url": artwork_url,
-        "preview_url": preview_url,
         "duration_s": duration_s,
         "confirmed": confirmed,
+        "aligned": aligned,
         "dismissed": dismissed,
         "set_bpm": set_bpm,
         "pitch_offset": pitch_offset,
     }
     values: dict[str, object] = {key: value for key, value in updates.items() if value is not None}
+    if not isinstance(artwork_url, _Unset):
+        values["artwork_url"] = artwork_url
+    if not isinstance(preview_url, _Unset):
+        values["preview_url"] = preview_url
     values["updated_at"] = time.time()
     if mark_user_edited:
         values["user_edited"] = True

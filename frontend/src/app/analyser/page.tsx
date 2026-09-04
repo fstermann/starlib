@@ -85,13 +85,31 @@ function AnalyserPageInner() {
     }
     return out;
   }, [state.timeline]);
-  const toggleConfirmed = useCallback(
+  // Higher tier: rows the user marked alignment-correct (implies confirmed).
+  const aligned = useMemo<Set<string>>(() => {
+    const out = new Set<string>();
+    for (const t of state.timeline) {
+      if (t.aligned) out.add(String(t.id));
+    }
+    return out;
+  }, [state.timeline]);
+  // One control cycles a row's curation status: none → confirmed → aligned
+  // → none. ``aligned`` always implies ``confirmed``.
+  const cycleStatus = useCallback(
     (trackKey: string) => {
       if (!jobId) return;
       const id = Number(trackKey);
       if (!Number.isFinite(id)) return;
       const current = state.timeline.find((t) => t.id === id);
-      void updateTrack(jobId, id, { confirmed: !(current?.confirmed ?? false) })
+      const c = current?.confirmed ?? false;
+      const a = current?.aligned ?? false;
+      const next =
+        !c && !a
+          ? { confirmed: true, aligned: false }
+          : c && !a
+            ? { confirmed: true, aligned: true }
+            : { confirmed: false, aligned: false };
+      void updateTrack(jobId, id, next)
         .then(refresh)
         .catch((err) =>
           setError(err instanceof Error ? err.message : String(err)),
@@ -408,6 +426,7 @@ function AnalyserPageInner() {
           }
           onFocusTrack={handleFocusTrack}
           confirmed={confirmed}
+          aligned={aligned}
           onEditBounds={(track, bounds) =>
             void handleEditBounds(track as TrackTimelineEntry, bounds)
           }
@@ -477,7 +496,8 @@ function AnalyserPageInner() {
             audio={audio}
             focusedTrack={focusedTrack}
             confirmed={confirmed}
-            onToggleConfirmed={toggleConfirmed}
+            aligned={aligned}
+            onCycleStatus={cycleStatus}
             onTracklistChanged={refresh}
             minMatches={minMatches}
             onMinMatchesChange={setMinMatches}

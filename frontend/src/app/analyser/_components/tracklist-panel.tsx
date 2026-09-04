@@ -2,6 +2,7 @@
 
 import {
   AlignVerticalSpaceAround,
+  BadgeCheck,
   Check,
   CheckCircle2,
   Circle,
@@ -21,6 +22,7 @@ import {
   effectiveDurationInSet,
   formatTimecode,
   originalBpmFromSet,
+  updateTrack,
   windowSupport,
   type TrackTimelineEntry,
 } from "@/lib/analyser";
@@ -43,9 +45,11 @@ interface TracklistPanelProps {
   /** Track keys (``${start_s}-${shazam_id ?? title}``) the user has
    *  marked as correctly identified. */
   confirmed?: Set<string>;
-  /** Toggle the confirmation flag for a track. Persisted to
-   *  localStorage by the page-level state owner. */
-  onToggleConfirmed?: (key: string) => void;
+  /** Track keys the user marked alignment-correct — a higher tier than
+   *  ``confirmed`` (and always a subset of it). */
+  aligned?: Set<string>;
+  /** Cycle a track's curation status: none → confirmed → aligned → none. */
+  onCycleStatus?: (key: string) => void;
   /** Reload the snapshot — called after a manual add / hide / unhide so
    *  the merged tracklist reflects the new override. */
   onTracklistChanged?: () => void;
@@ -183,7 +187,8 @@ export function TracklistPanel({
   audio,
   focusedTrack,
   confirmed,
-  onToggleConfirmed,
+  aligned,
+  onCycleStatus,
   onTracklistChanged,
   minMatches = 1,
   onMinMatchesChange,
@@ -272,19 +277,47 @@ export function TracklistPanel({
   // flash a highlight. Map keyed by the same rowKey we render with.
   const rowRefs = useRef<Map<string, HTMLLIElement>>(new Map());
 
-  // Per-row override: when the user picks an alternative, we display it
-  // as the primary for that scan range. Frontend-only — the canonical
-  // tracklist on the backend stays untouched, but this lets the user
-  // audition a different match when Shazam picked the wrong one.
+  // Per-row override: when the user picks an alternative, show it as the
+  // primary immediately (optimistic), then persist the switch to the
+  // backend so it survives leaving and re-opening the analyser.
   const [chosenAlt, setChosenAlt] = useState<Record<string, Alternative>>({});
-  const pickAlternative = (key: string, alt: Alternative) =>
-    setChosenAlt((m) => ({ ...m, [key]: alt }));
   const resetAlternative = (key: string) =>
     setChosenAlt((m) => {
       const next = { ...m };
       delete next[key];
       return next;
     });
+  const pickAlternative = (
+    key: string,
+    alt: Alternative,
+    track: TrackTimelineEntry | DerivedRun,
+  ) => {
+    setChosenAlt((m) => ({ ...m, [key]: alt }));
+    // Only real timeline rows (with an ``id``) can be patched. During a
+    // live scan a ``DerivedRun`` has no row yet, so the pick stays local
+    // until the scan materialises tracks.
+    if (!state.jobId || !onTracklistChanged || !("id" in track)) return;
+    const preview = previewByKey.get(
+      alt.shazam_id ?? `${alt.title}|${alt.artist ?? ""}`,
+    );
+    void updateTrack(state.jobId, track.id, {
+      title: alt.title,
+      artist: alt.artist,
+      shazam_id: alt.shazam_id,
+      pitch_offset: alt.pitch_offset,
+      artwork_url: preview?.artwork_url ?? null,
+      preview_url: preview?.preview_url ?? null,
+    })
+      .then(() => {
+        onTracklistChanged();
+        // The refreshed row is now the alternative; drop the optimistic
+        // override so alternatives recompute from the new primary.
+        resetAlternative(key);
+      })
+      .catch((err) => {
+        console.warn("analyser: failed to persist track switch", err);
+      });
+  };
   const [flashKey, setFlashKey] = useState<string | null>(null);
   useEffect(() => {
     if (!focusedTrack) return;
@@ -538,6 +571,7 @@ export function TracklistPanel({
                 ]
               : allAlts;
             const isConfirmed = confirmed?.has(rowKey) ?? false;
+            const isAligned = aligned?.has(rowKey) ?? false;
             // Tentative = a Shazam match seen at < 2 windows and not yet
             // user-confirmed. Manual rows (no shazam_id) are never tentative.
             const isTentative =
@@ -748,51 +782,60 @@ export function TracklistPanel({
                       {Math.round(display.confidence * 100)}%
                     </span>
                   </div>
-                  {onToggleConfirmed && (
-                    <div
-                      className={cn(
-                        "flex items-center overflow-hidden transition-[max-width,opacity] duration-200 ease-out",
-                        // Confirmed: check is the rightmost at-rest badge.
-                        // Unconfirmed: empty circle stays collapsed at rest
-                        // and slides in on hover so idle rows don't show
-                        // dangling empty affordances. Same pointer-events
-                        // gating as the trash so the clipped overflow
-                        // isn't a phantom click target at rest.
-                        isConfirmed
-                          ? "max-w-9 opacity-100"
-                          : "pointer-events-none max-w-0 opacity-0 group-hover:pointer-events-auto group-hover:max-w-9 group-hover:opacity-100",
-                      )}
-                    >
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label={
-                          isConfirmed
-                            ? "Mark as not yet checked"
-                            : "Mark as correctly identified"
-                        }
-                        title={
-                          isConfirmed
-                            ? "Mark as not yet checked"
-                            : "Mark as correctly identified"
-                        }
-                        onClick={() => onToggleConfirmed(rowKey)}
-                        data-testid="toggle-confirmed"
-                        data-confirmed={isConfirmed ? "true" : "false"}
-                        className={cn(
-                          "transition-colors",
-                          isConfirmed && "text-brand",
-                        )}
-                      >
-                        {isConfirmed ? (
-                          <CheckCircle2 className="size-4" />
-                        ) : (
-                          <Circle className="size-4" />
-                        )}
-                      </Button>
-                    </div>
-                  )}
+                  {onCycleStatus &&
+                    (() => {
+                      // One control cycles none → confirmed → aligned.
+                      const status = isAligned
+                        ? "aligned"
+                        : isConfirmed
+                          ? "confirmed"
+                          : "none";
+                      const label =
+                        status === "none"
+                          ? "Mark as correctly identified"
+                          : status === "confirmed"
+                            ? "Confirmed — mark alignment correct"
+                            : "Alignment correct — clear status";
+                      return (
+                        <div
+                          className={cn(
+                            "flex items-center overflow-hidden transition-[max-width,opacity] duration-200 ease-out",
+                            // At rest the badge shows once the row has any
+                            // status; a plain unchecked row keeps it collapsed
+                            // until hover so idle rows aren't cluttered.
+                            status !== "none"
+                              ? "max-w-9 opacity-100"
+                              : "pointer-events-none max-w-0 opacity-0 group-hover:pointer-events-auto group-hover:max-w-9 group-hover:opacity-100",
+                          )}
+                        >
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            aria-label={label}
+                            title={label}
+                            onClick={() => onCycleStatus(rowKey)}
+                            data-testid="track-status"
+                            data-status={status}
+                            data-confirmed={isConfirmed ? "true" : "false"}
+                            data-aligned={isAligned ? "true" : "false"}
+                            className={cn(
+                              "transition-colors",
+                              status === "confirmed" && "text-brand",
+                              status === "aligned" && "text-warning",
+                            )}
+                          >
+                            {status === "aligned" ? (
+                              <BadgeCheck className="size-4" />
+                            ) : status === "confirmed" ? (
+                              <CheckCircle2 className="size-4" />
+                            ) : (
+                              <Circle className="size-4" />
+                            )}
+                          </Button>
+                        </div>
+                      );
+                    })()}
                   {override && (
                     <Button
                       type="button"
@@ -975,7 +1018,7 @@ export function TracklistPanel({
                   <AlternativesList
                     alternatives={alts}
                     primaryStart={t.start_s}
-                    onPick={(alt) => pickAlternative(rowKey, alt)}
+                    onPick={(alt) => pickAlternative(rowKey, alt, t)}
                     findStateFor={(alt) =>
                       findState[
                         `${rowKey}::alt::${alt.shazam_id ?? alt.title}`
@@ -1003,6 +1046,7 @@ export function TracklistPanel({
           jobId={state.jobId}
           track={aligning.track}
           soundcloudIdOverride={aligning.soundcloudId}
+          setDurationS={audio.duration}
           onSaved={() => {
             setAligning(null);
             onTracklistChanged?.();

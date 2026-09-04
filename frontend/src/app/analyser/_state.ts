@@ -236,6 +236,7 @@ function applySse(
         // Carry user-curation flags so SSE replays after a snapshot
         // refresh don't silently revert a confirm-toggle.
         confirmed: event.confirmed ?? false,
+        aligned: event.aligned ?? false,
         user_edited: event.user_edited ?? false,
         set_bpm: event.set_bpm ?? null,
         pitch_offset: event.pitch_offset ?? null,

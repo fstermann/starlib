@@ -1468,8 +1468,8 @@ def sync_shazam_runs_to_tracks(job_id: str) -> int:
             end_s=run.end_s,
             set_bpm=set_bpm,
             pitch_offset=run.pitch_offset,
-            artwork_url=run.artwork_url if existing.artwork_url is None else None,
-            preview_url=run.preview_url if existing.preview_url is None else None,
+            artwork_url=run.artwork_url if existing.artwork_url is None else db.UNSET,
+            preview_url=run.preview_url if existing.preview_url is None else db.UNSET,
         )
     return inserted
 
@@ -1508,6 +1508,7 @@ def _track_to_event(job_id: str, t: db.TrackRow) -> TrackTimelineEvent:
         set_bpm=t.set_bpm,
         pitch_offset=t.pitch_offset,
         confirmed=t.confirmed,
+        aligned=t.aligned,
         user_edited=t.user_edited,
     )
 
@@ -1531,6 +1532,7 @@ def _track_to_dict(t: db.TrackRow) -> dict:
         "preview_url": t.preview_url,
         "duration_s": t.duration_s,
         "confirmed": t.confirmed,
+        "aligned": t.aligned,
         "user_edited": t.user_edited,
         "set_bpm": t.set_bpm,
         "pitch_offset": t.pitch_offset,

@@ -24,7 +24,12 @@ from sqlalchemy import Select, String, delete, func, or_, select, update
 from backend.domain.tags import SIMPLE_TAG_FIELDS
 from backend.infra.db.engine import get_engine, init_engine
 from backend.infra.db.migrations import run_migrations
-from backend.infra.db.models import Peaks, SoundcloudTrackBpm, Track
+from backend.infra.db.models import (
+    Peaks,
+    SoundcloudBpmOverride,
+    SoundcloudTrackBpm,
+    Track,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +225,33 @@ def get_sc_bpms(track_ids: list[int]) -> dict[int, int]:
             )
         ).all()
     return {int(r[0]): int(r[1]) for r in rows}
+
+
+def upsert_sc_bpm_override(track_id: int, bpm: float, updated_at: float) -> None:
+    """Insert or replace the user's BPM correction for a SoundCloud track."""
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    row = {"track_id": track_id, "bpm": bpm, "updated_at": updated_at}
+    stmt = sqlite_insert(SoundcloudBpmOverride.__table__).values(row)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[SoundcloudBpmOverride.__table__.c.track_id],
+        set_={c: stmt.excluded[c] for c in row if c != "track_id"},
+    )
+    with get_engine().begin() as conn:
+        conn.execute(stmt)
+
+
+def get_sc_bpm_override(track_id: int) -> float | None:
+    """Return the user's BPM correction for a SoundCloud track, or None."""
+    with get_engine().connect() as conn:
+        row = conn.execute(select(SoundcloudBpmOverride.bpm).where(SoundcloudBpmOverride.track_id == track_id)).first()
+    return float(row[0]) if row else None
+
+
+def delete_sc_bpm_override(track_id: int) -> None:
+    """Remove the user's BPM correction for a SoundCloud track, if any."""
+    with get_engine().begin() as conn:
+        conn.execute(delete(SoundcloudBpmOverride).where(SoundcloudBpmOverride.track_id == track_id))
 
 
 def get_track_mtime(file_path: Path) -> float | None:
