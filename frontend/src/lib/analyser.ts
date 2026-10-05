@@ -52,6 +52,8 @@ export interface JobSummary {
   created_at: number;
   /** Number of tracks in the merged tracklist (Shazam + manual − hidden). */
   track_count: number;
+  /** How many of those the user marked as correctly identified. */
+  confirmed_count: number;
 }
 
 export interface WindowBpm {

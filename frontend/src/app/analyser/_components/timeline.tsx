@@ -173,8 +173,12 @@ const ROW_HEIGHTS = {
   bpm: 120,
   waveform: 56,
   axis: 18,
-  tracks: 28,
+  tracks: 44,
 } as const;
+
+/** Overlapping bands (a mix-in) go to different rows so both stay visible
+ *  instead of the later one covering the earlier one. */
+const TRACK_ROWS = 2;
 
 /** Vertical inset (px) the BPM chart leaves at the top of its band so
  *  the topmost y-axis label has breathing room from the card edge. The
@@ -390,6 +394,7 @@ export function AnalyserTimeline({
           timeline={state.timeline}
           duration={duration}
           confirmed={confirmed}
+          aligned={aligned}
           height={TOTAL_HEIGHT - ROW_HEIGHTS.tracks}
         />
 
@@ -929,11 +934,13 @@ function groupOverlappingTracks(
   return groups;
 }
 
-/** Horizontal geometry (percent of duration) for each track group. The
- *  raw ``end_s`` only spans the seconds Shazam sampled, so each band is
- *  stretched to whichever comes first: an explicit user end, the known
- *  SoundCloud duration, or the next group's start (capped). Shared by the
- *  track lane and the confirmed overlay so a confirmed column lines up
+/** Horizontal geometry (percent of duration) and row for each track group.
+ *  The raw ``end_s`` only spans the seconds Shazam sampled, so each band is
+ *  stretched to an explicit user end or the known SoundCloud duration.
+ *  Each group takes the first row that is free at its start, so a band may
+ *  run past the next one's start and show the overlap; only a band of
+ *  unknown length stops there. Shared by
+ *  the track lane and the confirmed overlay so a confirmed column lines up
  *  exactly with its band. */
 function bandGeometry(
   groups: DerivedRun[][],
@@ -943,8 +950,10 @@ function bandGeometry(
   groupStart: number;
   left: number;
   width: number;
+  row: number;
 }> {
   const MAX_VISUAL_TRACK_S = 300; // 5 min — fallback when the length is unknown
+  const rowEnds: number[] = Array.from({ length: TRACK_ROWS }, () => -Infinity);
   return groups.map((group, i) => {
     const groupStart = Math.min(...group.map((t) => t.start_s));
     const groupEnd = Math.max(...group.map((t) => t.end_s));
@@ -968,18 +977,25 @@ function bandGeometry(
     } else {
       const targetEnd =
         knownDuration > 0
-          ? groupStart + knownDuration
-          : Math.max(groupEnd, groupStart) + MAX_VISUAL_TRACK_S;
-      visualEnd = Math.max(
-        Math.min(nextStart, targetEnd),
-        groupStart + duration * 0.005,
-      );
+          ? Math.min(groupStart + knownDuration, duration)
+          : Math.min(
+              nextStart,
+              Math.max(groupEnd, groupStart) + MAX_VISUAL_TRACK_S,
+            );
+      visualEnd = Math.max(targetEnd, groupStart + duration * 0.005);
     }
+    // First row free at this start. With every row busy (three tracks at
+    // once), take the one that frees up soonest; the newer band covers the
+    // tail of the older one there, as both did on a single row.
+    let row = rowEnds.findIndex((end) => end <= groupStart);
+    if (row === -1) row = rowEnds.indexOf(Math.min(...rowEnds));
+    rowEnds[row] = visualEnd;
     return {
       group,
       groupStart,
       left: (groupStart / duration) * 100,
       width: ((visualEnd - groupStart) / duration) * 100,
+      row,
     };
   });
 }
@@ -1081,7 +1097,7 @@ function TracksLane({
           />
         );
       })}
-      {geometry.map(({ group, groupStart, left, width }) => {
+      {geometry.map(({ group, groupStart, left, width, row }) => {
         const isSelected = selection
           ? group.some(
               (t) =>
@@ -1101,6 +1117,7 @@ function TracksLane({
             artworks={artworks}
             left={left}
             width={width}
+            row={row}
             selected={isSelected}
             onFocusTrack={onFocusTrack}
             confirmed={confirmed}
@@ -1126,9 +1143,9 @@ function trackColour(t: DerivedRun): string {
 }
 
 /** Pixel width the band expands to on hover so the cover is fully
- *  visible at a 1:1 aspect ratio. Matches the band's content height
- *  (lane height minus top-1/bottom-1 insets) for a square. */
-const HOVER_EXPAND_PX = 20;
+ *  visible at a 1:1 aspect ratio. Matches one row's band height for a
+ *  square. */
+const HOVER_EXPAND_PX = 18;
 
 /** A track band on the timeline.
  *
@@ -1144,6 +1161,7 @@ function TrackBand({
   artworks,
   left,
   width,
+  row,
   selected,
   onFocusTrack,
   confirmed,
@@ -1155,6 +1173,8 @@ function TrackBand({
   artworks: Map<string, string | null>;
   left: number;
   width: number;
+  /** Row in the lane, ``0`` (top) to ``TRACK_ROWS - 1``. */
+  row: number;
   selected: boolean;
   onFocusTrack?: (trackKey: string) => void;
   confirmed?: Set<string>;
@@ -1296,7 +1316,7 @@ function TrackBand({
     <button
       type="button"
       className={cn(
-        "absolute top-1 bottom-1 flex cursor-pointer items-stretch overflow-hidden rounded-md shadow-sm ring-1 transition-[width,min-width,box-shadow] duration-150",
+        "absolute flex cursor-pointer items-stretch overflow-hidden rounded-md shadow-sm ring-1 transition-[width,min-width,box-shadow] duration-150",
         selected
           ? "ring-brand shadow-brand/30 shadow-md"
           : isAligned
@@ -1309,6 +1329,8 @@ function TrackBand({
       style={{
         left: `${visualLeft}%`,
         width: `${Math.max(0.05, visualWidth)}%`,
+        top: `calc(${(row / TRACK_ROWS) * 100}% + 2px)`,
+        height: `calc(${100 / TRACK_ROWS}% - 3px)`,
         minWidth: hovered ? `${HOVER_EXPAND_PX}px` : "4px",
         background: echoArt ? laneBg : fallbackBg,
       }}
@@ -1318,6 +1340,7 @@ function TrackBand({
       title={tooltip}
       data-testid="track-band"
       data-group-size={tracks.length}
+      data-row={row}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={(e) => {
@@ -1450,19 +1473,22 @@ function TrackBand({
   );
 }
 
-/** Faint brand columns over the lanes above the track lane, marking the
- *  spans of confirmed tracks so correct sections are findable at a glance.
- *  Geometry mirrors the bands below exactly via the shared helpers, so each
- *  column lines up with its confirmed band. */
+/** Faint columns over the lanes above the track lane, marking the spans of
+ *  confirmed tracks (brand) and aligned ones (amber, like their badge) so
+ *  correct sections are findable at a glance. Geometry mirrors the bands
+ *  below exactly via the shared helpers, so each column lines up with its
+ *  band. */
 function ConfirmedOverlay({
   timeline,
   duration,
   confirmed,
+  aligned,
   height,
 }: {
   timeline: AnalyserUiState["timeline"];
   duration: number;
   confirmed: Set<string> | undefined;
+  aligned: Set<string> | undefined;
   height: number;
 }) {
   const spans = useMemo(() => {
@@ -1479,15 +1505,27 @@ function ConfirmedOverlay({
       style={{ height }}
       data-testid="timeline-confirmed-overlay"
     >
-      {spans.map(({ groupStart, left, width }) => (
-        <div
-          key={`confirmed-${groupStart}`}
-          className="bg-brand/[0.06] absolute top-0 bottom-0"
-          style={{ left: `${left}%`, width: `${Math.max(0.1, width)}%` }}
-        >
-          <span className="bg-brand/70 absolute inset-x-0 top-0 h-0.5" />
-        </div>
-      ))}
+      {spans.map(({ group, groupStart, left, width }) => {
+        const isAligned = isGroupAligned(group, aligned);
+        return (
+          <div
+            key={`confirmed-${groupStart}`}
+            data-aligned={isAligned ? "true" : "false"}
+            className={cn(
+              "absolute top-0 bottom-0",
+              isAligned ? "bg-warning/[0.08]" : "bg-brand/[0.06]",
+            )}
+            style={{ left: `${left}%`, width: `${Math.max(0.1, width)}%` }}
+          >
+            <span
+              className={cn(
+                "absolute inset-x-0 top-0 h-0.5",
+                isAligned ? "bg-warning/80" : "bg-brand/70",
+              )}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

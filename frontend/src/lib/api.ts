@@ -143,6 +143,15 @@ export interface BatchUpdateResponse {
 
 // ==================== BPM Types ====================
 
+/** Where an original's tempo came from: the user, SoundCloud, or detection. */
+export type BpmSource = "corrected" | "soundcloud" | "detected";
+
+export interface TrackBpm {
+  bpm: number | null;
+  bpm_overridden: boolean;
+  bpm_source: BpmSource;
+}
+
 export interface LocalBpmResult {
   file_path: string;
   bpm: number;
@@ -927,6 +936,7 @@ export const api = {
     duration_s: number;
     bpm: number | null;
     bpm_overridden: boolean;
+    bpm_source: BpmSource;
   }> {
     return fetchApi(`/api/soundcloud/tracks/${trackId}/peaks`);
   },
@@ -934,16 +944,14 @@ export const api = {
   async setSoundcloudTrackBpm(
     trackId: number | string,
     bpm: number,
-  ): Promise<{ bpm: number | null; bpm_overridden: boolean }> {
+  ): Promise<TrackBpm> {
     return fetchApi(`/api/soundcloud/tracks/${trackId}/bpm`, {
       method: "PUT",
       body: JSON.stringify({ bpm }),
     });
   },
 
-  async clearSoundcloudTrackBpm(
-    trackId: number | string,
-  ): Promise<{ bpm: number | null; bpm_overridden: boolean }> {
+  async clearSoundcloudTrackBpm(trackId: number | string): Promise<TrackBpm> {
     return fetchApi(`/api/soundcloud/tracks/${trackId}/bpm`, {
       method: "DELETE",
     });
@@ -952,7 +960,7 @@ export const api = {
   async reanalyseSoundcloudTrackBpm(
     trackId: number | string,
     strong = false,
-  ): Promise<{ bpm: number | null; bpm_overridden: boolean }> {
+  ): Promise<TrackBpm> {
     const query = strong ? "?strong=true" : "";
     return fetchApi(`/api/soundcloud/tracks/${trackId}/bpm/reanalyse${query}`, {
       method: "POST",

@@ -49,13 +49,15 @@ import {
   originalBpmFromSet,
   pitchSpeedRatio,
   updateTrack,
+  type AlignChunk,
   type AutoAlignResult,
   type SetPeaks,
   type TrackTimelineEntry,
 } from "@/lib/analyser";
-import { api } from "@/lib/api";
+import { api, type TrackBpm } from "@/lib/api";
 import { getTrack, type SCTrack } from "@/lib/soundcloud";
 import {
+  decodedBpm,
   getCachedSoundcloudDecodedPeaks,
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
@@ -108,6 +110,54 @@ const MIX_MARGIN_S = 90;
 /** SoundCloud's own waveform is ~1 sample / 100 ms; used only when the
  *  decoded peaks are unavailable. */
 const SC_FALLBACK_PEAKS = 1800;
+
+/** Agreeing chunks as non-overlapping spans, each as unique as the most
+ *  unique chunk covering it. Chunks overlap (30 s long, every 5 s), so
+ *  tinting each one stacks up to six layers and hides the waveform. */
+function agreeingSpans(
+  chunks: AlignChunk[],
+): { startS: number; endS: number; uniqueness: number }[] {
+  const agreeing = chunks.filter((c) => c.agrees);
+  const edges = [
+    ...new Set(agreeing.flatMap((c) => [c.start_s, c.end_s])),
+  ].sort((a, b) => a - b);
+  const spans: { startS: number; endS: number; uniqueness: number }[] = [];
+  for (let i = 0; i + 1 < edges.length; i++) {
+    const [startS, endS] = [edges[i], edges[i + 1]];
+    const covering = agreeing.filter(
+      (c) => c.start_s <= startS && c.end_s >= endS,
+    );
+    if (covering.length === 0) continue;
+    spans.push({
+      startS,
+      endS,
+      uniqueness: Math.max(...covering.map((c) => c.uniqueness)),
+    });
+  }
+  return spans;
+}
+
+// Re-anchor when the extrapolated time drifts this far from the media clock.
+const CLOCK_RESYNC_S = 0.3;
+
+/** Media time per animation frame. WebKit advances ``currentTime`` in coarse
+ *  steps, so between steps this extrapolates from the last one at the
+ *  playback rate. */
+function smoothClock() {
+  let anchorMedia = NaN;
+  let anchorAt = 0;
+  return (audio: HTMLMediaElement, now: number): number => {
+    const media = audio.currentTime;
+    if (audio.paused) return media;
+    const guess = anchorMedia + ((now - anchorAt) / 1000) * audio.playbackRate;
+    if (!(Math.abs(guess - media) < CLOCK_RESYNC_S)) {
+      anchorMedia = media;
+      anchorAt = now;
+      return media;
+    }
+    return guess;
+  };
+}
 /** Accepted original-BPM correction range, mirroring the backend's 40–300
  *  guard so an out-of-range value is caught before the request. */
 const BPM_MIN = 40;
@@ -250,9 +300,9 @@ export function AlignmentDialog({
   const mixSpeedFactor = 1 / speedRatio;
 
   const applyDecodedBpm = useCallback(
-    (bpm: number | null, overridden: boolean) => {
-      setScDecoded((prev) => (prev ? { ...prev, bpm, overridden } : prev));
-      if (scId != null) updateCachedSoundcloudBpm(scId, bpm, overridden);
+    (r: TrackBpm) => {
+      setScDecoded((prev) => (prev ? { ...prev, ...decodedBpm(r) } : prev));
+      if (scId != null) updateCachedSoundcloudBpm(scId, r);
     },
     [scId],
   );
@@ -268,7 +318,7 @@ export function AlignmentDialog({
     setBpmError(null);
     try {
       const r = await api.setSoundcloudTrackBpm(scId, value);
-      applyDecodedBpm(r.bpm, r.bpm_overridden);
+      applyDecodedBpm(r);
       setBpmEditing(false);
     } catch (err) {
       setBpmError(err instanceof Error ? err.message : String(err));
@@ -283,7 +333,7 @@ export function AlignmentDialog({
     setBpmError(null);
     try {
       const r = await api.clearSoundcloudTrackBpm(scId);
-      applyDecodedBpm(r.bpm, r.bpm_overridden);
+      applyDecodedBpm(r);
     } catch (err) {
       setBpmError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -298,7 +348,7 @@ export function AlignmentDialog({
       setBpmError(null);
       try {
         const r = await api.reanalyseSoundcloudTrackBpm(scId, strong);
-        applyDecodedBpm(r.bpm, r.bpm_overridden);
+        applyDecodedBpm(r);
       } catch (err) {
         setBpmError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -425,9 +475,22 @@ export function AlignmentDialog({
   // speed ratio the dialog settles on.
   const positionsRef = useRef({ mix: mixCenterS, orig: origCenterS });
   positionsRef.current = { mix: mixCenterS, orig: origCenterS };
+  // A BPM change reruns it: the tempo sets the playback rates it searches,
+  // and the new result moves the strips even if the user had moved them.
+  const alignBpm = scDecodedResolved ? (scDecoded?.bpm ?? null) : undefined;
+  const lastAlignBpmRef = useRef<number | null | undefined>(undefined);
   useEffect(() => {
     setAutoAlign(null);
-    if (!open || scId == null || track.aligned) return;
+    if (!open || scId == null || alignBpm === undefined) {
+      // A new track or reopen starts fresh, not as a BPM change.
+      lastAlignBpmRef.current = undefined;
+      return;
+    }
+    const bpmChanged =
+      lastAlignBpmRef.current !== undefined &&
+      lastAlignBpmRef.current !== alignBpm;
+    lastAlignBpmRef.current = alignBpm;
+    if (track.aligned && !bpmChanged) return;
     let cancelled = false;
     setAutoAlign("running");
     void autoAlignTrack(jobId, track.id, scId)
@@ -438,12 +501,14 @@ export function AlignmentDialog({
         const untouched =
           positionsRef.current.mix === track.start_s &&
           positionsRef.current.orig === 0;
-        if (r.found && untouched) setMixCenterS(Math.max(0, r.start_s));
+        if (!r.found || !(untouched || bpmChanged)) return;
+        setMixCenterS(Math.max(0, r.start_s));
+        setOrigCenterS(0);
       });
     return () => {
       cancelled = true;
     };
-  }, [open, scId, jobId, track.id, track.start_s, track.aligned]);
+  }, [open, scId, alignBpm, jobId, track.id, track.start_s, track.aligned]);
 
   // Mix deck: a plain media element on the cached set (Range-served), and
   // peaks for just the region around the track, so nothing decodes the
@@ -546,11 +611,13 @@ export function AlignmentDialog({
   useEffect(() => {
     if (!isPlaying) return;
     let frame = 0;
-    const tick = () => {
+    const mixClock = smoothClock();
+    const origClock = smoothClock();
+    const tick = (now: number) => {
       const mix = setAudioRef.current;
       const orig = scAudioRef.current;
-      if (mix) mixStripRef.current?.draw(mix.currentTime);
-      if (orig) origStripRef.current?.draw(orig.currentTime);
+      if (mix) mixStripRef.current?.draw(mixClock(mix, now));
+      if (orig) origStripRef.current?.draw(origClock(orig, now));
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -723,6 +790,14 @@ export function AlignmentDialog({
     autoAlign !== null && autoAlign !== "running" && autoAlign.found
       ? autoAlign
       : null;
+  // Where the track becomes audible. The mix start is the original's 0:00,
+  // which for a track mixed in partway can sit long before it is heard.
+  const entry = found
+    ? (() => {
+        const mixS = Math.max(newStartS, found.enter_s);
+        return { mixS, origS: (mixS - newStartS) / speedRatio };
+      })()
+    : null;
   const mixBands: StripBand[] = found
     ? [
         {
@@ -736,14 +811,14 @@ export function AlignmentDialog({
   const mixMarkers: StripMarker[] = found
     ? [{ atS: found.start_s, token: "--color-brand" }]
     : [];
-  const origBands: StripBand[] = (found?.chunks ?? [])
-    .filter((c) => c.agrees)
-    .map((c) => ({
-      startS: c.start_s,
-      endS: c.end_s,
+  const origBands: StripBand[] = agreeingSpans(found?.chunks ?? []).map(
+    (span) => ({
+      startS: span.startS,
+      endS: span.endS,
       token: "--color-brand",
-      alpha: 0.04 + 0.14 * c.uniqueness,
-    }));
+      alpha: 0.04 + 0.14 * span.uniqueness,
+    }),
+  );
 
   // ``markAligned`` promotes the row to the highest curation tier
   // (confirmed + alignment-verified) as part of the save, so the user can
@@ -772,7 +847,7 @@ export function AlignmentDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[90dvh] max-w-2xl overflow-y-auto"
+        className="max-h-[90dvh] w-[min(96vw,90rem)] overflow-y-auto sm:max-w-none"
         data-testid="alignment-dialog"
       >
         <DialogHeader>
@@ -784,7 +859,7 @@ export function AlignmentDialog({
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col gap-3">
-          <div className="border-border bg-surface-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border px-3 py-2">
+          <div className="border-border bg-surface-2 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border px-3 py-2">
             <div className="flex flex-col">
               <span className="text-text-subtle text-2xs tracking-wider uppercase">
                 Mix start
@@ -803,25 +878,39 @@ export function AlignmentDialog({
                 </span>
               </div>
             </div>
+            {entry && (
+              <div className="flex flex-col" data-testid="alignment-entry">
+                <span className="text-text-subtle text-2xs tracking-wider uppercase">
+                  Comes in
+                </span>
+                <div className="flex items-baseline gap-3">
+                  <span className="text-text text-xl tabular-nums">
+                    {formatTimecode(entry.mixS)}
+                  </span>
+                  <span className="text-text-subtle text-xs tabular-nums">
+                    {formatTimecode(entry.origS)} into the track
+                  </span>
+                </div>
+              </div>
+            )}
             {autoAlign != null && <AutoAlignBadge state={autoAlign} />}
+            {found && (
+              <p
+                className="text-text-subtle text-2xs ml-auto flex flex-wrap items-center gap-x-3 gap-y-1"
+                data-testid="alignment-match-legend"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="bg-brand inline-block h-3 w-0.5" />
+                  suggested start
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="bg-brand/20 inline-block size-3 rounded-xs" />
+                  where the track plays · original: brighter = more unique part,
+                  weighs more in the match
+                </span>
+              </p>
+            )}
           </div>
-
-          {found && (
-            <p
-              className="text-text-subtle text-2xs -mt-1 flex flex-wrap items-center gap-x-3 gap-y-1"
-              data-testid="alignment-match-legend"
-            >
-              <span className="inline-flex items-center gap-1.5">
-                <span className="bg-brand inline-block h-3 w-0.5" />
-                suggested start
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="bg-brand/20 inline-block size-3 rounded-xs" />
-                where the track plays · original: brighter = more unique part,
-                weighs more in the match
-              </span>
-            </p>
-          )}
 
           {/* Set waveform — top strip, drag to move the mix. */}
           <div className="flex min-w-0 flex-col gap-1">
@@ -938,6 +1027,15 @@ export function AlignmentDialog({
                           data-testid="alignment-bpm-corrected"
                         >
                           corrected
+                        </span>
+                      )}
+                      {scDecoded.source === "soundcloud" && (
+                        <span
+                          className="text-text-muted text-2xs"
+                          data-testid="alignment-bpm-soundcloud"
+                          title="Tempo listed on SoundCloud"
+                        >
+                          from SoundCloud
                         </span>
                       )}
                       <Button
@@ -1062,45 +1160,9 @@ export function AlignmentDialog({
             />
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="text-text-subtle text-2xs w-8 tracking-wider uppercase">
-              Zoom
-            </span>
-            <Slider
-              aria-label="Waveform zoom"
-              min={MIN_PX_PER_S}
-              max={MAX_PX_PER_S}
-              step={ZOOM_STEP}
-              value={[pxPerSec]}
-              onValueChange={([v]) => {
-                if (v != null) setPxPerSec(v);
-              }}
-              className="flex-1"
-              data-testid="alignment-zoom"
-            />
-            <span
-              className="text-text-muted w-10 text-right text-xs tabular-nums"
-              data-testid="alignment-zoom-value"
-            >
-              {(pxPerSec / DEFAULT_PX_PER_S).toFixed(1)}×
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setPxPerSec(DEFAULT_PX_PER_S)}
-              disabled={pxPerSec === DEFAULT_PX_PER_S}
-              aria-label="Reset zoom"
-              title="Reset zoom"
-              data-testid="alignment-zoom-reset"
-            >
-              <RotateCcw />
-            </Button>
-          </div>
-
-          {/* Control deck: transport on the left, then jog + cue stacked on
-              the right with aligned labels — reads as one DJ-mixer unit. */}
-          <div className="border-border bg-surface-2 flex items-center gap-3 rounded-lg border px-3 py-3">
+          {/* Control deck on one row under the strips: transport, jog, cue,
+              zoom. Wraps on narrow windows. */}
+          <div className="border-border bg-surface-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border px-3 py-2">
             <PlayButton
               label={transport ? "Pause" : "Play"}
               active={transport}
@@ -1109,11 +1171,11 @@ export function AlignmentDialog({
               testId="alignment-play-toggle"
             />
 
-            <Separator orientation="vertical" className="h-12" />
+            <Separator orientation="vertical" className="h-8" />
 
-            <div className="flex flex-1 flex-col gap-2">
+            <div className="contents">
               <div className="flex items-center gap-2">
-                <span className="text-text-subtle text-2xs w-10 tracking-wider uppercase">
+                <span className="text-text-subtle text-2xs tracking-wider uppercase">
                   Jog
                 </span>
                 <div className="border-border bg-surface-1 inline-flex overflow-hidden rounded-md border">
@@ -1149,7 +1211,7 @@ export function AlignmentDialog({
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-text-subtle text-2xs inline-flex w-10 items-center gap-1 tracking-wider uppercase">
+                <span className="text-text-subtle text-2xs inline-flex items-center gap-1 tracking-wider uppercase">
                   <Headphones className="size-3.5" /> Cue
                 </span>
                 <ToggleGroup
@@ -1180,12 +1242,46 @@ export function AlignmentDialog({
                   ))}
                 </ToggleGroup>
               </div>
-
-              {streamError && (
-                <span className="text-destructive text-xs">{streamError}</span>
-              )}
+            </div>
+            <div className="flex min-w-64 flex-1 items-center gap-3">
+              <span className="text-text-subtle text-2xs tracking-wider uppercase">
+                Zoom
+              </span>
+              <Slider
+                aria-label="Waveform zoom"
+                min={MIN_PX_PER_S}
+                max={MAX_PX_PER_S}
+                step={ZOOM_STEP}
+                value={[pxPerSec]}
+                onValueChange={([v]) => {
+                  if (v != null) setPxPerSec(v);
+                }}
+                className="flex-1"
+                data-testid="alignment-zoom"
+              />
+              <span
+                className="text-text-muted w-10 text-right text-xs tabular-nums"
+                data-testid="alignment-zoom-value"
+              >
+                {(pxPerSec / DEFAULT_PX_PER_S).toFixed(1)}×
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setPxPerSec(DEFAULT_PX_PER_S)}
+                disabled={pxPerSec === DEFAULT_PX_PER_S}
+                aria-label="Reset zoom"
+                title="Reset zoom"
+                data-testid="alignment-zoom-reset"
+              >
+                <RotateCcw />
+              </Button>
             </div>
           </div>
+          {streamError && (
+            <span className="text-destructive text-xs">{streamError}</span>
+          )}
         </div>
 
         <DialogFooter>
@@ -1335,7 +1431,7 @@ function WaveformStrip({
 }: WaveformStripProps) {
   return (
     <div
-      className="border-border bg-surface-2 relative h-20 w-full min-w-0 overflow-hidden rounded-md border"
+      className="border-border bg-surface-2 relative h-28 w-full min-w-0 overflow-hidden rounded-md border"
       data-testid={testId}
     >
       {empty ? (

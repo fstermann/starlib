@@ -40,6 +40,19 @@ interface PeakStripProps {
   centerS: number;
 }
 
+/** Highest summed alpha anywhere on the strip, where overlapping bands
+ *  stack. Exposed so tests can check tints never bury the waveform. */
+function maxCoverage(bands: StripBand[]): number {
+  let max = 0;
+  for (const b of bands) {
+    const at = bands
+      .filter((o) => o.startS <= b.startS && o.endS > b.startS)
+      .reduce((sum, o) => sum + o.alpha, 0);
+    max = Math.max(max, at);
+  }
+  return Math.round(max * 1000) / 1000;
+}
+
 const BAR_PX = 2;
 const GAP_PX = 1;
 
@@ -63,7 +76,10 @@ export const PeakStrip = forwardRef<PeakStripHandle, PeakStripProps>(
     // Synced after render so the animation-frame ``draw`` sees fresh props.
     useLayoutEffect(() => {
       propsRef.current = { peaks, peaksPerS, startS, pxPerS, bands, markers };
+      colours.current.clear();
     });
+    // ``getComputedStyle`` per frame forces a style recalc; resolve once.
+    const colours = useRef(new Map<string, string>());
     const centerRef = useRef(centerS);
 
     const draw = (t: number) => {
@@ -85,44 +101,57 @@ export const PeakStrip = forwardRef<PeakStripHandle, PeakStripProps>(
       const p = propsRef.current;
       const leftS = t - w / 2 / p.pxPerS;
       const xOf = (s: number) => (s - leftS) * p.pxPerS;
-      const css = getComputedStyle(canvas);
+      const colour = (token: string) => {
+        let c = colours.current.get(token);
+        if (c === undefined) {
+          c = getComputedStyle(canvas).getPropertyValue(token).trim() || "#888";
+          colours.current.set(token, c);
+        }
+        return c;
+      };
       for (const band of p.bands) {
         const x0 = Math.max(0, xOf(band.startS));
         const x1 = Math.min(w, xOf(band.endS));
         if (x1 <= x0) continue;
         ctx.globalAlpha = band.alpha;
-        ctx.fillStyle = css.getPropertyValue(band.token).trim() || "#888";
+        ctx.fillStyle = colour(band.token);
         ctx.fillRect(x0, 0, x1 - x0, h);
       }
       ctx.globalAlpha = 1;
-      ctx.fillStyle =
-        css.getPropertyValue("--color-text-subtle").trim() || "#888";
+      ctx.fillStyle = colour("--color-text-subtle");
 
-      // One bar per BAR_PX + GAP_PX pixels, taking the loudest peak it covers
-      // so zoomed-out views keep their transients.
+      // Bars sit on a grid fixed in strip time, so scrolling slides them
+      // instead of re-binning (which made them flicker). Each takes the
+      // loudest peak it covers so zoomed-out views keep their transients.
       const step = BAR_PX + GAP_PX;
       const mid = h / 2;
-      for (let x = 0; x < w; x += step) {
-        const from = (leftS + x / p.pxPerS - p.startS) * p.peaksPerS;
-        const to = (leftS + (x + step) / p.pxPerS - p.startS) * p.peaksPerS;
+      const barS = step / p.pxPerS;
+      const first = Math.floor(leftS / barS);
+      const last = Math.ceil((leftS + w / p.pxPerS) / barS);
+      for (let k = first; k <= last; k++) {
+        const from = (k * barS - p.startS) * p.peaksPerS;
         const i0 = Math.max(0, Math.floor(from));
-        const i1 = Math.min(p.peaks.length, Math.max(i0 + 1, Math.ceil(to)));
+        const i1 = Math.min(
+          p.peaks.length,
+          Math.max(i0 + 1, Math.ceil(from + barS * p.peaksPerS)),
+        );
         let v = 0;
         for (let i = i0; i < i1; i++) v = Math.max(v, p.peaks[i] ?? 0);
         if (v <= 0) continue;
         const bh = Math.max(1, v * (h - 4));
-        ctx.fillRect(x, mid - bh / 2, BAR_PX, bh);
+        ctx.fillRect(xOf(k * barS), mid - bh / 2, BAR_PX, bh);
       }
       for (const marker of p.markers) {
         const x = xOf(marker.atS);
         if (x < 0 || x > w) continue;
-        ctx.fillStyle = css.getPropertyValue(marker.token).trim() || "#888";
+        ctx.fillStyle = colour(marker.token);
         ctx.fillRect(Math.round(x) - 1, 0, 2, h);
       }
       // Observable state for tests: the canvas content itself isn't.
       canvas.dataset.centerS = t.toFixed(2);
       canvas.dataset.pxPerS = String(p.pxPerS);
       canvas.dataset.bands = String(p.bands.length);
+      canvas.dataset.maxTint = String(maxCoverage(p.bands));
     };
 
     useImperativeHandle(ref, () => ({ draw }));

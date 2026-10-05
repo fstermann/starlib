@@ -487,11 +487,7 @@ export function TracklistPanel({
               data-testid="confirmed-count"
             >
               <span className="text-brand font-semibold">
-                {
-                  tracks.filter((t) =>
-                    confirmed.has(`${t.start_s}-${t.shazam_id ?? t.title}`),
-                  ).length
-                }
+                {tracks.filter((t) => confirmed.has(rowKeyOf(t))).length}
               </span>
               <span className="text-text-subtle"> / {tracks.length}</span>{" "}
               confirmed
