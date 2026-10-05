@@ -112,3 +112,32 @@ def test_route_without_soundcloud_link_finds_nothing() -> None:
     app.include_router(analyser_router)
     resp = TestClient(app).post(f"/api/analyser/sets/job-1/tracks/{row.id}/auto-align")
     assert resp.json() == {"found": False}
+
+
+def test_set_peaks_window_is_clamped_to_the_set() -> None:
+    _seed()
+    peaks_mock = AsyncMock(return_value=[0.5, 1.0])
+    with (
+        patch("backend.api.analyser.audio_cache.cached_set_path", return_value=Path("mix.mp4")),
+        patch("backend.infra.analyser.peaks.window_peaks", peaks_mock),
+    ):
+        early = TestClient(_app()).get("/api/analyser/sets/job-1/peaks?start_s=-30&end_s=600")
+        late = TestClient(_app()).get("/api/analyser/sets/job-1/peaks?start_s=3300&end_s=4000")
+
+    assert early.status_code == late.status_code == 200
+    assert early.json()["start_s"] == 0.0
+    assert peaks_mock.await_args_list[0].args[1:] == (0.0, 600.0)
+    assert peaks_mock.await_args_list[1].args[1:] == (3300.0, 3600.0)
+
+
+def test_set_peaks_rejects_oversized_window() -> None:
+    _seed()
+    with patch("backend.api.analyser.audio_cache.cached_set_path", return_value=Path("mix.mp4")):
+        resp = TestClient(_app()).get("/api/analyser/sets/job-1/peaks?start_s=0&end_s=3600")
+    assert resp.status_code == 422
+
+
+def _app() -> FastAPI:
+    app = FastAPI()
+    app.include_router(analyser_router)
+    return app

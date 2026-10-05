@@ -436,10 +436,20 @@ export async function linkSoundcloudTrack(
   );
 }
 
+/** One chunk of the original and how it voted, in original seconds. */
+export interface AlignChunk {
+  start_s: number;
+  end_s: number;
+  /** ``0`` = repeated elsewhere in the track, ``1`` = one of a kind. */
+  uniqueness: number;
+  agrees: boolean;
+}
+
 export type AutoAlignResult =
   | { found: false }
   | {
       found: true;
+      chunks: AlignChunk[];
       start_s: number;
       /** Playback rate of the original in the mix (>1 = sped up). */
       rate: number;
@@ -448,6 +458,23 @@ export type AutoAlignResult =
       enter_s: number;
       exit_s: number;
     };
+
+export interface SetPeaks {
+  start_s: number;
+  peaks_per_s: number;
+  peaks: number[];
+}
+
+/** Waveform peaks for ``[startS, endS]`` of the cached set. */
+export async function getSetPeaks(
+  jobId: string,
+  startS: number,
+  endS: number,
+): Promise<SetPeaks> {
+  return fetchApi(
+    `/api/analyser/sets/${encodeURIComponent(jobId)}/peaks?start_s=${startS}&end_s=${endS}`,
+  );
+}
 
 /** Suggest a track's start from the audio. Nothing is saved. */
 export async function autoAlignTrack(

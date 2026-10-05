@@ -28,6 +28,9 @@ class AlignResult:
     confidence: float
     enter_s: float
     exit_s: float
+    # Per chunk of the original: start_s/end_s (original seconds), uniqueness
+    # within the track (0-1) and whether it agrees with the match.
+    chunks: tuple[dict, ...] = ()
 
 
 async def _extract_window(source: Path, start_s: float, end_s: float, out: Path) -> None:
@@ -97,5 +100,6 @@ async def align_track(
                 confidence=event["confidence"],
                 enter_s=start_s + event["enter_s"],
                 exit_s=start_s + event["exit_s"],
+                chunks=tuple(event.get("chunks", ())),
             )
     return None

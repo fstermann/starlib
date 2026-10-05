@@ -8,6 +8,13 @@
 //! start and a small speed drift `k` finds it. A fine pass then correlates
 //! onset envelopes at ~3 ms resolution around the line to pin the start.
 //!
+//! Electronic tracks repeat whole sections, so a chunk from a looped drop
+//! matches every repeat of it in the mix equally well. Each chunk is first
+//! matched against the original itself: a chunk with a near-twin elsewhere in
+//! the track (a repeated groove) gets little weight, while unique ones (intro,
+//! breakdown, build) carry the vote. The winner must also beat its runner-up
+//! on those unique chunks, which is what confidence reports.
+//!
 //! Tempo: the caller passes playback-rate hints (set BPM / original BPM, or
 //! from the Shazam pitch offset). Each hint is tried with key-lock (tempo
 //! changes, pitch kept) and pitch-fader (both change) features; the best
@@ -50,6 +57,14 @@ const MIN_FINE_SCORE: f32 = 0.2;
 const CURVED_RMS_S: f64 = 0.015;
 const LOCAL_FIT_S: f64 = 60.0;
 const ACTIVE_FRACTION: f32 = 0.5;
+// A self-match this far from the chunk's own spot counts as a repeat; closer
+// lags are the same section sliding past itself.
+const SELF_MIN_GAP_S: f64 = 8.0;
+// Self-similarity at or above this means "same section"; at or below the
+// floor the chunk is unique. Weight falls linearly between them.
+const REPEAT_SIM: f32 = 0.9;
+const UNIQUE_SIM: f32 = 0.5;
+const MIN_UNIQUENESS: f64 = 0.05;
 
 /// Where the original sits in the mix window.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -68,6 +83,19 @@ pub struct Alignment {
     pub exit_s: f64,
     /// Chunks of the original whose best match agrees with the result.
     pub matched_chunks: usize,
+    /// Per original chunk, in original seconds: how unique it is within the
+    /// track (`0` = repeated elsewhere, `1` = one of a kind) and whether its
+    /// best match agrees with the result.
+    pub chunks: Vec<ChunkMatch>,
+}
+
+/// One chunk of the original and how it voted.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ChunkMatch {
+    pub start_s: f64,
+    pub end_s: f64,
+    pub uniqueness: f64,
+    pub agrees: bool,
 }
 
 /// Find `original` inside `mix` (both mono at `sr`).
@@ -90,7 +118,7 @@ pub fn align(mix: &[f32], original: &[f32], sr: u32, rate_hints: &[f64]) -> Opti
             let bins = bin_bands(COARSE_WIN, sr, freq_scale, COARSE_BANDS, COARSE_HZ);
             let orig_feats = band_energies(original, &orig_frames, COARSE_WIN, &bins, COARSE_BANDS);
             if let Some(c) = coarse_match(&mix_feats, &orig_feats, frame_s) {
-                if best.as_ref().is_none_or(|(b, _, _)| c.weight > b.weight) {
+                if best.as_ref().is_none_or(|(b, _, _)| c.fit > b.fit) {
                     best = Some((c, rate, key_lock));
                 }
             }
@@ -110,6 +138,18 @@ pub fn align(mix: &[f32], original: &[f32], sr: u32, rate_hints: &[f64]) -> Opti
     let (start, slope) = robust_line(&points).unwrap_or((coarse.start, coarse.slope));
 
     let (enter_s, exit_s) = coarse.active_span(start, slope, mix.len() as f64 / sr as f64);
+    let inlier_us: Vec<f64> = coarse.inliers.iter().map(|p| p.0).collect();
+    let chunks = coarse
+        .scores
+        .iter()
+        .zip(&coarse.uniqueness)
+        .map(|((u, _), &w)| ChunkMatch {
+            start_s: u * rate,
+            end_s: (u + CHUNK_S) * rate,
+            uniqueness: w,
+            agrees: inlier_us.iter().any(|x| (x - u).abs() < 1e-9),
+        })
+        .collect();
     Some(Alignment {
         start_s: start,
         rate: rate / slope,
@@ -118,6 +158,7 @@ pub fn align(mix: &[f32], original: &[f32], sr: u32, rate_hints: &[f64]) -> Opti
         enter_s,
         exit_s,
         matched_chunks: coarse.inliers.len(),
+        chunks,
     })
 }
 
@@ -126,12 +167,16 @@ pub fn align(mix: &[f32], original: &[f32], sr: u32, rate_hints: &[f64]) -> Opti
 struct Coarse {
     start: f64,
     slope: f64,
-    weight: f64,
+    /// Unweighted correlation summed over agreeing chunks: how well this
+    /// rate and tempo mode reproduce the mix, used to pick between them.
+    fit: f64,
     confidence: f64,
     /// `(u, t)` of the vote each agreeing chunk cast.
     inliers: Vec<(f64, f64)>,
     /// Per chunk: its offset `u` and correlation score at every mix lag.
     scores: Vec<(f64, Vec<f32>)>,
+    /// Per chunk, parallel to `scores`: weight from 0 (repeat) to 1 (unique).
+    uniqueness: Vec<f64>,
     frame_s: f64,
 }
 
@@ -174,23 +219,30 @@ fn coarse_match(mix: &[Vec<f32>], orig: &[Vec<f32>], frame_s: f64) -> Option<Coa
     let hop = ((CHUNK_HOP_S / frame_s) as usize).max(1);
     let nms = (PEAK_NMS_S / frame_s).ceil() as usize;
 
+    let self_index = MixIndex::new(orig, chunk_len);
+    let self_gap = (SELF_MIN_GAP_S / frame_s) as usize;
+
     let mut votes: Vec<Vote> = Vec::new();
     let mut scores = Vec::new();
+    let mut uniqueness = Vec::new();
     let mut chunk_start = 0;
     while chunk_start + chunk_len <= n_orig {
         let chunk: Vec<&[f32]> = orig.iter().map(|b| &b[chunk_start..chunk_start + chunk_len]).collect();
         if let Some(s) = index.scores(&chunk) {
             let u = chunk_start as f64 * frame_s;
-            for (lag, w) in top_peaks(&s, nms, PEAKS_PER_CHUNK) {
-                votes.push(Vote { chunk: scores.len(), u, t: lag * frame_s, w: w as f64 });
+            let w = self_index.scores(&chunk).map_or(1.0, |own| chunk_uniqueness(&own, chunk_start, self_gap));
+            for (lag, score) in top_peaks(&s, nms, PEAKS_PER_CHUNK) {
+                votes.push(Vote { chunk: scores.len(), u, t: lag * frame_s, w: score as f64 * w, score: score as f64 });
             }
             scores.push((u, s));
+            uniqueness.push(w);
         }
         chunk_start += hop;
     }
 
     let (start, slope, weight, rival) = hough(&votes)?;
     let mut inliers: Vec<(f64, f64)> = Vec::new();
+    let mut fit = 0.0;
     for chunk in 0..scores.len() {
         let closest = votes
             .iter()
@@ -200,6 +252,7 @@ fn coarse_match(mix: &[Vec<f32>], orig: &[Vec<f32>], frame_s: f64) -> Option<Coa
             .min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((v, _)) = closest {
             inliers.push((v.u, v.t));
+            fit += v.score;
         }
     }
     if inliers.len() < 2 {
@@ -209,19 +262,37 @@ fn coarse_match(mix: &[Vec<f32>], orig: &[Vec<f32>], frame_s: f64) -> Option<Coa
     Some(Coarse {
         start,
         slope,
-        weight,
+        fit,
         confidence: (1.0 - rival / weight).clamp(0.0, 1.0),
         inliers,
         scores,
+        uniqueness,
         frame_s,
     })
+}
+
+/// Weight of a chunk from its self-correlation `own` against the original:
+/// 1 when nothing else in the track resembles it, falling towards
+/// [`MIN_UNIQUENESS`] as its closest twin (at least `gap` frames away)
+/// approaches [`REPEAT_SIM`].
+fn chunk_uniqueness(own: &[f32], at: usize, gap: usize) -> f64 {
+    let twin = own
+        .iter()
+        .enumerate()
+        .filter(|(lag, _)| lag.abs_diff(at) >= gap)
+        .map(|(_, &s)| s)
+        .fold(f32::MIN, f32::max);
+    let t = ((twin - UNIQUE_SIM) / (REPEAT_SIM - UNIQUE_SIM)).clamp(0.0, 1.0) as f64;
+    1.0 - t * (1.0 - MIN_UNIQUENESS)
 }
 
 struct Vote {
     chunk: usize,
     u: f64,
     t: f64,
+    /// Correlation scaled by the chunk's uniqueness; what the Hough sums.
     w: f64,
+    score: f64,
 }
 
 /// Best `(start, slope, weight, rival_weight)` over a start × drift grid.
@@ -739,6 +810,35 @@ mod tests {
         let a = align(&mix, &original, SR, &[1.0]).expect("match");
         assert!((a.start_s - (30.0 + eight_bars)).abs() < 0.01, "{a:?}");
         assert!(a.enter_s > 30.0 && a.exit_s > a.enter_s + 60.0, "{a:?}");
+    }
+
+    /// A track that is mostly one looped groove, with a short unique
+    /// breakdown. The mix plays the groove early (a decoy: the DJ teased a
+    /// long loop of it) and the real play-through later.
+    #[test]
+    fn unique_breakdown_beats_a_repeated_groove() {
+        let groove = score(11, 8);
+        let breakdown: Vec<Bar> = score(12, 8).into_iter().map(|b| Bar { kick: false, ..b }).collect();
+        let bars: Vec<Bar> =
+            groove.iter().chain(&groove).chain(&breakdown).chain(&groove).chain(&groove).cloned().collect();
+        let original = render(&bars, BPM);
+        let decoy: Vec<Bar> = groove.iter().chain(&groove).chain(&groove).chain(&groove).cloned().collect();
+        let sr = SR as f64;
+        let real_at = 150.0;
+        let mut mix = vec![0.0f32; (330.0 * sr) as usize];
+        for (i, x) in render(&decoy, BPM).iter().enumerate() {
+            mix[(5.0 * sr) as usize + i] += x;
+        }
+        for (i, x) in original.iter().enumerate() {
+            if let Some(m) = mix.get_mut((real_at * sr) as usize + i) {
+                *m += x;
+            }
+        }
+
+        let a = align(&mix, &original, SR, &[1.0]).expect("match");
+        assert!((a.start_s - real_at).abs() < 0.01, "{a:?}");
+        let unique = |c: &ChunkMatch| c.uniqueness > 0.5;
+        assert!(a.chunks.iter().any(unique) && a.chunks.iter().any(|c| !unique(c)), "{:?}", a.chunks);
     }
 
     #[test]

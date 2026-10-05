@@ -243,6 +243,29 @@ async function mockAnalyserApi(page: Page) {
 }
 
 test.describe("Set Analyser", () => {
+  // The align dialog paints the mix from peaks for the region around the
+  // track: a steady pulse so the strip has something to draw.
+  test.beforeEach(async ({ page }) => {
+    await page.route(/\/api\/analyser\/sets\/[^/?]+\/peaks\?/, (route) => {
+      const url = new URL(route.request().url());
+      const startS = Math.max(0, Number(url.searchParams.get("start_s")));
+      const endS = Number(url.searchParams.get("end_s"));
+      const perS = 20;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          start_s: startS,
+          peaks_per_s: perS,
+          peaks: Array.from(
+            { length: Math.round((endS - startS) * perS) },
+            (_, i) => (i % 10 === 0 ? 1 : 0.2),
+          ),
+        }),
+      });
+    });
+  });
+
   test("paste-url flow loads timeline + tracks from SSE", async ({ page }) => {
     await mockAnalyserApi(page);
     await page.goto("/analyser");
@@ -3661,6 +3684,11 @@ test.describe("Set Analyser", () => {
             confidence: 0.64,
             enter_s: 52.5,
             exit_s: 240,
+            chunks: [
+              { start_s: 0, end_s: 30, uniqueness: 1, agrees: true },
+              { start_s: 30, end_s: 60, uniqueness: 0.1, agrees: true },
+              { start_s: 60, end_s: 90, uniqueness: 0.5, agrees: false },
+            ],
           }),
         });
       },
@@ -3678,6 +3706,17 @@ test.describe("Set Analyser", () => {
       "00:52",
     );
     expect(autoAlignUrls[0]).toContain("soundcloud_id=9001");
+
+    // The match is drawn on both strips: the span it plays in on the mix,
+    // and the agreeing chunks on the original.
+    const bandCount = (testId: string) =>
+      page
+        .getByTestId(testId)
+        .locator("canvas")
+        .evaluate((el) => Number((el as HTMLCanvasElement).dataset.bands));
+    await expect.poll(() => bandCount("alignment-set-strip")).toBe(1);
+    await expect.poll(() => bandCount("alignment-sc-strip")).toBe(2);
+    await expect(page.getByTestId("alignment-match-legend")).toBeVisible();
 
     // The suggestion isn't saved until the user confirms it.
     expect(patches).toHaveLength(0);
@@ -4055,43 +4094,43 @@ test.describe("Set Analyser", () => {
       page.getByTestId("alignment-set-strip").getByTestId("waveform-loading"),
     ).toHaveCount(0);
 
-    // Read the scrollLeft of WaveSurfer's own (shadow-DOM) scroll
-    // container — the element the fix actually moves. The old code set the
-    // outer container's scrollLeft, which does nothing here, leaving this 0.
-    const mixScrollLeft = () =>
-      page.getByTestId("alignment-set-strip").evaluate((el) => {
-        const host = [...el.querySelectorAll("div")].find((d) => d.shadowRoot);
-        const scroll = host?.shadowRoot?.querySelector(".scroll");
-        return scroll instanceof HTMLElement ? scroll.scrollLeft : -1;
-      });
+    // Each strip's canvas records the time it is centred on and its scale.
+    const stripState = (testId: string) =>
+      page
+        .getByTestId(testId)
+        .locator("canvas")
+        .evaluate((el) => ({
+          centerS: Number((el as HTMLCanvasElement).dataset.centerS),
+          pxPerS: Number((el as HTMLCanvasElement).dataset.pxPerS),
+        }));
+    const mixCenter = async () =>
+      (await stripState("alignment-set-strip")).centerS;
 
-    // Centred on 40 s → scrolled well past 0 (old behaviour: stuck at 0,
-    // showing the very start of the mix instead of the track region).
-    await expect.poll(mixScrollLeft).toBeGreaterThan(50);
+    // Centred on the track's 40 s start (old behaviour: showed 0 s).
+    await expect.poll(mixCenter).toBeCloseTo(40, 0);
 
-    // Zoom control: zooming in raises px/s, so the same centred time sits
-    // further along the (wider) waveform — scrollLeft grows without the mix
-    // re-decoding (ws.zoom re-renders from existing peaks).
+    // Zoom control: zooming in raises px/s on both strips.
     const zoom = page.getByTestId("alignment-zoom").getByRole("slider");
     const zoomValue = () => zoom.getAttribute("aria-valuenow");
     const beforeZoomValue = await zoomValue();
-    const beforeZoomScroll = await mixScrollLeft();
+    const beforeZoomPx = (await stripState("alignment-set-strip")).pxPerS;
     await zoom.focus();
     for (let i = 0; i < 20; i++) await zoom.press("ArrowRight");
     await expect.poll(zoomValue).not.toBe(beforeZoomValue);
-    await expect.poll(mixScrollLeft).toBeGreaterThan(beforeZoomScroll);
+    await expect
+      .poll(async () => (await stripState("alignment-set-strip")).pxPerS)
+      .toBeGreaterThan(beforeZoomPx);
 
     // Reset returns the zoom to its default (1.0×).
     await page.getByTestId("alignment-zoom-reset").click();
     await expect(page.getByTestId("alignment-zoom-value")).toHaveText("1.0×");
 
-    // Jog both: scrubs both decks together, so the mix scrolls forward but
+    // Jog both: scrubs both decks together, so the mix moves forward but
     // the computed start (the alignment) is unchanged.
     const startText = () => page.getByTestId("alignment-new-start").innerText();
     const beforeJogStart = await startText();
-    const beforeJogScroll = await mixScrollLeft();
     await page.getByTestId("alignment-jog-30").click();
-    await expect.poll(mixScrollLeft).toBeGreaterThan(beforeJogScroll);
+    await expect.poll(mixCenter).toBeCloseTo(70, 0);
     expect(await startText()).toBe(beforeJogStart);
 
     // Both strips are draggable; the saved start recomputes from both
@@ -4118,13 +4157,18 @@ test.describe("Set Analyser", () => {
     await expect(page.getByTestId("alignment-cue-original")).toBeVisible();
     await expect(page.getByTestId("alignment-cue-both")).toBeVisible();
 
-    // Transport runs both decks; the mix strip must scroll to keep the
-    // playhead centred (old behaviour: nothing moved with the audio).
-    const beforePlay = await mixScrollLeft();
+    // Transport runs both decks; the mix strip follows the playhead
+    // (old behaviour: nothing moved with the audio).
+    const beforePlay = await mixCenter();
     await page.getByTestId("alignment-play-toggle").click();
     await expect
-      .poll(mixScrollLeft, { timeout: 4000 })
-      .toBeGreaterThan(beforePlay + 15);
+      .poll(mixCenter, { timeout: 4000 })
+      .toBeGreaterThan(beforePlay + 0.5);
+
+    // Pausing keeps the strips where playback left them.
+    await page.getByTestId("alignment-play-toggle").click();
+    const pausedAt = await mixCenter();
+    expect(pausedAt).toBeGreaterThan(beforePlay + 0.5);
   });
 
   test("alignment resolves a SoundCloud original for a Shazam-only track", async ({

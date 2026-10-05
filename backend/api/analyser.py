@@ -554,6 +554,7 @@ async def auto_align_track(job_id: str, track_id: int, soundcloud_id: int | None
         "confidence": result.confidence,
         "enter_s": result.enter_s,
         "exit_s": result.exit_s,
+        "chunks": result.chunks,
     }
 
 
@@ -693,6 +694,31 @@ async def get_audio(job_id: str) -> FileResponse:
         media_type="audio/mp4",
         headers={"Accept-Ranges": "bytes", "Cache-Control": "no-store"},
     )
+
+
+# Longest region one peaks request may cover; a window of ±(track + slack)
+# around one track stays well under it.
+_MAX_PEAKS_WINDOW_S = 40 * 60
+
+
+@router.get("/sets/{job_id}/peaks")
+async def get_set_peaks(job_id: str, start_s: float, end_s: float) -> dict:
+    """Waveform peaks for a region of the cached set, for the align dialog."""
+    from backend.infra.analyser import peaks as peaks_infra
+
+    snap = get_job_snapshot(job_id)
+    if snap is None or snap.get("soundcloud_id") is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    path = audio_cache.cached_set_path(int(snap["soundcloud_id"]))
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="audio not yet cached")
+    start_s = max(0.0, start_s)
+    if snap.get("duration_s"):
+        end_s = min(end_s, float(snap["duration_s"]))
+    if not 0 < end_s - start_s <= _MAX_PEAKS_WINDOW_S:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid peaks window")
+    peaks = await peaks_infra.window_peaks(path, start_s, end_s)
+    return {"start_s": start_s, "peaks_per_s": peaks_infra.PEAKS_PER_SECOND, "peaks": peaks}
 
 
 @router.get("/sets/{job_id}/events")

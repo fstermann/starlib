@@ -40,7 +40,7 @@ _BPM_RANGE = (70.0, 200.0)
 # 120/s gives headroom. Clamped so very short or very long tracks stay sane.
 # 8 kHz mono is plenty for an amplitude envelope.
 _DECODE_SAMPLE_RATE = 8000
-_PEAKS_PER_SECOND = 120
+PEAKS_PER_SECOND = 120
 _MIN_PEAKS = 2000
 _MAX_PEAKS = 60000
 _DECODE_TIMEOUT_S = 180
@@ -59,10 +59,12 @@ def _peaks_cache_path(soundcloud_id: int) -> Path:
     return _peaks_dir() / f"{soundcloud_id}.json"
 
 
-def _decode_pcm_f32(path: Path) -> bytes:
-    """Decode ``path`` to mono ``f32le`` PCM at the decode sample rate."""
+def _decode_pcm_f32(path: Path, start_s: float | None = None, duration_s: float | None = None) -> bytes:
+    """Decode ``path`` (or ``[start_s, start_s + duration_s]`` of it) to mono ``f32le`` PCM."""
+    region = [] if start_s is None or duration_s is None else ["-ss", f"{start_s:.3f}", "-t", f"{duration_s:.3f}"]
     cmd = [
         _find_ffmpeg(),
+        *region,
         "-i",
         str(path),
         "-ac",
@@ -79,6 +81,30 @@ def _decode_pcm_f32(path: Path) -> bytes:
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg decode failed ({proc.returncode}) for {path}")
     return proc.stdout
+
+
+async def window_peaks(path: Path, start_s: float, end_s: float) -> list[float]:
+    """Peaks for ``[start_s, end_s]`` of ``path`` at :data:`PEAKS_PER_SECOND`.
+
+    For a long set, where peaking the whole file at alignment resolution would
+    be far too big to send.
+
+    Parameters
+    ----------
+    path : Path
+        Cached audio file.
+    start_s, end_s : float
+        Region to decode, in seconds.
+
+    Returns
+    -------
+    list[float]
+        Peaks normalised to ``[0, 1]`` within the region, rounded to 3 places.
+    """
+    duration_s = max(0.0, end_s - start_s)
+    pcm = await asyncio.to_thread(_decode_pcm_f32, path, start_s, duration_s)
+    peaks = reduce_peaks(pcm, max(1, round(duration_s * PEAKS_PER_SECOND)))
+    return [round(p, 3) for p in peaks]
 
 
 async def detect_bpm(path: Path, *, strong: bool = False) -> float | None:
@@ -170,7 +196,7 @@ async def get_or_compute_peaks(
     duration_s = sample_count / _DECODE_SAMPLE_RATE if sample_count else 0.0
     num_peaks = max(
         _MIN_PEAKS,
-        min(_MAX_PEAKS, round(duration_s * _PEAKS_PER_SECOND)),
+        min(_MAX_PEAKS, round(duration_s * PEAKS_PER_SECOND)),
     )
     peaks = reduce_peaks(pcm, num_peaks)
     _save_cached(soundcloud_id, peaks, duration_s, bpm, source_mtime)
