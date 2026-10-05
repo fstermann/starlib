@@ -44,7 +44,7 @@ repos:
           - "--install-types"
           - "--non-interactive"
   - repo: https://github.com/jsh9/pydoclint
-    rev: 0.9.1
+    rev: 0.11.0
     hooks:
       - id: pydoclint
         args:
