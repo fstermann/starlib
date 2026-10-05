@@ -32,6 +32,7 @@ from backend.schemas.analyser import event_to_sse
 from backend.services.analyser import (
     AnalyserJobOptions,
     JobNotFoundError,
+    auto_align,
     cancel_shazam_scan,
     delete_job,
     get_job_snapshot,
@@ -512,6 +513,40 @@ async def link_soundcloud(job_id: str) -> dict:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     linked = await soundcloud_links.link_unlinked_tracks(job_id)
     return {"job_id": job_id, "linked": linked}
+
+
+@router.post("/sets/{job_id}/tracks/{track_id}/auto-align")
+async def auto_align_track(job_id: str, track_id: int, soundcloud_id: int | None = None) -> dict:
+    """Suggest the track's start from the audio, without saving it.
+
+    ``soundcloud_id`` overrides the row's link, for a match the align dialog
+    resolved by search. Returns ``{"found": false}`` when the original isn't in
+    the mix near where it was detected. The user confirms in the align dialog.
+    """
+    from backend.api.soundcloud.tracks import _resolve_track_audio_path
+    from backend.infra.analyser import db as analyser_db
+
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    track = next((t for t in analyser_db.list_tracks(job_id) if t.id == track_id), None)
+    if track is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="track not found")
+    soundcloud_id = soundcloud_id or track.soundcloud_id
+    if soundcloud_id is None:
+        return {"found": False}
+    original = await _resolve_track_audio_path(soundcloud_id)
+    result = await auto_align.suggest_alignment(job_id, track_id, soundcloud_id, original)
+    if result is None:
+        return {"found": False}
+    return {
+        "found": True,
+        "start_s": result.start_s,
+        "rate": result.rate,
+        "key_lock": result.key_lock,
+        "confidence": result.confidence,
+        "enter_s": result.enter_s,
+        "exit_s": result.exit_s,
+    }
 
 
 @router.patch("/sets/{job_id}/tracks/{track_id}")

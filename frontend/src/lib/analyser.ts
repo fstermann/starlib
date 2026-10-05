@@ -425,6 +425,31 @@ export async function linkSoundcloudTracks(
   );
 }
 
+export type AutoAlignResult =
+  | { found: false }
+  | {
+      found: true;
+      start_s: number;
+      /** Playback rate of the original in the mix (>1 = sped up). */
+      rate: number;
+      key_lock: boolean;
+      confidence: number;
+      enter_s: number;
+      exit_s: number;
+    };
+
+/** Suggest a track's start from the audio. Nothing is saved. */
+export async function autoAlignTrack(
+  jobId: string,
+  trackId: number,
+  soundcloudId: number,
+): Promise<AutoAlignResult> {
+  return fetchApi(
+    `/api/analyser/sets/${encodeURIComponent(jobId)}/tracks/${trackId}/auto-align?soundcloud_id=${soundcloudId}`,
+    { method: "POST" },
+  );
+}
+
 export async function resetJob(
   jobId: string,
 ): Promise<{ job_id: string; reset: boolean }> {

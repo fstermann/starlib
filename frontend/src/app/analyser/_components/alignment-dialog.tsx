@@ -34,11 +34,13 @@ import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  autoAlignTrack,
   formatTimecode,
   jobAudioUrl,
   originalBpmFromSet,
   pitchSpeedRatio,
   updateTrack,
+  type AutoAlignResult,
   type TrackTimelineEntry,
 } from "@/lib/analyser";
 import { api } from "@/lib/api";
@@ -118,8 +120,8 @@ const SC_PLACEHOLDER_PEAKS = Array.from(
  *  match the mix's tempo); a DJ-style cue picks what you hear — the mix
  *  (A), the original (B), or both (master).
  *
- *  Auto cross-correlation is intentionally still out of scope — manual
- *  alignment first, server-side correlation as a follow-up. */
+ *  On open, the backend matches the original against the mix and the
+ *  strips start at its suggestion; saving stays the user's confirmation. */
 export function AlignmentDialog({
   open,
   onOpenChange,
@@ -186,6 +188,9 @@ export function AlignmentDialog({
   const [origCenterS, setOrigCenterS] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [autoAlign, setAutoAlign] = useState<
+    "running" | AutoAlignResult | null
+  >(null);
 
   // Original-BPM correction. Detection occasionally lands an octave off
   // (half/double time), which throws off the stretch ratio; the user can
@@ -424,6 +429,32 @@ export function AlignmentDialog({
       cancelled = true;
     };
   }, [open, scId]);
+
+  // Suggest a position from the audio. Skipped for rows the user already
+  // aligned, and dropped if they moved a strip while it ran. Centring the
+  // original's 0:00 on the suggestion keeps the saved start exact whatever
+  // speed ratio the dialog settles on.
+  const positionsRef = useRef({ mix: mixCenterS, orig: origCenterS });
+  positionsRef.current = { mix: mixCenterS, orig: origCenterS };
+  useEffect(() => {
+    setAutoAlign(null);
+    if (!open || scId == null || track.aligned) return;
+    let cancelled = false;
+    setAutoAlign("running");
+    void autoAlignTrack(jobId, track.id, scId)
+      .catch((): AutoAlignResult => ({ found: false }))
+      .then((r) => {
+        if (cancelled) return;
+        setAutoAlign(r);
+        const untouched =
+          positionsRef.current.mix === track.start_s &&
+          positionsRef.current.orig === 0;
+        if (r.found && untouched) setMixCenterS(Math.max(0, r.start_s));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, scId, jobId, track.id, track.start_s, track.aligned]);
 
   // Mount the SET waveform when the dialog opens. Let WaveSurfer own the
   // media element (URL mode, same as the main set waveform) — decoding a
@@ -914,6 +945,15 @@ export function AlignmentDialog({
                 {offsetS.toFixed(2)} s vs. detected (
                 {formatTimecode(track.start_s)})
               </span>
+              {autoAlign != null && (
+                <span data-testid="alignment-auto-status">
+                  {autoAlign === "running"
+                    ? "Finding the track in the mix…"
+                    : autoAlign.found
+                      ? `Auto-aligned · ${Math.round(autoAlign.confidence * 100)}% sure · ${autoAlign.key_lock ? "master tempo" : "pitch fader"}`
+                      : "Not found in the mix, align by hand"}
+                </span>
+              )}
             </div>
           </div>
 

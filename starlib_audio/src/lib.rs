@@ -14,6 +14,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
+pub mod align;
 pub mod chunk;
 pub mod decode;
 pub mod local;

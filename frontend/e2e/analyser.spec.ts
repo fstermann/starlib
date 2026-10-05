@@ -3487,6 +3487,206 @@ test.describe("Set Analyser", () => {
     expect(sent.aligned).toBe(true);
   });
 
+  test("alignment dialog opens at the auto-aligned start", async ({ page }) => {
+    const ALIGN_JOB = "test-auto-align-job";
+    const autoAlignUrls: string[] = [];
+    const patches: Array<Record<string, unknown>> = [];
+
+    await page.addInitScript(() => {
+      const future = Date.now() + 60 * 60 * 1000;
+      localStorage.setItem("access_token", "fake-token");
+      localStorage.setItem("token_expires_at", String(future));
+    });
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${ALIGN_JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: ALIGN_JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "Align Set",
+          artist: "Tester",
+          duration_s: 600,
+          status: "complete",
+          options: {
+            pitch_strategy: "single",
+            target_bpm: 124,
+            window_s: 30,
+            hop_s: 25,
+            min_section_gap_s: 30,
+            sections_enabled: true,
+            scan_cadence_s: 60,
+            scan_window_s: 12,
+          },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          scans: [],
+          timeline: [
+            {
+              id: 42,
+              start_s: 60,
+              end_s: 240,
+              title: "Pinned Track",
+              artist: "DJ Y",
+              shazam_id: "shz-pin",
+              confidence: 0.95,
+              source: "shazam",
+              soundcloud_id: 9001,
+              soundcloud_permalink_url: null,
+              artwork_url: null,
+              duration_s: 200,
+              confirmed: false,
+              user_edited: false,
+              set_bpm: 128,
+              pitch_offset: -0.5,
+            },
+          ],
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${ALIGN_JOB}/events$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: "",
+        }),
+    );
+    // The MIX strip decodes the set audio in URL mode — needs real bytes
+    // to reach "ready". Long enough that the 60 s track start isn't clamped
+    // to the set length.
+    await page.route(
+      new RegExp(`/api/analyser/sets/${ALIGN_JOB}/audio$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "audio/wav",
+          headers: { "Accept-Ranges": "bytes" },
+          body: silentWav(70),
+        }),
+    );
+    await page.route(/\/api\/soundcloud\/tracks\/9001\/stream/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          url: "https://example.invalid/stream.m3u8",
+          expires_at: new Date(Date.now() + 600_000).toISOString(),
+        }),
+      }),
+    );
+    // The SC strip paints from the track's own waveform data (the HLS
+    // element has no fetchable src for WaveSurfer to decode).
+    await page.route(/api\.soundcloud\.com\/tracks\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 9001,
+          urn: "soundcloud:tracks:9001",
+          title: "Pinned Track",
+          duration: 200_000,
+          waveform_url: "https://wave.invalid/9001.json",
+        }),
+      }),
+    );
+    await page.route(/wave\.invalid\/9001\.json/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          samples: Array.from({ length: 400 }, (_, i) => (i % 20) + 1),
+        }),
+      }),
+    );
+    // High-res peaks decoded server-side (the SC strip's fidelity source).
+    await page.route(/\/api\/soundcloud\/tracks\/\d+\/peaks/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          peaks: Array.from({ length: 500 }, (_, i) => Math.abs(Math.sin(i))),
+          duration_s: 200,
+          bpm: 128,
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${ALIGN_JOB}/tracks/42$`),
+      async (route) => {
+        if (route.request().method() === "PATCH") {
+          patches.push(
+            route.request().postDataJSON() as Record<string, unknown>,
+          );
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              job_id: ALIGN_JOB,
+              track_id: 42,
+              updated: true,
+            }),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+
+    await page.route(
+      new RegExp(`/api/analyser/sets/${ALIGN_JOB}/tracks/42/auto-align`),
+      (route) => {
+        autoAlignUrls.push(route.request().url());
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            found: true,
+            start_s: 52.5,
+            rate: 1,
+            key_lock: true,
+            confidence: 0.64,
+            enter_s: 52.5,
+            exit_s: 240,
+          }),
+        });
+      },
+    );
+
+    await page.goto(`/analyser?job=${ALIGN_JOB}`);
+    await page.getByTestId("tracklist-row").hover();
+    await page.getByTestId("align-track").click();
+    await expect(page.getByTestId("alignment-dialog")).toBeVisible();
+
+    await expect(page.getByTestId("alignment-auto-status")).toContainText(
+      "Auto-aligned · 64% sure · master tempo",
+    );
+    await expect(page.getByTestId("alignment-new-start")).toContainText(
+      "00:52",
+    );
+    expect(autoAlignUrls[0]).toContain("soundcloud_id=9001");
+
+    // The suggestion isn't saved until the user confirms it.
+    expect(patches).toHaveLength(0);
+    await page.getByTestId("alignment-save-aligned").click();
+    await expect.poll(() => patches.length).toBeGreaterThan(0);
+    expect(patches[0].start_s as number).toBeCloseTo(52.5, 1);
+    expect(patches[0].aligned).toBe(true);
+  });
+
   test("alignment dialog corrects a misdetected original BPM", async ({
     page,
   }) => {
