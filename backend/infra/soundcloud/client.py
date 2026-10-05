@@ -120,3 +120,15 @@ async def search_tracks(query: str, *, token: str, limit: int = 10) -> list[dict
     data = response.json()
     collection = data.get("collection") if isinstance(data, dict) else data
     return [t for t in collection or [] if isinstance(t, dict)]
+
+
+async def get_track_bpm(track_id: int, *, token: str) -> float | None:
+    """Return the tempo SoundCloud lists for a track, or ``None`` if unset or unreachable."""
+    try:
+        response = await get(f"{PUBLIC_API_BASE}/tracks/{track_id}", token=token, follow_redirects=True)
+    except httpx.HTTPError:
+        return None
+    if response.status_code != 200:
+        return None
+    bpm = response.json().get("bpm")
+    return float(bpm) if isinstance(bpm, int | float) and bpm > 0 else None

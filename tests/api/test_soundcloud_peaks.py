@@ -7,6 +7,7 @@ domain reducer's unit tests; here we mock the infra so the suite runs offline.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -19,6 +20,16 @@ from backend.api.soundcloud import tracks as soundcloud_api
 from backend.infra import cache as db_cache
 from backend.infra.analyser import cache as audio_cache
 from backend.infra.analyser import peaks as peaks_infra
+from backend.services.analyser import original_bpm
+
+
+@pytest.fixture(autouse=True)
+def _no_listed_bpm() -> Iterator[None]:
+    with (
+        patch.object(original_bpm, "listed_bpm", new=AsyncMock(return_value=None)),
+        patch.object(db_cache, "get_sc_bpm_override", return_value=None),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -132,7 +143,7 @@ def test_set_bpm_override_persists(client: TestClient) -> None:
         resp = client.put("/api/soundcloud/tracks/42/bpm", json={"bpm": 140.0})
 
     assert resp.status_code == 200
-    assert resp.json() == {"bpm": 140.0, "bpm_overridden": True}
+    assert resp.json() == {"bpm": 140.0, "bpm_overridden": True, "bpm_source": "corrected"}
     mock.assert_called_once()
     assert mock.call_args.args[:2] == (42, 140.0)
 
@@ -163,7 +174,7 @@ def test_clear_bpm_reverts_to_detected(client: TestClient, tmp_path: Path) -> No
         resp = client.delete("/api/soundcloud/tracks/42/bpm")
 
     assert resp.status_code == 200
-    assert resp.json() == {"bpm": 70.0, "bpm_overridden": False}
+    assert resp.json() == {"bpm": 70.0, "bpm_overridden": False, "bpm_source": "detected"}
     delete_mock.assert_called_once_with(42)
 
 
@@ -184,7 +195,7 @@ def test_clear_bpm_uses_cached_value_without_decoding(client: TestClient) -> Non
         resp = client.delete("/api/soundcloud/tracks/42/bpm")
 
     assert resp.status_code == 200
-    assert resp.json() == {"bpm": 128.0, "bpm_overridden": False}
+    assert resp.json() == {"bpm": 128.0, "bpm_overridden": False, "bpm_source": "detected"}
     delete_mock.assert_called_once_with(42)
     resolve.assert_not_awaited()
     compute.assert_not_awaited()
@@ -207,25 +218,26 @@ def test_clear_bpm_decodes_when_cache_missing(client: TestClient, tmp_path: Path
         resp = client.delete("/api/soundcloud/tracks/42/bpm")
 
     assert resp.status_code == 200
-    assert resp.json() == {"bpm": 70.0, "bpm_overridden": False}
+    assert resp.json() == {"bpm": 70.0, "bpm_overridden": False, "bpm_source": "detected"}
 
 
-def test_reanalyse_forces_recompute_and_clears_override(client: TestClient, tmp_path: Path) -> None:
-    """POST reanalyse clears the override and recomputes with force=True."""
+def test_reanalyse_recomputes_and_keeps_result_as_correction(client: TestClient, tmp_path: Path) -> None:
+    """POST reanalyse recomputes with force=True and saves the result over SoundCloud's tempo."""
     cached = tmp_path / "42.mp4"
     cached.write_bytes(b"fake")
     compute = AsyncMock(return_value=([0.0], 10.0, 128.0))
 
     with (
-        patch.object(db_cache, "delete_sc_bpm_override") as delete_mock,
+        patch.object(db_cache, "delete_sc_bpm_override"),
+        patch.object(db_cache, "upsert_sc_bpm_override") as upsert_mock,
         patch.object(audio_cache, "cached_set_path", return_value=cached),
         patch.object(peaks_infra, "get_or_compute_peaks", new=compute),
     ):
         resp = client.post("/api/soundcloud/tracks/42/bpm/reanalyse")
 
     assert resp.status_code == 200
-    assert resp.json() == {"bpm": 128.0, "bpm_overridden": False}
-    delete_mock.assert_called_once_with(42)
+    assert resp.json() == {"bpm": 128.0, "bpm_overridden": True, "bpm_source": "corrected"}
+    assert upsert_mock.call_args.args[:2] == (42, 128.0)
     assert compute.await_args is not None
     assert compute.await_args.kwargs.get("force") is True
 
@@ -237,11 +249,46 @@ def test_reanalyse_strong_uses_dp_beat_tracker(client: TestClient, tmp_path: Pat
 
     with (
         patch.object(db_cache, "delete_sc_bpm_override"),
+        patch.object(db_cache, "upsert_sc_bpm_override"),
         patch.object(audio_cache, "cached_set_path", return_value=cached),
         patch.object(peaks_infra, "get_or_compute_peaks", new=compute),
     ):
         resp = client.post("/api/soundcloud/tracks/42/bpm/reanalyse?strong=true")
 
-    assert resp.json() == {"bpm": 142.0, "bpm_overridden": False}
+    assert resp.json()["bpm"] == 142.0
     assert compute.await_args is not None
     assert compute.await_args.kwargs.get("strong") is True
+
+
+def test_soundcloud_listed_bpm_wins_over_detected(client: TestClient, tmp_path: Path) -> None:
+    """Without a correction, SoundCloud's tempo replaces a misdetected one (here 2/3 time)."""
+    cached = tmp_path / "42.mp4"
+    cached.write_bytes(b"fake")
+
+    with (
+        patch.object(audio_cache, "cached_set_path", return_value=cached),
+        patch.object(db_cache, "get_sc_bpm_override", return_value=None),
+        patch.object(original_bpm, "listed_bpm", new=AsyncMock(return_value=140.0)),
+        patch.object(peaks_infra, "get_or_compute_peaks", new=AsyncMock(return_value=([0.0], 10.0, 93.1))),
+    ):
+        body = client.get("/api/soundcloud/tracks/42/peaks").json()
+
+    assert body["bpm"] == 140.0
+    assert body["bpm_source"] == "soundcloud"
+    assert body["bpm_overridden"] is False
+
+
+def test_correction_wins_over_soundcloud_listed_bpm(client: TestClient, tmp_path: Path) -> None:
+    cached = tmp_path / "42.mp4"
+    cached.write_bytes(b"fake")
+
+    with (
+        patch.object(audio_cache, "cached_set_path", return_value=cached),
+        patch.object(db_cache, "get_sc_bpm_override", return_value=138.4),
+        patch.object(original_bpm, "listed_bpm", new=AsyncMock(return_value=140.0)),
+        patch.object(peaks_infra, "get_or_compute_peaks", new=AsyncMock(return_value=([0.0], 10.0, 93.1))),
+    ):
+        body = client.get("/api/soundcloud/tracks/42/peaks").json()
+
+    assert body["bpm"] == 138.4
+    assert body["bpm_source"] == "corrected"

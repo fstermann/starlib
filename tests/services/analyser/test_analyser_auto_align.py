@@ -59,7 +59,7 @@ def _patched(result: AlignResult | None):
     stack.enter_context(
         patch.object(auto_align.peaks, "get_or_compute_peaks", AsyncMock(return_value=([], 240.0, 125.0)))
     )
-    stack.enter_context(patch.object(auto_align.db_cache, "get_sc_bpm_override", return_value=None))
+    stack.enter_context(patch.object(auto_align, "original_bpm", AsyncMock(return_value=(125.0, "detected"))))
     stack.enter_context(patch.object(auto_align.align, "align_track", align_mock))
     return align_mock, stack
 
@@ -78,6 +78,16 @@ def test_searches_around_detection_with_bpm_rate() -> None:
     assert end == pytest.approx(1200.0 + 240.0 / 1.04 + 15.0)
     # A suggestion is never saved; the user confirms it in the dialog.
     assert analyser_db.list_tracks("job-1")[0].start_s == 1200.0
+
+
+def test_soundcloud_bpm_drives_the_rate_hint() -> None:
+    track = _seed()
+    align_mock, patches = _patched(_result(0.6))
+    with patches, patch.object(auto_align, "original_bpm", AsyncMock(return_value=(120.0, "soundcloud"))):
+        asyncio.run(auto_align.suggest_alignment("job-1", track.id, 7, Path("orig.mp4")))
+
+    assert align_mock.await_args is not None
+    assert align_mock.await_args.kwargs["rate_hints"] == [pytest.approx(130.0 / 120.0)]
 
 
 def test_low_confidence_is_no_suggestion() -> None:

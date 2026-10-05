@@ -8,6 +8,7 @@ Public surface used by ``backend.api.analyser``:
 - :func:`get_job_snapshot`        — load a finished/in-progress job for the
   reload / deep-link path.
 - :func:`recent_jobs`             — list recent analyses for the home view.
+- :func:`set_bpm_at`              — mix tempo at a track's position.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from backend.services.analyser.controller import (
     get_job_snapshot,
     reanalyse_job,
     recent_jobs,
+    set_bpm_at,
     start_job,
     start_shazam_scan,
     subscribe_to_job,
@@ -33,6 +35,7 @@ __all__ = [
     "get_job_snapshot",
     "reanalyse_job",
     "recent_jobs",
+    "set_bpm_at",
     "start_job",
     "start_shazam_scan",
     "subscribe_to_job",

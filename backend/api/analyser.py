@@ -38,6 +38,7 @@ from backend.services.analyser import (
     get_job_snapshot,
     reanalyse_job,
     recent_jobs,
+    set_bpm_at,
     soundcloud_links,
     start_job,
     start_shazam_scan,
@@ -502,6 +503,7 @@ def add_track(job_id: str, payload: AddTrackRequest) -> dict:
         duration_s=payload.duration_s,
         unreleased=payload.unreleased,
         user_edited=True,
+        set_bpm=set_bpm_at(job_id, payload.start_s, payload.end_s),
     )
     return _track_dict(row)
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -24,6 +24,8 @@ class TrackPeaksResponse(BaseModel):
     bpm: float | None = None
     # True when ``bpm`` is a user correction rather than the detected value.
     bpm_overridden: bool = False
+    # Where ``bpm`` came from: the user's correction, SoundCloud's listing, or detection.
+    bpm_source: Literal["corrected", "soundcloud", "detected"] = "detected"
 
 
 class TrackBpmRequest(BaseModel):
@@ -37,6 +39,7 @@ class TrackBpmResponse(BaseModel):
 
     bpm: float | None = None
     bpm_overridden: bool = False
+    bpm_source: Literal["corrected", "soundcloud", "detected"] = "detected"
 
 
 class SystemPlaylistSummary(BaseModel):

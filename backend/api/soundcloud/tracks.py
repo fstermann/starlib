@@ -27,6 +27,7 @@ from backend.schemas.soundcloud import (
     TrackBpmResponse,
     TrackPeaksResponse,
 )
+from backend.services.analyser.original_bpm import original_bpm
 
 __all__ = ["OAuthManager", "get_settings", "router"]
 
@@ -402,7 +403,6 @@ async def get_track_peaks(track_id: int) -> TrackPeaksResponse:
     TrackPeaksResponse
         Normalized peaks in ``[0, 1]`` and the audio duration in seconds.
     """
-    from backend.infra import cache as db_cache
     from backend.infra.analyser import peaks as peaks_infra
 
     path = await _resolve_track_audio_path(track_id)
@@ -416,12 +416,13 @@ async def get_track_peaks(track_id: int) -> TrackPeaksResponse:
             detail="Failed to decode track audio",
         ) from exc
 
-    override = db_cache.get_sc_bpm_override(track_id)
+    bpm, source = await original_bpm(track_id, detected_bpm)
     return TrackPeaksResponse(
         peaks=peaks,
         duration_s=duration_s,
-        bpm=override if override is not None else detected_bpm,
-        bpm_overridden=override is not None,
+        bpm=bpm,
+        bpm_overridden=source == "corrected",
+        bpm_source=source,
     )
 
 
@@ -441,7 +442,7 @@ async def set_track_bpm(track_id: int, body: TrackBpmRequest) -> TrackBpmRespons
             detail=f"BPM must be between {_BPM_MIN:g} and {_BPM_MAX:g}",
         )
     db_cache.upsert_sc_bpm_override(track_id, body.bpm, time.time())
-    return TrackBpmResponse(bpm=body.bpm, bpm_overridden=True)
+    return TrackBpmResponse(bpm=body.bpm, bpm_overridden=True, bpm_source="corrected")
 
 
 @router.delete("/tracks/{track_id}/bpm", response_model=TrackBpmResponse)
@@ -465,16 +466,17 @@ async def clear_track_bpm(track_id: int) -> TrackBpmResponse:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Failed to decode track audio",
             ) from exc
-    return TrackBpmResponse(bpm=detected_bpm, bpm_overridden=False)
+    bpm, source = await original_bpm(track_id, detected_bpm)
+    return TrackBpmResponse(bpm=bpm, bpm_overridden=False, bpm_source=source)
 
 
 @router.post("/tracks/{track_id}/bpm/reanalyse", response_model=TrackBpmResponse)
 async def reanalyse_track_bpm(track_id: int, strong: bool = False) -> TrackBpmResponse:
-    """Re-run tempo detection for a track, bypassing caches and any correction.
+    """Re-run tempo detection for a track and keep the result as the correction.
 
-    Detection is deterministic, so the default mode returns the same value as
-    before unless the cached result was stale. ``strong`` switches to the DP
-    beat tracker, which fixes dotted/triplet sub-rate locks.
+    Saved as a correction so it outranks SoundCloud's listed tempo, which the
+    user just chose to replace. ``strong`` switches to the DP beat tracker,
+    which fixes dotted/triplet sub-rate locks.
     """
     from backend.infra import cache as db_cache
     from backend.infra.analyser import peaks as peaks_infra
@@ -491,7 +493,10 @@ async def reanalyse_track_bpm(track_id: int, strong: bool = False) -> TrackBpmRe
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to decode track audio",
         ) from exc
-    return TrackBpmResponse(bpm=detected_bpm, bpm_overridden=False)
+    if detected_bpm is None:
+        return TrackBpmResponse(bpm=None, bpm_overridden=False, bpm_source="detected")
+    db_cache.upsert_sc_bpm_override(track_id, detected_bpm, time.time())
+    return TrackBpmResponse(bpm=detected_bpm, bpm_overridden=True, bpm_source="corrected")
 
 
 def _user_token_from_authorization(authorization: str | None) -> str:

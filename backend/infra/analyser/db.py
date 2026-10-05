@@ -655,7 +655,7 @@ def insert_track(
     return _row_to_track(row)
 
 
-def count_tracks(job_id: str, *, include_dismissed: bool = False) -> int:
+def count_tracks(job_id: str, *, include_dismissed: bool = False, confirmed_only: bool = False) -> int:
     """Count tracks for a job without materialising rows."""
     from sqlalchemy import func
 
@@ -663,6 +663,8 @@ def count_tracks(job_id: str, *, include_dismissed: bool = False) -> int:
     stmt = select(func.count()).select_from(table).where(table.c.job_id == job_id)
     if not include_dismissed:
         stmt = stmt.where(table.c.dismissed == False)  # noqa: E712
+    if confirmed_only:
+        stmt = stmt.where(table.c.confirmed == True)  # noqa: E712
     with get_engine().begin() as conn:
         return int(conn.execute(stmt).scalar() or 0)
 

@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from backend.domain.track_alignment import MIN_CONFIDENCE, rate_hints, search_window
-from backend.infra import cache as db_cache
 from backend.infra.analyser import align, db, peaks
 from backend.infra.analyser import cache as audio_cache
+from backend.services.analyser.original_bpm import original_bpm
 
 
 async def suggest_alignment(job_id: str, track_id: int, soundcloud_id: int, original: Path) -> align.AlignResult | None:
@@ -33,8 +33,8 @@ async def suggest_alignment(job_id: str, track_id: int, soundcloud_id: int, orig
         return None
 
     _peaks, duration_s, detected_bpm = await peaks.get_or_compute_peaks(original, soundcloud_id)
-    original_bpm = db_cache.get_sc_bpm_override(soundcloud_id) or detected_bpm
-    hints = rate_hints(track.set_bpm, original_bpm, track.pitch_offset)
+    bpm, _source = await original_bpm(soundcloud_id, detected_bpm)
+    hints = rate_hints(track.set_bpm, bpm, track.pitch_offset)
     window = search_window(track.start_s, duration_s, min(hints), job.duration_s)
     result = await align.align_track(mix, original, window=window, rate_hints=hints)
     if result is None or result.confidence < MIN_CONFIDENCE:

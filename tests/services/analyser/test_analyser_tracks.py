@@ -424,6 +424,20 @@ def test_recent_jobs_track_count_matches_materialisation(
     assert job["track_count"] == 3
 
 
+def test_recent_jobs_count_confirmed_tracks(http_client: TestClient) -> None:
+    _seed_job("a")
+    for start, title in ((0.0, "T1"), (60.0, "T2"), (120.0, "T3")):
+        http_client.post("/api/analyser/sets/a/tracks", json={"start_s": start, "title": title})
+    rows = analyser_db.list_tracks("a")
+    http_client.patch(f"/api/analyser/sets/a/tracks/{rows[0].id}", json={"confirmed": True})
+    http_client.patch(f"/api/analyser/sets/a/tracks/{rows[1].id}", json={"confirmed": True})
+    analyser_db.update_track("a", rows[1].id, dismissed=True)
+
+    job = next(j for j in http_client.get("/api/analyser/sets").json()["jobs"] if j["id"] == "a")
+
+    assert (job["track_count"], job["confirmed_count"]) == (2, 1)
+
+
 def test_delete_job_cascades_tracks(http_client: TestClient) -> None:
     _seed_job("doomed")
     _seed_shazam_run("doomed", 0.0, "T", "shz")
@@ -466,3 +480,34 @@ def test_unreleased_round_trips(http_client: TestClient) -> None:
     assert r.status_code == 200
     snap = http_client.get("/api/analyser/sets/job-1").json()
     assert snap["timeline"][0]["unreleased"] is False
+
+
+# ---------------------------------------------------------------------------
+# Set BPM for hand-placed tracks
+# ---------------------------------------------------------------------------
+
+
+def _seed_windows() -> None:
+    for start, bpm in ((0.0, 128.0), (30.0, 128.0), (300.0, 142.0), (330.0, 142.5), (360.0, 142.5)):
+        analyser_db.upsert_window_bpm(job_id="job-1", start_s=start, end_s=start + 30.0, bpm=bpm, confidence="high")
+
+
+def test_manual_track_gets_set_bpm_at_its_position(http_client: TestClient) -> None:
+    _seed_job()
+    _seed_windows()
+    resp = http_client.post("/api/analyser/sets/job-1/tracks", json={"start_s": 310.0, "title": "Brutal House"})
+    assert resp.status_code == 200
+    assert resp.json()["set_bpm"] == 142.5
+
+
+def test_snapshot_fills_set_bpm_of_older_manual_tracks() -> None:
+    _seed_job()
+    _seed_windows()
+    row = analyser_db.insert_track(job_id="job-1", origin="manual", start_s=310.0, title="Brutal House", artist="X")
+    assert row.set_bpm is None
+
+    snap = analyser_controller.get_job_snapshot("job-1")
+
+    assert snap is not None
+    assert snap["timeline"][0]["set_bpm"] == 142.5
+    assert analyser_db.list_tracks("job-1")[0].set_bpm == 142.5
