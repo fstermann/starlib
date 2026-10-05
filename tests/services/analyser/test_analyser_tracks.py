@@ -435,3 +435,34 @@ def test_delete_job_cascades_tracks(http_client: TestClient) -> None:
     r = http_client.delete("/api/analyser/sets/doomed")
     assert r.status_code == 200
     assert analyser_db.list_tracks("doomed") == []
+
+
+def test_blank_title_saves_as_id(http_client: TestClient) -> None:
+    _seed_job()
+    r = http_client.post(
+        "/api/analyser/sets/job-1/tracks",
+        json={"start_s": 60.0, "title": "  ", "artist": "Entasia"},
+    )
+    assert r.status_code == 200
+    assert r.json()["title"] == "ID"
+
+    r = http_client.post("/api/analyser/sets/job-1/tracks", json={"start_s": 90.0, "artist": "Entasia"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "ID"
+
+
+def test_unreleased_round_trips(http_client: TestClient) -> None:
+    _seed_job()
+    r = http_client.post(
+        "/api/analyser/sets/job-1/tracks",
+        json={"start_s": 60.0, "title": "Dub", "artist": "Entasia", "unreleased": True},
+    )
+    track_id = r.json()["id"]
+    assert r.json()["unreleased"] is True
+    snap = http_client.get("/api/analyser/sets/job-1").json()
+    assert snap["timeline"][0]["unreleased"] is True
+
+    r = http_client.patch(f"/api/analyser/sets/job-1/tracks/{track_id}", json={"unreleased": False})
+    assert r.status_code == 200
+    snap = http_client.get("/api/analyser/sets/job-1").json()
+    assert snap["timeline"][0]["unreleased"] is False

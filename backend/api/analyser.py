@@ -22,7 +22,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.infra.analyser import cache as audio_cache
 from backend.infra.soundcloud import token_cache
@@ -37,10 +37,13 @@ from backend.services.analyser import (
     get_job_snapshot,
     reanalyse_job,
     recent_jobs,
+    soundcloud_links,
     start_job,
     start_shazam_scan,
     subscribe_to_job,
 )
+
+UNKNOWN_TITLE = soundcloud_links.UNKNOWN_TITLE
 
 logger = logging.getLogger(__name__)
 
@@ -397,13 +400,20 @@ class AddTrackRequest(BaseModel):
 
     start_s: float = Field(ge=0)
     end_s: float | None = Field(default=None, ge=0)
-    title: str = Field(min_length=1)
+    # A blank title saves as "ID", the DJ-tracklist name for an unidentified track.
+    title: str = UNKNOWN_TITLE
     artist: str | None = None
     shazam_id: str | None = None
     soundcloud_id: int | None = None
     soundcloud_permalink_url: str | None = None
     artwork_url: str | None = None
     duration_s: float | None = Field(default=None, gt=0)
+    unreleased: bool = False
+
+    @field_validator("title")
+    @classmethod
+    def _blank_title_is_id(cls, title: str) -> str:
+        return title.strip() or UNKNOWN_TITLE
 
     @model_validator(mode="after")
     def _end_after_start(self) -> AddTrackRequest:
@@ -434,6 +444,7 @@ class UpdateTrackRequest(BaseModel):
     pitch_offset: float | None = None
     confirmed: bool | None = None
     aligned: bool | None = None
+    unreleased: bool | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> UpdateTrackRequest:
@@ -458,6 +469,7 @@ def _track_dict(row) -> dict:  # type: ignore[no-untyped-def]
         "duration_s": row.duration_s,
         "confirmed": row.confirmed,
         "aligned": row.aligned,
+        "unreleased": row.unreleased,
         "dismissed": row.dismissed,
         "user_edited": row.user_edited,
         "set_bpm": row.set_bpm,
@@ -487,9 +499,19 @@ def add_track(job_id: str, payload: AddTrackRequest) -> dict:
         soundcloud_permalink_url=payload.soundcloud_permalink_url,
         artwork_url=payload.artwork_url,
         duration_s=payload.duration_s,
+        unreleased=payload.unreleased,
         user_edited=True,
     )
     return _track_dict(row)
+
+
+@router.post("/sets/{job_id}/tracks/link-soundcloud")
+async def link_soundcloud(job_id: str) -> dict:
+    """Search SoundCloud for tracks without a link and store the matches."""
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    linked = await soundcloud_links.link_unlinked_tracks(job_id)
+    return {"job_id": job_id, "linked": linked}
 
 
 @router.patch("/sets/{job_id}/tracks/{track_id}")
@@ -532,6 +554,7 @@ def update_track(job_id: str, track_id: int, payload: UpdateTrackRequest) -> dic
         pitch_offset=payload.pitch_offset,
         confirmed=payload.confirmed,
         aligned=payload.aligned,
+        unreleased=payload.unreleased,
         mark_user_edited=edits_identity,
     )
     if not ok:

@@ -4,6 +4,7 @@ import { ImageIcon, Loader2, Play, Plus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -65,6 +66,49 @@ function parseTimecode(input: string): number | null {
   return null;
 }
 
+/** DJ-tracklist name for an unidentified title or artist. */
+const UNKNOWN = "ID";
+
+/** Text field with an "Unknown" checkbox under it. Ticking it disables the
+ *  input and shows "ID", which is what the field saves as. */
+function UnknownableField({
+  id,
+  label,
+  value,
+  onChange,
+  unknown,
+  onUnknownChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  unknown: boolean;
+  onUnknownChange: (unknown: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        value={unknown ? "" : value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={unknown ? UNKNOWN : undefined}
+        disabled={unknown}
+        data-testid={id}
+      />
+      <Label className="text-text-muted flex items-center gap-2 text-xs font-normal">
+        <Checkbox
+          checked={unknown}
+          onCheckedChange={(v) => onUnknownChange(v === true)}
+          data-testid={`${id}-unknown`}
+        />
+        Unknown
+      </Label>
+    </div>
+  );
+}
+
 export function AddTrackDialog({
   jobId,
   defaultStartS,
@@ -79,6 +123,9 @@ export function AddTrackDialog({
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
+  const [titleUnknown, setTitleUnknown] = useState(false);
+  const [artistUnknown, setArtistUnknown] = useState(false);
+  const [unreleased, setUnreleased] = useState(false);
   const [start, setStart] = useState(formatTimecode(defaultStartS));
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -100,6 +147,9 @@ export function AddTrackDialog({
     setPreviewId(null);
     setTitle("");
     setArtist("");
+    setTitleUnknown(false);
+    setArtistUnknown(false);
+    setUnreleased(false);
     setSubmitError(null);
     setSearchError(null);
   }, [open]);
@@ -158,8 +208,8 @@ export function AddTrackDialog({
       setSubmitError("Start time must be mm:ss or seconds.");
       return;
     }
-    if (!title.trim()) {
-      setSubmitError("Title is required.");
+    if (!titleUnknown && !title.trim()) {
+      setSubmitError('Title is required, or tick "Unknown".');
       return;
     }
     setSubmitting(true);
@@ -172,8 +222,10 @@ export function AddTrackDialog({
         typeof durMs === "number" && durMs > 0 ? durMs / 1000 : null;
       await addTrack(jobId, {
         start_s: startS,
-        title: title.trim(),
-        artist: artist.trim() || null,
+        // The backend saves a blank title or an unknown artist as "ID".
+        title: titleUnknown ? "" : title.trim(),
+        artist: artistUnknown ? UNKNOWN : artist.trim() || null,
+        unreleased,
         soundcloud_id: picked ? scTrackId(picked) : null,
         soundcloud_permalink_url: picked?.permalink_url ?? null,
         artwork_url: picked?.artwork_url ?? null,
@@ -207,6 +259,8 @@ export function AddTrackDialog({
           <DialogTitle>Add track</DialogTitle>
           <DialogDescription>
             Search SoundCloud and link a track, or fill the fields manually.
+            Tick Unknown for a field you don&apos;t know; it saves as
+            &quot;ID&quot;.
           </DialogDescription>
         </DialogHeader>
 
@@ -312,25 +366,31 @@ export function AddTrackDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="add-track-title">Title</Label>
-              <Input
-                id="add-track-title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                data-testid="add-track-title"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="add-track-artist">Artist</Label>
-              <Input
-                id="add-track-artist"
-                value={artist}
-                onChange={(e) => setArtist(e.target.value)}
-                data-testid="add-track-artist"
-              />
-            </div>
+            <UnknownableField
+              id="add-track-title"
+              label="Title"
+              value={title}
+              onChange={setTitle}
+              unknown={titleUnknown}
+              onUnknownChange={setTitleUnknown}
+            />
+            <UnknownableField
+              id="add-track-artist"
+              label="Artist"
+              value={artist}
+              onChange={setArtist}
+              unknown={artistUnknown}
+              onUnknownChange={setArtistUnknown}
+            />
           </div>
+          <Label className="text-text-muted flex items-center gap-2 text-xs font-normal">
+            <Checkbox
+              checked={unreleased}
+              onCheckedChange={(v) => setUnreleased(v === true)}
+              data-testid="add-track-unreleased"
+            />
+            Unreleased
+          </Label>
           <div className="flex flex-col gap-1">
             <Label htmlFor="add-track-start">Start time (mm:ss)</Label>
             <Input

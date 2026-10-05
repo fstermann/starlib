@@ -649,6 +649,15 @@ export function TracklistPanel({
                         switched
                       </span>
                     )}
+                    {"unreleased" in t && t.unreleased && (
+                      <span
+                        className="border-border text-text-muted shrink-0 rounded border px-1 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
+                        title="Marked as unreleased"
+                        data-testid="tracklist-unreleased"
+                      >
+                        unreleased
+                      </span>
+                    )}
                     {"source" in t && t.source === "manual" && (
                       <span
                         className="bg-brand-soft text-text rounded px-1 py-0.5 text-[9px] font-semibold tracking-wider uppercase"

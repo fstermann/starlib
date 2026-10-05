@@ -2,12 +2,14 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { useTopBar } from "@/components/layout/top-bar-context";
 import {
   buildTracklistText,
   cancelShazamScan,
   DEFAULT_JOB_OPTIONS,
+  linkSoundcloudTracks,
   reanalyse,
   resetJob,
   startAnalyserJob,
@@ -362,6 +364,21 @@ function AnalyserPageInner() {
     state.windows,
   ]);
 
+  const handleLinkSoundcloud = useCallback(async () => {
+    if (!jobId) return;
+    try {
+      const { linked } = await linkSoundcloudTracks(jobId);
+      toast(
+        linked === 0
+          ? "No new SoundCloud matches found"
+          : `Linked ${linked} track${linked === 1 ? "" : "s"} to SoundCloud`,
+      );
+      if (linked > 0) refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [jobId, refresh]);
+
   const handleExportTracklist = useCallback(() => {
     if (!snapshot) return;
     const text = buildTracklistText(snapshot);
@@ -386,6 +403,7 @@ function AnalyserPageInner() {
             onPasteUrl={handlePasteUrl}
             onReanalyseSelection={handleReanalyseSelection}
             onExportTracklist={handleExportTracklist}
+            onLinkSoundcloud={handleLinkSoundcloud}
           />
           <AnalyserStartScreen
             onStart={handleStart}
@@ -413,6 +431,7 @@ function AnalyserPageInner() {
           onPasteUrl={handlePasteUrl}
           onReanalyseSelection={handleReanalyseSelection}
           onExportTracklist={handleExportTracklist}
+          onLinkSoundcloud={handleLinkSoundcloud}
         />
         {/* Timeline (2) sits on top full-width — the waveform reads best
             wide. Below it, a 1/3 · 2/3 split: job header + controls +

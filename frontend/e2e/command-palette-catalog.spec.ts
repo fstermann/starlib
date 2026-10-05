@@ -41,6 +41,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "analyser.paste-url",
   "analyser.reanalyse-selection",
   "analyser.export-tracklist",
+  "analyser.link-soundcloud",
 ]);
 
 /** Allowed ID prefixes for dynamic providers (folder shortcuts, search hits). */

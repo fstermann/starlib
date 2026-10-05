@@ -107,3 +107,16 @@ async def get(
         follow_redirects=follow_redirects,
         accept_json=accept_json,
     )
+
+
+async def search_tracks(query: str, *, token: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Return public-API ``/tracks`` search results, or ``[]`` on any failure."""
+    try:
+        response = await get(f"{PUBLIC_API_BASE}/tracks", token=token, params={"q": query, "limit": limit})
+    except httpx.HTTPError:
+        return []
+    if response.status_code != 200:
+        return []
+    data = response.json()
+    collection = data.get("collection") if isinstance(data, dict) else data
+    return [t for t in collection or [] if isinstance(t, dict)]

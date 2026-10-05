@@ -540,6 +540,7 @@ class TrackRow:
     duration_s: float | None
     confirmed: bool
     aligned: bool
+    unreleased: bool
     dismissed: bool
     user_edited: bool
     set_bpm: float | None
@@ -564,6 +565,7 @@ _TRACK_COLS = (
     AnalyserTrack.__table__.c.duration_s,
     AnalyserTrack.__table__.c.confirmed,
     AnalyserTrack.__table__.c.aligned,
+    AnalyserTrack.__table__.c.unreleased,
     AnalyserTrack.__table__.c.dismissed,
     AnalyserTrack.__table__.c.user_edited,
     AnalyserTrack.__table__.c.set_bpm,
@@ -590,6 +592,7 @@ def _row_to_track(row) -> TrackRow:
         duration_s=None if row.duration_s is None else float(row.duration_s),
         confirmed=bool(row.confirmed),
         aligned=bool(row.aligned),
+        unreleased=bool(row.unreleased),
         dismissed=bool(row.dismissed),
         user_edited=bool(row.user_edited),
         set_bpm=None if row.set_bpm is None else float(row.set_bpm),
@@ -614,6 +617,7 @@ def insert_track(
     preview_url: str | None = None,
     duration_s: float | None = None,
     user_edited: bool = False,
+    unreleased: bool = False,
     set_bpm: float | None = None,
     pitch_offset: float | None = None,
 ) -> TrackRow:
@@ -634,6 +638,7 @@ def insert_track(
         "duration_s": duration_s,
         "confirmed": False,
         "aligned": False,
+        "unreleased": unreleased,
         "dismissed": False,
         "user_edited": user_edited,
         "set_bpm": set_bpm,
@@ -717,6 +722,7 @@ def update_track(
     duration_s: float | None = None,
     confirmed: bool | None = None,
     aligned: bool | None = None,
+    unreleased: bool | None = None,
     dismissed: bool | None = None,
     set_bpm: float | None = None,
     pitch_offset: float | None = None,
@@ -743,6 +749,7 @@ def update_track(
         "duration_s": duration_s,
         "confirmed": confirmed,
         "aligned": aligned,
+        "unreleased": unreleased,
         "dismissed": dismissed,
         "set_bpm": set_bpm,
         "pitch_offset": pitch_offset,

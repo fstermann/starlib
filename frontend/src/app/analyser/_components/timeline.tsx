@@ -944,7 +944,7 @@ function bandGeometry(
   left: number;
   width: number;
 }> {
-  const MAX_VISUAL_TRACK_S = 600; // 10 min — typical longest DJ-set cut
+  const MAX_VISUAL_TRACK_S = 300; // 5 min — fallback when the length is unknown
   return groups.map((group, i) => {
     const groupStart = Math.min(...group.map((t) => t.start_s));
     const groupEnd = Math.max(...group.map((t) => t.end_s));

@@ -198,6 +198,7 @@ class AnalyserTrack(SQLModel, table=True):
     # Higher tier than ``confirmed`` — the user verified the start
     # alignment (implies ``confirmed``).
     aligned: bool = Field(default=False)
+    unreleased: bool = Field(default=False)
     dismissed: bool = Field(default=False)
     user_edited: bool = Field(default=False)
     # Mix tempo at the matched scan point (median of overlapping BPM

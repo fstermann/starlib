@@ -55,6 +55,7 @@ from backend.schemas.analyser import (
     WindowBpmEvent,
     event_from_subprocess_line,
 )
+from backend.services.analyser import soundcloud_links
 
 logger = logging.getLogger(__name__)
 
@@ -931,6 +932,7 @@ async def _run_shazam_scan(
     # that the per-point sync didn't yet aggregate) and broadcasts the
     # complete tracklist for late subscribers.
     sync_shazam_runs_to_tracks(state.job_id)
+    await soundcloud_links.link_unlinked_tracks(state.job_id)
     for t in db.list_tracks(state.job_id):
         await _broadcast(state, _track_to_event(state.job_id, t))
 
@@ -1509,6 +1511,7 @@ def _track_to_event(job_id: str, t: db.TrackRow) -> TrackTimelineEvent:
         pitch_offset=t.pitch_offset,
         confirmed=t.confirmed,
         aligned=t.aligned,
+        unreleased=t.unreleased,
         user_edited=t.user_edited,
     )
 
@@ -1533,6 +1536,7 @@ def _track_to_dict(t: db.TrackRow) -> dict:
         "duration_s": t.duration_s,
         "confirmed": t.confirmed,
         "aligned": t.aligned,
+        "unreleased": t.unreleased,
         "user_edited": t.user_edited,
         "set_bpm": t.set_bpm,
         "pitch_offset": t.pitch_offset,

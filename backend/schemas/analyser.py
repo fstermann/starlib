@@ -96,6 +96,7 @@ class TrackTimelineEvent(BaseModel):
     # A higher tier than ``confirmed``: the user verified the start
     # alignment, not just the identity. ``aligned`` implies ``confirmed``.
     aligned: bool = False
+    unreleased: bool = False
     user_edited: bool = False
 
 

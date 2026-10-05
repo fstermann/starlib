@@ -866,6 +866,112 @@ test.describe("Set Analyser", () => {
     ).toHaveAttribute("src", coverPersisted);
   });
 
+  test("Find SoundCloud links sizes an unlinked band to the track's length", async ({
+    page,
+  }) => {
+    const JOB = "test-link-job";
+    // Unlinked Shazam row: no duration, so the band stretches to the next
+    // track. After linking it carries the SoundCloud length (6:00).
+    const track = (linked: boolean) => ({
+      id: 1,
+      start_s: 120,
+      end_s: 540,
+      title: "Invasion",
+      artist: "Entasia",
+      shazam_id: "shz-a",
+      confidence: 0.9,
+      source: "shazam",
+      soundcloud_id: linked ? 777 : null,
+      soundcloud_permalink_url: null,
+      artwork_url: null,
+      duration_s: linked ? 360 : null,
+      confirmed: false,
+      user_edited: true,
+      set_bpm: 142,
+      pitch_offset: 0,
+    });
+    const next = {
+      ...track(false),
+      id: 2,
+      start_s: 1800,
+      end_s: 1800,
+      title: "Next",
+      shazam_id: "shz-b",
+      user_edited: false,
+    };
+    let linked = false;
+
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}/audio$`), (route) =>
+      route.fulfill({ status: 200, contentType: "audio/mp4", body: "" }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}/events$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "Cache-Control": "no-cache" },
+        body: sseBody([
+          {
+            event: "job.complete",
+            data: { type: "job.complete", job_id: JOB },
+          },
+        ]),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${JOB}/tracks/link-soundcloud$`),
+      (route) => {
+        linked = true;
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ job_id: JOB, linked: 1 }),
+        });
+      },
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "Link Set",
+          artist: "Tester",
+          duration_s: 3600,
+          status: "complete",
+          options: { pitch_strategy: "none" },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          scans: [],
+          timeline: [track(linked), next],
+        }),
+      }),
+    );
+
+    await page.goto(`/analyser?job=${JOB}`);
+    const band = page.getByTestId("track-band").first();
+    // Unlinked: 2:00 → 14:00 (stored end + 5 min fallback) = 720 s of 3600.
+    await expect(band).toHaveAttribute("style", /width: 20%/);
+
+    await page.getByRole("button", { name: /open command palette/i }).click();
+    await page.getByRole("option", { name: /Find SoundCloud links/ }).click();
+
+    await expect(page.getByText("Linked 1 track to SoundCloud")).toBeVisible();
+    // Linked: 2:00 → 8:00 = 360 s of 3600.
+    await expect(band).toHaveAttribute("style", /width: 10%/);
+  });
+
   test("set search lists long tracks and starts analysis from a result", async ({
     page,
   }) => {
@@ -2018,6 +2124,115 @@ test.describe("Set Analyser", () => {
     await expect(page.getByTestId("tracklist-row")).toContainText(
       "Hand Picked",
     );
+  });
+
+  test("Unknown checkboxes save title and artist as ID; Unreleased is separate", async ({
+    page,
+  }) => {
+    const JOB = "test-add-id-job";
+    let posted: Record<string, unknown> | null = null;
+
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}/events$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "Cache-Control": "no-cache" },
+        body: sseBody([
+          {
+            event: "job.complete",
+            data: { type: "job.complete", job_id: JOB },
+          },
+        ]),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "ID Set",
+          artist: "Tester",
+          duration_s: 120.0,
+          status: "complete",
+          options: { pitch_strategy: "none" },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          scans: [],
+          timeline: posted
+            ? [
+                {
+                  id: 9,
+                  start_s: 30,
+                  end_s: 30,
+                  title: "ID",
+                  artist: "ID",
+                  shazam_id: null,
+                  confidence: 1.0,
+                  source: "manual",
+                  soundcloud_id: null,
+                  soundcloud_permalink_url: null,
+                  artwork_url: null,
+                  unreleased: true,
+                },
+              ]
+            : [],
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${JOB}/tracks$`),
+      (route) => {
+        posted = route.request().postDataJSON();
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ id: 9 }),
+        });
+      },
+    );
+
+    await page.goto(`/analyser?job=${JOB}`);
+    await page.getByTestId("add-track-trigger").click();
+
+    // Without a title, the dialog asks for one or for "Unknown".
+    await page.getByTestId("add-track-artist").fill("Entasia");
+    await page.getByTestId("add-track-start").fill("00:30");
+    await page.getByTestId("add-track-submit").click();
+    await expect(page.getByTestId("add-track-error")).toContainText("Unknown");
+
+    // Each Unknown checkbox disables its own field only.
+    await page.getByTestId("add-track-title-unknown").click();
+    await expect(page.getByTestId("add-track-title")).toBeDisabled();
+    await expect(page.getByTestId("add-track-artist")).toBeEnabled();
+    await page.getByTestId("add-track-artist-unknown").click();
+    await expect(page.getByTestId("add-track-artist")).toBeDisabled();
+    await page.getByTestId("add-track-unreleased").click();
+    await page.getByTestId("add-track-submit").click();
+
+    await expect
+      .poll(() => posted)
+      .toMatchObject({
+        start_s: 30,
+        title: "",
+        artist: "ID",
+        unreleased: true,
+      });
+    const row = page.getByTestId("tracklist-row");
+    await expect(row).toContainText("ID");
+    await expect(row.getByTestId("tracklist-unreleased")).toBeVisible();
   });
 
   test("add-track search shows cover art, resolves a URL, and previews", async ({

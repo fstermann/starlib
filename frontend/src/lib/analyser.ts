@@ -133,6 +133,8 @@ export interface TrackTimelineEntry {
   /** Higher tier than ``confirmed``: the user verified the start
    *  alignment. Implies ``confirmed``. */
   aligned?: boolean;
+  /** The user knows this track is unreleased (not on SoundCloud). */
+  unreleased?: boolean;
   user_edited?: boolean;
   /** Mix tempo (BPM) at the matched scan point. ``null`` for legacy /
    *  manual rows. Combined with ``pitch_offset`` it derives the original
@@ -154,6 +156,7 @@ export interface AddTrackInput {
   soundcloud_permalink_url?: string | null;
   artwork_url?: string | null;
   duration_s?: number | null;
+  unreleased?: boolean;
 }
 
 export interface UpdateTrackInput {
@@ -170,6 +173,7 @@ export interface UpdateTrackInput {
   pitch_offset?: number | null;
   confirmed?: boolean | null;
   aligned?: boolean | null;
+  unreleased?: boolean | null;
 }
 
 export interface JobSnapshot {
@@ -410,6 +414,17 @@ export async function deleteTrack(
   );
 }
 
+/** Search SoundCloud for tracks without a link and store id, permalink and
+ *  duration on each match. Returns how many tracks were linked. */
+export async function linkSoundcloudTracks(
+  jobId: string,
+): Promise<{ linked: number }> {
+  return fetchApi(
+    `/api/analyser/sets/${encodeURIComponent(jobId)}/tracks/link-soundcloud`,
+    { method: "POST" },
+  );
+}
+
 export async function resetJob(
   jobId: string,
 ): Promise<{ job_id: string; reset: boolean }> {
@@ -491,7 +506,10 @@ export function buildTracklistText(snapshot: JobSnapshot): string {
   }
   for (const entry of snapshot.timeline) {
     const time = formatTimecode(entry.start_s);
-    lines.push(`${time}  ${entry.artist ?? "Unknown"} — ${entry.title}`);
+    const unreleased = entry.unreleased ? " (unreleased)" : "";
+    lines.push(
+      `${time}  ${entry.artist ?? "Unknown"} — ${entry.title}${unreleased}`,
+    );
   }
   return lines.join("\n");
 }
