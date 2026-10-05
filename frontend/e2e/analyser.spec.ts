@@ -3672,7 +3672,7 @@ test.describe("Set Analyser", () => {
     await expect(page.getByTestId("alignment-dialog")).toBeVisible();
 
     await expect(page.getByTestId("alignment-auto-status")).toContainText(
-      "Auto-aligned · 64% sure · master tempo",
+      /Auto-aligned\s*64% sure\s*·\s*master tempo/,
     );
     await expect(page.getByTestId("alignment-new-start")).toContainText(
       "00:52",
@@ -3823,15 +3823,22 @@ test.describe("Set Analyser", () => {
         }),
       }),
     );
-    // Reanalyse re-runs detection (returns the same value, no override).
+    // Reanalyse re-runs detection: the default mode repeats 64, the
+    // stronger DP tracker fixes the half-time lock.
+    const reanalyseUrls: string[] = [];
     await page.route(
-      /\/api\/soundcloud\/tracks\/\d+\/bpm\/reanalyse$/,
+      /\/api\/soundcloud\/tracks\/\d+\/bpm\/reanalyse/,
       (route) => {
         reanalysed = true;
+        const url = route.request().url();
+        reanalyseUrls.push(url);
         return route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ bpm: 64, bpm_overridden: false }),
+          body: JSON.stringify({
+            bpm: url.includes("strong=true") ? 128 : 64,
+            bpm_overridden: false,
+          }),
         });
       },
     );
@@ -3888,10 +3895,23 @@ test.describe("Set Analyser", () => {
 
     // Reanalyse re-runs detection (deterministic here, still 64).
     await page.getByTestId("alignment-bpm-reanalyse").click();
+    await page.getByTestId("alignment-bpm-reanalyse-default").click();
     await expect.poll(() => reanalysed).toBe(true);
     await expect(page.getByTestId("alignment-orig-bpm")).toContainText(
       "64.0 BPM",
     );
+
+    // The stronger algorithm is one pick away in the same menu.
+    await expect(
+      page.getByTestId("alignment-bpm-reanalyse-default"),
+    ).toHaveCount(0);
+    await expect(page.getByTestId("alignment-bpm-reanalyse")).toBeEnabled();
+    await page.getByTestId("alignment-bpm-reanalyse").click();
+    await page.getByTestId("alignment-bpm-reanalyse-strong").click();
+    await expect(page.getByTestId("alignment-orig-bpm")).toContainText(
+      "128.0 BPM",
+    );
+    expect(reanalyseUrls.at(-1)).toContain("strong=true");
   });
 
   test("alignment strips scroll to the track and follow playback", async ({

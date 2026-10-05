@@ -228,3 +228,20 @@ def test_reanalyse_forces_recompute_and_clears_override(client: TestClient, tmp_
     delete_mock.assert_called_once_with(42)
     assert compute.await_args is not None
     assert compute.await_args.kwargs.get("force") is True
+
+
+def test_reanalyse_strong_uses_dp_beat_tracker(client: TestClient, tmp_path: Path) -> None:
+    cached = tmp_path / "42.mp4"
+    cached.write_bytes(b"fake")
+    compute = AsyncMock(return_value=([0.0], 10.0, 142.0))
+
+    with (
+        patch.object(db_cache, "delete_sc_bpm_override"),
+        patch.object(audio_cache, "cached_set_path", return_value=cached),
+        patch.object(peaks_infra, "get_or_compute_peaks", new=compute),
+    ):
+        resp = client.post("/api/soundcloud/tracks/42/bpm/reanalyse?strong=true")
+
+    assert resp.json() == {"bpm": 142.0, "bpm_overridden": False}
+    assert compute.await_args is not None
+    assert compute.await_args.kwargs.get("strong") is True

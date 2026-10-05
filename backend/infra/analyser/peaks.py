@@ -81,7 +81,7 @@ def _decode_pcm_f32(path: Path) -> bytes:
     return proc.stdout
 
 
-async def detect_bpm(path: Path) -> float | None:
+async def detect_bpm(path: Path, *, strong: bool = False) -> float | None:
     """Detect the track's tempo by running the analyser binary over ``path``.
 
     Collects the per-window BPMs the binary streams (section detection off)
@@ -93,6 +93,8 @@ async def detect_bpm(path: Path) -> float | None:
     ----------
     path : Path
         The cached audio file to analyse.
+    strong : bool, optional
+        Use the slower DP beat tracker, which fixes dotted/triplet locks.
 
     Returns
     -------
@@ -108,7 +110,7 @@ async def detect_bpm(path: Path) -> float | None:
             except (KeyError, TypeError, ValueError):
                 pass
 
-    options = AnalyserBinaryOptions(sections_enabled=False, bpm_range=_BPM_RANGE)
+    options = AnalyserBinaryOptions(sections_enabled=False, bpm_range=_BPM_RANGE, strong=strong)
     try:
         binary_path = binary_locator.find_analyser_binary()
         rc = await run_analyser_subprocess(
@@ -130,6 +132,7 @@ async def get_or_compute_peaks(
     soundcloud_id: int,
     *,
     force: bool = False,
+    strong: bool = False,
 ) -> tuple[list[float], float, float | None]:
     """Return ``(peaks, duration_s, bpm)`` for a cached audio file.
 
@@ -144,6 +147,8 @@ async def get_or_compute_peaks(
         Track id; keys the on-disk peaks cache.
     force : bool, optional
         Skip the on-disk cache and recompute peaks + BPM. Used by reanalyse.
+    strong : bool, optional
+        Detect the tempo with the DP beat tracker.
 
     Returns
     -------
@@ -159,7 +164,7 @@ async def get_or_compute_peaks(
 
     pcm, bpm = await asyncio.gather(
         asyncio.to_thread(_decode_pcm_f32, path),
-        detect_bpm(path),
+        detect_bpm(path, strong=strong),
     )
     sample_count = len(pcm) // 4
     duration_s = sample_count / _DECODE_SAMPLE_RATE if sample_count else 0.0

@@ -15,6 +15,8 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
+  SearchX,
+  Sparkles,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,6 +31,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
@@ -284,19 +292,22 @@ export function AlignmentDialog({
     }
   }, [scId, applyDecodedBpm]);
 
-  const reanalyseBpm = useCallback(async () => {
-    if (scId == null) return;
-    setBpmBusy(true);
-    setBpmError(null);
-    try {
-      const r = await api.reanalyseSoundcloudTrackBpm(scId);
-      applyDecodedBpm(r.bpm, r.bpm_overridden);
-    } catch (err) {
-      setBpmError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBpmBusy(false);
-    }
-  }, [scId, applyDecodedBpm]);
+  const reanalyseBpm = useCallback(
+    async (strong: boolean) => {
+      if (scId == null) return;
+      setBpmBusy(true);
+      setBpmError(null);
+      try {
+        const r = await api.reanalyseSoundcloudTrackBpm(scId, strong);
+        applyDecodedBpm(r.bpm, r.bpm_overridden);
+      } catch (err) {
+        setBpmError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBpmBusy(false);
+      }
+    },
+    [scId, applyDecodedBpm],
+  );
 
   // SC plays at ``1/speedRatio`` to match set tempo. Visually we
   // compensate by stretching the SC waveform so 1 px = same set-time
@@ -919,34 +930,26 @@ export function AlignmentDialog({
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col gap-3">
-          <div className="border-border bg-surface-2 flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2">
+          <div className="border-border bg-surface-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border px-3 py-2">
             <div className="flex flex-col">
               <span className="text-text-subtle text-2xs tracking-wider uppercase">
                 Mix start
               </span>
-              <span
-                className="text-text text-xl tabular-nums"
-                data-testid="alignment-new-start"
-              >
-                {formatTimecode(newStartS)}
-              </span>
-            </div>
-            <div className="text-text-subtle flex flex-col items-end text-xs">
-              <span>
-                {offsetS >= 0 ? "+" : ""}
-                {offsetS.toFixed(2)} s vs. detected (
-                {formatTimecode(track.start_s)})
-              </span>
-              {autoAlign != null && (
-                <span data-testid="alignment-auto-status">
-                  {autoAlign === "running"
-                    ? "Finding the track in the mix…"
-                    : autoAlign.found
-                      ? `Auto-aligned · ${Math.round(autoAlign.confidence * 100)}% sure · ${autoAlign.key_lock ? "master tempo" : "pitch fader"}`
-                      : "Not found in the mix, align by hand"}
+              <div className="flex items-baseline gap-3">
+                <span
+                  className="text-text text-xl tabular-nums"
+                  data-testid="alignment-new-start"
+                >
+                  {formatTimecode(newStartS)}
                 </span>
-              )}
+                <span className="text-text-subtle text-xs tabular-nums">
+                  {offsetS >= 0 ? "+" : "−"}
+                  {Math.abs(offsetS).toFixed(2)} s vs. detected{" "}
+                  {formatTimecode(track.start_s)}
+                </span>
+              </div>
             </div>
+            {autoAlign != null && <AutoAlignBadge state={autoAlign} />}
           </div>
 
           {/* Set waveform — top strip, drag to move the mix. */}
@@ -1070,18 +1073,54 @@ export function AlignmentDialog({
                       >
                         <Pencil />
                       </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => void reanalyseBpm()}
-                        disabled={bpmBusy}
-                        aria-label="Reanalyse BPM"
-                        title="Reanalyse BPM"
-                        data-testid="alignment-bpm-reanalyse"
-                      >
-                        <RefreshCw className={cn(bpmBusy && "animate-spin")} />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            disabled={bpmBusy}
+                            aria-label="Reanalyse BPM"
+                            title="Reanalyse BPM"
+                            data-testid="alignment-bpm-reanalyse"
+                          >
+                            <RefreshCw
+                              className={cn(bpmBusy && "animate-spin")}
+                            />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-64">
+                          <DropdownMenuItem
+                            onSelect={() => void reanalyseBpm(false)}
+                            data-testid="alignment-bpm-reanalyse-default"
+                            className="items-start py-2"
+                          >
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-sm font-medium">
+                                Reanalyse
+                              </span>
+                              <span className="text-text-muted text-xs">
+                                Same algorithm, fresh run
+                              </span>
+                            </div>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => void reanalyseBpm(true)}
+                            data-testid="alignment-bpm-reanalyse-strong"
+                            className="items-start py-2"
+                          >
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-sm font-medium">
+                                Stronger algorithm
+                              </span>
+                              <span className="text-text-muted text-xs">
+                                DP beat tracker, fixes dotted/triplet sub-rate
+                                locks
+                              </span>
+                            </div>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       {scDecoded.overridden && (
                         <Button
                           type="button"
@@ -1289,6 +1328,50 @@ export function AlignmentDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Auto-align status: running, the suggestion's confidence and tempo
+ *  mode, or a miss. */
+function AutoAlignBadge({ state }: { state: "running" | AutoAlignResult }) {
+  const base =
+    "text-xs inline-flex items-center gap-1.5 rounded-xs px-1.5 py-0.5 font-medium";
+  if (state === "running") {
+    return (
+      <span
+        className={cn(base, "bg-surface-3 text-text-muted")}
+        data-testid="alignment-auto-status"
+      >
+        <Loader2 className="size-3 animate-spin" />
+        Finding the track in the mix…
+      </span>
+    );
+  }
+  if (!state.found) {
+    return (
+      <span
+        className={cn(base, "bg-surface-3 text-text-muted")}
+        data-testid="alignment-auto-status"
+      >
+        <SearchX className="size-3" />
+        Not found in the mix, align by hand
+      </span>
+    );
+  }
+  return (
+    <span
+      className={cn(base, "bg-surface-3 text-text-muted")}
+      data-testid="alignment-auto-status"
+      title={`Playback rate ${state.rate.toFixed(3)}×`}
+    >
+      <Sparkles className="text-brand size-3" />
+      <span className="text-text">Auto-aligned</span>
+      <span className="tabular-nums">
+        {Math.round(state.confidence * 100)}% sure
+      </span>
+      <span aria-hidden>·</span>
+      <span>{state.key_lock ? "master tempo" : "pitch fader"}</span>
+    </span>
   );
 }
 

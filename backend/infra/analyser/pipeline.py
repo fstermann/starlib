@@ -28,6 +28,8 @@ class AnalyserBinaryOptions:
     max_bpm: float | None = None
     bpm_range: tuple[float, float] | None = None
     octave_correction: bool | None = None
+    # DP beat tracker: slower, fixes dotted/triplet sub-rate locks.
+    strong: bool = False
     sections_enabled: bool = True
     bands: int | None = None
     kernel_half_s: float | None = None
@@ -62,6 +64,8 @@ class AnalyserBinaryOptions:
                 argv += ["--max-bpm", str(self.max_bpm)]
         if self.octave_correction is False:
             argv += ["--no-octave-correction"]
+        if self.strong:
+            argv += ["--strong"]
         return argv
 
     def _segment_argv(self) -> list[str]:

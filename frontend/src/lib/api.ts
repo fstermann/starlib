@@ -951,8 +951,10 @@ export const api = {
 
   async reanalyseSoundcloudTrackBpm(
     trackId: number | string,
+    strong = false,
   ): Promise<{ bpm: number | null; bpm_overridden: boolean }> {
-    return fetchApi(`/api/soundcloud/tracks/${trackId}/bpm/reanalyse`, {
+    const query = strong ? "?strong=true" : "";
+    return fetchApi(`/api/soundcloud/tracks/${trackId}/bpm/reanalyse${query}`, {
       method: "POST",
     });
   },

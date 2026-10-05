@@ -469,11 +469,12 @@ async def clear_track_bpm(track_id: int) -> TrackBpmResponse:
 
 
 @router.post("/tracks/{track_id}/bpm/reanalyse", response_model=TrackBpmResponse)
-async def reanalyse_track_bpm(track_id: int) -> TrackBpmResponse:
+async def reanalyse_track_bpm(track_id: int, strong: bool = False) -> TrackBpmResponse:
     """Re-run tempo detection for a track, bypassing caches and any correction.
 
-    Detection is deterministic, so this returns the same value as before unless
-    the cached result was stale or detection had previously failed.
+    Detection is deterministic, so the default mode returns the same value as
+    before unless the cached result was stale. ``strong`` switches to the DP
+    beat tracker, which fixes dotted/triplet sub-rate locks.
     """
     from backend.infra import cache as db_cache
     from backend.infra.analyser import peaks as peaks_infra
@@ -481,7 +482,9 @@ async def reanalyse_track_bpm(track_id: int) -> TrackBpmResponse:
     db_cache.delete_sc_bpm_override(track_id)
     path = await _resolve_track_audio_path(track_id)
     try:
-        _peaks, _duration_s, detected_bpm = await peaks_infra.get_or_compute_peaks(path, track_id, force=True)
+        _peaks, _duration_s, detected_bpm = await peaks_infra.get_or_compute_peaks(
+            path, track_id, force=True, strong=strong
+        )
     except Exception as exc:
         logger.exception("Failed to reanalyse track %s", track_id)
         raise HTTPException(

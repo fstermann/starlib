@@ -16,7 +16,7 @@
 //!   analyser-stream analyse --input <path> [--window-s 30] [--hop-s 25]
 //!                           [--min-bpm 60] [--max-bpm 200] [--target-sr 22050]
 //!                           [--no-sections] [--no-octave-correction]
-//!                           [--bpm-range MIN-MAX]
+//!                           [--bpm-range MIN-MAX] [--strong]
 //!                           [--start-s S] [--end-s S]
 //!   analyser-stream align --mix <path> --original <path> [--rate-hint R]...
 //!     emits {"type":"alignment",...} (see `starlib_audio::align::Alignment`)
@@ -32,7 +32,7 @@ use starlib_audio::align::{align, Alignment, ALIGN_SR};
 use starlib_audio::chunk::{analyze_chunks, ChunkOptions, ChunkResult};
 use starlib_audio::decode::decode_file;
 use starlib_audio::segment::{segment, Section, SegmentOptions};
-use starlib_audio::types::BpmOptions;
+use starlib_audio::types::{BeatTracker, BpmOptions};
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -138,6 +138,7 @@ fn parse_args(args: Vec<String>) -> Result<Cli> {
                 bpm_opts.max_bpm = hi.parse()?;
             }
             "--no-octave-correction" => bpm_opts.octave_correction = false,
+            "--strong" => bpm_opts.beat_tracker = BeatTracker::DynamicProgramming,
             "--no-sections" => sections_enabled = false,
             "--bands" => segment_opts.bands = take(&mut iter, "--bands")?.parse()?,
             "--kernel-half-s" => {
