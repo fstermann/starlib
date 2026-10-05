@@ -62,3 +62,32 @@ describe("shazam scan progress", () => {
     expect(s.activeShazamScan!.arrivedScanS).toEqual([]);
   });
 });
+
+describe("track timeline updates", () => {
+  it("keep the alignment fields a live update carries", () => {
+    const s = analyserReducer(INITIAL_STATE, {
+      type: "sse",
+      event: {
+        type: "track.timeline",
+        job_id: "j",
+        override_id: 7,
+        start_s: 1.4,
+        end_s: 558.7,
+        title: "Invasion",
+        artist: "Entasia",
+        shazam_id: "shz",
+        confidence: 1,
+        aligned: true,
+        unreleased: true,
+        mix_in_s: 140,
+        mix_out_s: 350,
+      },
+    });
+    expect(s.timeline[0]).toMatchObject({
+      aligned: true,
+      unreleased: true,
+      mix_in_s: 140,
+      mix_out_s: 350,
+    });
+  });
+});

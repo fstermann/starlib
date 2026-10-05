@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from backend.domain.track_alignment import MIN_CONFIDENCE, rate_hints, search_window
@@ -40,3 +41,59 @@ async def suggest_alignment(job_id: str, track_id: int, soundcloud_id: int, orig
     if result is None or result.confidence < MIN_CONFIDENCE:
         return None
     return result
+
+
+# A match within this of the user's alignment, where the track is heard, is
+# the same alignment.
+_SAME_ALIGNMENT_S = 1.0
+
+
+async def fill_mix_points(job_id: str, resolve_original: Callable[[int], Awaitable[Path]]) -> int:
+    """Store where hand-aligned tracks are audible, from a fresh auto-align.
+
+    Only for aligned tracks without mix points, and only when the match sits
+    within :data:`_SAME_ALIGNMENT_S` of the user's alignment where the track
+    is heard; a different answer is left alone rather than overriding the
+    user. Compared where it plays, not at the original's 0:00: the two can
+    assume slightly different speeds and drift apart before the track is in.
+
+    Args:
+        job_id: Analyser job.
+        resolve_original: ``async (soundcloud_id) -> Path`` for the original's
+            cached audio.
+
+    Returns:
+        How many tracks got mix points.
+    """
+    filled = 0
+    for track in db.list_tracks(job_id):
+        if not track.aligned or track.mix_in_s is not None or track.soundcloud_id is None:
+            continue
+        original = await resolve_original(track.soundcloud_id)
+        result = await suggest_alignment(job_id, track.id, track.soundcloud_id, original)
+        if result is None or not _agrees_with_saved(track, result, await _saved_rate(track, original)):
+            continue
+        db.update_track(job_id, track.id, mix_in_s=result.enter_s, mix_out_s=result.exit_s)
+        filled += 1
+    return filled
+
+
+async def _saved_rate(track: db.TrackRow, original: Path) -> float | None:
+    """Playback rate the align dialog used when the user saved the start:
+    set BPM over the original's BPM, as the dialog derives it."""
+    if not track.set_bpm or track.soundcloud_id is None:
+        return None
+    _peaks, _duration, detected = await peaks.get_or_compute_peaks(original, track.soundcloud_id)
+    bpm, _source = await original_bpm(track.soundcloud_id, detected)
+    return track.set_bpm / bpm if bpm else None
+
+
+def _agrees_with_saved(track: db.TrackRow, result: align.AlignResult, saved_rate: float | None) -> bool:
+    """Whether the match and the saved start put the track at the same mix
+    time where it enters, plays and leaves."""
+    rate = saved_rate or result.rate
+    for mix_s in (result.enter_s, (result.enter_s + result.exit_s) / 2, result.exit_s):
+        orig_s = (mix_s - result.start_s) * result.rate
+        if abs(track.start_s + orig_s / rate - mix_s) > _SAME_ALIGNMENT_S:
+            return False
+    return True

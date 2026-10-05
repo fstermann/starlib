@@ -137,6 +137,10 @@ export interface TrackTimelineEntry {
   aligned?: boolean;
   /** The user knows this track is unreleased (not on SoundCloud). */
   unreleased?: boolean;
+  /** Mix time where the track becomes audible / fades out, from the
+   *  alignment. ``start_s`` is the original's 0:00, which can sit earlier. */
+  mix_in_s?: number | null;
+  mix_out_s?: number | null;
   user_edited?: boolean;
   /** Mix tempo (BPM) at the matched scan point. ``null`` for legacy /
    *  manual rows. Combined with ``pitch_offset`` it derives the original
@@ -176,6 +180,8 @@ export interface UpdateTrackInput {
   confirmed?: boolean | null;
   aligned?: boolean | null;
   unreleased?: boolean | null;
+  mix_in_s?: number | null;
+  mix_out_s?: number | null;
 }
 
 export interface JobSnapshot {
@@ -261,6 +267,9 @@ export type AnalyserEvent =
       pitch_offset?: number | null;
       confirmed?: boolean;
       aligned?: boolean;
+      unreleased?: boolean;
+      mix_in_s?: number | null;
+      mix_out_s?: number | null;
       user_edited?: boolean;
     }
   | { type: "job.complete"; job_id: string }
@@ -486,6 +495,16 @@ export async function autoAlignTrack(
 ): Promise<AutoAlignResult> {
   return fetchApi(
     `/api/analyser/sets/${encodeURIComponent(jobId)}/tracks/${trackId}/auto-align?soundcloud_id=${soundcloudId}`,
+    { method: "POST" },
+  );
+}
+
+/** Store where hand-aligned tracks are audible, from auto-align. */
+export async function fillMixPoints(
+  jobId: string,
+): Promise<{ filled: number }> {
+  return fetchApi(
+    `/api/analyser/sets/${encodeURIComponent(jobId)}/tracks/fill-mix-points`,
     { method: "POST" },
   );
 }

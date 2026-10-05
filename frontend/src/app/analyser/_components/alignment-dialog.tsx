@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Crosshair,
   Headphones,
   Loader2,
   Pause,
@@ -235,6 +236,9 @@ export function AlignmentDialog({
   const [mixCenterS, setMixCenterS] = useState(track.start_s);
   const [origCenterS, setOrigCenterS] = useState(0);
   const [saving, setSaving] = useState(false);
+  // In/out set by hand at the playhead; otherwise the saved or matched ones.
+  const [mixInEdit, setMixInEdit] = useState<number | null>(null);
+  const [mixOutEdit, setMixOutEdit] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [autoAlign, setAutoAlign] = useState<
     "running" | AutoAlignResult | null
@@ -381,6 +385,8 @@ export function AlignmentDialog({
       setMixCenterS(track.start_s);
       setOrigCenterS(0);
       setSaveError(null);
+      setMixInEdit(null);
+      setMixOutEdit(null);
     }
   }, [open, track.id, track.start_s]);
 
@@ -790,24 +796,25 @@ export function AlignmentDialog({
     autoAlign !== null && autoAlign !== "running" && autoAlign.found
       ? autoAlign
       : null;
-  // Where the track becomes audible. The mix start is the original's 0:00,
-  // which for a track mixed in partway can sit long before it is heard.
-  const entry = found
-    ? (() => {
-        const mixS = Math.max(newStartS, found.enter_s);
-        return { mixS, origS: (mixS - newStartS) / speedRatio };
-      })()
-    : null;
-  const mixBands: StripBand[] = found
-    ? [
-        {
-          startS: found.enter_s,
-          endS: found.exit_s,
-          token: "--color-brand",
-          alpha: 0.1,
-        },
-      ]
-    : [];
+  // Where the track is audible. The mix start is the original's 0:00, which
+  // for a track mixed in partway can sit long before it is heard. A match
+  // is shifted by however far the user moved the start since.
+  const shift = found ? newStartS - found.start_s : 0;
+  const mixIn =
+    mixInEdit ?? (found ? found.enter_s + shift : (track.mix_in_s ?? null));
+  const mixOut =
+    mixOutEdit ?? (found ? found.exit_s + shift : (track.mix_out_s ?? null));
+  const entry =
+    mixIn != null
+      ? (() => {
+          const mixS = Math.max(newStartS, mixIn);
+          return { mixS, origS: (mixS - newStartS) / speedRatio };
+        })()
+      : null;
+  const mixBands: StripBand[] =
+    mixIn != null && mixOut != null
+      ? [{ startS: mixIn, endS: mixOut, token: "--color-brand", alpha: 0.1 }]
+      : [];
   const mixMarkers: StripMarker[] = found
     ? [{ atS: found.start_s, token: "--color-brand" }]
     : [];
@@ -823,6 +830,9 @@ export function AlignmentDialog({
   // ``markAligned`` promotes the row to the highest curation tier
   // (confirmed + alignment-verified) as part of the save, so the user can
   // sign off the alignment right after nudging.
+  const currentMixS = () =>
+    isPlaying ? (setAudioRef.current?.currentTime ?? mixCenterS) : mixCenterS;
+
   const save = useCallback(
     async (markAligned: boolean) => {
       if (saving) return;
@@ -831,6 +841,9 @@ export function AlignmentDialog({
       try {
         await updateTrack(jobId, track.id, {
           start_s: newStartS,
+          ...(mixIn != null && mixOut != null && mixOut > mixIn
+            ? { mix_in_s: mixIn, mix_out_s: mixOut }
+            : {}),
           ...(markAligned ? { confirmed: true, aligned: true } : {}),
         });
         onSaved?.(newStartS);
@@ -841,7 +854,7 @@ export function AlignmentDialog({
         setSaving(false);
       }
     },
-    [jobId, newStartS, onOpenChange, onSaved, saving, track.id],
+    [jobId, newStartS, mixIn, mixOut, onOpenChange, onSaved, saving, track.id],
   );
 
   return (
@@ -878,21 +891,22 @@ export function AlignmentDialog({
                 </span>
               </div>
             </div>
-            {entry && (
-              <div className="flex flex-col" data-testid="alignment-entry">
-                <span className="text-text-subtle text-2xs tracking-wider uppercase">
-                  Comes in
-                </span>
-                <div className="flex items-baseline gap-3">
-                  <span className="text-text text-xl tabular-nums">
-                    {formatTimecode(entry.mixS)}
-                  </span>
-                  <span className="text-text-subtle text-xs tabular-nums">
-                    {formatTimecode(entry.origS)} into the track
-                  </span>
-                </div>
-              </div>
-            )}
+            <MixPoint
+              label="Comes in"
+              testId="alignment-entry"
+              atS={entry?.mixS ?? null}
+              detail={
+                entry ? `${formatTimecode(entry.origS)} into the track` : null
+              }
+              onSetHere={() => setMixInEdit(currentMixS())}
+            />
+            <MixPoint
+              label="Goes out"
+              testId="alignment-exit"
+              atS={mixOut}
+              detail={null}
+              onSetHere={() => setMixOutEdit(currentMixS())}
+            />
             {autoAlign != null && <AutoAlignBadge state={autoAlign} />}
             {found && (
               <p
@@ -1367,6 +1381,52 @@ function AutoAlignBadge({ state }: { state: "running" | AutoAlignResult }) {
       <span aria-hidden>·</span>
       <span>{state.key_lock ? "master tempo" : "pitch fader"}</span>
     </span>
+  );
+}
+
+/** One mix point (where the track comes in or goes out) with a button to
+ *  move it to the playhead, for when the match is a few seconds off. */
+function MixPoint({
+  label,
+  testId,
+  atS,
+  detail,
+  onSetHere,
+}: {
+  label: string;
+  testId: string;
+  atS: number | null;
+  detail: string | null;
+  onSetHere: () => void;
+}) {
+  return (
+    <div className="flex flex-col" data-testid={testId}>
+      <span className="text-text-subtle text-2xs tracking-wider uppercase">
+        {label}
+      </span>
+      <div className="flex items-baseline gap-2">
+        <span className="text-text text-xl tabular-nums">
+          {atS != null ? formatTimecode(atS) : "—"}
+        </span>
+        {detail && (
+          <span className="text-text-subtle text-xs tabular-nums">
+            {detail}
+          </span>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="text-text-muted self-center"
+          onClick={onSetHere}
+          title={`Set ${label.toLowerCase()} to the playhead`}
+          data-testid={`${testId}-set`}
+        >
+          <Crosshair />
+          Set here
+        </Button>
+      </div>
+    </div>
   );
 }
 

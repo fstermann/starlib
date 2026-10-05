@@ -1,7 +1,14 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 
 import { useTopBar } from "@/components/layout/top-bar-context";
@@ -9,6 +16,7 @@ import {
   buildTracklistText,
   cancelShazamScan,
   DEFAULT_JOB_OPTIONS,
+  fillMixPoints,
   linkSoundcloudTracks,
   reanalyse,
   resetJob,
@@ -48,6 +56,23 @@ function AnalyserPageInner() {
     useState<AnalyserJobOptions>(DEFAULT_JOB_OPTIONS);
 
   const { state, dispatch, refresh } = useAnalyserJob(jobId);
+
+  // Hand-aligned tracks saved before in/out points existed get them from
+  // auto-align, once per opened set, so their bands show how long they play.
+  const needsMixPoints = state.timeline.some(
+    (t) => t.aligned && t.mix_in_s == null && t.soundcloud_id != null,
+  );
+  const mixPointsFilledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!jobId || !needsMixPoints || mixPointsFilledFor.current === jobId)
+      return;
+    mixPointsFilledFor.current = jobId;
+    void fillMixPoints(jobId)
+      .then(({ filled }) => {
+        if (filled > 0) refresh();
+      })
+      .catch((err) => console.warn("analyser: filling mix points failed", err));
+  }, [jobId, needsMixPoints, refresh]);
   // Lift the WaveSurfer instance to the page so the tracklist's
   // per-row "Play matched section" buttons can drive the same playback
   // surface as the timeline's transport. Container ref is attached

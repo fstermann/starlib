@@ -1543,6 +1543,8 @@ def _track_to_event(job_id: str, t: db.TrackRow) -> TrackTimelineEvent:
         confirmed=t.confirmed,
         aligned=t.aligned,
         unreleased=t.unreleased,
+        mix_in_s=t.mix_in_s,
+        mix_out_s=t.mix_out_s,
         user_edited=t.user_edited,
     )
 
@@ -1568,6 +1570,8 @@ def _track_to_dict(t: db.TrackRow) -> dict:
         "confirmed": t.confirmed,
         "aligned": t.aligned,
         "unreleased": t.unreleased,
+        "mix_in_s": t.mix_in_s,
+        "mix_out_s": t.mix_out_s,
         "user_edited": t.user_edited,
         "set_bpm": t.set_bpm,
         "pitch_offset": t.pitch_offset,

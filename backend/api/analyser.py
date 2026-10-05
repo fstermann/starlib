@@ -447,11 +447,15 @@ class UpdateTrackRequest(BaseModel):
     confirmed: bool | None = None
     aligned: bool | None = None
     unreleased: bool | None = None
+    mix_in_s: float | None = Field(default=None, ge=0)
+    mix_out_s: float | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def _validate(self) -> UpdateTrackRequest:
         if self.start_s is not None and self.end_s is not None and self.end_s <= self.start_s:
             raise ValueError("end_s must be greater than start_s")
+        if self.mix_in_s is not None and self.mix_out_s is not None and self.mix_out_s <= self.mix_in_s:
+            raise ValueError("mix_out_s must be greater than mix_in_s")
         return self
 
 
@@ -472,6 +476,8 @@ def _track_dict(row) -> dict:  # type: ignore[no-untyped-def]
         "confirmed": row.confirmed,
         "aligned": row.aligned,
         "unreleased": row.unreleased,
+        "mix_in_s": row.mix_in_s,
+        "mix_out_s": row.mix_out_s,
         "dismissed": row.dismissed,
         "user_edited": row.user_edited,
         "set_bpm": row.set_bpm,
@@ -560,6 +566,16 @@ async def auto_align_track(job_id: str, track_id: int, soundcloud_id: int | None
     }
 
 
+@router.post("/sets/{job_id}/tracks/fill-mix-points")
+async def fill_mix_points(job_id: str) -> dict:
+    """Store where hand-aligned tracks are audible, where auto-align agrees with the saved start."""
+    from backend.api.soundcloud.tracks import _resolve_track_audio_path
+
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    return {"filled": await auto_align.fill_mix_points(job_id, _resolve_track_audio_path)}
+
+
 @router.patch("/sets/{job_id}/tracks/{track_id}")
 def update_track(job_id: str, track_id: int, payload: UpdateTrackRequest) -> dict:
     """Patch any subset of a track's fields. Drag, rename, confirm — same route."""
@@ -601,6 +617,8 @@ def update_track(job_id: str, track_id: int, payload: UpdateTrackRequest) -> dic
         confirmed=payload.confirmed,
         aligned=payload.aligned,
         unreleased=payload.unreleased,
+        mix_in_s=payload.mix_in_s,
+        mix_out_s=payload.mix_out_s,
         mark_user_edited=edits_identity,
     )
     if not ok:

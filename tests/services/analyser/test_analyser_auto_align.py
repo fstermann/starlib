@@ -151,3 +151,58 @@ def _app() -> FastAPI:
     app = FastAPI()
     app.include_router(analyser_router)
     return app
+
+
+def _aligned_track(start_s: float) -> analyser_db.TrackRow:
+    track = _seed()
+    analyser_db.update_track("job-1", track.id, start_s=start_s, aligned=True)
+    return track
+
+
+def _fill(result: AlignResult | None) -> int:
+    _mock, patches = _patched(result)
+
+    async def resolve(_sc: int) -> Path:
+        return Path("orig.mp4")
+
+    with patches:
+        return asyncio.run(auto_align.fill_mix_points("job-1", resolve))
+
+
+def test_fill_stores_mix_points_when_the_match_agrees() -> None:
+    # Saved at 1180.5; set 130 / original 125 = the match's rate 1.04.
+    track = _aligned_track(1180.5)
+    assert _fill(_result(0.6)) == 1
+    row = next(t for t in analyser_db.list_tracks("job-1") if t.id == track.id)
+    assert (row.mix_in_s, row.mix_out_s) == (1180.5, 1400.0)
+
+
+def test_fill_leaves_a_disagreeing_alignment_alone() -> None:
+    track = _aligned_track(1190.0)  # 9.5 s off the match
+    assert _fill(_result(0.6)) == 0
+    row = next(t for t in analyser_db.list_tracks("job-1") if t.id == track.id)
+    assert row.mix_in_s is None
+
+
+def test_fill_skips_unaligned_tracks() -> None:
+    _seed()
+    assert _fill(_result(0.6)) == 0
+
+
+def test_saving_mix_points_round_trips() -> None:
+    track = _seed()
+    resp = TestClient(_app()).patch(
+        f"/api/analyser/sets/job-1/tracks/{track.id}", json={"mix_in_s": 1250.0, "mix_out_s": 1420.0}
+    )
+    assert resp.status_code == 200
+    snap = TestClient(_app()).get("/api/analyser/sets/job-1").json()
+    entry = next(t for t in snap["timeline"] if t["id"] == track.id)
+    assert (entry["mix_in_s"], entry["mix_out_s"]) == (1250.0, 1420.0)
+
+
+def test_mix_out_before_mix_in_is_rejected() -> None:
+    track = _seed()
+    resp = TestClient(_app()).patch(
+        f"/api/analyser/sets/job-1/tracks/{track.id}", json={"mix_in_s": 1420.0, "mix_out_s": 1250.0}
+    )
+    assert resp.status_code == 422

@@ -97,6 +97,8 @@ class TrackTimelineEvent(BaseModel):
     # alignment, not just the identity. ``aligned`` implies ``confirmed``.
     aligned: bool = False
     unreleased: bool = False
+    mix_in_s: float | None = None
+    mix_out_s: float | None = None
     user_edited: bool = False
 
 

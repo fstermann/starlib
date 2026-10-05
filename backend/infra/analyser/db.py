@@ -541,6 +541,8 @@ class TrackRow:
     confirmed: bool
     aligned: bool
     unreleased: bool
+    mix_in_s: float | None
+    mix_out_s: float | None
     dismissed: bool
     user_edited: bool
     set_bpm: float | None
@@ -566,6 +568,8 @@ _TRACK_COLS = (
     AnalyserTrack.__table__.c.confirmed,
     AnalyserTrack.__table__.c.aligned,
     AnalyserTrack.__table__.c.unreleased,
+    AnalyserTrack.__table__.c.mix_in_s,
+    AnalyserTrack.__table__.c.mix_out_s,
     AnalyserTrack.__table__.c.dismissed,
     AnalyserTrack.__table__.c.user_edited,
     AnalyserTrack.__table__.c.set_bpm,
@@ -593,6 +597,8 @@ def _row_to_track(row) -> TrackRow:
         confirmed=bool(row.confirmed),
         aligned=bool(row.aligned),
         unreleased=bool(row.unreleased),
+        mix_in_s=None if row.mix_in_s is None else float(row.mix_in_s),
+        mix_out_s=None if row.mix_out_s is None else float(row.mix_out_s),
         dismissed=bool(row.dismissed),
         user_edited=bool(row.user_edited),
         set_bpm=None if row.set_bpm is None else float(row.set_bpm),
@@ -728,6 +734,8 @@ def update_track(
     dismissed: bool | None = None,
     set_bpm: float | None = None,
     pitch_offset: float | None = None,
+    mix_in_s: float | None = None,
+    mix_out_s: float | None = None,
     mark_user_edited: bool = False,
 ) -> bool:
     """Apply a partial update to a track row.
@@ -755,6 +763,8 @@ def update_track(
         "dismissed": dismissed,
         "set_bpm": set_bpm,
         "pitch_offset": pitch_offset,
+        "mix_in_s": mix_in_s,
+        "mix_out_s": mix_out_s,
     }
     values: dict[str, object] = {key: value for key, value in updates.items() if value is not None}
     if not isinstance(artwork_url, _Unset):

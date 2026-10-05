@@ -199,6 +199,9 @@ class AnalyserTrack(SQLModel, table=True):
     # alignment (implies ``confirmed``).
     aligned: bool = Field(default=False)
     unreleased: bool = Field(default=False)
+    # Where the track is audible in the mix, from the alignment.
+    mix_in_s: float | None = None
+    mix_out_s: float | None = None
     dismissed: bool = Field(default=False)
     user_edited: bool = Field(default=False)
     # Mix tempo at the matched scan point (median of overlapping BPM
