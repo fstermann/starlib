@@ -4192,24 +4192,19 @@ test.describe("Set Analyser", () => {
         }),
       }),
     );
-    // Title+artist search resolves the SoundCloud original (Shazam gives
-    // no soundcloud_id).
-    await page.route(/api\.soundcloud\.com\/tracks\?/, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([
-          {
-            id: 8002,
-            urn: "soundcloud:tracks:8002",
-            title: "Get It",
-            artwork_url: cover,
-            waveform_url: "https://wave.invalid/8002.json",
-            duration: 180_000,
-            user: { username: "mischluft", urn: "soundcloud:users:2" },
-          },
-        ]),
-      }),
+    // The backend matcher links the SoundCloud original (Shazam gives no
+    // soundcloud_id).
+    let linkRequested = false;
+    await page.route(
+      new RegExp(`/api/analyser/sets/${JOB}/tracks/\\d+/link-soundcloud$`),
+      (route) => {
+        linkRequested = true;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ soundcloud_id: 8002 }),
+        });
+      },
     );
     await page.route(/api\.soundcloud\.com\/tracks\/soundcloud/, (route) =>
       route.fulfill({
@@ -4279,6 +4274,7 @@ test.describe("Set Analyser", () => {
     // The original paints REAL peaks decoded server-side from the resolved
     // track's audio, not the coarse waveform_url or the placeholder arch.
     expect(peaksFetched).toBe(true);
+    expect(linkRequested).toBe(true);
 
     // Per-strip BPM readouts: the mix shows the detected in-set tempo (144),
     // the original its native tempo (128 from the peaks endpoint) plus the

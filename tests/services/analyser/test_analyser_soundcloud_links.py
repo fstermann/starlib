@@ -134,3 +134,31 @@ def test_skips_unreleased_and_unknown_tracks() -> None:
     with a, b:
         assert asyncio.run(soundcloud_links.link_unlinked_tracks("job-1")) == 0
     assert queries == []
+
+
+def test_link_track_uses_matcher_not_top_hit() -> None:
+    _seed()
+    row = _shazam_track("Invasion", "Entasia")
+    other = _shazam_track("Believe In Me", "Nobody")
+    a, b = _patched([])
+    with a, b:
+        assert asyncio.run(soundcloud_links.link_track("job-1", row.id)) == 777
+        assert asyncio.run(soundcloud_links.link_track("job-1", other.id)) is None
+    assert analyser_db.list_tracks("job-1")[0].soundcloud_id == 777
+
+
+def test_link_track_keeps_existing_link() -> None:
+    _seed()
+    row = _shazam_track("Linked", "X", soundcloud_id=5)
+    queries: list[str] = []
+    a, b = _patched(queries)
+    with a, b:
+        resp = TestClient(_app()).post(f"/api/analyser/sets/job-1/tracks/{row.id}/link-soundcloud")
+    assert resp.json() == {"soundcloud_id": 5}
+    assert queries == []
+
+
+def _app() -> FastAPI:
+    app = FastAPI()
+    app.include_router(analyser_router)
+    return app

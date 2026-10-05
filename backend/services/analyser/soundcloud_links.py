@@ -52,6 +52,29 @@ async def _link(job_id: str, track: db.TrackRow, token: str, gate: asyncio.Semap
     )
 
 
+async def link_track(job_id: str, track_id: int) -> int | None:
+    """Link one track to its SoundCloud upload, searching if it has no link.
+
+    Args:
+        job_id: Analyser job.
+        track_id: Track row to link.
+
+    Returns:
+        The linked SoundCloud id, or ``None`` when nothing matched.
+    """
+    track = next((t for t in db.list_tracks(job_id) if t.id == track_id), None)
+    if track is None:
+        return None
+    if track.soundcloud_id is not None:
+        return track.soundcloud_id
+    if track.unreleased or UNKNOWN_TITLE in (track.title, track.artist):
+        return None
+    token = _token()
+    if token is None or not await _link(job_id, track, token, asyncio.Semaphore(1)):
+        return None
+    return next(t.soundcloud_id for t in db.list_tracks(job_id) if t.id == track_id)
+
+
 async def link_unlinked_tracks(job_id: str) -> int:
     """Search SoundCloud for every track without a link and store matches.
 

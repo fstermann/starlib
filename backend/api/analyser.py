@@ -515,6 +515,14 @@ async def link_soundcloud(job_id: str) -> dict:
     return {"job_id": job_id, "linked": linked}
 
 
+@router.post("/sets/{job_id}/tracks/{track_id}/link-soundcloud")
+async def link_soundcloud_track(job_id: str, track_id: int) -> dict:
+    """Link one track to its SoundCloud upload; returns its id or ``null``."""
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    return {"soundcloud_id": await soundcloud_links.link_track(job_id, track_id)}
+
+
 @router.post("/sets/{job_id}/tracks/{track_id}/auto-align")
 async def auto_align_track(job_id: str, track_id: int, soundcloud_id: int | None = None) -> dict:
     """Suggest the track's start from the audio, without saving it.

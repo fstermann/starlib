@@ -425,6 +425,17 @@ export async function linkSoundcloudTracks(
   );
 }
 
+/** Link one track to its SoundCloud upload, searching if it has none. */
+export async function linkSoundcloudTrack(
+  jobId: string,
+  trackId: number,
+): Promise<{ soundcloud_id: number | null }> {
+  return fetchApi(
+    `/api/analyser/sets/${encodeURIComponent(jobId)}/tracks/${trackId}/link-soundcloud`,
+    { method: "POST" },
+  );
+}
+
 export type AutoAlignResult =
   | { found: false }
   | {

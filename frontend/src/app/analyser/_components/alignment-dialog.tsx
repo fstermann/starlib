@@ -37,6 +37,7 @@ import {
   autoAlignTrack,
   formatTimecode,
   jobAudioUrl,
+  linkSoundcloudTrack,
   originalBpmFromSet,
   pitchSpeedRatio,
   updateTrack,
@@ -44,7 +45,7 @@ import {
   type TrackTimelineEntry,
 } from "@/lib/analyser";
 import { api } from "@/lib/api";
-import { getTrack, searchTracks, type SCTrack } from "@/lib/soundcloud";
+import { getTrack, type SCTrack } from "@/lib/soundcloud";
 import {
   getCachedSoundcloudDecodedPeaks,
   getCachedSoundcloudPeaks,
@@ -95,13 +96,6 @@ const SC_NUM_PEAKS = 1000;
 const BPM_MIN = 40;
 const BPM_MAX = 300;
 
-function scNumericId(t: SCTrack): number | null {
-  const direct = (t as { id?: number | string }).id;
-  if (typeof direct === "number") return direct;
-  if (typeof direct === "string" && /^\d+$/.test(direct)) return Number(direct);
-  const tail = t.urn?.split(":").pop();
-  return tail && /^\d+$/.test(tail) ? Number(tail) : null;
-}
 // Fallback silhouette when a SoundCloud track exposes no waveform data,
 // so the strip renders instead of spinning forever.
 const SC_PLACEHOLDER_PEAKS = Array.from(
@@ -133,7 +127,7 @@ export function AlignmentDialog({
 }: AlignmentDialogProps) {
   const soundcloudId = soundcloudIdOverride ?? track.soundcloud_id ?? null;
   const trackTitle = track.title;
-  const trackArtist = track.artist ?? null;
+  const trackId = track.id;
 
   // Container nodes tracked as state (via callback refs) so the mount
   // effects fire once the portaled dialog content actually attaches them —
@@ -366,16 +360,14 @@ export function AlignmentDialog({
         // Persisted / find-resolved id: fetch the track for its waveform.
         hit = await getTrack(`soundcloud:tracks:${id}`).catch(() => null);
       } else if (trackTitle) {
-        // Shazam row: resolve via search (its hit already carries the
-        // waveform + duration).
-        try {
-          const q = `${trackTitle} ${trackArtist ?? ""}`.trim();
-          const hits = q ? await searchTracks(q, 1) : [];
-          hit = hits[0] ?? null;
-          id = hit ? scNumericId(hit) : null;
-        } catch {
-          hit = null;
-          id = null;
+        // Shazam row: the backend's matcher checks title, artist, remixer
+        // and length, so a loose top search hit isn't streamed as the
+        // original. It also saves the link.
+        id = await linkSoundcloudTrack(jobId, trackId)
+          .then((r) => r.soundcloud_id)
+          .catch(() => null);
+        if (id != null) {
+          hit = await getTrack(`soundcloud:tracks:${id}`).catch(() => null);
         }
       }
       if (cancelled) return;
@@ -408,7 +400,7 @@ export function AlignmentDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, soundcloudId, trackTitle, trackArtist]);
+  }, [open, soundcloudId, trackTitle, jobId, trackId]);
 
   // Fetch the server-decoded peaks + detected tempo once the original id is
   // known, before the SC strip builds — so the speed ratio (which drives the
