@@ -3,6 +3,7 @@
 import {
   Compass,
   Heart,
+  Layers,
   ListPlus,
   Radio,
   RefreshCw,
@@ -64,6 +65,7 @@ import {
   mixNodeId,
   NEW_TODAY_NODE_ID,
   NEW_WEEK_NODE_ID,
+  picksNodeId,
   playlistNodeId,
   PLAYLISTS_GROUP_ID,
   REPOSTS_NODE_ID,
@@ -81,6 +83,7 @@ import {
   makeLikesFilterPredicate,
   useLikesFilter,
 } from "./use-likes-filter";
+import { usePlaylistPicks } from "./use-playlist-picks";
 import { usePlaylistTracks } from "./use-playlist-tracks";
 import { useReposts } from "./use-reposts";
 import { useSoundcloudTrackSearch } from "./use-soundcloud-track-search";
@@ -133,6 +136,7 @@ export function SoundcloudView() {
   // Seed track title for the station header. Set when the user opens a station
   // from a row; null after a cold load (node in URL, title not in memory).
   const [stationSeedTitle, setStationSeedTitle] = useState<string | null>(null);
+  const [picksSeedTitle, setPicksSeedTitle] = useState<string | null>(null);
 
   // ProfileGroup state (Discover tab). The active group can be a saved
   // group (looked up by `?group=<id>`) or a transient single-member group
@@ -380,6 +384,10 @@ export function SoundcloudView() {
   const stationSeedId = isStationView
     ? (nodeId as string).slice("station:".length)
     : null;
+  const isPicksView = nodeId?.startsWith("picks:") ?? false;
+  const picksSeedId = isPicksView
+    ? (nodeId as string).slice("picks:".length)
+    : null;
 
   const selectedPlaylist = useMemo(() => {
     if (!isPlaylistView) return null;
@@ -411,6 +419,7 @@ export function SoundcloudView() {
     isAllPlaylistsView ? allPlaylistUrns : null,
   );
   const stationTracks = useStationTracks(stationSeedId);
+  const playlistPicks = usePlaylistPicks(picksSeedId);
 
   // Open a track-station from a row: stash the seed title for the header, then
   // switch to a synthetic station node under the personal tab (stations aren't
@@ -422,6 +431,16 @@ export function SoundcloudView() {
       setStationSeedTitle(track.title ?? null);
       setTab("me");
       setNodeId(stationNodeId(id));
+    },
+    [setTab, setNodeId],
+  );
+  const openPlaylistPicks = useCallback(
+    (track: SCTrack) => {
+      const id = extractId(track);
+      if (id == null) return;
+      setPicksSeedTitle(track.title ?? null);
+      setTab("me");
+      setNodeId(picksNodeId(id));
     },
     [setTab, setNodeId],
   );
@@ -860,6 +879,10 @@ export function SoundcloudView() {
             stationTitle={stationTracks.title ?? stationSeedTitle}
             onOpenStation={openStation}
             onCloseStation={() => setNodeId(LIKES_NODE_ID)}
+            playlistPicks={playlistPicks}
+            isPicksView={isPicksView}
+            picksTitle={picksSeedTitle}
+            onOpenPlaylistPicks={mixesAvailable ? openPlaylistPicks : undefined}
             nodeId={nodeId ?? LIKES_NODE_ID}
             isPlaylistView={isPlaylistView}
             selectedPlaylistUrn={selectedPlaylist?.urn ?? null}
@@ -909,6 +932,13 @@ interface LikesViewProps {
   onOpenStation: (track: SCTrack) => void;
   /** Leave the station view, returning to the likes node. */
   onCloseStation: () => void;
+  playlistPicks: ReturnType<typeof usePlaylistPicks>;
+  isPicksView: boolean;
+  /** Seed track title for the picks header (null on cold load). */
+  picksTitle: string | null;
+  /** Open playlist picks seeded by a row's track. Unset without a session
+   *  cookie, since the backing api-v2 lookup needs one. */
+  onOpenPlaylistPicks?: (track: SCTrack) => void;
   nodeId: string;
   isPlaylistView: boolean;
   /** URN of the playlist currently being viewed (null unless in a playlist
@@ -954,6 +984,10 @@ function LikesView({
   stationTitle,
   onOpenStation,
   onCloseStation,
+  playlistPicks,
+  isPicksView,
+  picksTitle,
+  onOpenPlaylistPicks,
   nodeId,
   isPlaylistView,
   selectedPlaylistUrn,
@@ -989,23 +1023,25 @@ function LikesView({
     setRemovedUrns(new Set());
   }, [nodeId]);
 
-  const baseTracks = isStationView
+  const baseTracks: SCTrack[] = isStationView
     ? stationTracks.tracks
-    : isNewTodayView
-      ? newToday.tracks
-      : isNewWeekView
-        ? newWeek.tracks
-        : isMixView
-          ? mixTracks.tracks
-          : isPlaylistView
-            ? playlistTracks.tracks
-            : isAllPlaylistsView
-              ? combinedPlaylistTracks.tracks
-              : isRepostsView
-                ? (activeReposts?.tracks ?? EMPTY_TRACKS)
-                : isTracksView
-                  ? (activeTracks?.tracks ?? EMPTY_TRACKS)
-                  : activeLikes.tracks;
+    : isPicksView
+      ? playlistPicks.tracks
+      : isNewTodayView
+        ? newToday.tracks
+        : isNewWeekView
+          ? newWeek.tracks
+          : isMixView
+            ? mixTracks.tracks
+            : isPlaylistView
+              ? playlistTracks.tracks
+              : isAllPlaylistsView
+                ? combinedPlaylistTracks.tracks
+                : isRepostsView
+                  ? (activeReposts?.tracks ?? EMPTY_TRACKS)
+                  : isTracksView
+                    ? (activeTracks?.tracks ?? EMPTY_TRACKS)
+                    : activeLikes.tracks;
   const sourceTracks = useMemo(
     () =>
       removedUrns.size === 0
@@ -1089,55 +1125,61 @@ function LikesView({
 
   const loading = isStationView
     ? stationTracks.loading
-    : isNewTodayView
-      ? newToday.loading
-      : isNewWeekView
-        ? newWeek.loading
-        : isMixView
-          ? mixTracks.loading
-          : isPlaylistView
-            ? playlistTracks.loading
-            : isAllPlaylistsView
-              ? combinedPlaylistTracks.loading
-              : isRepostsView
-                ? (activeReposts?.loading ?? false)
-                : isTracksView
-                  ? (activeTracks?.loading ?? false)
-                  : activeLikes.loading;
+    : isPicksView
+      ? playlistPicks.loading
+      : isNewTodayView
+        ? newToday.loading
+        : isNewWeekView
+          ? newWeek.loading
+          : isMixView
+            ? mixTracks.loading
+            : isPlaylistView
+              ? playlistTracks.loading
+              : isAllPlaylistsView
+                ? combinedPlaylistTracks.loading
+                : isRepostsView
+                  ? (activeReposts?.loading ?? false)
+                  : isTracksView
+                    ? (activeTracks?.loading ?? false)
+                    : activeLikes.loading;
   const error = isStationView
     ? stationTracks.error
-    : isNewTodayView
-      ? newToday.error
-      : isNewWeekView
-        ? newWeek.error
-        : isMixView
-          ? mixTracks.error
-          : isPlaylistView
-            ? playlistTracks.error
-            : isAllPlaylistsView
-              ? combinedPlaylistTracks.error
-              : isRepostsView
-                ? (activeReposts?.error ?? null)
-                : isTracksView
-                  ? (activeTracks?.error ?? null)
-                  : activeLikes.error;
+    : isPicksView
+      ? playlistPicks.error
+      : isNewTodayView
+        ? newToday.error
+        : isNewWeekView
+          ? newWeek.error
+          : isMixView
+            ? mixTracks.error
+            : isPlaylistView
+              ? playlistTracks.error
+              : isAllPlaylistsView
+                ? combinedPlaylistTracks.error
+                : isRepostsView
+                  ? (activeReposts?.error ?? null)
+                  : isTracksView
+                    ? (activeTracks?.error ?? null)
+                    : activeLikes.error;
   const loadedCount = isStationView
     ? stationTracks.tracks.length
-    : isNewTodayView
-      ? newToday.loaded
-      : isNewWeekView
-        ? newWeek.loaded
-        : isMixView
-          ? mixTracks.tracks.length
-          : isPlaylistView
-            ? playlistTracks.tracks.length
-            : isAllPlaylistsView
-              ? combinedPlaylistTracks.tracks.length
-              : isRepostsView
-                ? (activeReposts?.loaded ?? 0)
-                : isTracksView
-                  ? (activeTracks?.loaded ?? 0)
-                  : activeLikes.loaded;
+    : isPicksView
+      ? playlistPicks.tracks.length
+      : isNewTodayView
+        ? newToday.loaded
+        : isNewWeekView
+          ? newWeek.loaded
+          : isMixView
+            ? mixTracks.tracks.length
+            : isPlaylistView
+              ? playlistTracks.tracks.length
+              : isAllPlaylistsView
+                ? combinedPlaylistTracks.tracks.length
+                : isRepostsView
+                  ? (activeReposts?.loaded ?? 0)
+                  : isTracksView
+                    ? (activeTracks?.loaded ?? 0)
+                    : activeLikes.loaded;
 
   // Contextual palette commands — registered only while this view is mounted
   // and a selection/filter context applies.
@@ -1211,6 +1253,39 @@ function LikesView({
             className="text-muted-foreground hover:text-foreground ml-auto cursor-pointer text-xs underline"
             onClick={onCloseStation}
             data-testid="station-close"
+          >
+            Back to likes
+          </button>
+        </div>
+      )}
+      {isPicksView && (
+        <div
+          className="border-border flex items-center gap-2 border-b px-4 py-2"
+          data-testid="picks-header"
+        >
+          <Layers className="text-primary size-4 shrink-0" />
+          <span className="truncate text-sm font-medium">
+            Playlist picks
+            {picksTitle ? (
+              <span className="text-muted-foreground font-normal">
+                {" · "}
+                {picksTitle}
+              </span>
+            ) : null}
+          </span>
+          {!playlistPicks.loading && playlistPicks.playlistCount > 0 && (
+            <span
+              className="text-muted-foreground shrink-0 text-xs"
+              data-testid="picks-playlist-count"
+            >
+              from {playlistPicks.playlistCount} playlist
+              {playlistPicks.playlistCount === 1 ? "" : "s"}
+            </span>
+          )}
+          <button
+            className="text-muted-foreground hover:text-foreground ml-auto cursor-pointer text-xs underline"
+            onClick={onCloseStation}
+            data-testid="picks-close"
           >
             Back to likes
           </button>
@@ -1324,23 +1399,25 @@ function LikesView({
             <p className="text-muted-foreground text-sm">
               {isStationView
                 ? "This station has no tracks"
-                : isNewTodayView
-                  ? "Nothing released today on your feed yet"
-                  : isNewWeekView
-                    ? "Nothing released this week on your feed yet"
-                    : isMixView
-                      ? "This mix is empty"
-                      : isPlaylistView
-                        ? "This playlist is empty"
-                        : isAllPlaylistsView
-                          ? "No playlists"
-                          : tab === "search"
-                            ? "No tracks matched your search"
-                            : isRepostsView
-                              ? "No reposted tracks found"
-                              : isTracksView
-                                ? "No tracks found"
-                                : "No liked tracks found"}
+                : isPicksView
+                  ? "This track isn't in any public playlists"
+                  : isNewTodayView
+                    ? "Nothing released today on your feed yet"
+                    : isNewWeekView
+                      ? "Nothing released this week on your feed yet"
+                      : isMixView
+                        ? "This mix is empty"
+                        : isPlaylistView
+                          ? "This playlist is empty"
+                          : isAllPlaylistsView
+                            ? "No playlists"
+                            : tab === "search"
+                              ? "No tracks matched your search"
+                              : isRepostsView
+                                ? "No reposted tracks found"
+                                : isTracksView
+                                  ? "No tracks found"
+                                  : "No liked tracks found"}
             </p>
           </div>
         ) : (
@@ -1355,7 +1432,11 @@ function LikesView({
             collectionIds={collectionIds}
             likedIds={myLikedIds}
             isColumnVisible={(id) =>
-              id === "source" ? showSourceColumn : columnPrefs.isVisible(id)
+              id === "source"
+                ? showSourceColumn
+                : id === "playlist_count"
+                  ? isPicksView
+                  : columnPrefs.isVisible(id)
             }
             columnOrder={columnPrefs.prefs.order}
             onColumnOrderChange={columnPrefs.setOrder}
@@ -1364,6 +1445,7 @@ function LikesView({
             onColumnWidthReset={columnPrefs.resetWidth}
             showAddToPlaylist
             onOpenStation={onOpenStation}
+            onOpenPlaylistPicks={onOpenPlaylistPicks}
             removeFromPlaylist={removeFromPlaylist}
           />
         )}

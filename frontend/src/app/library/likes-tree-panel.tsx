@@ -32,6 +32,9 @@ export const memberNodeId = (userUrn: string) => `member:${userUrn}`;
 /** Transient "track station" node — seeded from a track id, not a tree entry. */
 export const stationNodeId = (seedTrackId: number | string) =>
   `station:${seedTrackId}`;
+/** Transient "playlist picks" node — tracks ranked by shared playlists. */
+export const picksNodeId = (seedTrackId: number | string) =>
+  `picks:${seedTrackId}`;
 
 export type LikesTreeNodeKind =
   | "root"

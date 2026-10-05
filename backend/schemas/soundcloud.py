@@ -75,3 +75,20 @@ class StationTracksResponse(BaseModel):
 
     title: str | None = None
     tracks: list[dict[str, Any]]
+
+
+class PlaylistPick(BaseModel):
+    """A track and the number of seed-sharing playlists that contain it."""
+
+    count: int
+    track: dict[str, Any]
+
+
+class PlaylistPicksResponse(BaseModel):
+    """Tracks from the playlists containing a seed track, most frequent first.
+
+    ``playlist_count`` is how many playlists were scanned.
+    """
+
+    playlist_count: int
+    picks: list[PlaylistPick]

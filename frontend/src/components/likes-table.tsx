@@ -24,6 +24,7 @@ import {
   Download,
   FolderCheck,
   GripVertical,
+  Layers,
   ListPlus,
   ListX,
   Radio,
@@ -100,6 +101,7 @@ type SortKey =
   | "genre"
   | "duration"
   | "playback_count"
+  | "playlist_count"
   | "uploaded"
   | "added"
   | "key_signature"
@@ -171,6 +173,15 @@ const LIKES_COLUMNS: LikesCol[] = [
         sources={(track as { __sources?: SourceProfile[] }).__sources}
       />
     ),
+  },
+  {
+    id: "playlist_count",
+    header: "Playlists",
+    sortKey: "playlist_count",
+    defaultWidth: 72,
+    cellClassName:
+      "text-muted-foreground shrink-0 text-right text-xs tabular-nums",
+    renderBody: ({ track }) => <>{playlistCount(track) ?? "—"}</>,
   },
   {
     id: "title",
@@ -463,12 +474,13 @@ const LIKES_COLUMNS: LikesCol[] = [
   },
 ];
 
-// "source" is opt-in (Discover with 2+ group members); excluded from the
-// standard column-prefs vocabulary so it doesn't appear in the visibility
-// menu and doesn't get auto-shown for callers that don't pass an
-// `isColumnVisible` predicate.
+// "source" (Discover with 2+ group members) and "playlist_count" (playlist
+// picks view) are opt-in; excluded from the standard column-prefs vocabulary
+// so they don't appear in the visibility menu and don't get auto-shown for
+// callers that don't pass an `isColumnVisible` predicate.
+const OPT_IN_COLUMNS = new Set(["source", "playlist_count"]);
 export const LIKES_COLUMN_DEFS: ColumnDef[] = LIKES_COLUMNS.filter(
-  (c) => c.id !== "source",
+  (c) => !OPT_IN_COLUMNS.has(c.id),
 ).map((c) => ({
   id: c.id,
   header: c.header,
@@ -509,6 +521,11 @@ function formatDate(value: string | undefined): string {
   return `${dd}.${mm}.${d.getFullYear()}`;
 }
 
+/** Shared-playlist count set on playlist-picks tracks; undefined elsewhere. */
+function playlistCount(track: SCTrack): number | undefined {
+  return (track as { __playlistCount?: number }).__playlistCount;
+}
+
 function dateValue(value: string | undefined): number {
   return parseSCTimestamp(value) ?? 0;
 }
@@ -521,6 +538,7 @@ const SORT_ACCESSORS: Record<SortKey, (t: SCTrack) => string | number> = {
   genre: (t) => t.genre ?? "",
   duration: (t) => t.duration ?? 0,
   playback_count: (t) => t.playback_count ?? 0,
+  playlist_count: (t) => playlistCount(t) ?? 0,
   uploaded: (t) => dateValue(t.created_at),
   added: (t) => dateValue(t.addedAt),
   key_signature: (t) => t.key_signature ?? "",
@@ -809,6 +827,9 @@ interface TrackRowProps {
   /** When set, the row's context menu gains "Open track station" — navigate to
    *  the track-station stream seeded by this track. */
   onOpenStation?: () => void;
+  /** When set, the row's context menu gains "Open playlist picks" — tracks
+   *  ranked by how many of this track's playlists contain them. */
+  onOpenPlaylistPicks?: () => void;
   /** When set, the row's context menu gains "Add to playlist" (submenu of the
    *  user's own playlists) and "Create playlist" (SoundCloud view only).
    *  `createCount` is how many tracks the create action would use — the current
@@ -851,6 +872,7 @@ function TrackRowInner({
   onAddToQueue,
   onPlayNext,
   onOpenStation,
+  onOpenPlaylistPicks,
   addToPlaylist,
   removeFromPlaylist,
   visibleColumns,
@@ -892,7 +914,10 @@ function TrackRowInner({
       onAddToQueue={onAddToQueue}
       disabled={unplayable}
       extraItems={
-        onOpenStation || addToPlaylist || removeFromPlaylist ? (
+        onOpenStation ||
+        onOpenPlaylistPicks ||
+        addToPlaylist ||
+        removeFromPlaylist ? (
           <>
             {onOpenStation && (
               <ContextMenuItem
@@ -902,6 +927,16 @@ function TrackRowInner({
               >
                 <Radio className="size-3.5" />
                 Open track station
+              </ContextMenuItem>
+            )}
+            {onOpenPlaylistPicks && (
+              <ContextMenuItem
+                data-testid="open-playlist-picks"
+                onSelect={onOpenPlaylistPicks}
+                className="text-xs"
+              >
+                <Layers className="size-3.5" />
+                Open playlist picks
               </ContextMenuItem>
             )}
             {addToPlaylist && (
@@ -1098,6 +1133,9 @@ interface LikesTableProps {
   /** When set, each row's context menu gains "Open track station", called with
    *  the row's track so the caller can navigate to its station. */
   onOpenStation?: (track: SCTrack) => void;
+  /** When set, each row's context menu gains "Open playlist picks", called
+   *  with the row's track. */
+  onOpenPlaylistPicks?: (track: SCTrack) => void;
   /** Opt-in: add an "Add to playlist" submenu to each row's context menu,
    *  targeting the authenticated user's own SoundCloud playlists. */
   showAddToPlaylist?: boolean;
@@ -1131,6 +1169,7 @@ export function LikesTable({
   onReorderTracks,
   onVisibleOrderChange,
   onOpenStation,
+  onOpenPlaylistPicks,
   showAddToPlaylist,
   removeFromPlaylist,
 }: LikesTableProps) {
@@ -1297,10 +1336,10 @@ export function LikesTable({
 
   const colVisible = React.useCallback(
     (id: string) => {
-      // "source" is opt-in: only renders when the caller explicitly returns
-      // true from isColumnVisible. Without this guard, callers that don't
-      // pass a predicate would see an empty 32px column on every row.
-      if (id === "source") return isColumnVisible?.(id) === true;
+      // Opt-in columns only render when the caller explicitly returns true
+      // from isColumnVisible. Without this guard, callers that don't pass a
+      // predicate would see an empty column on every row.
+      if (OPT_IN_COLUMNS.has(id)) return isColumnVisible?.(id) === true;
       if (isColumnVisible) return isColumnVisible(id);
       // No predicate (e.g. the weekly view): fall back to the column's own
       // default so the extended metadata columns stay hidden.
@@ -1588,6 +1627,9 @@ export function LikesTable({
             onPlayNext={() => playNext(scTrackToPlayerTrack(track, bpmCache))}
             onOpenStation={
               onOpenStation ? () => onOpenStation(track) : undefined
+            }
+            onOpenPlaylistPicks={
+              onOpenPlaylistPicks ? () => onOpenPlaylistPicks(track) : undefined
             }
             addToPlaylist={
               showAddToPlaylist

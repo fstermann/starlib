@@ -125,6 +125,10 @@ Playlists are editable from the tree and from track rows:
 - **Right-click a playlist** in the tree to rename or delete it
 - Or run **Create playlist from N selected tracks** from the [command palette](command-palette.md)
 
+#### Playlist picks
+
+Right-click a track → **Open playlist picks** to find tracks that often share playlists with it. Starlib scans up to 50 public playlists containing the track and ranks their tracks by how many of those playlists include them, so the most frequent come first. The **Playlists** column shows each track's count. The lookup uses SoundCloud's web API, so the menu item only shows once a session cookie is captured (see Mixes below).
+
 #### Columns
 
 The table ships a wide set of SoundCloud metadata columns — key signature, label, metadata artist, tags, release date, like/repost/comment/download/play counts, downloadable, access, sharing, license, ISRC, and description. Use the **column visibility** menu in the toolbar to pick which ones show; your choice is remembered per view.
