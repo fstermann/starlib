@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
+import httpx
+
 from backend.infra import cache as db_cache
 from backend.infra.soundcloud import client, token_cache
 from backend.infra.soundcloud.oauth import OAuthManager
@@ -30,7 +32,11 @@ async def listed_bpm(soundcloud_id: int) -> float | None:
     except Exception:
         logger.exception("analyser: no SoundCloud token for the listed BPM")
         return None
-    bpm = await client.get_track_bpm(soundcloud_id, token=token)
+    try:
+        bpm = await client.get_track_bpm(soundcloud_id, token=token)
+    except httpx.HTTPError:
+        logger.warning("analyser: SoundCloud BPM lookup failed for %s", soundcloud_id)
+        return None
     _listed[soundcloud_id] = bpm
     return bpm
 

@@ -968,3 +968,26 @@ def test_shazam_scan_endpoint_rejects_unknown_tier(http_client: Any) -> None:
         json={"tier": "ultrafine"},
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_failed_soundcloud_linking_does_not_fail_the_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_subprocess(monkeypatch, [{"type": "meta", "duration_s": 200.0, "sample_rate": 22050}])
+    job_id = await start_job(
+        options=AnalyserJobOptions(window_s=30.0, hop_s=25.0, scan_cadence_s=60.0, scan_window_s=12.0),
+        soundcloud_id=2,
+        fetch_audio=_fake_fetch_audio,
+        shazam_client=FakeShazam(),
+    )
+    async for ev in subscribe_to_job(job_id):
+        if isinstance(ev, JobCompleteEvent):
+            break
+
+    async def broken_link(_job_id: str) -> int:
+        raise ValueError("not JSON")
+
+    monkeypatch.setattr(analyser_controller.soundcloud_links, "link_unlinked_tracks", broken_link)
+    await start_shazam_scan(job_id, fetch_audio=_fake_fetch_audio, shazam_client=FakeShazam())
+
+    job = analyser_db.get_job(job_id)
+    assert job is not None and job.status == "complete"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend.domain.track_alignment import rate_hints, search_window
+from backend.domain.track_alignment import fold_rate, rate_hints, search_window
 
 
 def test_rate_from_bpm_ratio_and_pitch_offset() -> None:
@@ -32,3 +32,9 @@ def test_window_spans_a_track_length_either_side() -> None:
 def test_window_clamps_to_set() -> None:
     start, end = search_window(100.0, 300.0, 1.0, 350.0)
     assert (start, end) == (0.0, 350.0)
+
+
+def test_fold_rate_undoes_half_and_double_time() -> None:
+    assert fold_rate(130.0 / 62.5) == pytest.approx(1.04)
+    assert fold_rate(130.0 / 250.0) == pytest.approx(1.04)
+    assert fold_rate(1.04) == pytest.approx(1.04)

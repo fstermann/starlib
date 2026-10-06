@@ -959,9 +959,17 @@ async def _run_shazam_scan(
     # that the per-point sync didn't yet aggregate) and broadcasts the
     # complete tracklist for late subscribers.
     sync_shazam_runs_to_tracks(state.job_id)
-    await soundcloud_links.link_unlinked_tracks(state.job_id)
+    await _link_soundcloud_best_effort(state.job_id)
     for t in db.list_tracks(state.job_id):
         await _broadcast(state, _track_to_event(state.job_id, t))
+
+
+async def _link_soundcloud_best_effort(job_id: str) -> None:
+    """Link tracks to SoundCloud without letting a failure fail the scan."""
+    try:
+        await soundcloud_links.link_unlinked_tracks(job_id)
+    except Exception:
+        logger.exception("analyser: SoundCloud linking failed for job %s", job_id)
 
 
 async def _sync_and_broadcast_new_tracks(state: _JobState) -> None:

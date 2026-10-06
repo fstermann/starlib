@@ -47,7 +47,7 @@ async def _link(job_id: str, track: db.TrackRow, token: str, gate: asyncio.Semap
         track.id,
         soundcloud_id=match["id"],
         soundcloud_permalink_url=match.get("permalink_url"),
-        duration_s=match["duration"] / 1000,
+        duration_s=track.duration_s or match["duration"] / 1000,
         artwork_url=track.artwork_url or match.get("artwork_url"),
     )
 

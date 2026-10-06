@@ -625,6 +625,15 @@ export function pitchSpeedRatio(pitchOffset: number): number {
   return Math.pow(2, pitchOffset / 12);
 }
 
+/** Undo a half- or double-time BPM in a tempo ratio: the fold of ``ratio``
+ *  by ½, 1 or 2 nearest 1. SoundCloud listings often give a 174 BPM track
+ *  as 87. */
+export function foldTempoRatio(ratio: number): number {
+  return [ratio / 2, ratio, ratio * 2].reduce((best, r) =>
+    Math.abs(Math.log2(r)) < Math.abs(Math.log2(best)) ? r : best,
+  );
+}
+
 /** Derive the original (released) BPM from the in-set BPM and the offset
  *  that produced the Shazam match. Returns ``null`` if either input is
  *  missing or non-positive. */

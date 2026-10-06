@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Iterator
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from backend.services.analyser import original_bpm
@@ -49,3 +50,15 @@ def test_listed_bpm_is_fetched_once_per_track() -> None:
         assert asyncio.run(original_bpm.listed_bpm(7)) == 140.0
         assert asyncio.run(original_bpm.listed_bpm(7)) == 140.0
     fetch.assert_awaited_once()
+
+
+def test_failed_lookup_is_retried() -> None:
+    fetch = AsyncMock(side_effect=[httpx.ConnectError("down"), 140.0])
+    with (
+        patch.object(original_bpm, "get_settings") as settings,
+        patch.object(original_bpm.token_cache, "get_cached_access_token", return_value="t"),
+        patch.object(original_bpm.client, "get_track_bpm", fetch),
+    ):
+        settings.return_value.has_oauth_credentials.return_value = True
+        assert asyncio.run(original_bpm.listed_bpm(7)) is None
+        assert asyncio.run(original_bpm.listed_bpm(7)) == 140.0

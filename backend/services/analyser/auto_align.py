@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from backend.domain.track_alignment import MIN_CONFIDENCE, rate_hints, search_window
+from backend.domain.track_alignment import MIN_CONFIDENCE, fold_rate, rate_hints, search_window
 from backend.infra.analyser import align, db, peaks
 from backend.infra.analyser import cache as audio_cache
 from backend.services.analyser.original_bpm import original_bpm
+
+logger = logging.getLogger(__name__)
 
 
 async def suggest_alignment(job_id: str, track_id: int, soundcloud_id: int, original: Path) -> align.AlignResult | None:
@@ -69,9 +72,14 @@ async def fill_mix_points(job_id: str, resolve_original: Callable[[int], Awaitab
     for track in db.list_tracks(job_id):
         if not track.aligned or track.mix_in_s is not None or track.soundcloud_id is None:
             continue
-        original = await resolve_original(track.soundcloud_id)
-        result = await suggest_alignment(job_id, track.id, track.soundcloud_id, original)
-        if result is None or not _agrees_with_saved(track, result, await _saved_rate(track, original)):
+        try:
+            original = await resolve_original(track.soundcloud_id)
+            result = await suggest_alignment(job_id, track.id, track.soundcloud_id, original)
+            saved_rate = await _saved_rate(track, original) if result is not None else None
+        except Exception:
+            logger.exception("analyser: mix points failed for track %s", track.id)
+            continue
+        if result is None or not _agrees_with_saved(track, result, saved_rate):
             continue
         db.update_track(job_id, track.id, mix_in_s=result.enter_s, mix_out_s=result.exit_s)
         filled += 1
@@ -80,12 +88,12 @@ async def fill_mix_points(job_id: str, resolve_original: Callable[[int], Awaitab
 
 async def _saved_rate(track: db.TrackRow, original: Path) -> float | None:
     """Playback rate the align dialog used when the user saved the start:
-    set BPM over the original's BPM, as the dialog derives it."""
+    set BPM over the original's BPM, octave-folded, as the dialog derives it."""
     if not track.set_bpm or track.soundcloud_id is None:
         return None
     _peaks, _duration, detected = await peaks.get_or_compute_peaks(original, track.soundcloud_id)
     bpm, _source = await original_bpm(track.soundcloud_id, detected)
-    return track.set_bpm / bpm if bpm else None
+    return fold_rate(track.set_bpm / bpm) if bpm else None
 
 
 def _agrees_with_saved(track: db.TrackRow, result: align.AlignResult, saved_rate: float | None) -> bool:

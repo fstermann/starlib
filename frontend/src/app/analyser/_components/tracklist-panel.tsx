@@ -20,6 +20,7 @@ import { Slider } from "@/components/ui/slider";
 import {
   deleteTrack,
   effectiveDurationInSet,
+  foldTempoRatio,
   formatTimecode,
   originalBpmFromSet,
   updateTrack,
@@ -1350,7 +1351,7 @@ function BpmChip({
   const tempos = useTempos(track, listing);
   if (!tempos) return null;
   const { trackBpm: original, setBpm } = tempos;
-  const ratePercent = (setBpm / original - 1) * 100;
+  const ratePercent = (foldTempoRatio(setBpm / original) - 1) * 100;
   const shifted = Math.abs(ratePercent) >= 0.05;
   return (
     <span
@@ -1431,7 +1432,7 @@ function KeyChip({
   const tempos = useTempos(track, listing);
   if (!key) return null;
   const semitones = tempos
-    ? semitonesFromBpmRatio(tempos.setBpm / tempos.trackBpm)
+    ? semitonesFromBpmRatio(foldTempoRatio(tempos.setBpm / tempos.trackBpm))
     : 0;
   const shifted =
     semitones !== 0 ? transposeCamelot(key.camelot, semitones) : null;

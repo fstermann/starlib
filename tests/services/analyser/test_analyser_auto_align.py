@@ -206,3 +206,36 @@ def test_mix_out_before_mix_in_is_rejected() -> None:
         f"/api/analyser/sets/job-1/tracks/{track.id}", json={"mix_in_s": 1420.0, "mix_out_s": 1250.0}
     )
     assert resp.status_code == 422
+
+
+def test_fill_skips_a_track_whose_original_fails() -> None:
+    track = _aligned_track(1180.5)
+    broken = analyser_db.insert_track(
+        job_id="job-1", origin="manual", start_s=100.0, title="Gone", artist="Y", soundcloud_id=8
+    )
+    analyser_db.update_track("job-1", broken.id, aligned=True)
+    _mock, patches = _patched(_result(0.6))
+
+    async def resolve(sc: int) -> Path:
+        if sc == 8:
+            raise RuntimeError("taken down")
+        return Path("orig.mp4")
+
+    with patches:
+        assert asyncio.run(auto_align.fill_mix_points("job-1", resolve)) == 1
+    row = next(t for t in analyser_db.list_tracks("job-1") if t.id == track.id)
+    assert row.mix_in_s == 1180.5
+
+
+def test_fill_agrees_with_a_half_time_listing() -> None:
+    # Listed at 62.5, half the original's 125: the dialog folds the rate to 1.04.
+    track = _aligned_track(1180.5)
+    _mock, patches = _patched(_result(0.6))
+
+    async def resolve(_sc: int) -> Path:
+        return Path("orig.mp4")
+
+    with patches, patch.object(auto_align, "original_bpm", AsyncMock(return_value=(62.5, "soundcloud"))):
+        assert asyncio.run(auto_align.fill_mix_points("job-1", resolve)) == 1
+    row = next(t for t in analyser_db.list_tracks("job-1") if t.id == track.id)
+    assert row.mix_in_s == 1180.5

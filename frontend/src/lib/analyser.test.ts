@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildTracklistText,
   effectiveDurationInSet,
+  foldTempoRatio,
   originalBpmFromSet,
   pitchSpeedRatio,
   type JobSnapshot,
@@ -18,6 +19,14 @@ describe("pitchSpeedRatio", () => {
     expect(pitchSpeedRatio(12)).toBeCloseTo(2, 6);
     expect(pitchSpeedRatio(-12)).toBeCloseTo(0.5, 6);
     expect(pitchSpeedRatio(1)).toBeCloseTo(1.05946, 4);
+  });
+});
+
+describe("foldTempoRatio", () => {
+  it("undoes a half- or double-time listing", () => {
+    expect(foldTempoRatio(174 / 87)).toBeCloseTo(1, 6);
+    expect(foldTempoRatio(130 / 250)).toBeCloseTo(1.04, 6);
+    expect(foldTempoRatio(1.04)).toBeCloseTo(1.04, 6);
   });
 });
 

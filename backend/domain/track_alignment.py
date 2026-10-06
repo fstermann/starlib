@@ -1,5 +1,7 @@
 """Inputs for locating an identified track inside its DJ mix."""
 
+import math
+
 # DJs rarely push a track more than ~20% off its tempo; a ratio outside this
 # band means one of the BPMs was detected at half, double or 3:2 time.
 MIN_RATE = 0.8
@@ -34,6 +36,18 @@ def rate_hints(set_bpm: float | None, original_bpm: float | None, pitch_offset: 
         hints.append(2 ** (-pitch_offset / 12))
     distinct = [h for i, h in enumerate(hints) if all(abs(h - p) > 0.002 for p in hints[:i])]
     return distinct or [1.0]
+
+
+def fold_rate(rate: float) -> float:
+    """Undo a half- or double-time BPM in a playback rate.
+
+    Args:
+        rate: Set BPM over original BPM.
+
+    Returns:
+        The octave fold of ``rate`` nearest 1.0.
+    """
+    return min((rate * f for f in (0.5, 1.0, 2.0)), key=lambda r: abs(math.log2(r)))
 
 
 def search_window(

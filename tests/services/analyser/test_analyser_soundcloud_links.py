@@ -162,3 +162,12 @@ def _app() -> FastAPI:
     app = FastAPI()
     app.include_router(analyser_router)
     return app
+
+
+def test_link_track_keeps_a_known_duration() -> None:
+    _seed()
+    row = _shazam_track("Invasion", "Entasia", duration_s=300.0)
+    a, b = _patched([])
+    with a, b:
+        assert asyncio.run(soundcloud_links.link_track("job-1", row.id)) == 777
+    assert analyser_db.list_tracks("job-1")[0].duration_s == 300.0

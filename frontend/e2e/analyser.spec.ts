@@ -4042,6 +4042,7 @@ test.describe("Set Analyser", () => {
           timeline: [
             track(1, 60, "Native Tempo", 0),
             track(2, 300, "Pitched Up", -2),
+            track(3, 450, "Half Time Listing", 0),
           ],
         }),
       }),
@@ -4070,8 +4071,8 @@ test.describe("Set Analyser", () => {
           contentType: "application/json",
           body: JSON.stringify({
             id,
-            key_signature: id === 7001 ? "A:min" : "Db:maj",
-            bpm: id === 7001 ? 138 : null,
+            key_signature: id === 7002 ? "Db:maj" : "A:min",
+            bpm: { 7001: 138, 7003: 70 }[id] ?? null,
           }),
         });
       },
@@ -4080,7 +4081,7 @@ test.describe("Set Analyser", () => {
     await page.goto(`/analyser?job=${KEY_JOB}`);
 
     const keys = page.getByTestId("tracklist-key");
-    await expect(keys).toHaveCount(2);
+    await expect(keys).toHaveCount(3);
     await expect(keys.nth(0)).toHaveText("8A");
     // Played 2 semitones above its original tempo: 3B moves to 5B.
     await expect(keys.nth(1)).toHaveText("3B → 5B");
@@ -4093,6 +4094,9 @@ test.describe("Set Analyser", () => {
     const bpms = page.getByTestId("tracklist-bpm");
     await expect(bpms.nth(0)).toHaveText(/^138 BPM\s*\+1\.4%$/);
     await expect(bpms.nth(1)).toHaveText(/^125 BPM\s*\+12\.2%$/);
+    // Listed at half time: 70 → 140 is the same tempo, not +100% / +12 st.
+    await expect(bpms.nth(2)).toHaveText(/^70 BPM\s*$/);
+    await expect(keys.nth(2)).toHaveText("8A");
   });
 
   test("alignment dialog shows a tempo listed on SoundCloud", async ({
@@ -4108,6 +4112,20 @@ test.describe("Set Analyser", () => {
     );
     await expect(page.getByTestId("alignment-bpm-soundcloud")).toBeVisible();
     await expect(page.getByTestId("alignment-bpm-corrected")).toHaveCount(0);
+  });
+
+  test("alignment dialog plays a half-time listing at set tempo", async ({
+    page,
+  }) => {
+    await mountBpmDialog(page, {
+      bpm: 64,
+      bpm_overridden: false,
+      bpm_source: "soundcloud",
+    });
+    // Set at 128: a 64 BPM listing is the same tempo, not a 2× speed-up.
+    await expect(page.getByTestId("alignment-orig-bpm")).toContainText(
+      "1.000× in mix",
+    );
   });
 
   test("alignment dialog corrects a misdetected original BPM", async ({

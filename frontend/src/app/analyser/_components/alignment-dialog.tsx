@@ -43,6 +43,7 @@ import { Slider } from "@/components/ui/slider";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   autoAlignTrack,
+  foldTempoRatio,
   formatTimecode,
   getSetPeaks,
   jobAudioUrl,
@@ -286,7 +287,7 @@ export function AlignmentDialog({
     track.set_bpm > 0 &&
     scDecoded?.bpm != null &&
     scDecoded.bpm > 0
-      ? scDecoded.bpm / track.set_bpm
+      ? foldTempoRatio(scDecoded.bpm / track.set_bpm)
       : null;
   const speedRatio =
     bpmRatio ??
