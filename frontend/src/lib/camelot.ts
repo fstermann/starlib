@@ -78,3 +78,42 @@ export function keyFromSoundcloud(
     camelot: `${num + 1}${minor ? "A" : "B"}`,
   };
 }
+
+/** Pitch-class names in SoundCloud's spelling (flats for black keys). */
+const NOTE_NAMES = [
+  "C",
+  "Db",
+  "D",
+  "Eb",
+  "E",
+  "F",
+  "Gb",
+  "G",
+  "Ab",
+  "A",
+  "Bb",
+  "B",
+];
+
+/** Standard key name (``"Am"``, ``"Db"``) for a Camelot code (``"8A"``,
+ *  ``"3B"``). Returns ``null`` for anything else. */
+export function keyNameFromCamelot(camelot: string): string | null {
+  const m = camelot.match(CAMELOT_RE);
+  if (!m) return null;
+  const num = parseInt(m[1], 10);
+  if (num < 1 || num > 12) return null;
+  const minor = m[2].toUpperCase() === "A";
+  const pc = ((num - 1) * 7 + (minor ? 8 : 11)) % 12;
+  return minor ? `${NOTE_NAMES[pc]}m` : NOTE_NAMES[pc];
+}
+
+/** Position on the Camelot wheel (1A, 1B, 2A, …) for sorting; unparseable
+ *  signatures sort last. Finite so rank differences never go NaN. */
+export function soundcloudKeyRank(
+  signature: string | null | undefined,
+): number {
+  const key = keyFromSoundcloud(signature);
+  if (!key) return 99;
+  const num = parseInt(key.camelot, 10);
+  return num * 2 + (key.camelot.endsWith("A") ? 0 : 1);
+}

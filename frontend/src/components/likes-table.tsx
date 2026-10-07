@@ -74,6 +74,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
+import { keyFromSoundcloud, soundcloudKeyRank } from "@/lib/camelot";
 import type { ColumnDef } from "@/lib/columns/types";
 import { parseFallbackDownloadUrl } from "@/lib/parse-fallback-download";
 import { usePlayer } from "@/lib/player-context";
@@ -90,6 +91,7 @@ import {
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
 } from "@/lib/soundcloud-cache";
+import { useKeyNotation } from "@/lib/use-key-notation";
 import { cn } from "@/lib/utils";
 
 const ROW_HEIGHT = 48;
@@ -278,7 +280,7 @@ const LIKES_COLUMNS: LikesCol[] = [
     defaultVisible: false,
     defaultWidth: 64,
     cellClassName: "text-muted-foreground shrink-0 truncate text-xs",
-    renderBody: ({ track }) => <>{track.key_signature || "—"}</>,
+    renderBody: ({ track }) => <SoundcloudKeyCell track={track} />,
   },
   {
     id: "label_name",
@@ -521,6 +523,15 @@ function formatDate(value: string | undefined): string {
   return `${dd}.${mm}.${d.getFullYear()}`;
 }
 
+/** SoundCloud key in the notation chosen in Settings; unparseable values
+ *  show as SoundCloud sent them. */
+function SoundcloudKeyCell({ track }: { track: SCTrack }) {
+  const notation = useKeyNotation();
+  const key = keyFromSoundcloud(track.key_signature);
+  if (!key) return <>{track.key_signature || "—"}</>;
+  return <>{notation === "camelot" ? key.camelot : key.name}</>;
+}
+
 /** Shared-playlist count set on playlist-picks tracks; undefined elsewhere. */
 function playlistCount(track: SCTrack): number | undefined {
   return (track as { __playlistCount?: number }).__playlistCount;
@@ -541,7 +552,7 @@ const SORT_ACCESSORS: Record<SortKey, (t: SCTrack) => string | number> = {
   playlist_count: (t) => playlistCount(t) ?? 0,
   uploaded: (t) => dateValue(t.created_at),
   added: (t) => dateValue(t.addedAt),
-  key_signature: (t) => t.key_signature ?? "",
+  key_signature: (t) => soundcloudKeyRank(t.key_signature),
   label_name: (t) => t.label_name ?? "",
   released: releaseValue,
   favoritings_count: (t) => t.favoritings_count ?? 0,

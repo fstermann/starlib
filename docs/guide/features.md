@@ -225,6 +225,10 @@ Classic requires **title, artist, genre, release date, and artwork** before it c
 
 Under **Settings > Library**, choose the default format used by convert rules set to "preferred". This can be overridden per-rule.
 
+#### Key notation
+
+Under **Settings > Library**, **SoundCloud key notation** picks how keys listed by SoundCloud appear in the Key column and the analyser tracklist: Camelot (`8A`, the default) or standard (`Am`).
+
 #### AI
 
 Under **Settings > AI**, choose which LLM provider backs the AI-powered features — local Ollama, the Claude Code CLI, or the Anthropic API. See the [AI providers guide](ai.md) for setup.

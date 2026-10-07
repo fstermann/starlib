@@ -29,10 +29,12 @@ import {
 } from "@/lib/analyser";
 import {
   keyFromSoundcloud,
+  keyNameFromCamelot,
   semitonesFromBpmRatio,
   transposeCamelot,
 } from "@/lib/camelot";
 import { getTrack, searchTracks, type SCTrack } from "@/lib/soundcloud";
+import { useKeyNotation } from "@/lib/use-key-notation";
 import { cn } from "@/lib/utils";
 
 import type { AnalyserUiState } from "../_state";
@@ -1418,9 +1420,9 @@ function useTempos(
   return { trackBpm: listing?.bpm ?? derived ?? setBpm, setBpm };
 }
 
-/** Camelot key (``8A``) from SoundCloud's listed key. When the track was
- *  pitched a semitone or more in the mix, the shifted Camelot key follows
- *  in brand colour, as in the Rekordbox view. */
+/** SoundCloud's listed key in the notation chosen in Settings. When the track
+ *  was pitched a semitone or more in the mix, the shifted key follows in brand
+ *  colour, as in the Rekordbox view. */
 function KeyChip({
   track,
   listing,
@@ -1428,6 +1430,7 @@ function KeyChip({
   track: TrackTimelineEntry | DerivedRun;
   listing: Listing | null;
 }) {
+  const notation = useKeyNotation();
   const key = keyFromSoundcloud(listing?.keySignature);
   const tempos = useTempos(track, listing);
   if (!key) return null;
@@ -1436,21 +1439,23 @@ function KeyChip({
     : 0;
   const shifted =
     semitones !== 0 ? transposeCamelot(key.camelot, semitones) : null;
+  const shown = (camelot: string) =>
+    notation === "camelot" ? camelot : (keyNameFromCamelot(camelot) ?? camelot);
   return (
     <span
       className="w-16"
       data-testid="tracklist-key"
       title={
         shifted
-          ? `Key ${key.name} (${key.camelot}), ${shifted} in the mix (${semitones > 0 ? "+" : ""}${semitones} st)`
+          ? `Key ${key.name} (${key.camelot}), ${keyNameFromCamelot(shifted)} (${shifted}) in the mix (${semitones > 0 ? "+" : ""}${semitones} st)`
           : `Key ${key.name} (${key.camelot})`
       }
     >
-      {key.camelot}
+      {shown(key.camelot)}
       {shifted && (
         <span className="text-brand" data-testid="tracklist-key-shifted">
           {" "}
-          → {shifted}
+          → {shown(shifted)}
         </span>
       )}
     </span>

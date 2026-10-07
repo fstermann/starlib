@@ -4097,6 +4097,17 @@ test.describe("Set Analyser", () => {
     // Listed at half time: 70 → 140 is the same tempo, not +100% / +12 st.
     await expect(bpms.nth(2)).toHaveText(/^70 BPM\s*$/);
     await expect(keys.nth(2)).toHaveText("8A");
+
+    // Standard notation renames both the listed and the shifted key.
+    await page.evaluate(() =>
+      localStorage.setItem(
+        "starlib_ui",
+        JSON.stringify({ keyNotation: "standard" }),
+      ),
+    );
+    await page.reload();
+    await expect(keys.nth(0)).toHaveText("Am");
+    await expect(keys.nth(1)).toHaveText("Db → Eb");
   });
 
   test("alignment dialog shows a tempo listed on SoundCloud", async ({

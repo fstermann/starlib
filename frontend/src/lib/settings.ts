@@ -16,14 +16,19 @@ import { isTauri } from "./tauri";
 /** Which waveform the bottom player renders for Rekordbox tracks. */
 export type WaveformStyle = "starlib" | "rekordbox_rgb" | "rekordbox_blue";
 
+/** How SoundCloud keys are shown: Camelot code (``8A``) or name (``Am``). */
+export type KeyNotation = "camelot" | "standard";
+
 export interface Settings {
   autoUpdate: boolean;
   waveformStyle: WaveformStyle;
+  keyNotation: KeyNotation;
 }
 
 const DEFAULTS: Settings = {
   autoUpdate: true,
   waveformStyle: "starlib",
+  keyNotation: "camelot",
 };
 
 const STORAGE_KEY = "starlib_ui";
