@@ -52,6 +52,8 @@ export interface JobSummary {
   created_at: number;
   /** Number of tracks in the merged tracklist (Shazam + manual − hidden). */
   track_count: number;
+  /** How many of those the user marked as correctly identified. */
+  confirmed_count: number;
 }
 
 export interface WindowBpm {
@@ -133,6 +135,12 @@ export interface TrackTimelineEntry {
   /** Higher tier than ``confirmed``: the user verified the start
    *  alignment. Implies ``confirmed``. */
   aligned?: boolean;
+  /** The user knows this track is unreleased (not on SoundCloud). */
+  unreleased?: boolean;
+  /** Mix time where the track becomes audible / fades out, from the
+   *  alignment. ``start_s`` is the original's 0:00, which can sit earlier. */
+  mix_in_s?: number | null;
+  mix_out_s?: number | null;
   user_edited?: boolean;
   /** Mix tempo (BPM) at the matched scan point. ``null`` for legacy /
    *  manual rows. Combined with ``pitch_offset`` it derives the original
@@ -154,6 +162,7 @@ export interface AddTrackInput {
   soundcloud_permalink_url?: string | null;
   artwork_url?: string | null;
   duration_s?: number | null;
+  unreleased?: boolean;
 }
 
 export interface UpdateTrackInput {
@@ -170,6 +179,9 @@ export interface UpdateTrackInput {
   pitch_offset?: number | null;
   confirmed?: boolean | null;
   aligned?: boolean | null;
+  unreleased?: boolean | null;
+  mix_in_s?: number | null;
+  mix_out_s?: number | null;
 }
 
 export interface JobSnapshot {
@@ -255,6 +267,9 @@ export type AnalyserEvent =
       pitch_offset?: number | null;
       confirmed?: boolean;
       aligned?: boolean;
+      unreleased?: boolean;
+      mix_in_s?: number | null;
+      mix_out_s?: number | null;
       user_edited?: boolean;
     }
   | { type: "job.complete"; job_id: string }
@@ -410,6 +425,90 @@ export async function deleteTrack(
   );
 }
 
+/** Search SoundCloud for tracks without a link and store id, permalink and
+ *  duration on each match. Returns how many tracks were linked. */
+export async function linkSoundcloudTracks(
+  jobId: string,
+): Promise<{ linked: number }> {
+  return fetchApi(
+    `/api/analyser/sets/${encodeURIComponent(jobId)}/tracks/link-soundcloud`,
+    { method: "POST" },
+  );
+}
+
+/** Link one track to its SoundCloud upload, searching if it has none. */
+export async function linkSoundcloudTrack(
+  jobId: string,
+  trackId: number,
+): Promise<{ soundcloud_id: number | null }> {
+  return fetchApi(
+    `/api/analyser/sets/${encodeURIComponent(jobId)}/tracks/${trackId}/link-soundcloud`,
+    { method: "POST" },
+  );
+}
+
+/** One chunk of the original and how it voted, in original seconds. */
+export interface AlignChunk {
+  start_s: number;
+  end_s: number;
+  /** ``0`` = repeated elsewhere in the track, ``1`` = one of a kind. */
+  uniqueness: number;
+  agrees: boolean;
+}
+
+export type AutoAlignResult =
+  | { found: false }
+  | {
+      found: true;
+      chunks: AlignChunk[];
+      start_s: number;
+      /** Playback rate of the original in the mix (>1 = sped up). */
+      rate: number;
+      key_lock: boolean;
+      confidence: number;
+      enter_s: number;
+      exit_s: number;
+    };
+
+export interface SetPeaks {
+  start_s: number;
+  peaks_per_s: number;
+  peaks: number[];
+}
+
+/** Waveform peaks for ``[startS, endS]`` of the cached set. */
+export async function getSetPeaks(
+  jobId: string,
+  startS: number,
+  endS: number,
+): Promise<SetPeaks> {
+  return fetchApi(
+    `/api/analyser/sets/${encodeURIComponent(jobId)}/peaks?start_s=${startS}&end_s=${endS}`,
+  );
+}
+
+/** Suggest a track's start from the audio. Nothing is saved. */
+export async function autoAlignTrack(
+  jobId: string,
+  trackId: number,
+  soundcloudId: number,
+): Promise<AutoAlignResult> {
+  return fetchApi(
+    `/api/analyser/sets/${encodeURIComponent(jobId)}/tracks/${trackId}/auto-align?soundcloud_id=${soundcloudId}`,
+    { method: "POST" },
+  );
+}
+
+/** Store where hand-aligned tracks are audible, from auto-align. */
+export async function fillMixPoints(
+  jobId: string,
+): Promise<{ filled: number }> {
+  return fetchApi(
+    `/api/analyser/sets/${encodeURIComponent(jobId)}/tracks/fill-mix-points`,
+    { method: "POST" },
+  );
+}
+
 export async function resetJob(
   jobId: string,
 ): Promise<{ job_id: string; reset: boolean }> {
@@ -491,7 +590,10 @@ export function buildTracklistText(snapshot: JobSnapshot): string {
   }
   for (const entry of snapshot.timeline) {
     const time = formatTimecode(entry.start_s);
-    lines.push(`${time}  ${entry.artist ?? "Unknown"} — ${entry.title}`);
+    const unreleased = entry.unreleased ? " (unreleased)" : "";
+    lines.push(
+      `${time}  ${entry.artist ?? "Unknown"} — ${entry.title}${unreleased}`,
+    );
   }
   return lines.join("\n");
 }
@@ -521,6 +623,15 @@ export function buildTracklistCsv(snapshot: JobSnapshot): string {
  *  typically negative and ``ratio`` slightly < 1. */
 export function pitchSpeedRatio(pitchOffset: number): number {
   return Math.pow(2, pitchOffset / 12);
+}
+
+/** Undo a half- or double-time BPM in a tempo ratio: the fold of ``ratio``
+ *  by ½, 1 or 2 nearest 1. SoundCloud listings often give a 174 BPM track
+ *  as 87. */
+export function foldTempoRatio(ratio: number): number {
+  return [ratio / 2, ratio, ratio * 2].reduce((best, r) =>
+    Math.abs(Math.log2(r)) < Math.abs(Math.log2(best)) ? r : best,
+  );
 }
 
 /** Derive the original (released) BPM from the in-set BPM and the offset

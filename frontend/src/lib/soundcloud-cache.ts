@@ -1,4 +1,4 @@
-import { api } from "./api";
+import { api, type BpmSource, type TrackBpm } from "./api";
 
 /* SoundCloud signed stream URLs are valid for ~15 minutes. Cache for 10 to
  * leave headroom; the WaveformPlayer already has a 403-refresh fallback
@@ -59,6 +59,7 @@ export interface DecodedPeaks {
   bpm: number | null;
   /** True when ``bpm`` is a user correction rather than the detected value. */
   overridden: boolean;
+  source: BpmSource;
 }
 
 interface DecodedPeaksEntry {
@@ -85,6 +86,7 @@ export function getCachedSoundcloudDecodedPeaks(
         durationS: r.duration_s,
         bpm: r.bpm,
         overridden: r.bpm_overridden,
+        source: r.bpm_source,
       };
       decodedPeaksCache.set(key, { result });
       return result;
@@ -101,11 +103,16 @@ export function getCachedSoundcloudDecodedPeaks(
  * dialog reflects it without re-decoding. No-op if peaks aren't cached yet. */
 export function updateCachedSoundcloudBpm(
   id: string | number,
-  bpm: number | null,
-  overridden: boolean,
+  r: TrackBpm,
 ): void {
   const hit = decodedPeaksCache.get(String(id));
-  if (hit?.result) hit.result = { ...hit.result, bpm, overridden };
+  if (hit?.result) hit.result = { ...hit.result, ...decodedBpm(r) };
+}
+
+export function decodedBpm(
+  r: TrackBpm,
+): Pick<DecodedPeaks, "bpm" | "overridden" | "source"> {
+  return { bpm: r.bpm, overridden: r.bpm_overridden, source: r.bpm_source };
 }
 
 /* Peaks cache — keyed by `${waveformUrl}::${numPeaks}` so we can reuse

@@ -540,6 +540,9 @@ class TrackRow:
     duration_s: float | None
     confirmed: bool
     aligned: bool
+    unreleased: bool
+    mix_in_s: float | None
+    mix_out_s: float | None
     dismissed: bool
     user_edited: bool
     set_bpm: float | None
@@ -564,6 +567,9 @@ _TRACK_COLS = (
     AnalyserTrack.__table__.c.duration_s,
     AnalyserTrack.__table__.c.confirmed,
     AnalyserTrack.__table__.c.aligned,
+    AnalyserTrack.__table__.c.unreleased,
+    AnalyserTrack.__table__.c.mix_in_s,
+    AnalyserTrack.__table__.c.mix_out_s,
     AnalyserTrack.__table__.c.dismissed,
     AnalyserTrack.__table__.c.user_edited,
     AnalyserTrack.__table__.c.set_bpm,
@@ -590,6 +596,9 @@ def _row_to_track(row) -> TrackRow:
         duration_s=None if row.duration_s is None else float(row.duration_s),
         confirmed=bool(row.confirmed),
         aligned=bool(row.aligned),
+        unreleased=bool(row.unreleased),
+        mix_in_s=None if row.mix_in_s is None else float(row.mix_in_s),
+        mix_out_s=None if row.mix_out_s is None else float(row.mix_out_s),
         dismissed=bool(row.dismissed),
         user_edited=bool(row.user_edited),
         set_bpm=None if row.set_bpm is None else float(row.set_bpm),
@@ -614,6 +623,7 @@ def insert_track(
     preview_url: str | None = None,
     duration_s: float | None = None,
     user_edited: bool = False,
+    unreleased: bool = False,
     set_bpm: float | None = None,
     pitch_offset: float | None = None,
 ) -> TrackRow:
@@ -634,6 +644,7 @@ def insert_track(
         "duration_s": duration_s,
         "confirmed": False,
         "aligned": False,
+        "unreleased": unreleased,
         "dismissed": False,
         "user_edited": user_edited,
         "set_bpm": set_bpm,
@@ -650,7 +661,7 @@ def insert_track(
     return _row_to_track(row)
 
 
-def count_tracks(job_id: str, *, include_dismissed: bool = False) -> int:
+def count_tracks(job_id: str, *, include_dismissed: bool = False, confirmed_only: bool = False) -> int:
     """Count tracks for a job without materialising rows."""
     from sqlalchemy import func
 
@@ -658,6 +669,8 @@ def count_tracks(job_id: str, *, include_dismissed: bool = False) -> int:
     stmt = select(func.count()).select_from(table).where(table.c.job_id == job_id)
     if not include_dismissed:
         stmt = stmt.where(table.c.dismissed == False)  # noqa: E712
+    if confirmed_only:
+        stmt = stmt.where(table.c.confirmed == True)  # noqa: E712
     with get_engine().begin() as conn:
         return int(conn.execute(stmt).scalar() or 0)
 
@@ -717,9 +730,12 @@ def update_track(
     duration_s: float | None = None,
     confirmed: bool | None = None,
     aligned: bool | None = None,
+    unreleased: bool | None = None,
     dismissed: bool | None = None,
     set_bpm: float | None = None,
     pitch_offset: float | None = None,
+    mix_in_s: float | None = None,
+    mix_out_s: float | None = None,
     mark_user_edited: bool = False,
 ) -> bool:
     """Apply a partial update to a track row.
@@ -743,9 +759,12 @@ def update_track(
         "duration_s": duration_s,
         "confirmed": confirmed,
         "aligned": aligned,
+        "unreleased": unreleased,
         "dismissed": dismissed,
         "set_bpm": set_bpm,
         "pitch_offset": pitch_offset,
+        "mix_in_s": mix_in_s,
+        "mix_out_s": mix_out_s,
     }
     values: dict[str, object] = {key: value for key, value in updates.items() if value is not None}
     if not isinstance(artwork_url, _Unset):

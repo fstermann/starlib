@@ -22,7 +22,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.infra.analyser import cache as audio_cache
 from backend.infra.soundcloud import token_cache
@@ -32,15 +32,20 @@ from backend.schemas.analyser import event_to_sse
 from backend.services.analyser import (
     AnalyserJobOptions,
     JobNotFoundError,
+    auto_align,
     cancel_shazam_scan,
     delete_job,
     get_job_snapshot,
     reanalyse_job,
     recent_jobs,
+    set_bpm_at,
+    soundcloud_links,
     start_job,
     start_shazam_scan,
     subscribe_to_job,
 )
+
+UNKNOWN_TITLE = soundcloud_links.UNKNOWN_TITLE
 
 logger = logging.getLogger(__name__)
 
@@ -397,13 +402,20 @@ class AddTrackRequest(BaseModel):
 
     start_s: float = Field(ge=0)
     end_s: float | None = Field(default=None, ge=0)
-    title: str = Field(min_length=1)
+    # A blank title saves as "ID", the DJ-tracklist name for an unidentified track.
+    title: str = UNKNOWN_TITLE
     artist: str | None = None
     shazam_id: str | None = None
     soundcloud_id: int | None = None
     soundcloud_permalink_url: str | None = None
     artwork_url: str | None = None
     duration_s: float | None = Field(default=None, gt=0)
+    unreleased: bool = False
+
+    @field_validator("title")
+    @classmethod
+    def _blank_title_is_id(cls, title: str) -> str:
+        return title.strip() or UNKNOWN_TITLE
 
     @model_validator(mode="after")
     def _end_after_start(self) -> AddTrackRequest:
@@ -434,11 +446,16 @@ class UpdateTrackRequest(BaseModel):
     pitch_offset: float | None = None
     confirmed: bool | None = None
     aligned: bool | None = None
+    unreleased: bool | None = None
+    mix_in_s: float | None = Field(default=None, ge=0)
+    mix_out_s: float | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def _validate(self) -> UpdateTrackRequest:
         if self.start_s is not None and self.end_s is not None and self.end_s <= self.start_s:
             raise ValueError("end_s must be greater than start_s")
+        if self.mix_in_s is not None and self.mix_out_s is not None and self.mix_out_s <= self.mix_in_s:
+            raise ValueError("mix_out_s must be greater than mix_in_s")
         return self
 
 
@@ -458,6 +475,9 @@ def _track_dict(row) -> dict:  # type: ignore[no-untyped-def]
         "duration_s": row.duration_s,
         "confirmed": row.confirmed,
         "aligned": row.aligned,
+        "unreleased": row.unreleased,
+        "mix_in_s": row.mix_in_s,
+        "mix_out_s": row.mix_out_s,
         "dismissed": row.dismissed,
         "user_edited": row.user_edited,
         "set_bpm": row.set_bpm,
@@ -487,9 +507,73 @@ def add_track(job_id: str, payload: AddTrackRequest) -> dict:
         soundcloud_permalink_url=payload.soundcloud_permalink_url,
         artwork_url=payload.artwork_url,
         duration_s=payload.duration_s,
+        unreleased=payload.unreleased,
         user_edited=True,
+        set_bpm=set_bpm_at(job_id, payload.start_s, payload.end_s),
     )
     return _track_dict(row)
+
+
+@router.post("/sets/{job_id}/tracks/link-soundcloud")
+async def link_soundcloud(job_id: str) -> dict:
+    """Search SoundCloud for tracks without a link and store the matches."""
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    linked = await soundcloud_links.link_unlinked_tracks(job_id)
+    return {"job_id": job_id, "linked": linked}
+
+
+@router.post("/sets/{job_id}/tracks/{track_id}/link-soundcloud")
+async def link_soundcloud_track(job_id: str, track_id: int) -> dict:
+    """Link one track to its SoundCloud upload; returns its id or ``null``."""
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    return {"soundcloud_id": await soundcloud_links.link_track(job_id, track_id)}
+
+
+@router.post("/sets/{job_id}/tracks/{track_id}/auto-align")
+async def auto_align_track(job_id: str, track_id: int, soundcloud_id: int | None = None) -> dict:
+    """Suggest the track's start from the audio, without saving it.
+
+    ``soundcloud_id`` overrides the row's link, for a match the align dialog
+    resolved by search. Returns ``{"found": false}`` when the original isn't in
+    the mix near where it was detected. The user confirms in the align dialog.
+    """
+    from backend.api.soundcloud.tracks import _resolve_track_audio_path
+    from backend.infra.analyser import db as analyser_db
+
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    track = next((t for t in analyser_db.list_tracks(job_id) if t.id == track_id), None)
+    if track is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="track not found")
+    soundcloud_id = soundcloud_id or track.soundcloud_id
+    if soundcloud_id is None:
+        return {"found": False}
+    original = await _resolve_track_audio_path(soundcloud_id)
+    result = await auto_align.suggest_alignment(job_id, track_id, soundcloud_id, original)
+    if result is None:
+        return {"found": False}
+    return {
+        "found": True,
+        "start_s": result.start_s,
+        "rate": result.rate,
+        "key_lock": result.key_lock,
+        "confidence": result.confidence,
+        "enter_s": result.enter_s,
+        "exit_s": result.exit_s,
+        "chunks": result.chunks,
+    }
+
+
+@router.post("/sets/{job_id}/tracks/fill-mix-points")
+async def fill_mix_points(job_id: str) -> dict:
+    """Store where hand-aligned tracks are audible, where auto-align agrees with the saved start."""
+    from backend.api.soundcloud.tracks import _resolve_track_audio_path
+
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    return {"filled": await auto_align.fill_mix_points(job_id, _resolve_track_audio_path)}
 
 
 @router.patch("/sets/{job_id}/tracks/{track_id}")
@@ -532,6 +616,9 @@ def update_track(job_id: str, track_id: int, payload: UpdateTrackRequest) -> dic
         pitch_offset=payload.pitch_offset,
         confirmed=payload.confirmed,
         aligned=payload.aligned,
+        unreleased=payload.unreleased,
+        mix_in_s=payload.mix_in_s,
+        mix_out_s=payload.mix_out_s,
         mark_user_edited=edits_identity,
     )
     if not ok:
@@ -627,6 +714,31 @@ async def get_audio(job_id: str) -> FileResponse:
         media_type="audio/mp4",
         headers={"Accept-Ranges": "bytes", "Cache-Control": "no-store"},
     )
+
+
+# Longest region one peaks request may cover; a window of ±(track + slack)
+# around one track stays well under it.
+_MAX_PEAKS_WINDOW_S = 40 * 60
+
+
+@router.get("/sets/{job_id}/peaks")
+async def get_set_peaks(job_id: str, start_s: float, end_s: float) -> dict:
+    """Waveform peaks for a region of the cached set, for the align dialog."""
+    from backend.infra.analyser import peaks as peaks_infra
+
+    snap = get_job_snapshot(job_id)
+    if snap is None or snap.get("soundcloud_id") is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    path = audio_cache.cached_set_path(int(snap["soundcloud_id"]))
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="audio not yet cached")
+    start_s = max(0.0, start_s)
+    if snap.get("duration_s"):
+        end_s = min(end_s, float(snap["duration_s"]))
+    if not 0 < end_s - start_s <= _MAX_PEAKS_WINDOW_S:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid peaks window")
+    peaks = await peaks_infra.window_peaks(path, start_s, end_s)
+    return {"start_s": start_s, "peaks_per_s": peaks_infra.PEAKS_PER_SECOND, "peaks": peaks}
 
 
 @router.get("/sets/{job_id}/events")

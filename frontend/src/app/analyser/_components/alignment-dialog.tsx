@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Crosshair,
   Headphones,
   Loader2,
   Pause,
@@ -15,10 +16,11 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
+  SearchX,
+  Sparkles,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type WaveSurferType from "wavesurfer.js";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,21 +31,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  autoAlignTrack,
+  foldTempoRatio,
   formatTimecode,
+  getSetPeaks,
   jobAudioUrl,
+  linkSoundcloudTrack,
   originalBpmFromSet,
   pitchSpeedRatio,
   updateTrack,
+  type AlignChunk,
+  type AutoAlignResult,
+  type SetPeaks,
   type TrackTimelineEntry,
 } from "@/lib/analyser";
-import { api } from "@/lib/api";
-import { getTrack, searchTracks, type SCTrack } from "@/lib/soundcloud";
+import { api, type TrackBpm } from "@/lib/api";
+import { getTrack, type SCTrack } from "@/lib/soundcloud";
 import {
+  decodedBpm,
   getCachedSoundcloudDecodedPeaks,
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
@@ -51,6 +67,13 @@ import {
   type DecodedPeaks,
 } from "@/lib/soundcloud-cache";
 import { cn } from "@/lib/utils";
+
+import {
+  PeakStrip,
+  type PeakStripHandle,
+  type StripBand,
+  type StripMarker,
+} from "./peak-strip";
 
 interface AlignmentDialogProps {
   open: boolean;
@@ -83,34 +106,70 @@ const DEFAULT_PX_PER_S = 16;
 const ZOOM_STEP = 2;
 /** Jog steps (set seconds) for scrubbing both decks together. */
 const JOG_STEPS_S = [-30, -5, 5, 30] as const;
-/** Floor for the SoundCloud peak count. The bake request scales with the
- *  rendered pixel width at MAX zoom so bars stay crisp when zoomed all the
- *  way in; this only guards very short originals and sizes the fallback
- *  silhouette. */
-const SC_NUM_PEAKS = 1000;
+/** Mix seconds loaded either side of the track: enough to drag or jog past
+ *  the mix-in and mix-out. */
+const MIX_MARGIN_S = 90;
+/** SoundCloud's own waveform is ~1 sample / 100 ms; used only when the
+ *  decoded peaks are unavailable. */
+const SC_FALLBACK_PEAKS = 1800;
+
+/** Agreeing chunks as non-overlapping spans, each as unique as the most
+ *  unique chunk covering it. Chunks overlap (30 s long, every 5 s), so
+ *  tinting each one stacks up to six layers and hides the waveform. */
+function agreeingSpans(
+  chunks: AlignChunk[],
+): { startS: number; endS: number; uniqueness: number }[] {
+  const agreeing = chunks.filter((c) => c.agrees);
+  const edges = [
+    ...new Set(agreeing.flatMap((c) => [c.start_s, c.end_s])),
+  ].sort((a, b) => a - b);
+  const spans: { startS: number; endS: number; uniqueness: number }[] = [];
+  for (let i = 0; i + 1 < edges.length; i++) {
+    const [startS, endS] = [edges[i], edges[i + 1]];
+    const covering = agreeing.filter(
+      (c) => c.start_s <= startS && c.end_s >= endS,
+    );
+    if (covering.length === 0) continue;
+    spans.push({
+      startS,
+      endS,
+      uniqueness: Math.max(...covering.map((c) => c.uniqueness)),
+    });
+  }
+  return spans;
+}
+
+// Re-anchor when the extrapolated time drifts this far from the media clock.
+const CLOCK_RESYNC_S = 0.3;
+
+/** Media time per animation frame. WebKit advances ``currentTime`` in coarse
+ *  steps, so between steps this extrapolates from the last one at the
+ *  playback rate. */
+function smoothClock() {
+  let anchorMedia = NaN;
+  let anchorAt = 0;
+  return (audio: HTMLMediaElement, now: number): number => {
+    const media = audio.currentTime;
+    if (audio.paused) return media;
+    const guess = anchorMedia + ((now - anchorAt) / 1000) * audio.playbackRate;
+    if (!(Math.abs(guess - media) < CLOCK_RESYNC_S)) {
+      anchorMedia = media;
+      anchorAt = now;
+      return media;
+    }
+    return guess;
+  };
+}
 /** Accepted original-BPM correction range, mirroring the backend's 40–300
  *  guard so an out-of-range value is caught before the request. */
 const BPM_MIN = 40;
 const BPM_MAX = 300;
 
-function scNumericId(t: SCTrack): number | null {
-  const direct = (t as { id?: number | string }).id;
-  if (typeof direct === "number") return direct;
-  if (typeof direct === "string" && /^\d+$/.test(direct)) return Number(direct);
-  const tail = t.urn?.split(":").pop();
-  return tail && /^\d+$/.test(tail) ? Number(tail) : null;
-}
-// Fallback silhouette when a SoundCloud track exposes no waveform data,
-// so the strip renders instead of spinning forever.
-const SC_PLACEHOLDER_PEAKS = Array.from(
-  { length: SC_NUM_PEAKS },
-  (_, i) => 0.25 + 0.6 * Math.abs(Math.sin(i * 0.12)),
-);
-
 /** A/B comparison + manual alignment for a Shazam-identified track.
  *
  *  Renders the cached set audio and the original SoundCloud track as
- *  two stacked WaveSurfer waveforms with a shared centre playhead. The
+ *  two stacked canvas waveforms with a shared centre playhead, both
+ *  repainted from one animation-frame loop. The
  *  user drags either waveform horizontally (zooming in for finer control)
  *  until kicks line up by eye, then saves. The saved start is computed
  *  from both positions. Transport plays both decks together
@@ -118,8 +177,8 @@ const SC_PLACEHOLDER_PEAKS = Array.from(
  *  match the mix's tempo); a DJ-style cue picks what you hear — the mix
  *  (A), the original (B), or both (master).
  *
- *  Auto cross-correlation is intentionally still out of scope — manual
- *  alignment first, server-side correlation as a follow-up. */
+ *  On open, the backend matches the original against the mix and the
+ *  strips start at its suggestion; saving stays the user's confirmation. */
 export function AlignmentDialog({
   open,
   onOpenChange,
@@ -131,22 +190,15 @@ export function AlignmentDialog({
 }: AlignmentDialogProps) {
   const soundcloudId = soundcloudIdOverride ?? track.soundcloud_id ?? null;
   const trackTitle = track.title;
-  const trackArtist = track.artist ?? null;
+  const trackId = track.id;
 
-  // Container nodes tracked as state (via callback refs) so the mount
-  // effects fire once the portaled dialog content actually attaches them —
-  // a plain ref reads null on the first effect pass and never retries.
-  const [setContainerEl, setSetContainerEl] = useState<HTMLDivElement | null>(
-    null,
-  );
-  const [scContainerEl, setScContainerEl] = useState<HTMLDivElement | null>(
-    null,
-  );
-  const setWsRef = useRef<WaveSurferType | null>(null);
-  const scWsRef = useRef<WaveSurferType | null>(null);
+  const mixStripRef = useRef<PeakStripHandle | null>(null);
+  const origStripRef = useRef<PeakStripHandle | null>(null);
   const setAudioRef = useRef<HTMLAudioElement | null>(null);
   const scAudioRef = useRef<HTMLAudioElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const [mixPeaks, setMixPeaks] = useState<SetPeaks | null>(null);
+  const [origPeaks, setOrigPeaks] = useState<number[] | null>(null);
 
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -185,7 +237,13 @@ export function AlignmentDialog({
   const [mixCenterS, setMixCenterS] = useState(track.start_s);
   const [origCenterS, setOrigCenterS] = useState(0);
   const [saving, setSaving] = useState(false);
+  // In/out set by hand at the playhead; otherwise the saved or matched ones.
+  const [mixInEdit, setMixInEdit] = useState<number | null>(null);
+  const [mixOutEdit, setMixOutEdit] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [autoAlign, setAutoAlign] = useState<
+    "running" | AutoAlignResult | null
+  >(null);
 
   // Original-BPM correction. Detection occasionally lands an octave off
   // (half/double time), which throws off the stretch ratio; the user can
@@ -205,8 +263,11 @@ export function AlignmentDialog({
 
   const setDurationBound =
     setDurationS != null && setDurationS > 0 ? setDurationS : null;
-  const origDurationBound =
-    scMeta?.durationS != null && scMeta.durationS > 0 ? scMeta.durationS : null;
+  const origDurationS =
+    scDecoded?.durationS != null && scDecoded.durationS > 0
+      ? scDecoded.durationS
+      : (scMeta?.durationS ?? 0);
+  const origDurationBound = origDurationS > 0 ? origDurationS : null;
   const clampMix = useCallback(
     (v: number) => Math.min(Math.max(0, v), setDurationBound ?? v),
     [setDurationBound],
@@ -226,7 +287,7 @@ export function AlignmentDialog({
     track.set_bpm > 0 &&
     scDecoded?.bpm != null &&
     scDecoded.bpm > 0
-      ? scDecoded.bpm / track.set_bpm
+      ? foldTempoRatio(scDecoded.bpm / track.set_bpm)
       : null;
   const speedRatio =
     bpmRatio ??
@@ -244,9 +305,9 @@ export function AlignmentDialog({
   const mixSpeedFactor = 1 / speedRatio;
 
   const applyDecodedBpm = useCallback(
-    (bpm: number | null, overridden: boolean) => {
-      setScDecoded((prev) => (prev ? { ...prev, bpm, overridden } : prev));
-      if (scId != null) updateCachedSoundcloudBpm(scId, bpm, overridden);
+    (r: TrackBpm) => {
+      setScDecoded((prev) => (prev ? { ...prev, ...decodedBpm(r) } : prev));
+      if (scId != null) updateCachedSoundcloudBpm(scId, r);
     },
     [scId],
   );
@@ -262,7 +323,7 @@ export function AlignmentDialog({
     setBpmError(null);
     try {
       const r = await api.setSoundcloudTrackBpm(scId, value);
-      applyDecodedBpm(r.bpm, r.bpm_overridden);
+      applyDecodedBpm(r);
       setBpmEditing(false);
     } catch (err) {
       setBpmError(err instanceof Error ? err.message : String(err));
@@ -277,7 +338,7 @@ export function AlignmentDialog({
     setBpmError(null);
     try {
       const r = await api.clearSoundcloudTrackBpm(scId);
-      applyDecodedBpm(r.bpm, r.bpm_overridden);
+      applyDecodedBpm(r);
     } catch (err) {
       setBpmError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -285,42 +346,32 @@ export function AlignmentDialog({
     }
   }, [scId, applyDecodedBpm]);
 
-  const reanalyseBpm = useCallback(async () => {
-    if (scId == null) return;
-    setBpmBusy(true);
-    setBpmError(null);
-    try {
-      const r = await api.reanalyseSoundcloudTrackBpm(scId);
-      applyDecodedBpm(r.bpm, r.bpm_overridden);
-    } catch (err) {
-      setBpmError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBpmBusy(false);
-    }
-  }, [scId, applyDecodedBpm]);
+  const reanalyseBpm = useCallback(
+    async (strong: boolean) => {
+      if (scId == null) return;
+      setBpmBusy(true);
+      setBpmError(null);
+      try {
+        const r = await api.reanalyseSoundcloudTrackBpm(scId, strong);
+        applyDecodedBpm(r);
+      } catch (err) {
+        setBpmError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBpmBusy(false);
+      }
+    },
+    [scId, applyDecodedBpm],
+  );
 
   // SC plays at ``1/speedRatio`` to match set tempo. Visually we
   // compensate by stretching the SC waveform so 1 px = same set-time
   // as the set strip. Internal px-per-original-second is reduced
   // accordingly.
   const scPxPerSec = pxPerSec * speedRatio;
-
-  // Live-zoom mirrors read by the once-created scroll handlers, plus the
-  // baked SC lead-in pad (seconds) so those handlers centre correctly at
-  // any zoom (the pad is sized for the widest — min-zoom — viewport).
-  const pxPerSecRef = useRef(pxPerSec);
-  const scPxPerSecRef = useRef(scPxPerSec);
-  const scPadSRef = useRef(0);
-  pxPerSecRef.current = pxPerSec;
-  scPxPerSecRef.current = scPxPerSec;
-  // Mirrors read by the SC-strip build so it can bake from the current
-  // decoded peaks + speed ratio without listing them as effect deps — a BPM
-  // correction mutates both, and re-running the effect would tear down and
-  // re-buffer the HLS stream. Scale changes are applied live via ``ws.zoom``.
+  // Read by the original deck's mount so a BPM correction doesn't re-run it
+  // (and re-buffer the stream).
   const scDecodedRef = useRef(scDecoded);
-  const speedRatioRef = useRef(speedRatio);
   scDecodedRef.current = scDecoded;
-  speedRatioRef.current = speedRatio;
 
   // The saved start is where the original's t=0 lands in the mix. At the
   // playhead mix=``mixCenterS`` aligns with original=``origCenterS``, and
@@ -335,6 +386,8 @@ export function AlignmentDialog({
       setMixCenterS(track.start_s);
       setOrigCenterS(0);
       setSaveError(null);
+      setMixInEdit(null);
+      setMixOutEdit(null);
     }
   }, [open, track.id, track.start_s]);
 
@@ -361,16 +414,14 @@ export function AlignmentDialog({
         // Persisted / find-resolved id: fetch the track for its waveform.
         hit = await getTrack(`soundcloud:tracks:${id}`).catch(() => null);
       } else if (trackTitle) {
-        // Shazam row: resolve via search (its hit already carries the
-        // waveform + duration).
-        try {
-          const q = `${trackTitle} ${trackArtist ?? ""}`.trim();
-          const hits = q ? await searchTracks(q, 1) : [];
-          hit = hits[0] ?? null;
-          id = hit ? scNumericId(hit) : null;
-        } catch {
-          hit = null;
-          id = null;
+        // Shazam row: the backend's matcher checks title, artist, remixer
+        // and length, so a loose top search hit isn't streamed as the
+        // original. It also saves the link.
+        id = await linkSoundcloudTrack(jobId, trackId)
+          .then((r) => r.soundcloud_id)
+          .catch(() => null);
+        if (id != null) {
+          hit = await getTrack(`soundcloud:tracks:${id}`).catch(() => null);
         }
       }
       if (cancelled) return;
@@ -403,7 +454,7 @@ export function AlignmentDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, soundcloudId, trackTitle, trackArtist]);
+  }, [open, soundcloudId, trackTitle, jobId, trackId]);
 
   // Fetch the server-decoded peaks + detected tempo once the original id is
   // known, before the SC strip builds — so the speed ratio (which drives the
@@ -425,249 +476,133 @@ export function AlignmentDialog({
     };
   }, [open, scId]);
 
-  // Mount the SET waveform when the dialog opens. Let WaveSurfer own the
-  // media element (URL mode, same as the main set waveform) — decoding a
-  // detached ``new Audio()`` element left the strip stuck on "loading".
+  // Suggest a position from the audio. Skipped for rows the user already
+  // aligned, and dropped if they moved a strip while it ran. Centring the
+  // original's 0:00 on the suggestion keeps the saved start exact whatever
+  // speed ratio the dialog settles on.
+  const positionsRef = useRef({ mix: mixCenterS, orig: origCenterS });
+  positionsRef.current = { mix: mixCenterS, orig: origCenterS };
+  // A BPM change reruns it: the tempo sets the playback rates it searches,
+  // and the new result moves the strips even if the user had moved them.
+  const alignBpm = scDecodedResolved ? (scDecoded?.bpm ?? null) : undefined;
+  const lastAlignBpmRef = useRef<number | null | undefined>(undefined);
   useEffect(() => {
-    if (!open) return;
-    const container = setContainerEl;
-    if (!container) return;
+    setAutoAlign(null);
+    if (!open || scId == null || alignBpm === undefined) {
+      // A new track or reopen starts fresh, not as a BPM change.
+      lastAlignBpmRef.current = undefined;
+      return;
+    }
+    const bpmChanged =
+      lastAlignBpmRef.current !== undefined &&
+      lastAlignBpmRef.current !== alignBpm;
+    lastAlignBpmRef.current = alignBpm;
+    if (track.aligned && !bpmChanged) return;
     let cancelled = false;
-    let teardown: (() => void) | null = null;
-    setSetReady(false);
-    void (async () => {
-      const { default: WaveSurfer } = await import("wavesurfer.js");
-      if (cancelled || !container) return;
-      const cs = getComputedStyle(document.documentElement);
-      const colour = (token: string, fallback: string) => {
-        const v = cs.getPropertyValue(token).trim();
-        return v.length > 0 ? v : fallback;
-      };
-      const ws = WaveSurfer.create({
-        container,
-        url: jobAudioUrl(jobId),
-        height: 80,
-        waveColor: colour("--color-text-subtle", "#888"),
-        progressColor: colour("--color-brand", "#a0e060"),
-        cursorColor: colour("--color-brand-active", "#84c441"),
-        cursorWidth: 0,
-        barWidth: 2,
-        barGap: 1,
-        barRadius: 1,
-        normalize: true,
-        minPxPerSec: pxPerSecRef.current,
-        autoScroll: false,
-        interact: true,
-        duration: setDurationS && setDurationS > 0 ? setDurationS : undefined,
-      });
-      setWsRef.current = ws;
-      setAudioRef.current = ws.getMediaElement();
-      ws.on("ready", () => {
+    setAutoAlign("running");
+    void autoAlignTrack(jobId, track.id, scId)
+      .catch((): AutoAlignResult => ({ found: false }))
+      .then((r) => {
         if (cancelled) return;
-        setSetReady(true);
+        setAutoAlign(r);
+        const untouched =
+          positionsRef.current.mix === track.start_s &&
+          positionsRef.current.orig === 0;
+        if (!r.found || !(untouched || bpmChanged)) return;
+        setMixCenterS(Math.max(0, r.start_s));
+        setOrigCenterS(0);
       });
-      // Follow the playhead by scrolling the strip so the current mix
-      // time stays under the centred playhead. WaveSurfer's scroll lives
-      // in a shadow-DOM child, so ``ws.setScroll`` is the only way to move
-      // it — setting the container's ``scrollLeft`` is a no-op.
-      ws.on("timeupdate", (t: number) => {
-        ws.setScroll(t * pxPerSecRef.current - container.clientWidth / 2);
-      });
-      ws.on("finish", () => setTransport(false));
-      teardown = () => {
-        try {
-          ws.destroy();
-        } catch {
-          /* already torn down */
-        }
-      };
-    })();
     return () => {
       cancelled = true;
-      teardown?.();
-      setWsRef.current = null;
+    };
+  }, [open, scId, alignBpm, jobId, track.id, track.start_s, track.aligned]);
+
+  // Mix deck: a plain media element on the cached set (Range-served), and
+  // peaks for just the region around the track, so nothing decodes the
+  // whole multi-hour set in the browser.
+  useEffect(() => {
+    setSetReady(false);
+    setMixPeaks(null);
+    if (!open) return;
+    const audio = new Audio(jobAudioUrl(jobId));
+    audio.preload = "auto";
+    setAudioRef.current = audio;
+    const onEnded = () => setTransport(false);
+    audio.addEventListener("ended", onEnded);
+    let cancelled = false;
+    const reach = (track.duration_s ?? 600) + MIX_MARGIN_S;
+    void getSetPeaks(jobId, track.start_s - reach, track.start_s + reach)
+      .then((r) => {
+        if (cancelled) return;
+        setMixPeaks(r);
+        setSetReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setSetReady(true);
+      });
+    return () => {
+      cancelled = true;
+      audio.removeEventListener("ended", onEnded);
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
       setAudioRef.current = null;
     };
-  }, [open, jobId, setDurationS, setContainerEl]);
+  }, [open, jobId, track.start_s, track.duration_s]);
 
-  // Mount the SC original waveform when the stream URL resolves. Wait for the
-  // decoded-peaks fetch to resolve first so ``speedRatio`` (BPM-derived) is
-  // settled before we bake the strip's scale — otherwise it would rebuild
-  // (and re-buffer the stream) when the tempo arrived.
+  // Original deck: stream the SoundCloud upload (HLS) and paint from the
+  // server-decoded peaks, falling back to SoundCloud's coarse waveform.
   useEffect(() => {
-    if (!open) return;
-    const container = scContainerEl;
-    if (!container || !streamUrl || !scDecodedResolved) return;
-    let cancelled = false;
-    let teardown: (() => void) | null = null;
     setScReady(false);
+    setOrigPeaks(null);
+    if (!open || !streamUrl || !scDecodedResolved) return;
+    let cancelled = false;
+    const audio = new Audio();
+    audio.preload = "auto";
+    // Attach to the DOM (hidden). A detached, MediaSource-fed element
+    // doesn't reliably fire ``loadedmetadata`` in the Tauri webview.
+    audio.hidden = true;
+    document.body.appendChild(audio);
+    const noQuery = streamUrl.split("?")[0] ?? streamUrl;
+    if (noQuery.endsWith(".m3u8") && Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(streamUrl);
+      hls.attachMedia(audio);
+      hlsRef.current = hls;
+    } else {
+      audio.src = streamUrl;
+    }
+    scAudioRef.current = audio;
+    const onEnded = () => setTransport(false);
+    audio.addEventListener("ended", onEnded);
+
+    const decoded = scDecodedRef.current;
     void (async () => {
-      const { default: WaveSurfer } = await import("wavesurfer.js");
-      if (cancelled || !container) return;
-      const audio = new Audio();
-      audio.preload = "auto";
-      // Attach to the DOM (hidden). A detached, MediaSource-fed element
-      // doesn't reliably fire ``loadedmetadata`` in the Tauri webview,
-      // which is where the SC duration comes from when the API omits it.
-      audio.hidden = true;
-      document.body.appendChild(audio);
-      const noQuery = streamUrl.split("?")[0] ?? streamUrl;
-      if (noQuery.endsWith(".m3u8") && Hls.isSupported()) {
-        const hls = new Hls();
-        hls.loadSource(streamUrl);
-        hls.attachMedia(audio);
-        hlsRef.current = hls;
-      } else {
-        audio.src = streamUrl;
-      }
-      scAudioRef.current = audio;
-      const onEnded = () => setTransport(false);
-      audio.addEventListener("ended", onEnded);
-
-      // The element is fed by hls.js via MediaSource, so it has no fetchable
-      // ``src`` for WaveSurfer to decode. Paint from precomputed peaks
-      // instead. Prefer the server-decoded duration (matches the decoded
-      // peaks), then the API duration, then the element's own metadata.
-      const decoded = scDecodedRef.current;
-      const speed = speedRatioRef.current;
-      const apiDuration =
-        decoded?.durationS != null && decoded.durationS > 0
-          ? decoded.durationS
-          : (scMeta?.durationS ?? 0);
-
-      const cs = getComputedStyle(document.documentElement);
-      const colour = (token: string, fallback: string) => {
-        const v = cs.getPropertyValue(token).trim();
-        return v.length > 0 ? v : fallback;
-      };
-      // Build the waveform once the duration is known. Request ~one peak
-      // per two rendered pixels so the bars stay crisp at this zoom — the
-      // old fixed 1000-peak downsample smeared each peak across many pixels,
-      // which read as a coarse, "too wide" strip next to the full-resolution
-      // mix.
-      const buildFor = async (origDuration: number) => {
-        if (cancelled || scWsRef.current || !container || origDuration <= 0)
-          return;
-        // Pad the front with a lead-in of silence so the original's t=0 can
-        // sit under the centred playhead (WaveSurfer can't scroll before
-        // t=0). Size it for the widest — MIN-zoom — viewport so it's always
-        // enough; the scroll handlers account for the exact pad at any zoom
-        // via ``(scPadS + t) * scPxPerSec - halfW``.
-        const halfW = (container.clientWidth || 600) / 2;
-        // Pad is baked once and not rebuilt on a later BPM correction, which
-        // can lower ``speed`` (and so raise the pad the min-zoom viewport
-        // needs). Size it for half the current ratio — enough headroom for a
-        // downward-octave correction to still centre t=0 without a rebuild.
-        const scPadS = halfW / (MIN_PX_PER_S * (speed / 2));
-        scPadSRef.current = scPadS;
-        // Bake peaks dense enough for the MOST zoomed-in view; WaveSurfer
-        // downsamples for lower zoom and ``ws.zoom`` re-renders from these
-        // without another fetch, so zooming in stays crisp.
-        const maxWidthPx = (scPadS + origDuration) * (MAX_PX_PER_S * speed);
-        const targetPeaks = Math.min(
-          20000,
-          Math.max(SC_NUM_PEAKS, Math.ceil(maxWidthPx / 2)),
+      let peaks: number[] | null =
+        decoded && decoded.peaks.length > 0 ? decoded.peaks : null;
+      if (!peaks && scMeta?.waveformUrl) {
+        peaks = await getCachedSoundcloudPeaks(
+          scMeta.waveformUrl,
+          SC_FALLBACK_PEAKS,
         );
-        // Prefer high-res peaks decoded server-side from the actual audio
-        // (fetched into ``scDecoded`` before this effect ran). SoundCloud's
-        // waveform_url is too coarse (~1 sample/100ms) and tiles into
-        // repeating blocks when zoomed in; fall back to it only if the decode
-        // endpoint had nothing.
-        let base: number[];
-        if (decoded && decoded.peaks.length > 0) {
-          base = decoded.peaks;
-        } else {
-          const rawPeaks = scMeta?.waveformUrl
-            ? await getCachedSoundcloudPeaks(scMeta.waveformUrl, targetPeaks)
-            : null;
-          if (cancelled || scWsRef.current || !container) return;
-          base = rawPeaks ?? SC_PLACEHOLDER_PEAKS;
-        }
-        // The decoded peaks span the audio's *real* duration, which can differ
-        // from SoundCloud's API duration by a second or two. Scale the strip's
-        // time axis to whichever produced ``base`` so kicks don't drift over
-        // distance and the playhead follows real playback time.
-        const effectiveDuration =
-          decoded && decoded.durationS > 0 ? decoded.durationS : origDuration;
-        const secPerPeak = effectiveDuration / base.length;
-        const padCount = secPerPeak > 0 ? Math.round(scPadS / secPerPeak) : 0;
-        const paddedPeaks = [...new Array<number>(padCount).fill(0), ...base];
-        const ws = WaveSurfer.create({
-          container,
-          media: audio,
-          height: 80,
-          waveColor: colour("--color-text-subtle", "#888"),
-          // Hide the built-in progress fill: the padded waveform width no
-          // longer matches the media's real duration, so the fill would sit
-          // in the wrong place. The centred playhead marks position instead.
-          progressColor: colour("--color-text-subtle", "#888"),
-          cursorColor: colour("--color-brand-active", "#84c441"),
-          cursorWidth: 0,
-          barWidth: 2,
-          barGap: 1,
-          barRadius: 1,
-          normalize: true,
-          // Visually 1 px = 1/pxPerSec of *set* time for both strips,
-          // achieved by scaling the SC's px-per-second by the speed
-          // ratio. Listening playback rate is set separately on the audio
-          // element so the SC plays at set tempo by ear too.
-          minPxPerSec: scPxPerSecRef.current,
-          autoScroll: false,
-          // The drag overlay owns pointer interaction; disable WaveSurfer's
-          // own click-to-seek so it can't fight our manual scroll.
-          interact: false,
-          peaks: [paddedPeaks],
-          duration: scPadS + effectiveDuration,
-        });
-        scWsRef.current = ws;
-        ws.on("ready", () => {
-          if (!cancelled) setScReady(true);
-        });
-        // Follow the playhead: centre original-time ``t`` at the current zoom.
-        ws.on("timeupdate", (t: number) => {
-          ws.setScroll(
-            (scPadSRef.current + t) * scPxPerSecRef.current -
-              (container.clientWidth || 0) / 2,
-          );
-        });
-      };
-      const onMeta = () => {
-        if (Number.isFinite(audio.duration) && audio.duration > 0) {
-          void buildFor(audio.duration);
-        }
-      };
-      if (apiDuration > 0) void buildFor(apiDuration);
-      else audio.addEventListener("loadedmetadata", onMeta, { once: true });
-
-      teardown = () => {
-        audio.removeEventListener("loadedmetadata", onMeta);
-        audio.removeEventListener("ended", onEnded);
-        try {
-          scWsRef.current?.destroy();
-        } catch {
-          /* already torn down */
-        }
-        hlsRef.current?.destroy();
-        hlsRef.current = null;
-        audio.pause();
-        audio.src = "";
-        audio.remove();
-      };
+      }
+      if (cancelled) return;
+      setOrigPeaks(peaks ?? []);
+      setScReady(true);
     })();
     return () => {
       cancelled = true;
-      teardown?.();
-      scWsRef.current = null;
+      audio.removeEventListener("ended", onEnded);
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+      audio.pause();
+      audio.src = "";
+      audio.remove();
       scAudioRef.current = null;
     };
-    // Zoom is NOT a dependency: it's applied live via ``ws.zoom`` so this
-    // effect (which loads the HLS stream) doesn't re-run — and re-buffer —
-    // on every slider tick. ``speedRatio`` and ``scDecoded`` are read through
-    // refs, NOT deps: a BPM correction mutates both, and rebuilding here would
-    // re-buffer the stream. Their initial values are settled before this runs
-    // (gated on ``scDecodedResolved``); later changes reach the strip live via
-    // the zoom effect (scale) and the playbackRate effect (tempo).
-  }, [open, streamUrl, scDecodedResolved, scMeta, scContainerEl]);
+    // ``scDecoded`` is read through a ref: a BPM correction mutates it, and
+    // re-running here would re-buffer the stream.
+  }, [open, streamUrl, scDecodedResolved, scMeta]);
 
   // Pitch-match: the SC track plays back faster or slower so the
   // listener hears it at the same tempo as the mix.
@@ -677,54 +612,44 @@ export function AlignmentDialog({
     audio.playbackRate = 1 / speedRatio;
   }, [speedRatio, scReady]);
 
-  // Apply zoom live to both strips: ``ws.zoom`` re-renders from the already-
-  // loaded peaks/decoded data, so it costs no fetch and doesn't re-buffer the
-  // SC stream. Re-centring is left to the paused effect (below) or, during
-  // playback, the next ``timeupdate`` tick.
+  // While playing, one animation-frame loop reads both media clocks and
+  // repaints both strips, so they move in lockstep at display rate. Paused,
+  // each strip repaints from its position prop instead.
   useEffect(() => {
-    try {
-      if (setReady) setWsRef.current?.zoom(pxPerSec);
-    } catch {
-      /* not ready to zoom yet */
-    }
-    try {
-      if (scReady) scWsRef.current?.zoom(scPxPerSec);
-    } catch {
-      /* not ready to zoom yet */
-    }
-  }, [pxPerSec, scPxPerSec, setReady, scReady]);
+    if (!isPlaying) return;
+    let frame = 0;
+    const mixClock = smoothClock();
+    const origClock = smoothClock();
+    const tick = (now: number) => {
+      const mix = setAudioRef.current;
+      const orig = scAudioRef.current;
+      if (mix) mixStripRef.current?.draw(mixClock(mix, now));
+      if (orig) origStripRef.current?.draw(origClock(orig, now));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isPlaying]);
 
-  // Position both strips while paused, each centred on its own position,
-  // and seek the media elements there so pressing play starts aligned.
-  // During playback the per-strip ``timeupdate`` handlers own the scroll
-  // (they follow the playhead), so this only runs when paused.
+  // Seek both decks to the strips' positions while paused, so pressing play
+  // starts aligned.
   useEffect(() => {
     if (isPlaying) return;
-    const setWs = setWsRef.current;
-    const scWs = scWsRef.current;
-    const setC = setContainerEl;
-    const scC = scContainerEl;
-    if (setWs && setC && setReady) {
-      if (setAudioRef.current) setAudioRef.current.currentTime = mixCenterS;
-      setWs.setScroll(mixCenterS * pxPerSec - setC.clientWidth / 2);
-    }
-    if (scWs && scC && scReady) {
-      if (scAudioRef.current) scAudioRef.current.currentTime = origCenterS;
-      scWs.setScroll(
-        (scPadSRef.current + origCenterS) * scPxPerSec - scC.clientWidth / 2,
-      );
-    }
-  }, [
-    isPlaying,
-    mixCenterS,
-    origCenterS,
-    pxPerSec,
-    scPxPerSec,
-    setReady,
-    scReady,
-    setContainerEl,
-    scContainerEl,
-  ]);
+    if (setAudioRef.current) setAudioRef.current.currentTime = mixCenterS;
+    if (scAudioRef.current) scAudioRef.current.currentTime = origCenterS;
+  }, [isPlaying, mixCenterS, origCenterS, setReady, scReady]);
+
+  // Stop the decks where playback left them, so pausing doesn't snap the
+  // strips back to where play started.
+  const pauseAt = useCallback(() => {
+    const mix = setAudioRef.current;
+    const orig = scAudioRef.current;
+    mix?.pause();
+    orig?.pause();
+    if (mix) setMixCenterS(mix.currentTime);
+    if (orig) setOrigCenterS(orig.currentTime);
+    setTransport(false);
+  }, []);
 
   // Drag either strip horizontally to move its position under the centred
   // playhead. Dragging right moves the waveform right, so the time at the
@@ -736,33 +661,33 @@ export function AlignmentDialog({
     start: number;
     kind: "mix" | "orig";
   } | null>(null);
-  // Pause both decks when a drag begins. While playing, the ``timeupdate``
-  // handlers own the scroll (following the playhead) and the paused-position
-  // effect is gated off, so a drag would silently shift ``newStartS`` with no
-  // visible or audible effect. Pausing hands control to the paused-position
-  // effect so the drag actually moves the strip and seeks the deck.
-  const pauseTransport = useCallback(() => {
-    setAudioRef.current?.pause();
-    scAudioRef.current?.pause();
-    setTransport(false);
-  }, []);
   const onMixPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       e.preventDefault();
-      pauseTransport();
-      dragRef.current = { startX: e.clientX, start: mixCenterS, kind: "mix" };
+      if (transport) pauseAt();
+      const start = setAudioRef.current?.currentTime ?? mixCenterS;
+      dragRef.current = {
+        startX: e.clientX,
+        start: transport ? start : mixCenterS,
+        kind: "mix",
+      };
       (e.target as HTMLDivElement).setPointerCapture(e.pointerId);
     },
-    [mixCenterS, pauseTransport],
+    [mixCenterS, transport, pauseAt],
   );
   const onOrigPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       e.preventDefault();
-      pauseTransport();
-      dragRef.current = { startX: e.clientX, start: origCenterS, kind: "orig" };
+      if (transport) pauseAt();
+      const start = scAudioRef.current?.currentTime ?? origCenterS;
+      dragRef.current = {
+        startX: e.clientX,
+        start: transport ? start : origCenterS,
+        kind: "orig",
+      };
       (e.target as HTMLDivElement).setPointerCapture(e.pointerId);
     },
-    [origCenterS, pauseTransport],
+    [origCenterS, transport, pauseAt],
   );
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -789,8 +714,14 @@ export function AlignmentDialog({
   // through the pair to sanity-check the match away from the drop.
   const skipBoth = useCallback(
     (deltaSet: number) => {
-      const newMix = clampMix(mixCenterS + deltaSet);
-      const newOrig = clampOrig(origCenterS + deltaSet / speedRatio);
+      const mixNow = isPlaying
+        ? (setAudioRef.current?.currentTime ?? mixCenterS)
+        : mixCenterS;
+      const origNow = isPlaying
+        ? (scAudioRef.current?.currentTime ?? origCenterS)
+        : origCenterS;
+      const newMix = clampMix(mixNow + deltaSet);
+      const newOrig = clampOrig(origNow + deltaSet / speedRatio);
       setMixCenterS(newMix);
       setOrigCenterS(newOrig);
       if (isPlaying) {
@@ -838,9 +769,7 @@ export function AlignmentDialog({
     const setAudio = setAudioRef.current;
     const scAudio = scAudioRef.current;
     if (transport) {
-      setAudio?.pause();
-      scAudio?.pause();
-      setTransport(false);
+      pauseAt();
       return;
     }
     if (setAudio) setAudio.currentTime = mixCenterS;
@@ -848,18 +777,63 @@ export function AlignmentDialog({
     applyCue(cue);
     try {
       if (scAudio) scAudio.playbackRate = 1 / speedRatio;
+      // Don't wait on the original: a stream still buffering would hold the
+      // whole transport. It joins once it can play.
+      scAudio?.play().catch((err: unknown) => {
+        console.warn("alignment: original playback failed", err);
+      });
       if (setAudio) await setAudio.play();
-      if (scAudio) await scAudio.play();
       setTransport(true);
     } catch (err) {
       console.warn("alignment: playback failed", err);
       setTransport(false);
     }
-  }, [transport, mixCenterS, origCenterS, cue, applyCue, speedRatio]);
+  }, [transport, mixCenterS, origCenterS, cue, applyCue, speedRatio, pauseAt]);
+
+  // Where the match says the track plays: tinted on the mix (mix seconds),
+  // and on the original its chunks by how they voted. Unique chunks that
+  // agree carry the match and get the strongest tint.
+  const found =
+    autoAlign !== null && autoAlign !== "running" && autoAlign.found
+      ? autoAlign
+      : null;
+  // Where the track is audible. The mix start is the original's 0:00, which
+  // for a track mixed in partway can sit long before it is heard. A match
+  // is shifted by however far the user moved the start since.
+  const shift = found ? newStartS - found.start_s : 0;
+  const mixIn =
+    mixInEdit ?? (found ? found.enter_s + shift : (track.mix_in_s ?? null));
+  const mixOut =
+    mixOutEdit ?? (found ? found.exit_s + shift : (track.mix_out_s ?? null));
+  const entry =
+    mixIn != null
+      ? (() => {
+          const mixS = Math.max(newStartS, mixIn);
+          return { mixS, origS: (mixS - newStartS) / speedRatio };
+        })()
+      : null;
+  const mixBands: StripBand[] =
+    mixIn != null && mixOut != null
+      ? [{ startS: mixIn, endS: mixOut, token: "--color-brand", alpha: 0.1 }]
+      : [];
+  const mixMarkers: StripMarker[] = found
+    ? [{ atS: found.start_s, token: "--color-brand" }]
+    : [];
+  const origBands: StripBand[] = agreeingSpans(found?.chunks ?? []).map(
+    (span) => ({
+      startS: span.startS,
+      endS: span.endS,
+      token: "--color-brand",
+      alpha: 0.04 + 0.14 * span.uniqueness,
+    }),
+  );
 
   // ``markAligned`` promotes the row to the highest curation tier
   // (confirmed + alignment-verified) as part of the save, so the user can
   // sign off the alignment right after nudging.
+  const currentMixS = () =>
+    isPlaying ? (setAudioRef.current?.currentTime ?? mixCenterS) : mixCenterS;
+
   const save = useCallback(
     async (markAligned: boolean) => {
       if (saving) return;
@@ -868,6 +842,9 @@ export function AlignmentDialog({
       try {
         await updateTrack(jobId, track.id, {
           start_s: newStartS,
+          ...(mixIn != null && mixOut != null && mixOut > mixIn
+            ? { mix_in_s: mixIn, mix_out_s: mixOut }
+            : {}),
           ...(markAligned ? { confirmed: true, aligned: true } : {}),
         });
         onSaved?.(newStartS);
@@ -878,13 +855,13 @@ export function AlignmentDialog({
         setSaving(false);
       }
     },
-    [jobId, newStartS, onOpenChange, onSaved, saving, track.id],
+    [jobId, newStartS, mixIn, mixOut, onOpenChange, onSaved, saving, track.id],
   );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[90dvh] max-w-2xl overflow-y-auto"
+        className="max-h-[90dvh] w-[min(96vw,90rem)] overflow-y-auto sm:max-w-none"
         data-testid="alignment-dialog"
       >
         <DialogHeader>
@@ -896,25 +873,58 @@ export function AlignmentDialog({
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col gap-3">
-          <div className="border-border bg-surface-2 flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2">
+          <div className="border-border bg-surface-2 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border px-3 py-2">
             <div className="flex flex-col">
               <span className="text-text-subtle text-2xs tracking-wider uppercase">
                 Mix start
               </span>
-              <span
-                className="text-text text-xl tabular-nums"
-                data-testid="alignment-new-start"
+              <div className="flex items-baseline gap-3">
+                <span
+                  className="text-text text-xl tabular-nums"
+                  data-testid="alignment-new-start"
+                >
+                  {formatTimecode(newStartS)}
+                </span>
+                <span className="text-text-subtle text-xs tabular-nums">
+                  {offsetS >= 0 ? "+" : "−"}
+                  {Math.abs(offsetS).toFixed(2)} s vs. detected{" "}
+                  {formatTimecode(track.start_s)}
+                </span>
+              </div>
+            </div>
+            <MixPoint
+              label="Comes in"
+              testId="alignment-entry"
+              atS={entry?.mixS ?? null}
+              detail={
+                entry ? `${formatTimecode(entry.origS)} into the track` : null
+              }
+              onSetHere={() => setMixInEdit(currentMixS())}
+            />
+            <MixPoint
+              label="Goes out"
+              testId="alignment-exit"
+              atS={mixOut}
+              detail={null}
+              onSetHere={() => setMixOutEdit(currentMixS())}
+            />
+            {autoAlign != null && <AutoAlignBadge state={autoAlign} />}
+            {found && (
+              <p
+                className="text-text-subtle text-2xs ml-auto flex flex-wrap items-center gap-x-3 gap-y-1"
+                data-testid="alignment-match-legend"
               >
-                {formatTimecode(newStartS)}
-              </span>
-            </div>
-            <div className="text-text-subtle flex flex-col items-end text-xs">
-              <span>
-                {offsetS >= 0 ? "+" : ""}
-                {offsetS.toFixed(2)} s vs. detected (
-                {formatTimecode(track.start_s)})
-              </span>
-            </div>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="bg-brand inline-block h-3 w-0.5" />
+                  suggested start
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="bg-brand/20 inline-block size-3 rounded-xs" />
+                  where the track plays · original: brighter = more unique part,
+                  weighs more in the match
+                </span>
+              </p>
+            )}
           </div>
 
           {/* Set waveform — top strip, drag to move the mix. */}
@@ -938,9 +948,22 @@ export function AlignmentDialog({
               </span>
             </div>
             <WaveformStrip
-              containerRef={setSetContainerEl}
               ready={setReady}
               testId="alignment-set-strip"
+              strip={
+                mixPeaks && (
+                  <PeakStrip
+                    ref={mixStripRef}
+                    peaks={mixPeaks.peaks}
+                    peaksPerS={mixPeaks.peaks_per_s}
+                    startS={mixPeaks.start_s}
+                    pxPerS={pxPerSec}
+                    bands={mixBands}
+                    markers={mixMarkers}
+                    centerS={mixCenterS}
+                  />
+                )
+              }
               onPointerDown={onMixPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -1021,6 +1044,15 @@ export function AlignmentDialog({
                           corrected
                         </span>
                       )}
+                      {scDecoded.source === "soundcloud" && (
+                        <span
+                          className="text-text-muted text-2xs"
+                          data-testid="alignment-bpm-soundcloud"
+                          title="Tempo listed on SoundCloud"
+                        >
+                          from SoundCloud
+                        </span>
+                      )}
                       <Button
                         type="button"
                         variant="ghost"
@@ -1038,18 +1070,54 @@ export function AlignmentDialog({
                       >
                         <Pencil />
                       </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => void reanalyseBpm()}
-                        disabled={bpmBusy}
-                        aria-label="Reanalyse BPM"
-                        title="Reanalyse BPM"
-                        data-testid="alignment-bpm-reanalyse"
-                      >
-                        <RefreshCw className={cn(bpmBusy && "animate-spin")} />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            disabled={bpmBusy}
+                            aria-label="Reanalyse BPM"
+                            title="Reanalyse BPM"
+                            data-testid="alignment-bpm-reanalyse"
+                          >
+                            <RefreshCw
+                              className={cn(bpmBusy && "animate-spin")}
+                            />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-64">
+                          <DropdownMenuItem
+                            onSelect={() => void reanalyseBpm(false)}
+                            data-testid="alignment-bpm-reanalyse-default"
+                            className="items-start py-2"
+                          >
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-sm font-medium">
+                                Reanalyse
+                              </span>
+                              <span className="text-text-muted text-xs">
+                                Same algorithm, fresh run
+                              </span>
+                            </div>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => void reanalyseBpm(true)}
+                            data-testid="alignment-bpm-reanalyse-strong"
+                            className="items-start py-2"
+                          >
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-sm font-medium">
+                                Stronger algorithm
+                              </span>
+                              <span className="text-text-muted text-xs">
+                                DP beat tracker, fixes dotted/triplet sub-rate
+                                locks
+                              </span>
+                            </div>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       {scDecoded.overridden && (
                         <Button
                           type="button"
@@ -1080,9 +1148,24 @@ export function AlignmentDialog({
               </span>
             )}
             <WaveformStrip
-              containerRef={setScContainerEl}
               ready={scReady}
               testId="alignment-sc-strip"
+              strip={
+                origPeaks && (
+                  <PeakStrip
+                    ref={origStripRef}
+                    peaks={origPeaks}
+                    peaksPerS={
+                      origDurationS > 0 ? origPeaks.length / origDurationS : 1
+                    }
+                    startS={0}
+                    pxPerS={scPxPerSec}
+                    bands={origBands}
+                    markers={[]}
+                    centerS={origCenterS}
+                  />
+                )
+              }
               onPointerDown={onOrigPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -1092,45 +1175,9 @@ export function AlignmentDialog({
             />
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="text-text-subtle text-2xs w-8 tracking-wider uppercase">
-              Zoom
-            </span>
-            <Slider
-              aria-label="Waveform zoom"
-              min={MIN_PX_PER_S}
-              max={MAX_PX_PER_S}
-              step={ZOOM_STEP}
-              value={[pxPerSec]}
-              onValueChange={([v]) => {
-                if (v != null) setPxPerSec(v);
-              }}
-              className="flex-1"
-              data-testid="alignment-zoom"
-            />
-            <span
-              className="text-text-muted w-10 text-right text-xs tabular-nums"
-              data-testid="alignment-zoom-value"
-            >
-              {(pxPerSec / DEFAULT_PX_PER_S).toFixed(1)}×
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setPxPerSec(DEFAULT_PX_PER_S)}
-              disabled={pxPerSec === DEFAULT_PX_PER_S}
-              aria-label="Reset zoom"
-              title="Reset zoom"
-              data-testid="alignment-zoom-reset"
-            >
-              <RotateCcw />
-            </Button>
-          </div>
-
-          {/* Control deck: transport on the left, then jog + cue stacked on
-              the right with aligned labels — reads as one DJ-mixer unit. */}
-          <div className="border-border bg-surface-2 flex items-center gap-3 rounded-lg border px-3 py-3">
+          {/* Control deck on one row under the strips: transport, jog, cue,
+              zoom. Wraps on narrow windows. */}
+          <div className="border-border bg-surface-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border px-3 py-2">
             <PlayButton
               label={transport ? "Pause" : "Play"}
               active={transport}
@@ -1139,11 +1186,11 @@ export function AlignmentDialog({
               testId="alignment-play-toggle"
             />
 
-            <Separator orientation="vertical" className="h-12" />
+            <Separator orientation="vertical" className="h-8" />
 
-            <div className="flex flex-1 flex-col gap-2">
+            <div className="contents">
               <div className="flex items-center gap-2">
-                <span className="text-text-subtle text-2xs w-10 tracking-wider uppercase">
+                <span className="text-text-subtle text-2xs tracking-wider uppercase">
                   Jog
                 </span>
                 <div className="border-border bg-surface-1 inline-flex overflow-hidden rounded-md border">
@@ -1179,7 +1226,7 @@ export function AlignmentDialog({
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-text-subtle text-2xs inline-flex w-10 items-center gap-1 tracking-wider uppercase">
+                <span className="text-text-subtle text-2xs inline-flex items-center gap-1 tracking-wider uppercase">
                   <Headphones className="size-3.5" /> Cue
                 </span>
                 <ToggleGroup
@@ -1210,12 +1257,46 @@ export function AlignmentDialog({
                   ))}
                 </ToggleGroup>
               </div>
-
-              {streamError && (
-                <span className="text-destructive text-xs">{streamError}</span>
-              )}
+            </div>
+            <div className="flex min-w-64 flex-1 items-center gap-3">
+              <span className="text-text-subtle text-2xs tracking-wider uppercase">
+                Zoom
+              </span>
+              <Slider
+                aria-label="Waveform zoom"
+                min={MIN_PX_PER_S}
+                max={MAX_PX_PER_S}
+                step={ZOOM_STEP}
+                value={[pxPerSec]}
+                onValueChange={([v]) => {
+                  if (v != null) setPxPerSec(v);
+                }}
+                className="flex-1"
+                data-testid="alignment-zoom"
+              />
+              <span
+                className="text-text-muted w-10 text-right text-xs tabular-nums"
+                data-testid="alignment-zoom-value"
+              >
+                {(pxPerSec / DEFAULT_PX_PER_S).toFixed(1)}×
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setPxPerSec(DEFAULT_PX_PER_S)}
+                disabled={pxPerSec === DEFAULT_PX_PER_S}
+                aria-label="Reset zoom"
+                title="Reset zoom"
+                data-testid="alignment-zoom-reset"
+              >
+                <RotateCcw />
+              </Button>
             </div>
           </div>
+          {streamError && (
+            <span className="text-destructive text-xs">{streamError}</span>
+          )}
         </div>
 
         <DialogFooter>
@@ -1260,6 +1341,96 @@ export function AlignmentDialog({
   );
 }
 
+/** Auto-align status: running, the suggestion's confidence and tempo
+ *  mode, or a miss. */
+function AutoAlignBadge({ state }: { state: "running" | AutoAlignResult }) {
+  const base =
+    "text-xs inline-flex items-center gap-1.5 rounded-xs px-1.5 py-0.5 font-medium";
+  if (state === "running") {
+    return (
+      <span
+        className={cn(base, "bg-surface-3 text-text-muted")}
+        data-testid="alignment-auto-status"
+      >
+        <Loader2 className="size-3 animate-spin" />
+        Finding the track in the mix…
+      </span>
+    );
+  }
+  if (!state.found) {
+    return (
+      <span
+        className={cn(base, "bg-surface-3 text-text-muted")}
+        data-testid="alignment-auto-status"
+      >
+        <SearchX className="size-3" />
+        Not found in the mix, align by hand
+      </span>
+    );
+  }
+  return (
+    <span
+      className={cn(base, "bg-surface-3 text-text-muted")}
+      data-testid="alignment-auto-status"
+      title={`Playback rate ${state.rate.toFixed(3)}×`}
+    >
+      <Sparkles className="text-brand size-3" />
+      <span className="text-text">Auto-aligned</span>
+      <span className="tabular-nums">
+        {Math.round(state.confidence * 100)}% sure
+      </span>
+      <span aria-hidden>·</span>
+      <span>{state.key_lock ? "master tempo" : "pitch fader"}</span>
+    </span>
+  );
+}
+
+/** One mix point (where the track comes in or goes out) with a button to
+ *  move it to the playhead, for when the match is a few seconds off. */
+function MixPoint({
+  label,
+  testId,
+  atS,
+  detail,
+  onSetHere,
+}: {
+  label: string;
+  testId: string;
+  atS: number | null;
+  detail: string | null;
+  onSetHere: () => void;
+}) {
+  return (
+    <div className="flex flex-col" data-testid={testId}>
+      <span className="text-text-subtle text-2xs tracking-wider uppercase">
+        {label}
+      </span>
+      <div className="flex items-baseline gap-2">
+        <span className="text-text text-xl tabular-nums">
+          {atS != null ? formatTimecode(atS) : "—"}
+        </span>
+        {detail && (
+          <span className="text-text-subtle text-xs tabular-nums">
+            {detail}
+          </span>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="text-text-muted self-center"
+          onClick={onSetHere}
+          title={`Set ${label.toLowerCase()} to the playhead`}
+          data-testid={`${testId}-set`}
+        >
+          <Crosshair />
+          Set here
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function PlayButton({
   label,
   active,
@@ -1295,7 +1466,7 @@ function PlayButton({
 }
 
 interface WaveformStripProps {
-  containerRef: React.Ref<HTMLDivElement>;
+  strip: React.ReactNode;
   ready: boolean;
   testId: string;
   onPointerDown?: (e: React.PointerEvent<HTMLDivElement>) => void;
@@ -1306,13 +1477,10 @@ interface WaveformStripProps {
   emptyLabel?: string;
 }
 
-/** A waveform container with a centred vertical playhead overlay. The
- *  WaveSurfer instance is mounted into ``containerRef`` by the parent;
- *  this just owns the framing and the playhead line so both strips
- *  look identical and so the parent's drag handlers get a clean
- *  pointer-event target. */
+/** Frame for one waveform: the strip, a centred playhead, and a drag
+ *  overlay, so both decks look and behave the same. */
 function WaveformStrip({
-  containerRef,
+  strip,
   ready,
   testId,
   onPointerDown,
@@ -1324,7 +1492,7 @@ function WaveformStrip({
 }: WaveformStripProps) {
   return (
     <div
-      className="border-border bg-surface-2 relative h-20 w-full min-w-0 overflow-hidden rounded-md border"
+      className="border-border bg-surface-2 relative h-28 w-full min-w-0 overflow-hidden rounded-md border"
       data-testid={testId}
     >
       {empty ? (
@@ -1333,13 +1501,7 @@ function WaveformStrip({
         </div>
       ) : (
         <>
-          <div
-            ref={containerRef}
-            className="h-full w-full overflow-hidden"
-            // ``touchAction: none`` keeps the browser from scrolling
-            // the page when the user drag-nudges with a touch device.
-            style={{ touchAction: "none" }}
-          />
+          {strip}
           {!ready && (
             <div
               className="text-text-subtle absolute inset-0 grid place-items-center"
@@ -1355,12 +1517,12 @@ function WaveformStrip({
             aria-hidden
             className="bg-brand pointer-events-none absolute top-0 bottom-0 left-1/2 w-px"
           />
-          {/* Pointer overlay — sits on top of WaveSurfer (whose shadow-DOM
-              scroll container otherwise wins the hit-test) so the drag
-              captures pointer events instead of WaveSurfer's own scroll. */}
           {onPointerDown && (
             <div
               className="absolute inset-0 z-10 cursor-ew-resize"
+              // ``touchAction: none`` keeps the browser from scrolling
+              // the page when the user drag-nudges with a touch device.
+              style={{ touchAction: "none" }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}

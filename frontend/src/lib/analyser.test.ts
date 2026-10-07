@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTracklistText,
   effectiveDurationInSet,
+  foldTempoRatio,
   originalBpmFromSet,
   pitchSpeedRatio,
+  type JobSnapshot,
+  type TrackTimelineEntry,
 } from "@/lib/analyser";
 
 describe("pitchSpeedRatio", () => {
@@ -15,6 +19,14 @@ describe("pitchSpeedRatio", () => {
     expect(pitchSpeedRatio(12)).toBeCloseTo(2, 6);
     expect(pitchSpeedRatio(-12)).toBeCloseTo(0.5, 6);
     expect(pitchSpeedRatio(1)).toBeCloseTo(1.05946, 4);
+  });
+});
+
+describe("foldTempoRatio", () => {
+  it("undoes a half- or double-time listing", () => {
+    expect(foldTempoRatio(174 / 87)).toBeCloseTo(1, 6);
+    expect(foldTempoRatio(130 / 250)).toBeCloseTo(1.04, 6);
+    expect(foldTempoRatio(1.04)).toBeCloseTo(1.04, 6);
   });
 });
 
@@ -52,5 +64,27 @@ describe("effectiveDurationInSet", () => {
     expect(out).not.toBeNull();
     expect(out!).toBeLessThan(300);
     expect(out!).toBeCloseTo(300 * 2 ** (-1 / 12), 4);
+  });
+});
+
+describe("buildTracklistText", () => {
+  it("labels unreleased tracks", () => {
+    const entry = (title: string, unreleased: boolean) =>
+      ({
+        start_s: 90,
+        end_s: 90,
+        title,
+        artist: "Entasia",
+        unreleased,
+      }) as TrackTimelineEntry;
+    const snapshot = {
+      title: null,
+      artist: null,
+      timeline: [entry("Invasion", false), entry("ID", true)],
+    } as unknown as JobSnapshot;
+    expect(buildTracklistText(snapshot).split("\n")).toEqual([
+      "01:30  Entasia — Invasion",
+      "01:30  Entasia — ID (unreleased)",
+    ]);
   });
 });

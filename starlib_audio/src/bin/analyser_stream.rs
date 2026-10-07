@@ -16,8 +16,11 @@
 //!   analyser-stream analyse --input <path> [--window-s 30] [--hop-s 25]
 //!                           [--min-bpm 60] [--max-bpm 200] [--target-sr 22050]
 //!                           [--no-sections] [--no-octave-correction]
-//!                           [--bpm-range MIN-MAX]
+//!                           [--bpm-range MIN-MAX] [--strong]
 //!                           [--start-s S] [--end-s S]
+//!   analyser-stream align --mix <path> --original <path> [--rate-hint R]...
+//!     emits {"type":"alignment",...} (see `starlib_audio::align::Alignment`)
+//!     or {"type":"alignment.none"} when the original isn't found.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -25,10 +28,11 @@ use std::process::ExitCode;
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 
+use starlib_audio::align::{align, Alignment, ALIGN_SR};
 use starlib_audio::chunk::{analyze_chunks, ChunkOptions, ChunkResult};
 use starlib_audio::decode::decode_file;
 use starlib_audio::segment::{segment, Section, SegmentOptions};
-use starlib_audio::types::BpmOptions;
+use starlib_audio::types::{BeatTracker, BpmOptions};
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -53,6 +57,9 @@ enum Event<'a> {
     },
     #[serde(rename = "job.complete")]
     JobComplete,
+    Alignment(Alignment),
+    #[serde(rename = "alignment.none")]
+    AlignmentNone,
     Error {
         message: String,
     },
@@ -66,7 +73,12 @@ fn emit(ev: &Event<'_>) {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match run(args) {
+    let result = if args.first().map(String::as_str) == Some("align") {
+        run_align(args)
+    } else {
+        run(args)
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             emit(&Event::Error {
@@ -126,6 +138,7 @@ fn parse_args(args: Vec<String>) -> Result<Cli> {
                 bpm_opts.max_bpm = hi.parse()?;
             }
             "--no-octave-correction" => bpm_opts.octave_correction = false,
+            "--strong" => bpm_opts.beat_tracker = BeatTracker::DynamicProgramming,
             "--no-sections" => sections_enabled = false,
             "--bands" => segment_opts.bands = take(&mut iter, "--bands")?.parse()?,
             "--kernel-half-s" => {
@@ -205,5 +218,38 @@ fn run(args: Vec<String>) -> Result<()> {
     }
 
     emit(&Event::JobComplete);
+    Ok(())
+}
+
+fn run_align(args: Vec<String>) -> Result<()> {
+    let mut iter = args.into_iter().skip(1);
+    let mut mix: Option<PathBuf> = None;
+    let mut original: Option<PathBuf> = None;
+    let mut rate_hints: Vec<f64> = Vec::new();
+    while let Some(flag) = iter.next() {
+        let value = iter.next().ok_or_else(|| anyhow!("missing value for {flag}"))?;
+        match flag.as_str() {
+            "--mix" => mix = Some(PathBuf::from(value)),
+            "--original" => original = Some(PathBuf::from(value)),
+            "--rate-hint" => rate_hints.push(value.parse()?),
+            other => return Err(anyhow!("unknown flag: {other}")),
+        }
+    }
+    let opts = BpmOptions {
+        target_sr: ALIGN_SR,
+        ..BpmOptions::default()
+    };
+    let mix = mix.ok_or_else(|| anyhow!("--mix is required"))?;
+    let original = original.ok_or_else(|| anyhow!("--original is required"))?;
+    let mix_pcm = decode_file(&mix, &opts).with_context(|| format!("decode {}", mix.display()))?;
+    let orig_pcm =
+        decode_file(&original, &opts).with_context(|| format!("decode {}", original.display()))?;
+    if rate_hints.is_empty() {
+        rate_hints.push(1.0);
+    }
+    match align(&mix_pcm, &orig_pcm, ALIGN_SR, &rate_hints) {
+        Some(a) => emit(&Event::Alignment(a)),
+        None => emit(&Event::AlignmentNone),
+    }
     Ok(())
 }

@@ -55,6 +55,7 @@ from backend.schemas.analyser import (
     WindowBpmEvent,
     event_from_subprocess_line,
 )
+from backend.services.analyser import soundcloud_links
 
 logger = logging.getLogger(__name__)
 
@@ -460,11 +461,37 @@ def _materialised_tracks(job_id: str) -> list[db.TrackRow]:
     """
     rows = db.list_tracks(job_id)
     if rows:
-        return rows
+        return _fill_missing_set_bpm(job_id, rows)
     inserted = sync_shazam_runs_to_tracks(job_id)
     if inserted == 0:
         return []
     return db.list_tracks(job_id)
+
+
+def set_bpm_at(job_id: str, start_s: float, end_s: float | None) -> float | None:
+    """The mix tempo over a track's span, as Shazam tracks get it."""
+    return _track_set_bpm(db.list_windows(job_id), start_s, end_s)
+
+
+def _track_set_bpm(windows: list[db.WindowBpmRow], start_s: float, end_s: float | None) -> float | None:
+    # A hand-placed track has no end yet, so its first minute stands in.
+    end = end_s if end_s is not None and end_s > start_s else start_s + _SET_BPM_PROBE_S
+    return _median_bpm_in_range(windows, start_s, end)
+
+
+def _fill_missing_set_bpm(job_id: str, rows: list[db.TrackRow]) -> list[db.TrackRow]:
+    """Give hand-placed tracks saved without a set BPM the mix tempo at their spot."""
+    missing = [t for t in rows if t.set_bpm is None]
+    if not missing:
+        return rows
+    windows = db.list_windows(job_id)
+    filled = False
+    for t in missing:
+        bpm = _track_set_bpm(windows, t.start_s, t.end_s)
+        if bpm is not None:
+            db.update_track(job_id, t.id, set_bpm=bpm)
+            filled = True
+    return db.list_tracks(job_id) if filled else rows
 
 
 def recent_jobs(limit: int = 25) -> list[dict]:
@@ -485,6 +512,7 @@ def recent_jobs(limit: int = 25) -> list[dict]:
                 "status": j.status,
                 "created_at": j.created_at,
                 "track_count": track_count,
+                "confirmed_count": db.count_tracks(j.id, confirmed_only=True),
             }
         )
     return out
@@ -931,8 +959,17 @@ async def _run_shazam_scan(
     # that the per-point sync didn't yet aggregate) and broadcasts the
     # complete tracklist for late subscribers.
     sync_shazam_runs_to_tracks(state.job_id)
+    await _link_soundcloud_best_effort(state.job_id)
     for t in db.list_tracks(state.job_id):
         await _broadcast(state, _track_to_event(state.job_id, t))
+
+
+async def _link_soundcloud_best_effort(job_id: str) -> None:
+    """Link tracks to SoundCloud without letting a failure fail the scan."""
+    try:
+        await soundcloud_links.link_unlinked_tracks(job_id)
+    except Exception:
+        logger.exception("analyser: SoundCloud linking failed for job %s", job_id)
 
 
 async def _sync_and_broadcast_new_tracks(state: _JobState) -> None:
@@ -1474,6 +1511,10 @@ def sync_shazam_runs_to_tracks(job_id: str) -> int:
     return inserted
 
 
+# Span of mix read for the tempo of a track with no end yet.
+_SET_BPM_PROBE_S = 60.0
+
+
 def _median_bpm_in_range(windows: list[db.WindowBpmRow], start_s: float, end_s: float) -> float | None:
     """Median BPM of windows overlapping ``[start_s, end_s]``. ``None`` if
     no usable window touches the range — keeps the column honestly empty
@@ -1509,6 +1550,9 @@ def _track_to_event(job_id: str, t: db.TrackRow) -> TrackTimelineEvent:
         pitch_offset=t.pitch_offset,
         confirmed=t.confirmed,
         aligned=t.aligned,
+        unreleased=t.unreleased,
+        mix_in_s=t.mix_in_s,
+        mix_out_s=t.mix_out_s,
         user_edited=t.user_edited,
     )
 
@@ -1533,6 +1577,9 @@ def _track_to_dict(t: db.TrackRow) -> dict:
         "duration_s": t.duration_s,
         "confirmed": t.confirmed,
         "aligned": t.aligned,
+        "unreleased": t.unreleased,
+        "mix_in_s": t.mix_in_s,
+        "mix_out_s": t.mix_out_s,
         "user_edited": t.user_edited,
         "set_bpm": t.set_bpm,
         "pitch_offset": t.pitch_offset,

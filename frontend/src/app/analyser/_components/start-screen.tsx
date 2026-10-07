@@ -36,21 +36,6 @@ interface StartScreenProps {
   errorMessage?: string | null;
 }
 
-/** Number of "confirmed" track keys stored in localStorage for a job.
- *  Mirrors the page-level confirmed-set; reading directly here keeps the
- *  recent-list a self-contained component instead of hoisting state. */
-function readConfirmedCount(jobId: string): number {
-  if (typeof window === "undefined") return 0;
-  try {
-    const raw = window.localStorage.getItem(`analyser:confirmed:${jobId}`);
-    if (!raw) return 0;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
-}
-
 export function AnalyserStartScreen({
   onStart,
   onOpen,
@@ -134,14 +119,6 @@ export function AnalyserStartScreen({
   const handleDelete = async (jobId: string) => {
     try {
       await deleteJob(jobId);
-      // Also wipe the confirmed-set for this job — otherwise a future
-      // job that happens to reuse the same id (won't happen with uuid4
-      // in practice, but cheap to be tidy) would inherit ghost marks.
-      try {
-        window.localStorage.removeItem(`analyser:confirmed:${jobId}`);
-      } catch {
-        // private mode / disabled storage — fine
-      }
       await loadRecent();
     } catch (err) {
       console.warn("analyser: failed to delete job", err);
@@ -251,7 +228,6 @@ export function AnalyserStartScreen({
           </h2>
           <ul className="divide-border divide-y" data-testid="recent-jobs">
             {recent.map((j) => {
-              const confirmed = readConfirmedCount(j.id);
               return (
                 <li
                   key={j.id}
@@ -286,7 +262,7 @@ export function AnalyserStartScreen({
                     {j.track_count > 0 && (
                       <span title="Marked as correctly identified">
                         <span className="text-brand font-medium">
-                          {confirmed}
+                          {j.confirmed_count}
                         </span>
                         <span className="text-text-subtle">
                           /{j.track_count}

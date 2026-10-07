@@ -54,6 +54,154 @@ function sseBody(lines: FakeSseLine[]): string {
   );
 }
 
+/** Mounts the align dialog for one SoundCloud-linked track whose peaks
+ *  endpoint reports ``bpm``. */
+async function mountBpmDialog(
+  page: Page,
+  bpm: { bpm: number | null; bpm_overridden: boolean; bpm_source: string },
+) {
+  const BPM_JOB = "test-bpm-source-job";
+  await page.addInitScript(() => {
+    const future = Date.now() + 60 * 60 * 1000;
+    localStorage.setItem("access_token", "fake-token");
+    localStorage.setItem("token_expires_at", String(future));
+  });
+  await page.route(/\/api\/analyser\/sets$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jobs: [] }),
+    }),
+  );
+  await page.route(new RegExp(`/api/analyser/sets/${BPM_JOB}$`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: BPM_JOB,
+        soundcloud_id: 1,
+        source_url: null,
+        title: "Align Set",
+        artist: "Tester",
+        duration_s: 600,
+        status: "complete",
+        options: {
+          pitch_strategy: "single",
+          target_bpm: 124,
+          window_s: 30,
+          hop_s: 25,
+          min_section_gap_s: 30,
+          sections_enabled: true,
+          scan_cadence_s: 60,
+          scan_window_s: 12,
+        },
+        error: null,
+        created_at: 0,
+        updated_at: 0,
+        windows: [],
+        sections: [],
+        scans: [],
+        timeline: [
+          {
+            id: 42,
+            start_s: 60,
+            end_s: 240,
+            title: "Pinned Track",
+            artist: "DJ Y",
+            shazam_id: "shz-pin",
+            confidence: 0.95,
+            source: "shazam",
+            soundcloud_id: 9001,
+            soundcloud_permalink_url: null,
+            artwork_url: null,
+            duration_s: 200,
+            confirmed: false,
+            user_edited: false,
+            set_bpm: 128,
+            pitch_offset: 0,
+          },
+        ],
+      }),
+    }),
+  );
+  await page.route(
+    new RegExp(`/api/analyser/sets/${BPM_JOB}/events$`),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "Cache-Control": "no-cache" },
+        body: "",
+      }),
+  );
+  await page.route(
+    new RegExp(`/api/analyser/sets/${BPM_JOB}/audio$`),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "audio/wav",
+        headers: { "Accept-Ranges": "bytes" },
+        body: silentWav(70),
+      }),
+  );
+  await page.route(/\/api\/soundcloud\/tracks\/9001\/stream/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        url: "https://example.invalid/stream.m3u8",
+        expires_at: new Date(Date.now() + 600_000).toISOString(),
+      }),
+    }),
+  );
+  await page.route(/api\.soundcloud\.com\/tracks\//, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 9001,
+        urn: "soundcloud:tracks:9001",
+        title: "Pinned Track",
+        duration: 200_000,
+        waveform_url: "https://wave.invalid/9001.json",
+      }),
+    }),
+  );
+  await page.route(/wave\.invalid\/9001\.json/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        samples: Array.from({ length: 400 }, (_, i) => (i % 20) + 1),
+      }),
+    }),
+  );
+  await page.route(/\/api\/soundcloud\/tracks\/\d+\/peaks/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        peaks: Array.from({ length: 500 }, (_, i) => Math.abs(Math.sin(i))),
+        duration_s: 200,
+        ...bpm,
+      }),
+    }),
+  );
+  await page.route(
+    new RegExp(`/api/analyser/sets/${BPM_JOB}/tracks/42/auto-align`),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ found: false }),
+      }),
+  );
+  await page.goto(`/analyser?job=${BPM_JOB}`);
+  await page.getByTestId("tracklist-row").hover();
+  await page.getByTestId("align-track").click();
+  await expect(page.getByTestId("alignment-dialog")).toBeVisible();
+}
+
 async function mockAnalyserApi(page: Page) {
   // The new SetWaveform component fetches the cached audio. Mock it as
   // an empty body (the WaveSurfer instance won't decode anything but
@@ -243,6 +391,29 @@ async function mockAnalyserApi(page: Page) {
 }
 
 test.describe("Set Analyser", () => {
+  // The align dialog paints the mix from peaks for the region around the
+  // track: a steady pulse so the strip has something to draw.
+  test.beforeEach(async ({ page }) => {
+    await page.route(/\/api\/analyser\/sets\/[^/?]+\/peaks\?/, (route) => {
+      const url = new URL(route.request().url());
+      const startS = Math.max(0, Number(url.searchParams.get("start_s")));
+      const endS = Number(url.searchParams.get("end_s"));
+      const perS = 20;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          start_s: startS,
+          peaks_per_s: perS,
+          peaks: Array.from(
+            { length: Math.round((endS - startS) * perS) },
+            (_, i) => (i % 10 === 0 ? 1 : 0.2),
+          ),
+        }),
+      });
+    });
+  });
+
   test("paste-url flow loads timeline + tracks from SSE", async ({ page }) => {
     await mockAnalyserApi(page);
     await page.goto("/analyser");
@@ -864,6 +1035,112 @@ test.describe("Set Analyser", () => {
     await expect(
       page.getByTestId("track-band").first().getByTestId("track-band-echo"),
     ).toHaveAttribute("src", coverPersisted);
+  });
+
+  test("Find SoundCloud links sizes an unlinked band to the track's length", async ({
+    page,
+  }) => {
+    const JOB = "test-link-job";
+    // Unlinked Shazam row: no duration, so the band stretches to the next
+    // track. After linking it carries the SoundCloud length (6:00).
+    const track = (linked: boolean) => ({
+      id: 1,
+      start_s: 120,
+      end_s: 540,
+      title: "Invasion",
+      artist: "Entasia",
+      shazam_id: "shz-a",
+      confidence: 0.9,
+      source: "shazam",
+      soundcloud_id: linked ? 777 : null,
+      soundcloud_permalink_url: null,
+      artwork_url: null,
+      duration_s: linked ? 360 : null,
+      confirmed: false,
+      user_edited: true,
+      set_bpm: 142,
+      pitch_offset: 0,
+    });
+    const next = {
+      ...track(false),
+      id: 2,
+      start_s: 1800,
+      end_s: 1800,
+      title: "Next",
+      shazam_id: "shz-b",
+      user_edited: false,
+    };
+    let linked = false;
+
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}/audio$`), (route) =>
+      route.fulfill({ status: 200, contentType: "audio/mp4", body: "" }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}/events$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "Cache-Control": "no-cache" },
+        body: sseBody([
+          {
+            event: "job.complete",
+            data: { type: "job.complete", job_id: JOB },
+          },
+        ]),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${JOB}/tracks/link-soundcloud$`),
+      (route) => {
+        linked = true;
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ job_id: JOB, linked: 1 }),
+        });
+      },
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "Link Set",
+          artist: "Tester",
+          duration_s: 3600,
+          status: "complete",
+          options: { pitch_strategy: "none" },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          scans: [],
+          timeline: [track(linked), next],
+        }),
+      }),
+    );
+
+    await page.goto(`/analyser?job=${JOB}`);
+    const band = page.getByTestId("track-band").first();
+    // Unlinked: 2:00 → 14:00 (stored end + 5 min fallback) = 720 s of 3600.
+    await expect(band).toHaveAttribute("style", /width: 20%/);
+
+    await page.getByRole("button", { name: /open command palette/i }).click();
+    await page.getByRole("option", { name: /Find SoundCloud links/ }).click();
+
+    await expect(page.getByText("Linked 1 track to SoundCloud")).toBeVisible();
+    // Linked: 2:00 → 8:00 = 360 s of 3600.
+    await expect(band).toHaveAttribute("style", /width: 10%/);
   });
 
   test("set search lists long tracks and starts analysis from a result", async ({
@@ -2020,6 +2297,115 @@ test.describe("Set Analyser", () => {
     );
   });
 
+  test("Unknown checkboxes save title and artist as ID; Unreleased is separate", async ({
+    page,
+  }) => {
+    const JOB = "test-add-id-job";
+    let posted: Record<string, unknown> | null = null;
+
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}/events$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "Cache-Control": "no-cache" },
+        body: sseBody([
+          {
+            event: "job.complete",
+            data: { type: "job.complete", job_id: JOB },
+          },
+        ]),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "ID Set",
+          artist: "Tester",
+          duration_s: 120.0,
+          status: "complete",
+          options: { pitch_strategy: "none" },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          scans: [],
+          timeline: posted
+            ? [
+                {
+                  id: 9,
+                  start_s: 30,
+                  end_s: 30,
+                  title: "ID",
+                  artist: "ID",
+                  shazam_id: null,
+                  confidence: 1.0,
+                  source: "manual",
+                  soundcloud_id: null,
+                  soundcloud_permalink_url: null,
+                  artwork_url: null,
+                  unreleased: true,
+                },
+              ]
+            : [],
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${JOB}/tracks$`),
+      (route) => {
+        posted = route.request().postDataJSON();
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ id: 9 }),
+        });
+      },
+    );
+
+    await page.goto(`/analyser?job=${JOB}`);
+    await page.getByTestId("add-track-trigger").click();
+
+    // Without a title, the dialog asks for one or for "Unknown".
+    await page.getByTestId("add-track-artist").fill("Entasia");
+    await page.getByTestId("add-track-start").fill("00:30");
+    await page.getByTestId("add-track-submit").click();
+    await expect(page.getByTestId("add-track-error")).toContainText("Unknown");
+
+    // Each Unknown checkbox disables its own field only.
+    await page.getByTestId("add-track-title-unknown").click();
+    await expect(page.getByTestId("add-track-title")).toBeDisabled();
+    await expect(page.getByTestId("add-track-artist")).toBeEnabled();
+    await page.getByTestId("add-track-artist-unknown").click();
+    await expect(page.getByTestId("add-track-artist")).toBeDisabled();
+    await page.getByTestId("add-track-unreleased").click();
+    await page.getByTestId("add-track-submit").click();
+
+    await expect
+      .poll(() => posted)
+      .toMatchObject({
+        start_s: 30,
+        title: "",
+        artist: "ID",
+        unreleased: true,
+      });
+    const row = page.getByTestId("tracklist-row");
+    await expect(row).toContainText("ID");
+    await expect(row.getByTestId("tracklist-unreleased")).toBeVisible();
+  });
+
   test("add-track search shows cover art, resolves a URL, and previews", async ({
     page,
   }) => {
@@ -2432,6 +2818,7 @@ test.describe("Set Analyser", () => {
                 status: "complete",
                 created_at: 0,
                 track_count: 4,
+                confirmed_count: 2,
               },
               {
                 id: "j-doomed",
@@ -2442,6 +2829,7 @@ test.describe("Set Analyser", () => {
                 status: "complete",
                 created_at: 0,
                 track_count: 1,
+                confirmed_count: 0,
               },
             ]
           : [
@@ -2454,6 +2842,7 @@ test.describe("Set Analyser", () => {
                 status: "complete",
                 created_at: 0,
                 track_count: 4,
+                confirmed_count: 2,
               },
             ];
       route.fulfill({
@@ -2475,14 +2864,6 @@ test.describe("Set Analyser", () => {
       route.fallback();
     });
 
-    // Seed two confirmed marks on the keeper so the row reads "2/4 ok".
-    await page.addInitScript(() => {
-      localStorage.setItem(
-        "analyser:confirmed:j-keep",
-        JSON.stringify(["k1", "k2"]),
-      );
-    });
-
     await page.goto("/analyser");
     await expect(page.getByTestId("recent-jobs")).toBeVisible();
     await expect(page.getByTestId("recent-job")).toHaveCount(2);
@@ -2490,8 +2871,7 @@ test.describe("Set Analyser", () => {
       .locator('[data-testid="recent-job"][data-job-id="j-keep"]')
       .getByTestId("recent-job-stats");
     await expect(keeperStats).toContainText("4 tracks");
-    await expect(keeperStats).toContainText("2");
-    await expect(keeperStats).toContainText("/4");
+    await expect(keeperStats).toContainText("2/4 ok");
 
     await page
       .locator('[data-testid="recent-job"][data-job-id="j-doomed"]')
@@ -3240,11 +3620,13 @@ test.describe("Set Analyser", () => {
     ).toHaveCount(0);
 
     // The zoomed waveform must scroll inside its strip, not blow the
-    // strip (and dialog) out past its max width. A 200 s original at
+    // strip (and dialog) out past the window. A 200 s original at
     // ~40 px/s would be ~8000 px wide if unbounded.
     const scBox = await page.getByTestId("alignment-sc-strip").boundingBox();
+    const dialogBox = await page.getByTestId("alignment-dialog").boundingBox();
     expect(scBox).not.toBeNull();
-    expect(scBox!.width).toBeLessThan(800);
+    expect(scBox!.width).toBeLessThan(dialogBox!.width);
+    expect(dialogBox!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 
     // Save is disabled at zero offset; drag the mix strip left to push the
     // start well past its detected 60 s (dragging left = later mix time).
@@ -3270,6 +3652,480 @@ test.describe("Set Analyser", () => {
     expect(sent.start_s as number).toBeGreaterThan(60);
     expect(sent.confirmed).toBe(true);
     expect(sent.aligned).toBe(true);
+  });
+
+  test("alignment dialog opens at the auto-aligned start", async ({ page }) => {
+    const ALIGN_JOB = "test-auto-align-job";
+    const autoAlignUrls: string[] = [];
+    const patches: Array<Record<string, unknown>> = [];
+
+    await page.addInitScript(() => {
+      const future = Date.now() + 60 * 60 * 1000;
+      localStorage.setItem("access_token", "fake-token");
+      localStorage.setItem("token_expires_at", String(future));
+    });
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${ALIGN_JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: ALIGN_JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "Align Set",
+          artist: "Tester",
+          duration_s: 600,
+          status: "complete",
+          options: {
+            pitch_strategy: "single",
+            target_bpm: 124,
+            window_s: 30,
+            hop_s: 25,
+            min_section_gap_s: 30,
+            sections_enabled: true,
+            scan_cadence_s: 60,
+            scan_window_s: 12,
+          },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          scans: [],
+          timeline: [
+            {
+              id: 42,
+              start_s: 60,
+              end_s: 240,
+              title: "Pinned Track",
+              artist: "DJ Y",
+              shazam_id: "shz-pin",
+              confidence: 0.95,
+              source: "shazam",
+              soundcloud_id: 9001,
+              soundcloud_permalink_url: null,
+              artwork_url: null,
+              duration_s: 200,
+              confirmed: false,
+              user_edited: false,
+              set_bpm: 128,
+              pitch_offset: -0.5,
+            },
+          ],
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${ALIGN_JOB}/events$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: "",
+        }),
+    );
+    // The MIX strip decodes the set audio in URL mode — needs real bytes
+    // to reach "ready". Long enough that the 60 s track start isn't clamped
+    // to the set length.
+    await page.route(
+      new RegExp(`/api/analyser/sets/${ALIGN_JOB}/audio$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "audio/wav",
+          headers: { "Accept-Ranges": "bytes" },
+          body: silentWav(70),
+        }),
+    );
+    await page.route(/\/api\/soundcloud\/tracks\/9001\/stream/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          url: "https://example.invalid/stream.m3u8",
+          expires_at: new Date(Date.now() + 600_000).toISOString(),
+        }),
+      }),
+    );
+    // The SC strip paints from the track's own waveform data (the HLS
+    // element has no fetchable src for WaveSurfer to decode).
+    await page.route(/api\.soundcloud\.com\/tracks\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 9001,
+          urn: "soundcloud:tracks:9001",
+          title: "Pinned Track",
+          duration: 200_000,
+          waveform_url: "https://wave.invalid/9001.json",
+        }),
+      }),
+    );
+    await page.route(/wave\.invalid\/9001\.json/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          samples: Array.from({ length: 400 }, (_, i) => (i % 20) + 1),
+        }),
+      }),
+    );
+    // High-res peaks decoded server-side (the SC strip's fidelity source).
+    await page.route(/\/api\/soundcloud\/tracks\/\d+\/peaks/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          peaks: Array.from({ length: 500 }, (_, i) => Math.abs(Math.sin(i))),
+          duration_s: 200,
+          bpm: 128,
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${ALIGN_JOB}/tracks/42$`),
+      async (route) => {
+        if (route.request().method() === "PATCH") {
+          patches.push(
+            route.request().postDataJSON() as Record<string, unknown>,
+          );
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              job_id: ALIGN_JOB,
+              track_id: 42,
+              updated: true,
+            }),
+          });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+
+    await page.route(
+      new RegExp(`/api/analyser/sets/${ALIGN_JOB}/tracks/42/auto-align`),
+      (route) => {
+        autoAlignUrls.push(route.request().url());
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            found: true,
+            start_s: 52.5,
+            rate: 1,
+            key_lock: true,
+            confidence: 0.64,
+            // Mixed in 30 s into the original: heard from 82.5 s.
+            enter_s: 82.5,
+            exit_s: 240,
+            // Real chunks overlap: 30 s long, one every 5 s.
+            chunks: [
+              { start_s: 0, end_s: 30, uniqueness: 1, agrees: true },
+              { start_s: 5, end_s: 35, uniqueness: 0.1, agrees: true },
+              { start_s: 60, end_s: 90, uniqueness: 0.5, agrees: false },
+            ],
+          }),
+        });
+      },
+    );
+
+    await page.goto(`/analyser?job=${ALIGN_JOB}`);
+    await page.getByTestId("tracklist-row").hover();
+    await page.getByTestId("align-track").click();
+    await expect(page.getByTestId("alignment-dialog")).toBeVisible();
+
+    await expect(page.getByTestId("alignment-auto-status")).toContainText(
+      /Auto-aligned\s*64% sure\s*·\s*master tempo/,
+    );
+    await expect(page.getByTestId("alignment-new-start")).toContainText(
+      "00:52",
+    );
+    expect(autoAlignUrls[0]).toContain("soundcloud_id=9001");
+    // Next to the original's 0:00, the point where it is first heard.
+    await expect(page.getByTestId("alignment-entry")).toContainText("01:22");
+    await expect(page.getByTestId("alignment-entry")).toContainText(
+      "00:30 into the track",
+    );
+    // It goes out where the match ends (240 s).
+    await expect(page.getByTestId("alignment-exit")).toContainText("04:00");
+
+    // The match is drawn on both strips: the span it plays in on the mix,
+    // and the agreeing chunks on the original.
+    const bandCount = (testId: string) =>
+      page
+        .getByTestId(testId)
+        .locator("canvas")
+        .evaluate((el) => Number((el as HTMLCanvasElement).dataset.bands));
+    await expect.poll(() => bandCount("alignment-set-strip")).toBe(1);
+    // Overlapping chunks become flat, non-overlapping spans (0-5, 5-30,
+    // 30-35) so the tint never stacks over the waveform.
+    await expect.poll(() => bandCount("alignment-sc-strip")).toBe(3);
+    const maxTint = () =>
+      page
+        .getByTestId("alignment-sc-strip")
+        .locator("canvas")
+        .evaluate((el) => Number((el as HTMLCanvasElement).dataset.maxTint));
+    // The most unique chunk's tint (0.04 + 0.14), never more.
+    await expect.poll(maxTint).toBeCloseTo(0.18, 3);
+    await expect(page.getByTestId("alignment-match-legend")).toBeVisible();
+
+    // "Set here" moves the in point to the playhead (the mix start, 00:52).
+    await page.getByTestId("alignment-entry-set").click();
+    await expect(page.getByTestId("alignment-entry")).toContainText("00:52");
+
+    // The suggestion isn't saved until the user confirms it.
+    expect(patches).toHaveLength(0);
+    await page.getByTestId("alignment-save-aligned").click();
+    await expect.poll(() => patches.length).toBeGreaterThan(0);
+    expect(patches[0].start_s as number).toBeCloseTo(52.5, 1);
+    expect(patches[0].aligned).toBe(true);
+    // The in/out points are saved with the start, including the correction.
+    expect(patches[0].mix_in_s as number).toBeCloseTo(52.5, 1);
+    expect(patches[0].mix_out_s as number).toBeCloseTo(240, 1);
+  });
+
+  test("opening a set fills in/out for hand-aligned tracks", async ({
+    page,
+  }) => {
+    const JOB = "test-fill-mix-points-job";
+    let filled = false;
+    let fillCalls = 0;
+    const track = (withPoints: boolean) => ({
+      id: 7,
+      start_s: 60,
+      end_s: 200,
+      title: "Hand Aligned",
+      artist: "DJ",
+      shazam_id: "shz-hand",
+      confidence: 0.9,
+      source: "shazam",
+      soundcloud_id: 77,
+      soundcloud_permalink_url: null,
+      artwork_url: null,
+      preview_url: null,
+      duration_s: 300,
+      confirmed: true,
+      aligned: true,
+      user_edited: true,
+      set_bpm: 128,
+      pitch_offset: 0,
+      mix_in_s: withPoints ? 120 : null,
+      mix_out_s: withPoints ? 240 : null,
+    });
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "Fill Set",
+          artist: "Tester",
+          duration_s: 600,
+          status: "complete",
+          options: {},
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          scans: [],
+          timeline: [track(filled)],
+        }),
+      }),
+    );
+    await page.route(new RegExp(`/api/analyser/sets/${JOB}/events$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "Cache-Control": "no-cache" },
+        body: "",
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${JOB}/tracks/fill-mix-points$`),
+      (route) => {
+        fillCalls += 1;
+        filled = true;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ filled: 1 }),
+        });
+      },
+    );
+
+    await page.goto(`/analyser?job=${JOB}`);
+
+    // Filled once, then the reloaded band dims where the track is silent.
+    await expect(page.getByTestId("track-band-silent")).toHaveCount(2);
+    expect(fillCalls).toBe(1);
+  });
+
+  test("tracklist shows track BPM, Camelot key and their shift in the set", async ({
+    page,
+  }) => {
+    const KEY_JOB = "test-key-job";
+    await page.addInitScript(() => {
+      localStorage.setItem("access_token", "fake-token");
+      localStorage.setItem("token_expires_at", String(Date.now() + 3600e3));
+    });
+    await page.route(/\/api\/analyser\/sets$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      }),
+    );
+    const track = (
+      id: number,
+      start_s: number,
+      title: string,
+      pitch_offset: number,
+    ) => ({
+      id,
+      start_s,
+      end_s: start_s + 120,
+      title,
+      artist: "DJ",
+      shazam_id: `shz-${id}`,
+      confidence: 0.9,
+      source: "shazam",
+      soundcloud_id: 7000 + id,
+      soundcloud_permalink_url: null,
+      artwork_url: null,
+      duration_s: 240,
+      confirmed: false,
+      user_edited: false,
+      set_bpm: 140,
+      pitch_offset,
+    });
+    await page.route(new RegExp(`/api/analyser/sets/${KEY_JOB}$`), (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: KEY_JOB,
+          soundcloud_id: 1,
+          source_url: null,
+          title: "Key Set",
+          artist: "Tester",
+          duration_s: 600,
+          status: "complete",
+          options: {
+            pitch_strategy: "none",
+            window_s: 30,
+            hop_s: 25,
+            min_section_gap_s: 30,
+            sections_enabled: true,
+            scan_cadence_s: 60,
+            scan_window_s: 12,
+          },
+          error: null,
+          created_at: 0,
+          updated_at: 0,
+          windows: [],
+          sections: [],
+          scans: [],
+          timeline: [
+            track(1, 60, "Native Tempo", 0),
+            track(2, 300, "Pitched Up", -2),
+            track(3, 450, "Half Time Listing", 0),
+          ],
+        }),
+      }),
+    );
+    await page.route(
+      new RegExp(`/api/analyser/sets/${KEY_JOB}/events$`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache" },
+          body: "",
+        }),
+    );
+    await page.route(
+      /api\.soundcloud\.com\/tracks\/soundcloud(:|%3A)tracks(:|%3A)\d+/,
+      (route) => {
+        const id = Number(
+          route
+            .request()
+            .url()
+            .match(/(\d+)$/)![1],
+        );
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id,
+            key_signature: id === 7002 ? "Db:maj" : "A:min",
+            bpm: { 7001: 138, 7003: 70 }[id] ?? null,
+          }),
+        });
+      },
+    );
+
+    await page.goto(`/analyser?job=${KEY_JOB}`);
+
+    const keys = page.getByTestId("tracklist-key");
+    await expect(keys).toHaveCount(3);
+    await expect(keys.nth(0)).toHaveText("8A");
+    // Played 2 semitones above its original tempo: 3B moves to 5B.
+    await expect(keys.nth(1)).toHaveText("3B → 5B");
+    await expect(
+      keys.nth(1).getByTestId("tracklist-key-shifted"),
+    ).toBeVisible();
+
+    // BPM leads with the track's own tempo (SoundCloud's, else derived from
+    // the pitch offset); the set's change follows.
+    const bpms = page.getByTestId("tracklist-bpm");
+    await expect(bpms.nth(0)).toHaveText(/^138 BPM\s*\+1\.4%$/);
+    await expect(bpms.nth(1)).toHaveText(/^125 BPM\s*\+12\.2%$/);
+    // Listed at half time: 70 → 140 is the same tempo, not +100% / +12 st.
+    await expect(bpms.nth(2)).toHaveText(/^70 BPM\s*$/);
+    await expect(keys.nth(2)).toHaveText("8A");
+  });
+
+  test("alignment dialog shows a tempo listed on SoundCloud", async ({
+    page,
+  }) => {
+    await mountBpmDialog(page, {
+      bpm: 140,
+      bpm_overridden: false,
+      bpm_source: "soundcloud",
+    });
+    await expect(page.getByTestId("alignment-orig-bpm")).toContainText(
+      "140.0 BPM",
+    );
+    await expect(page.getByTestId("alignment-bpm-soundcloud")).toBeVisible();
+    await expect(page.getByTestId("alignment-bpm-corrected")).toHaveCount(0);
+  });
+
+  test("alignment dialog plays a half-time listing at set tempo", async ({
+    page,
+  }) => {
+    await mountBpmDialog(page, {
+      bpm: 64,
+      bpm_overridden: false,
+      bpm_source: "soundcloud",
+    });
+    // Set at 128: a 64 BPM listing is the same tempo, not a 2× speed-up.
+    await expect(page.getByTestId("alignment-orig-bpm")).toContainText(
+      "1.000× in mix",
+    );
   });
 
   test("alignment dialog corrects a misdetected original BPM", async ({
@@ -3405,18 +4261,27 @@ test.describe("Set Analyser", () => {
           duration_s: 200,
           bpm: 64,
           bpm_overridden: false,
+          bpm_source: "detected",
         }),
       }),
     );
-    // Reanalyse re-runs detection (returns the same value, no override).
+    // Reanalyse re-runs detection: the default mode repeats 64, the
+    // stronger DP tracker fixes the half-time lock.
+    const reanalyseUrls: string[] = [];
     await page.route(
-      /\/api\/soundcloud\/tracks\/\d+\/bpm\/reanalyse$/,
+      /\/api\/soundcloud\/tracks\/\d+\/bpm\/reanalyse/,
       (route) => {
         reanalysed = true;
+        const url = route.request().url();
+        reanalyseUrls.push(url);
         return route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ bpm: 64, bpm_overridden: false }),
+          body: JSON.stringify({
+            bpm: url.includes("strong=true") ? 128 : 64,
+            bpm_overridden: true,
+            bpm_source: "corrected",
+          }),
         });
       },
     );
@@ -3429,16 +4294,61 @@ test.describe("Set Analyser", () => {
         return route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({ bpm: body.bpm, bpm_overridden: true }),
+          body: JSON.stringify({
+            bpm: body.bpm,
+            bpm_overridden: true,
+            bpm_source: "corrected",
+          }),
         });
       }
       reverted = true;
       return route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ bpm: 64, bpm_overridden: false }),
+        body: JSON.stringify({
+          bpm: 64,
+          bpm_overridden: false,
+          bpm_source: "detected",
+        }),
       });
     });
+
+    // Auto-align finds the track only once the tempo is right (128 BPM).
+    let currentBpm = 64;
+    let autoAligns = 0;
+    page.on("request", (req) => {
+      if (/\/bpm(\/reanalyse)?(\?|$)/.test(req.url())) {
+        const strong = req.url().includes("strong=true");
+        if (req.method() === "PUT")
+          currentBpm = (req.postDataJSON() as { bpm: number }).bpm;
+        else if (req.method() === "DELETE") currentBpm = 64;
+        else currentBpm = strong ? 128 : 64;
+      }
+    });
+    await page.route(
+      new RegExp(`/api/analyser/sets/${ALIGN_JOB}/tracks/42/auto-align`),
+      (route) => {
+        autoAligns += 1;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(
+            currentBpm === 128
+              ? {
+                  found: true,
+                  start_s: 75,
+                  rate: 1,
+                  key_lock: true,
+                  confidence: 0.7,
+                  enter_s: 75,
+                  exit_s: 240,
+                  chunks: [],
+                }
+              : { found: false },
+          ),
+        });
+      },
+    );
 
     await page.goto(`/analyser?job=${ALIGN_JOB}`);
     await expect(page.getByTestId("tracklist-row")).toHaveCount(1);
@@ -3473,10 +4383,32 @@ test.describe("Set Analyser", () => {
 
     // Reanalyse re-runs detection (deterministic here, still 64).
     await page.getByTestId("alignment-bpm-reanalyse").click();
+    await page.getByTestId("alignment-bpm-reanalyse-default").click();
     await expect.poll(() => reanalysed).toBe(true);
     await expect(page.getByTestId("alignment-orig-bpm")).toContainText(
       "64.0 BPM",
     );
+
+    // The stronger algorithm is one pick away in the same menu.
+    await expect(
+      page.getByTestId("alignment-bpm-reanalyse-default"),
+    ).toHaveCount(0);
+    await expect(page.getByTestId("alignment-bpm-reanalyse")).toBeEnabled();
+    await page.getByTestId("alignment-bpm-reanalyse").click();
+    await page.getByTestId("alignment-bpm-reanalyse-strong").click();
+    await expect(page.getByTestId("alignment-orig-bpm")).toContainText(
+      "128.0 BPM",
+    );
+    expect(reanalyseUrls.at(-1)).toContain("strong=true");
+
+    // The corrected tempo re-runs auto-align, which now finds the track.
+    await expect(page.getByTestId("alignment-auto-status")).toContainText(
+      "Auto-aligned",
+    );
+    await expect(page.getByTestId("alignment-new-start")).toContainText(
+      "01:15",
+    );
+    expect(autoAligns).toBeGreaterThan(1);
   });
 
   test("alignment strips scroll to the track and follow playback", async ({
@@ -3620,43 +4552,43 @@ test.describe("Set Analyser", () => {
       page.getByTestId("alignment-set-strip").getByTestId("waveform-loading"),
     ).toHaveCount(0);
 
-    // Read the scrollLeft of WaveSurfer's own (shadow-DOM) scroll
-    // container — the element the fix actually moves. The old code set the
-    // outer container's scrollLeft, which does nothing here, leaving this 0.
-    const mixScrollLeft = () =>
-      page.getByTestId("alignment-set-strip").evaluate((el) => {
-        const host = [...el.querySelectorAll("div")].find((d) => d.shadowRoot);
-        const scroll = host?.shadowRoot?.querySelector(".scroll");
-        return scroll instanceof HTMLElement ? scroll.scrollLeft : -1;
-      });
+    // Each strip's canvas records the time it is centred on and its scale.
+    const stripState = (testId: string) =>
+      page
+        .getByTestId(testId)
+        .locator("canvas")
+        .evaluate((el) => ({
+          centerS: Number((el as HTMLCanvasElement).dataset.centerS),
+          pxPerS: Number((el as HTMLCanvasElement).dataset.pxPerS),
+        }));
+    const mixCenter = async () =>
+      (await stripState("alignment-set-strip")).centerS;
 
-    // Centred on 40 s → scrolled well past 0 (old behaviour: stuck at 0,
-    // showing the very start of the mix instead of the track region).
-    await expect.poll(mixScrollLeft).toBeGreaterThan(50);
+    // Centred on the track's 40 s start (old behaviour: showed 0 s).
+    await expect.poll(mixCenter).toBeCloseTo(40, 0);
 
-    // Zoom control: zooming in raises px/s, so the same centred time sits
-    // further along the (wider) waveform — scrollLeft grows without the mix
-    // re-decoding (ws.zoom re-renders from existing peaks).
+    // Zoom control: zooming in raises px/s on both strips.
     const zoom = page.getByTestId("alignment-zoom").getByRole("slider");
     const zoomValue = () => zoom.getAttribute("aria-valuenow");
     const beforeZoomValue = await zoomValue();
-    const beforeZoomScroll = await mixScrollLeft();
+    const beforeZoomPx = (await stripState("alignment-set-strip")).pxPerS;
     await zoom.focus();
     for (let i = 0; i < 20; i++) await zoom.press("ArrowRight");
     await expect.poll(zoomValue).not.toBe(beforeZoomValue);
-    await expect.poll(mixScrollLeft).toBeGreaterThan(beforeZoomScroll);
+    await expect
+      .poll(async () => (await stripState("alignment-set-strip")).pxPerS)
+      .toBeGreaterThan(beforeZoomPx);
 
     // Reset returns the zoom to its default (1.0×).
     await page.getByTestId("alignment-zoom-reset").click();
     await expect(page.getByTestId("alignment-zoom-value")).toHaveText("1.0×");
 
-    // Jog both: scrubs both decks together, so the mix scrolls forward but
+    // Jog both: scrubs both decks together, so the mix moves forward but
     // the computed start (the alignment) is unchanged.
     const startText = () => page.getByTestId("alignment-new-start").innerText();
     const beforeJogStart = await startText();
-    const beforeJogScroll = await mixScrollLeft();
     await page.getByTestId("alignment-jog-30").click();
-    await expect.poll(mixScrollLeft).toBeGreaterThan(beforeJogScroll);
+    await expect.poll(mixCenter).toBeCloseTo(70, 0);
     expect(await startText()).toBe(beforeJogStart);
 
     // Both strips are draggable; the saved start recomputes from both
@@ -3683,13 +4615,18 @@ test.describe("Set Analyser", () => {
     await expect(page.getByTestId("alignment-cue-original")).toBeVisible();
     await expect(page.getByTestId("alignment-cue-both")).toBeVisible();
 
-    // Transport runs both decks; the mix strip must scroll to keep the
-    // playhead centred (old behaviour: nothing moved with the audio).
-    const beforePlay = await mixScrollLeft();
+    // Transport runs both decks; the mix strip follows the playhead
+    // (old behaviour: nothing moved with the audio).
+    const beforePlay = await mixCenter();
     await page.getByTestId("alignment-play-toggle").click();
     await expect
-      .poll(mixScrollLeft, { timeout: 4000 })
-      .toBeGreaterThan(beforePlay + 15);
+      .poll(mixCenter, { timeout: 4000 })
+      .toBeGreaterThan(beforePlay + 0.5);
+
+    // Pausing keeps the strips where playback left them.
+    await page.getByTestId("alignment-play-toggle").click();
+    const pausedAt = await mixCenter();
+    expect(pausedAt).toBeGreaterThan(beforePlay + 0.5);
   });
 
   test("alignment resolves a SoundCloud original for a Shazam-only track", async ({
@@ -3777,24 +4714,19 @@ test.describe("Set Analyser", () => {
         }),
       }),
     );
-    // Title+artist search resolves the SoundCloud original (Shazam gives
-    // no soundcloud_id).
-    await page.route(/api\.soundcloud\.com\/tracks\?/, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([
-          {
-            id: 8002,
-            urn: "soundcloud:tracks:8002",
-            title: "Get It",
-            artwork_url: cover,
-            waveform_url: "https://wave.invalid/8002.json",
-            duration: 180_000,
-            user: { username: "mischluft", urn: "soundcloud:users:2" },
-          },
-        ]),
-      }),
+    // The backend matcher links the SoundCloud original (Shazam gives no
+    // soundcloud_id).
+    let linkRequested = false;
+    await page.route(
+      new RegExp(`/api/analyser/sets/${JOB}/tracks/\\d+/link-soundcloud$`),
+      (route) => {
+        linkRequested = true;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ soundcloud_id: 8002 }),
+        });
+      },
     );
     await page.route(/api\.soundcloud\.com\/tracks\/soundcloud/, (route) =>
       route.fulfill({
@@ -3864,6 +4796,7 @@ test.describe("Set Analyser", () => {
     // The original paints REAL peaks decoded server-side from the resolved
     // track's audio, not the coarse waveform_url or the placeholder arch.
     expect(peaksFetched).toBe(true);
+    expect(linkRequested).toBe(true);
 
     // Per-strip BPM readouts: the mix shows the detected in-set tempo (144),
     // the original its native tempo (128 from the peaks endpoint) plus the
@@ -4066,8 +4999,31 @@ test.describe("Set Analyser", () => {
                 soundcloud_permalink_url: null,
                 artwork_url: null,
                 preview_url: null,
-                duration_s: null,
+                duration_s: 240,
                 confirmed: true,
+                user_edited: false,
+                set_bpm: null,
+                pitch_offset: null,
+              },
+              {
+                id: 3,
+                start_s: 240,
+                end_s: 360,
+                title: "Aligned Cut",
+                artist: "DJ",
+                shazam_id: "shz-aligned",
+                confidence: 0.9,
+                source: "shazam",
+                soundcloud_id: null,
+                soundcloud_permalink_url: null,
+                artwork_url: null,
+                preview_url: null,
+                duration_s: 120,
+                confirmed: true,
+                aligned: true,
+                // Heard only for the middle 40 s of its 240-360 s band.
+                mix_in_s: 280,
+                mix_out_s: 320,
                 user_edited: false,
                 set_bpm: null,
                 pitch_offset: null,
@@ -4107,19 +5063,70 @@ test.describe("Set Analyser", () => {
     );
 
     await page.goto(`/analyser?job=${CONFIRM_JOB}`);
-    await expect(page.getByTestId("track-band")).toHaveCount(2);
+    await expect(page.getByTestId("track-band")).toHaveCount(3);
 
     // The confirmed band carries data-confirmed="true"; the other doesn't.
     await expect(
       page.locator('[data-testid="track-band"][data-confirmed="true"]'),
-    ).toHaveCount(1);
+    ).toHaveCount(2);
     await expect(
       page.locator('[data-testid="track-band"][data-confirmed="false"]'),
     ).toHaveCount(1);
 
-    // One column is drawn over the upper lanes — one per confirmed track.
+    // Bands carry the tracklist's status icon: green check for confirmed,
+    // amber badge-check for aligned.
+    const marks = page.getByTestId("track-band-status-mark");
+    await expect(marks).toHaveCount(2);
+    await expect(
+      page.locator(
+        '[data-testid="track-band"][data-aligned="true"] [data-testid="track-band-status-mark"]',
+      ),
+    ).toHaveAttribute("data-status", "aligned");
+
+    // One column per confirmed track over the upper lanes; the aligned
+    // track's column is amber like its badge.
     const overlay = page.getByTestId("timeline-confirmed-overlay");
     await expect(overlay).toBeVisible();
-    await expect(overlay.locator(":scope > div")).toHaveCount(1);
+    await expect(overlay.locator(":scope > div")).toHaveCount(2);
+    await expect(
+      overlay.locator(':scope > div[data-aligned="true"]'),
+    ).toHaveCount(1);
+
+    // "Confirmed Cut" (60 s, 240 s long) is still playing when "Aligned
+    // Cut" comes in at 240 s, so the two sit in different rows; "Unconfirmed
+    // Cut" at 420 s starts after both and reuses the top row.
+    const rowOf = (n: number) =>
+      page.getByTestId("track-band").nth(n).getAttribute("data-row");
+    await expect.poll(() => rowOf(0)).toBe("0");
+    await expect.poll(() => rowOf(1)).toBe("1");
+    await expect.poll(() => rowOf(2)).toBe("0");
+
+    // The aligned track's band body covers only where it plays (280-320 s
+    // of its 240-360 s span); a thin line marks the silent third each side.
+    const aligned = page.locator(
+      '[data-testid="track-band"][data-aligned="true"]',
+    );
+    const silent = aligned.getByTestId("track-band-silent");
+    await expect(silent).toHaveCount(2);
+    const bandWidth = (await aligned.boundingBox())!.width;
+    for (const i of [0, 1]) {
+      const w = (await silent.nth(i).boundingBox())!.width;
+      expect(w / bandWidth).toBeCloseTo(1 / 3, 1);
+    }
+    const bodyWidth = (await aligned
+      .getByTestId("track-band-body")
+      .boundingBox())!.width;
+    expect(bodyWidth / bandWidth).toBeCloseTo(1 / 3, 1);
+
+    // The bar above covers only where it is heard, the same middle third.
+    const audibleColumn = overlay.getByTestId("confirmed-overlay-audible");
+    await expect(audibleColumn).toHaveCount(1);
+    const columnWidth = (await audibleColumn.boundingBox())!.width;
+    expect(columnWidth / bandWidth).toBeCloseTo(1 / 3, 1);
+
+    // The tracklist counts persisted confirmations (aligned implies confirmed).
+    await expect(page.getByTestId("confirmed-count")).toHaveText(
+      "2 / 3 confirmed",
+    );
   });
 });

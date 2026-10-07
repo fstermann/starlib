@@ -30,6 +30,7 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 | `analyser.paste-url` | Analyse SoundCloud URL from clipboard | on `/analyser` | `app/analyser/_components/commands.tsx` |
 | `analyser.reanalyse-selection` | Re-analyse selected region | on `/analyser`, region selected on the timeline | `app/analyser/_components/commands.tsx` |
 | `analyser.export-tracklist` | Export detected tracklist | on `/analyser`, a job is loaded | `app/analyser/_components/commands.tsx` |
+| `analyser.link-soundcloud` | Find SoundCloud links for tracks | on `/analyser`, a job is loaded | `app/analyser/_components/commands.tsx` |
 
 ### Go to
 

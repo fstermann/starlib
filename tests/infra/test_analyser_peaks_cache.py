@@ -120,3 +120,19 @@ def test_detect_bpm_none_on_error() -> None:
         raise RuntimeError("binary missing")
 
     assert _run_bpm(fake_run) is None
+
+
+def test_detect_bpm_strong_passes_flag() -> None:
+    seen = {}
+
+    async def fake_run(*, binary_path, input_path, options, listener):
+        seen["argv"] = options.to_argv(input_path=input_path)
+        await listener({"type": "window.bpm", "bpm": 142.0})
+        return 0
+
+    with (
+        patch.object(peaks_infra.binary_locator, "find_analyser_binary", return_value="bin"),
+        patch.object(peaks_infra, "run_analyser_subprocess", new=AsyncMock(side_effect=fake_run)),
+    ):
+        assert asyncio.run(peaks_infra.detect_bpm(Path("x"), strong=True)) == 142.0
+    assert "--strong" in seen["argv"]

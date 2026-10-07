@@ -20,13 +20,19 @@ import { Slider } from "@/components/ui/slider";
 import {
   deleteTrack,
   effectiveDurationInSet,
+  foldTempoRatio,
   formatTimecode,
   originalBpmFromSet,
   updateTrack,
   windowSupport,
   type TrackTimelineEntry,
 } from "@/lib/analyser";
-import { searchTracks, type SCTrack } from "@/lib/soundcloud";
+import {
+  keyFromSoundcloud,
+  semitonesFromBpmRatio,
+  transposeCamelot,
+} from "@/lib/camelot";
+import { getTrack, searchTracks, type SCTrack } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
 import type { AnalyserUiState } from "../_state";
@@ -487,11 +493,7 @@ export function TracklistPanel({
               data-testid="confirmed-count"
             >
               <span className="text-brand font-semibold">
-                {
-                  tracks.filter((t) =>
-                    confirmed.has(`${t.start_s}-${t.shazam_id ?? t.title}`),
-                  ).length
-                }
+                {tracks.filter((t) => confirmed.has(rowKeyOf(t))).length}
               </span>
               <span className="text-text-subtle"> / {tracks.length}</span>{" "}
               confirmed
@@ -598,7 +600,7 @@ export function TracklistPanel({
                   else rowRefs.current.delete(rowKey);
                 }}
                 className={cn(
-                  "group -mx-4 grid grid-cols-[64px_40px_1fr_auto] items-center gap-3 px-4 py-2 transition-colors",
+                  "group -mx-4 grid grid-cols-[64px_40px_1fr_auto_auto] items-center gap-3 px-4 py-2 transition-colors",
                   isPlaying && "bg-brand-soft/40 rounded",
                   isTentative && "opacity-65",
                   flashKey === rowKey &&
@@ -649,6 +651,15 @@ export function TracklistPanel({
                         switched
                       </span>
                     )}
+                    {"unreleased" in t && t.unreleased && (
+                      <span
+                        className="border-border text-text-muted shrink-0 rounded border px-1 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
+                        title="Marked as unreleased"
+                        data-testid="tracklist-unreleased"
+                      >
+                        unreleased
+                      </span>
+                    )}
                     {"source" in t && t.source === "manual" && (
                       <span
                         className="bg-brand-soft text-text rounded px-1 py-0.5 text-[9px] font-semibold tracking-wider uppercase"
@@ -658,13 +669,18 @@ export function TracklistPanel({
                       </span>
                     )}
                   </div>
-                  <div className="text-text-muted flex items-center gap-2 truncate text-xs">
-                    {display.artist && (
-                      <span title={display.artist}>{display.artist}</span>
-                    )}
-                    <BpmChip track={t} />
-                    <DurationChip track={t} />
-                  </div>
+                  {display.artist && (
+                    <div
+                      className="text-text-muted truncate text-xs"
+                      title={display.artist}
+                    >
+                      {display.artist}
+                    </div>
+                  )}
+                </div>
+                {/* Stats in fixed-width columns so they line up row to row. */}
+                <div className="text-text-subtle flex items-center gap-4 text-xs tabular-nums">
+                  <TrackStats track={t} />
                 </div>
                 <div className="flex items-center gap-1">
                   {/* Confidence + curate cluster.
@@ -1093,7 +1109,7 @@ function AlternativesList({
   const [open, setOpen] = useState(false);
   return (
     <div
-      className="col-span-4 -mt-1 ml-[116px]"
+      className="col-span-5 -mt-1 ml-[116px]"
       data-testid="track-alternatives"
       data-row-start={primaryStart}
     >
@@ -1322,31 +1338,135 @@ function ShazamGlyph({ className }: { className?: string }) {
   return <BrandIcon src="/icons/shazam.svg" alt="" className={className} />;
 }
 
-/** ``128 → 124 BPM`` chip. Hidden for derived/manual rows that don't
- *  carry the persisted scan stats; hidden when no pitch shift was
- *  applied (offset 0 means "set BPM == original BPM" so the arrow form
- *  is just visual noise). */
-function BpmChip({ track }: { track: TrackTimelineEntry | DerivedRun }) {
-  if (!("set_bpm" in track)) return null;
-  const setBpm = track.set_bpm;
-  const offset = track.pitch_offset;
-  if (setBpm == null) return null;
-  const original = originalBpmFromSet(setBpm, offset);
-  const showArrow = original != null && Math.abs(setBpm - original) >= 0.5;
+/** The track's own BPM, plus how far the set sped it up or slowed it
+ *  down (``142 BPM +1.4%``), like the player's pitcher readout. Hidden
+ *  for rows without the persisted scan stats. */
+function BpmChip({
+  track,
+  listing,
+}: {
+  track: TrackTimelineEntry | DerivedRun;
+  listing: Listing | null;
+}) {
+  const tempos = useTempos(track, listing);
+  if (!tempos) return null;
+  const { trackBpm: original, setBpm } = tempos;
+  const ratePercent = (foldTempoRatio(setBpm / original) - 1) * 100;
+  const shifted = Math.abs(ratePercent) >= 0.05;
   return (
     <span
-      className="text-text-subtle tabular-nums"
+      className="w-24 text-right"
       data-testid="tracklist-bpm"
+      title={`Track ${original.toFixed(1)} BPM, played at ${setBpm.toFixed(1)} BPM in the set`}
+    >
+      {original.toFixed(0)} BPM{" "}
+      <span
+        className={cn("inline-block w-10", shifted && "text-brand")}
+        data-testid="tracklist-bpm-rate"
+      >
+        {shifted && `${ratePercent > 0 ? "+" : ""}${ratePercent.toFixed(1)}%`}
+      </span>
+    </span>
+  );
+}
+
+// What SoundCloud lists for a track, per id; a listing never changes.
+type Listing = { bpm: number | null; keySignature: string | null };
+const LISTING_CACHE = new Map<number, Promise<Listing>>();
+
+function useSoundcloudListing(
+  soundcloudId: number | null | undefined,
+): Listing | null {
+  const [loaded, setLoaded] = useState<{ id: number; listing: Listing } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (soundcloudId == null) return;
+    let request = LISTING_CACHE.get(soundcloudId);
+    if (!request) {
+      request = getTrack(`soundcloud:tracks:${soundcloudId}`)
+        .then((t) => ({
+          bpm: t?.bpm != null && t.bpm > 0 ? t.bpm : null,
+          keySignature: t?.key_signature ?? null,
+        }))
+        .catch(() => ({ bpm: null, keySignature: null }));
+      LISTING_CACHE.set(soundcloudId, request);
+    }
+    let cancelled = false;
+    void request.then((listing) => {
+      if (!cancelled) setLoaded({ id: soundcloudId, listing });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [soundcloudId]);
+  return loaded && loaded.id === soundcloudId ? loaded.listing : null;
+}
+
+/** The track's own tempo and the set's tempo where it played: SoundCloud's
+ *  listed BPM first, else the one derived from the Shazam pitch offset. */
+function useTempos(
+  track: TrackTimelineEntry | DerivedRun,
+  listing: Listing | null,
+): { trackBpm: number; setBpm: number } | null {
+  const setBpm = "set_bpm" in track ? track.set_bpm : null;
+  if (setBpm == null || setBpm <= 0) return null;
+  const derived =
+    "pitch_offset" in track
+      ? originalBpmFromSet(setBpm, track.pitch_offset)
+      : null;
+  return { trackBpm: listing?.bpm ?? derived ?? setBpm, setBpm };
+}
+
+/** Camelot key (``8A``) from SoundCloud's listed key. When the track was
+ *  pitched a semitone or more in the mix, the shifted Camelot key follows
+ *  in brand colour, as in the Rekordbox view. */
+function KeyChip({
+  track,
+  listing,
+}: {
+  track: TrackTimelineEntry | DerivedRun;
+  listing: Listing | null;
+}) {
+  const key = keyFromSoundcloud(listing?.keySignature);
+  const tempos = useTempos(track, listing);
+  if (!key) return null;
+  const semitones = tempos
+    ? semitonesFromBpmRatio(foldTempoRatio(tempos.setBpm / tempos.trackBpm))
+    : 0;
+  const shifted =
+    semitones !== 0 ? transposeCamelot(key.camelot, semitones) : null;
+  return (
+    <span
+      className="w-16"
+      data-testid="tracklist-key"
       title={
-        showArrow
-          ? `Set ${setBpm.toFixed(1)} BPM, original ${original?.toFixed(1)} BPM (pitch ${offset?.toFixed(2)} ST)`
-          : `${setBpm.toFixed(1)} BPM`
+        shifted
+          ? `Key ${key.name} (${key.camelot}), ${shifted} in the mix (${semitones > 0 ? "+" : ""}${semitones} st)`
+          : `Key ${key.name} (${key.camelot})`
       }
     >
-      {showArrow
-        ? `${setBpm.toFixed(0)} → ${original?.toFixed(0)} BPM`
-        : `${setBpm.toFixed(0)} BPM`}
+      {key.camelot}
+      {shifted && (
+        <span className="text-brand" data-testid="tracklist-key-shifted">
+          {" "}
+          → {shifted}
+        </span>
+      )}
     </span>
+  );
+}
+
+function TrackStats({ track }: { track: TrackTimelineEntry | DerivedRun }) {
+  const listing = useSoundcloudListing(
+    "soundcloud_id" in track ? track.soundcloud_id : null,
+  );
+  return (
+    <>
+      <BpmChip track={track} listing={listing} />
+      <KeyChip track={track} listing={listing} />
+      <DurationChip track={track} />
+    </>
   );
 }
 
@@ -1359,7 +1479,7 @@ function DurationChip({ track }: { track: TrackTimelineEntry | DerivedRun }) {
   if (inSet == null) return null;
   return (
     <span
-      className="text-text-subtle tabular-nums"
+      className="w-9 text-right"
       data-testid="tracklist-effective-duration"
       title={
         track.pitch_offset != null && track.pitch_offset !== 0

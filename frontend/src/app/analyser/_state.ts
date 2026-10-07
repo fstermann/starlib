@@ -237,6 +237,9 @@ function applySse(
         // refresh don't silently revert a confirm-toggle.
         confirmed: event.confirmed ?? false,
         aligned: event.aligned ?? false,
+        unreleased: event.unreleased ?? false,
+        mix_in_s: event.mix_in_s ?? null,
+        mix_out_s: event.mix_out_s ?? null,
         user_edited: event.user_edited ?? false,
         set_bpm: event.set_bpm ?? null,
         pitch_offset: event.pitch_offset ?? null,

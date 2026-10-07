@@ -1,6 +1,12 @@
 "use client";
 
-import { AudioWaveform, ClipboardPaste, Download, Repeat } from "lucide-react";
+import {
+  AudioWaveform,
+  ClipboardPaste,
+  Download,
+  Link,
+  Repeat,
+} from "lucide-react";
 
 import { useCommand } from "@/components/command-palette/use-command";
 
@@ -12,6 +18,7 @@ interface CommandsProps {
   onPasteUrl: () => void;
   onReanalyseSelection: () => void;
   onExportTracklist: () => void;
+  onLinkSoundcloud: () => void;
 }
 
 /**
@@ -28,6 +35,7 @@ export function AnalyserCommands({
   onPasteUrl,
   onReanalyseSelection,
   onExportTracklist,
+  onLinkSoundcloud,
 }: CommandsProps) {
   // analyser.open is registered globally by the nav-config "Go to" entry,
   // so it lives in the palette even when the analyser route isn't mounted.
@@ -72,6 +80,21 @@ export function AnalyserCommands({
     when: hasJob,
     run: ({ close }) => {
       onExportTracklist();
+      close();
+    },
+  });
+
+  useCommand({
+    id: "analyser.link-soundcloud",
+    label: "Find SoundCloud links for tracks",
+    description:
+      "Search SoundCloud for unlinked tracks to fill in their length on the timeline.",
+    icon: Link,
+    keywords: ["soundcloud", "link", "duration", "length", "match"],
+    group: "Analyser",
+    when: hasJob,
+    run: ({ close }) => {
+      onLinkSoundcloud();
       close();
     },
   });

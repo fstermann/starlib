@@ -1,13 +1,23 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { toast } from "sonner";
 
 import { useTopBar } from "@/components/layout/top-bar-context";
 import {
   buildTracklistText,
   cancelShazamScan,
   DEFAULT_JOB_OPTIONS,
+  fillMixPoints,
+  linkSoundcloudTracks,
   reanalyse,
   resetJob,
   startAnalyserJob,
@@ -46,6 +56,23 @@ function AnalyserPageInner() {
     useState<AnalyserJobOptions>(DEFAULT_JOB_OPTIONS);
 
   const { state, dispatch, refresh } = useAnalyserJob(jobId);
+
+  // Hand-aligned tracks saved before in/out points existed get them from
+  // auto-align, once per opened set, so their bands show how long they play.
+  const needsMixPoints = state.timeline.some(
+    (t) => t.aligned && t.mix_in_s == null && t.soundcloud_id != null,
+  );
+  const mixPointsFilledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!jobId || !needsMixPoints || mixPointsFilledFor.current === jobId)
+      return;
+    mixPointsFilledFor.current = jobId;
+    void fillMixPoints(jobId)
+      .then(({ filled }) => {
+        if (filled > 0) refresh();
+      })
+      .catch((err) => console.warn("analyser: filling mix points failed", err));
+  }, [jobId, needsMixPoints, refresh]);
   // Lift the WaveSurfer instance to the page so the tracklist's
   // per-row "Play matched section" buttons can drive the same playback
   // surface as the timeline's transport. Container ref is attached
@@ -362,6 +389,21 @@ function AnalyserPageInner() {
     state.windows,
   ]);
 
+  const handleLinkSoundcloud = useCallback(async () => {
+    if (!jobId) return;
+    try {
+      const { linked } = await linkSoundcloudTracks(jobId);
+      toast(
+        linked === 0
+          ? "No new SoundCloud matches found"
+          : `Linked ${linked} track${linked === 1 ? "" : "s"} to SoundCloud`,
+      );
+      if (linked > 0) refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [jobId, refresh]);
+
   const handleExportTracklist = useCallback(() => {
     if (!snapshot) return;
     const text = buildTracklistText(snapshot);
@@ -386,6 +428,7 @@ function AnalyserPageInner() {
             onPasteUrl={handlePasteUrl}
             onReanalyseSelection={handleReanalyseSelection}
             onExportTracklist={handleExportTracklist}
+            onLinkSoundcloud={handleLinkSoundcloud}
           />
           <AnalyserStartScreen
             onStart={handleStart}
@@ -413,6 +456,7 @@ function AnalyserPageInner() {
           onPasteUrl={handlePasteUrl}
           onReanalyseSelection={handleReanalyseSelection}
           onExportTracklist={handleExportTracklist}
+          onLinkSoundcloud={handleLinkSoundcloud}
         />
         {/* Timeline (2) sits on top full-width — the waveform reads best
             wide. Below it, a 1/3 · 2/3 split: job header + controls +

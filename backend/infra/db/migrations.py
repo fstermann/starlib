@@ -102,10 +102,10 @@ def _detect_unstamped_analyser_revision(conn: Connection) -> str | None:
 
     if "analyser_tracks" in tables and "analyser_shazam_scans" in tables:
         revision = _detect_track_schema_revision(inspector)
-        # 0015 added a non-analyser table; a full track schema plus that table
-        # is really at head, so adopt there rather than re-running its create.
+        # 0015 added a non-analyser table; a 0014 track schema plus that table
+        # is at 0015 or later, so adopt there rather than re-running its create.
         if revision == "0014" and "soundcloud_bpm_override" in tables:
-            return "0015"
+            return _detect_post_0015_revision(inspector)
         return revision
     if "analyser_track_overrides" in tables and "analyser_shazam_scans" in tables:
         return _detect_override_schema_revision(inspector)
@@ -119,6 +119,16 @@ def _detect_unstamped_analyser_revision(conn: Connection) -> str | None:
 def _columns(inspector: Inspector, table: str) -> set[str]:
     """Return column names for an inspected table."""
     return {column["name"] for column in inspector.get_columns(table)}
+
+
+def _detect_post_0015_revision(inspector: Inspector) -> str:
+    """Infer revision 0015-0017 from the track columns added after 0015."""
+    track_columns = _columns(inspector, "analyser_tracks")
+    if {"mix_in_s", "mix_out_s"} <= track_columns:
+        return "0017"
+    if "unreleased" in track_columns:
+        return "0016"
+    return "0015"
 
 
 def _detect_track_schema_revision(inspector: Inspector) -> str:
