@@ -13,6 +13,7 @@ import {
 import { useMemo } from "react";
 
 import { PlaylistNodeMenu } from "@/components/playlist-node-menu";
+import { PlaylistDropTarget } from "@/components/track-playlist-dnd";
 import { TreeView } from "@/components/tree/tree-view";
 import type { SourceProfile } from "@/lib/profile-groups";
 import type { SCPlaylist } from "@/lib/soundcloud";
@@ -105,8 +106,9 @@ interface LikesTreePanelProps {
    * member's playlists. Falls through to the flat `playlists` list when
    * absent or single-member. */
   playlistsByMember?: Array<{ source: SourceProfile; playlists: SCPlaylist[] }>;
-  /** When true, right-clicking a playlist node offers rename/delete. Only pass
-   *  for the user's own playlists (the "me" tab). */
+  /** When true, right-clicking a playlist node offers rename/delete and track
+   *  rows can be dropped onto it. Only pass for the user's own playlists (the
+   *  "me" tab), inside a TrackPlaylistDndProvider. */
   editable?: boolean;
   /** Called after a playlist is deleted, so the caller can navigate away if it
    *  was the one being viewed. */
@@ -265,12 +267,14 @@ export function LikesTreePanel({
         editable
           ? (node, row) =>
               node.kind === "playlist" && node.playlist?.urn ? (
-                <PlaylistNodeMenu
-                  playlist={node.playlist}
-                  onDeleted={onPlaylistDeleted}
-                >
-                  {row}
-                </PlaylistNodeMenu>
+                <PlaylistDropTarget playlist={node.playlist}>
+                  <PlaylistNodeMenu
+                    playlist={node.playlist}
+                    onDeleted={onPlaylistDeleted}
+                  >
+                    {row}
+                  </PlaylistNodeMenu>
+                </PlaylistDropTarget>
               ) : (
                 row
               )

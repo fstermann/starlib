@@ -31,6 +31,7 @@ import { LIKES_COLUMN_DEFS, LikesTable } from "@/components/likes-table";
 import { LogoSpinner } from "@/components/logo-spinner";
 import { ProfileGroupDialog } from "@/components/profile-group-dialog";
 import { SoundcloudBatchAnalyzeButton } from "@/components/soundcloud-batch-analyze-button";
+import { TrackPlaylistDndProvider } from "@/components/track-playlist-dnd";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -835,79 +836,83 @@ export function SoundcloudView() {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
-        {!hideTreePanel && (
-          <LikesTreePanel
-            playlists={playlists}
-            playlistsByMember={playlistsByMember}
-            selectedId={nodeId ?? LIKES_NODE_ID}
-            onSelect={setNodeId}
-            storageKey={storageKey}
-            newTodayCount={newTodayCount}
-            newWeekCount={newWeekCount}
-            showNew={tab === "me"}
-            likesCount={likesCount}
-            repostsCount={repostsCount}
-            tracksCount={tracksCount}
-            combinedCount={combinedCount}
-            perPlaylistFilteredCount={perPlaylistCount}
-            mixes={mixes}
-            perMixFilteredCount={perMixCount}
-            showMixes={tab === "me"}
-            editable={tab === "me"}
-            onPlaylistDeleted={(urn) => {
-              if (nodeId === playlistNodeId(urn)) setNodeId(LIKES_NODE_ID);
-            }}
-          />
-        )}
+      <TrackPlaylistDndProvider>
+        <div className="flex min-h-0 flex-1">
+          {!hideTreePanel && (
+            <LikesTreePanel
+              playlists={playlists}
+              playlistsByMember={playlistsByMember}
+              selectedId={nodeId ?? LIKES_NODE_ID}
+              onSelect={setNodeId}
+              storageKey={storageKey}
+              newTodayCount={newTodayCount}
+              newWeekCount={newWeekCount}
+              showNew={tab === "me"}
+              likesCount={likesCount}
+              repostsCount={repostsCount}
+              tracksCount={tracksCount}
+              combinedCount={combinedCount}
+              perPlaylistFilteredCount={perPlaylistCount}
+              mixes={mixes}
+              perMixFilteredCount={perMixCount}
+              showMixes={tab === "me"}
+              editable={tab === "me"}
+              onPlaylistDeleted={(urn) => {
+                if (nodeId === playlistNodeId(urn)) setNodeId(LIKES_NODE_ID);
+              }}
+            />
+          )}
 
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <LikesView
-            tab={tab}
-            activeLikes={activeLikes}
-            activeReposts={activeReposts}
-            activeTracks={activeTracks}
-            newToday={newToday}
-            newWeek={newWeek}
-            isNewTodayView={isNewTodayView}
-            isNewWeekView={isNewWeekView}
-            playlistTracks={playlistTracks}
-            combinedPlaylistTracks={combinedPlaylistTracks}
-            mixTracks={mixTracks}
-            stationTracks={stationTracks}
-            isStationView={isStationView}
-            stationTitle={stationTracks.title ?? stationSeedTitle}
-            onOpenStation={openStation}
-            onCloseStation={() => setNodeId(LIKES_NODE_ID)}
-            playlistPicks={playlistPicks}
-            isPicksView={isPicksView}
-            picksTitle={picksSeedTitle}
-            onOpenPlaylistPicks={mixesAvailable ? openPlaylistPicks : undefined}
-            nodeId={nodeId ?? LIKES_NODE_ID}
-            isPlaylistView={isPlaylistView}
-            selectedPlaylistUrn={selectedPlaylist?.urn ?? null}
-            isAllPlaylistsView={isAllPlaylistsView}
-            isMixView={isMixView}
-            isMixesGroupView={isMixesGroupView}
-            isRepostsView={isRepostsView}
-            isTracksView={isTracksView}
-            mixesAvailable={mixesAvailable}
-            myLikedIds={myLikedIds}
-            collectionIds={collectionIds}
-            hasSelectedUser={activeGroup != null}
-            showSourceColumn={
-              tab === "discover" && (activeGroup?.members.length ?? 0) >= 2
-            }
-            searchQuery={searchQuery}
-            seedSchema={seedSchema}
-            filterState={filterState}
-            onFilterChange={setFilter}
-            onClearFilters={clearFilters}
-            filterOptions={filterOptions}
-            bpmMap={bpmMap}
-          />
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <LikesView
+              tab={tab}
+              activeLikes={activeLikes}
+              activeReposts={activeReposts}
+              activeTracks={activeTracks}
+              newToday={newToday}
+              newWeek={newWeek}
+              isNewTodayView={isNewTodayView}
+              isNewWeekView={isNewWeekView}
+              playlistTracks={playlistTracks}
+              combinedPlaylistTracks={combinedPlaylistTracks}
+              mixTracks={mixTracks}
+              stationTracks={stationTracks}
+              isStationView={isStationView}
+              stationTitle={stationTracks.title ?? stationSeedTitle}
+              onOpenStation={openStation}
+              onCloseStation={() => setNodeId(LIKES_NODE_ID)}
+              playlistPicks={playlistPicks}
+              isPicksView={isPicksView}
+              picksTitle={picksSeedTitle}
+              onOpenPlaylistPicks={
+                mixesAvailable ? openPlaylistPicks : undefined
+              }
+              nodeId={nodeId ?? LIKES_NODE_ID}
+              isPlaylistView={isPlaylistView}
+              selectedPlaylistUrn={selectedPlaylist?.urn ?? null}
+              isAllPlaylistsView={isAllPlaylistsView}
+              isMixView={isMixView}
+              isMixesGroupView={isMixesGroupView}
+              isRepostsView={isRepostsView}
+              isTracksView={isTracksView}
+              mixesAvailable={mixesAvailable}
+              myLikedIds={myLikedIds}
+              collectionIds={collectionIds}
+              hasSelectedUser={activeGroup != null}
+              showSourceColumn={
+                tab === "discover" && (activeGroup?.members.length ?? 0) >= 2
+              }
+              searchQuery={searchQuery}
+              seedSchema={seedSchema}
+              filterState={filterState}
+              onFilterChange={setFilter}
+              onClearFilters={clearFilters}
+              filterOptions={filterOptions}
+              bpmMap={bpmMap}
+            />
+          </div>
         </div>
-      </div>
+      </TrackPlaylistDndProvider>
     </div>
   );
 }
@@ -1444,6 +1449,7 @@ function LikesView({
             onColumnWidthChange={columnPrefs.setWidth}
             onColumnWidthReset={columnPrefs.resetWidth}
             showAddToPlaylist
+            dragToPlaylist={tab === "me"}
             onOpenStation={onOpenStation}
             onOpenPlaylistPicks={onOpenPlaylistPicks}
             removeFromPlaylist={removeFromPlaylist}
