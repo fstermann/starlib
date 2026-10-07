@@ -14,7 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.api.soundcloud import api_v2
+from backend.api.soundcloud import api_v2, public_api
 from backend.api.soundcloud import playlist_picks as picks_api
 from backend.infra.soundcloud import client as sc_client
 
@@ -56,7 +56,7 @@ def _patched(routes: dict[str, _Resp], calls: list, token: str | None = "session
     return (
         patch.object(api_v2, "get_settings", lambda: settings),
         patch.object(sc_client.httpx, "AsyncClient", lambda *a, **k: _RoutingAsyncClient(routes, calls)),
-        patch.object(picks_api, "_public_api_token", lambda: "app"),
+        patch.object(public_api, "public_api_token", lambda: "app"),
     )
 
 

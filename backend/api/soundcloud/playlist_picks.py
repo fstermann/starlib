@@ -17,9 +17,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Path, status
 
 from backend.api.soundcloud.api_v2 import api_v2_get, oauth_token_or_404
-from backend.api.soundcloud.stations import _public_api_token
+from backend.api.soundcloud.public_api import hydrate_tracks
 from backend.domain.playlist_picks import rank_by_playlist_occurrence
-from backend.infra.soundcloud import client
 from backend.schemas.soundcloud import PlaylistPick, PlaylistPicksResponse
 
 logger = logging.getLogger(__name__)
@@ -29,10 +28,6 @@ router = APIRouter(prefix="/api/soundcloud/playlist-picks", tags=["soundcloud"])
 _MAX_PLAYLISTS = 50
 _MAX_PICKS = 100
 _CONCURRENCY = 8
-# The public /tracks endpoint returns at most 50 tracks per request.
-_HYDRATE_BATCH = 50
-# Without this the public API silently drops preview-only and blocked tracks.
-_ANY_ACCESS = "playable,preview,blocked"
 
 
 def _ids(items: Any) -> list[int]:
@@ -50,32 +45,6 @@ async def _playlist_track_ids(playlist_id: int, token: str, gate: asyncio.Semaph
             logger.info("Skipping unreadable playlist %s", playlist_id)
             return []
     return _ids(playlist.get("tracks"))
-
-
-async def _hydrate(ids: list[int], token: str) -> dict[int, dict[str, Any]]:
-    """Fetch full public-API Track payloads for ``ids``, keyed by id."""
-    by_id: dict[int, dict[str, Any]] = {}
-    for start in range(0, len(ids), _HYDRATE_BATCH):
-        batch = ids[start : start + _HYDRATE_BATCH]
-        response = await client.get(
-            f"{client.PUBLIC_API_BASE}/tracks",
-            token=token,
-            params={
-                "urns": ",".join(f"soundcloud:tracks:{i}" for i in batch),
-                "access": _ANY_ACCESS,
-                "limit": _HYDRATE_BATCH,
-            },
-        )
-        if response.status_code != 200:
-            logger.warning("SoundCloud public /tracks returned %s", response.status_code)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="SoundCloud upstream error",
-            )
-        data = response.json()
-        tracks = data if isinstance(data, list) else data.get("collection") or []
-        by_id.update({t["id"]: t for t in tracks if isinstance(t, dict) and isinstance(t.get("id"), int)})
-    return by_id
 
 
 @router.get("/{seed_track_id}", response_model=PlaylistPicksResponse)
@@ -99,6 +68,6 @@ async def get_playlist_picks(
     playlists = await asyncio.gather(*(_playlist_track_ids(pid, token, gate) for pid in playlist_ids))
     ranked = rank_by_playlist_occurrence(playlists, exclude=seed_track_id, limit=_MAX_PICKS)
 
-    tracks = await _hydrate([track_id for track_id, _ in ranked], _public_api_token())
+    tracks = await hydrate_tracks([track_id for track_id, _ in ranked])
     picks = [PlaylistPick(count=count, track=tracks[tid]) for tid, count in ranked if tid in tracks]
     return PlaylistPicksResponse(playlist_count=len(playlist_ids), picks=picks)
