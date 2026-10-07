@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 from fastapi import APIRouter, Header, HTTPException, Response, status
 
+from backend.api.soundcloud.public_api import public_api_token
 from backend.infra.soundcloud import client, token_cache
 from backend.infra.soundcloud.oauth import OAuthManager  # re-exported for tests
 from backend.infra.soundcloud.settings import get_settings  # re-exported for tests
@@ -108,24 +109,6 @@ async def _http_get(url: str, *, token: str, follow_redirects: bool) -> httpx.Re
     return await client.get(url, token=token, follow_redirects=follow_redirects)
 
 
-async def _public_api_token() -> str:
-    """Acquire a Client-Credentials token usable against ``api.soundcloud.com``."""
-    settings = get_settings()
-    if not settings.has_oauth_credentials():
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="SoundCloud OAuth credentials not configured",
-        )
-    try:
-        return token_cache.get_cached_access_token(settings, OAuthManager)
-    except Exception as exc:
-        logger.exception("Failed to acquire SoundCloud OAuth token")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="SoundCloud auth unavailable",
-        ) from exc
-
-
 async def _resolve_track_id(url: str) -> int | None:
     """Resolve a soundcloud.com URL to a numeric track id via the public API.
 
@@ -134,7 +117,7 @@ async def _resolve_track_id(url: str) -> int | None:
     web-session token). Returns ``None`` if the URL doesn't point at a
     track resource.
     """
-    token = await _public_api_token()
+    token = public_api_token()
     resolve_url = f"{_PUBLIC_API_BASE}/resolve"
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
@@ -173,7 +156,7 @@ async def _fetch_track_meta(track_id: int) -> dict | None:
     ``None`` on 404. Errors raise an HTTPException so the caller surfaces a
     consistent 502.
     """
-    token = await _public_api_token()
+    token = public_api_token()
     track_url = f"{_PUBLIC_API_BASE}/tracks/{track_id}"
     try:
         response = await _http_get(track_url, token=token, follow_redirects=True)

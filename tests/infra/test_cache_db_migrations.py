@@ -48,7 +48,7 @@ def _cols(db: Path, table: str) -> set[str]:
 def test_fresh_db_upgrades_to_head(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
     cache.init_db(db)
-    assert _rev(db) == "0017"
+    assert _rev(db) == "0018"
     assert {
         "tracks",
         "peaks",
@@ -134,7 +134,7 @@ def test_adopts_unstamped_analyser_schema_without_losing_jobs(tmp_path: Path) ->
 
     cache.init_db(db)
 
-    assert _rev(db) == "0017"
+    assert _rev(db) == "0018"
     row = _connect(db).execute("SELECT status FROM analyser_jobs WHERE id = 'preserved-job'").fetchone()
     assert row == ("complete",)
 
@@ -187,7 +187,7 @@ def test_legacy_db_bootstrap_then_head(tmp_path: Path) -> None:
         "duration",
     ):
         assert col in tracks_cols, f"missing column after bootstrap: {col}"
-    assert _rev(db) == "0017"
+    assert _rev(db) == "0018"
 
 
 def test_backup_created_on_bootstrap(tmp_path: Path) -> None:
@@ -311,7 +311,7 @@ def test_migration_0004_downgrade_upgrade_round_trip(tmp_path: Path) -> None:
 
     db = tmp_path / "cache.db"
     cache.init_db(db)
-    assert _rev(db) == "0017"
+    assert _rev(db) == "0018"
 
     # Confirm the column is gone at head.
     head_cols = _cols(db, "soundcloud_track_bpm")
@@ -364,3 +364,22 @@ def test_sc_bpm_override_round_trip(tmp_path: Path) -> None:
     assert cache.get_sc_bpm_override(42) == 140.5
     cache.delete_sc_bpm_override(42)
     assert cache.get_sc_bpm_override(42) is None
+
+
+def test_migration_0018_wipes_sc_bpm_cache_but_keeps_overrides(tmp_path: Path) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    db = tmp_path / "cache.db"
+    cache.init_db(db)
+    cfg = Config()
+    cfg.set_main_option("script_location", "backend/infra/db/alembic")
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
+    command.downgrade(cfg, "0017")
+    cache.upsert_sc_bpm(42, 128, 1.0)
+    cache.upsert_sc_bpm_override(7, 140.0, 1.0)
+
+    command.upgrade(cfg, "0018")
+
+    assert cache.get_sc_bpms([42]) == {}
+    assert cache.get_sc_bpm_override(7) == 140.0

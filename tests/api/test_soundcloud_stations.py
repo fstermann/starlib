@@ -14,6 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from backend.api.soundcloud import public_api
 from backend.api.soundcloud import stations as stations_api
 from backend.infra.soundcloud import client as sc_client
 
@@ -60,7 +61,7 @@ def client() -> TestClient:
 
 def _with_credentials():
     return patch.object(
-        stations_api,
+        public_api,
         "get_settings",
         lambda: SimpleNamespace(
             client_id="cid",
@@ -71,7 +72,7 @@ def _with_credentials():
 
 
 def _with_token():
-    return patch.object(stations_api.token_cache, "get_cached_access_token", return_value="public-token")
+    return patch.object(public_api.token_cache, "get_cached_access_token", return_value="public-token")
 
 
 def test_station_returns_related_tracks_in_order(client: TestClient) -> None:
@@ -109,7 +110,7 @@ def test_station_returns_related_tracks_in_order(client: TestClient) -> None:
 
 def test_station_502_without_oauth_credentials(client: TestClient) -> None:
     settings = SimpleNamespace(has_oauth_credentials=lambda: False)
-    with patch.object(stations_api, "get_settings", return_value=settings):
+    with patch.object(public_api, "get_settings", return_value=settings):
         resp = client.get("/api/soundcloud/stations/123/tracks")
     assert resp.status_code == 502
 

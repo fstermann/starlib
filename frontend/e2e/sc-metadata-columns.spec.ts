@@ -14,7 +14,7 @@ const TRACK_A = {
   duration: 200_000,
   created_at: "2023-01-15T00:00:00Z",
   permalink_url: "https://soundcloud.com/me/alpha",
-  key_signature: "Amin",
+  key_signature: "A:min",
   label_name: "Alpha Records",
   tag_list: 'techno "deep house" 909',
   release_year: 2021,
@@ -42,7 +42,7 @@ const TRACK_B = {
   duration: 200_000,
   created_at: "2024-06-01T00:00:00Z",
   permalink_url: "https://soundcloud.com/me/bravo",
-  key_signature: "Cmaj",
+  key_signature: "C:maj",
   label_name: "Bravo Tapes",
   release_year: 2019,
   favoritings_count: 7,
@@ -156,7 +156,8 @@ test.describe("SoundCloud metadata columns", () => {
       "Description",
     );
 
-    await expect(cell(page, 0, "key_signature")).toHaveText("Amin");
+    // SoundCloud's "A:min" shows as Camelot by default.
+    await expect(cell(page, 0, "key_signature")).toHaveText("8A");
     await expect(cell(page, 0, "label_name")).toHaveText("Alpha Records");
     // tag_list is space-separated with quotes around multi-word tags.
     await expect(cell(page, 0, "tag_list")).toHaveText(
@@ -199,5 +200,34 @@ test.describe("SoundCloud metadata columns", () => {
     // Descending → Alpha first.
     await header.locator("button", { hasText: "Likes" }).click();
     await expect(page.locator('[data-index="0"]')).toContainText("Alpha track");
+  });
+
+  test("Key column follows the key notation setting", async ({ page }) => {
+    await setup(page);
+    await page.goto("/library?source=soundcloud");
+    await expect(page.locator("[data-index]")).toHaveCount(2, {
+      timeout: 5000,
+    });
+    await showColumns(page, "Key");
+    await expect(cell(page, 0, "key_signature")).toHaveText("8A");
+    await expect(cell(page, 1, "key_signature")).toHaveText("8B");
+
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("button", { name: "Library", exact: true }).click();
+    await page
+      .getByTestId("settings-key-notation")
+      .getByRole("radio", { name: "Standard (Am)" })
+      .click();
+    await page.keyboard.press("Escape");
+
+    await expect(cell(page, 0, "key_signature")).toHaveText("Am");
+    await expect(cell(page, 1, "key_signature")).toHaveText("C");
+
+    // The choice survives a reload.
+    await page.reload();
+    await expect(page.locator("[data-index]")).toHaveCount(2, {
+      timeout: 5000,
+    });
+    await expect(cell(page, 0, "key_signature")).toHaveText("Am");
   });
 });

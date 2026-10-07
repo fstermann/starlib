@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Path, status
 
 from backend.api.soundcloud.api_v2 import api_v2_get, oauth_token_or_404
+from backend.api.soundcloud.public_api import hydrate_tracks
 from backend.schemas.soundcloud import SystemPlaylistsResponse, SystemPlaylistSummary, SystemPlaylistTracksResponse
 
 logger = logging.getLogger(__name__)
@@ -90,8 +91,8 @@ async def get_system_playlist_tracks(
 ) -> SystemPlaylistTracksResponse:
     """Hydrate a system playlist's tracks to full Track payloads.
 
-    api-v2 returns slim tracks on the system-playlist resource itself;
-    we ``/tracks?ids=...`` to get full metadata (title, artwork, user).
+    api-v2 returns slim tracks on the system-playlist resource itself; the
+    public API fills in full metadata, including the ``bpm`` api-v2 omits.
     """
     token = oauth_token_or_404()
     if not urn.startswith("soundcloud:system-playlists:"):
@@ -106,14 +107,7 @@ async def get_system_playlist_tracks(
     if not ids:
         return SystemPlaylistTracksResponse(tracks=[])
 
-    # api-v2 /tracks tolerates ~50 ids per request; our mixes cap at 30 so
-    # a single call always suffices.
-    ids_param = ",".join(str(i) for i in ids)
-    hydrated = await api_v2_get("/tracks", token, ids=ids_param)
-    tracks = hydrated if isinstance(hydrated, list) else hydrated.get("collection") or []
-
-    # Preserve the order api-v2 returned on the system-playlist resource —
-    # /tracks?ids re-orders by numeric id, which would shuffle the mix.
-    by_id = {t["id"]: t for t in tracks if isinstance(t, dict) and isinstance(t.get("id"), int)}
+    # Keep the mix's own order; the public /tracks endpoint returns its own.
+    by_id = await hydrate_tracks(ids)
     ordered = [by_id[i] for i in ids if i in by_id]
     return SystemPlaylistTracksResponse(tracks=ordered)

@@ -13,9 +13,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Path, status
 
-from backend.infra.soundcloud import client, token_cache
-from backend.infra.soundcloud.oauth import OAuthManager
-from backend.infra.soundcloud.settings import get_settings
+from backend.api.soundcloud.public_api import public_api_token
+from backend.infra.soundcloud import client
 from backend.schemas.soundcloud import StationTracksResponse
 
 logger = logging.getLogger(__name__)
@@ -24,24 +23,6 @@ router = APIRouter(prefix="/api/soundcloud/stations", tags=["soundcloud"])
 
 # Enough to fill a station view without paginating.
 _LIMIT = 50
-
-
-def _public_api_token() -> str:
-    """Return a Client-Credentials token for the public SoundCloud API."""
-    settings = get_settings()
-    if not settings.has_oauth_credentials():
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="SoundCloud OAuth credentials not configured",
-        )
-    try:
-        return token_cache.get_cached_access_token(settings, OAuthManager)
-    except Exception as exc:
-        logger.exception("Failed to acquire SoundCloud OAuth token")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="SoundCloud auth unavailable",
-        ) from exc
 
 
 @router.get("/{seed_track_id}/tracks", response_model=StationTracksResponse)
@@ -53,7 +34,7 @@ async def get_station_tracks(
     Reads the documented public ``/tracks/{track_urn}/related`` endpoint and
     returns the full Track payloads in SoundCloud's order.
     """
-    token = _public_api_token()
+    token = public_api_token()
     track_urn = f"soundcloud:tracks:{seed_track_id}"
     url = f"{client.PUBLIC_API_BASE}/tracks/{track_urn}/related"
 

@@ -51,9 +51,15 @@ import {
   type Ruleset,
 } from "@/lib/api";
 import { onRulesetsChanged } from "@/lib/rulesets-events";
-import { getSetting, setSetting, type WaveformStyle } from "@/lib/settings";
+import {
+  getSetting,
+  setSetting,
+  type KeyNotation,
+  type WaveformStyle,
+} from "@/lib/settings";
 import { isTauri } from "@/lib/tauri";
 import { checkForUpdate, type UpdateResult } from "@/lib/updater";
+import { saveKeyNotation } from "@/lib/use-key-notation";
 import { saveWaveformStyle } from "@/lib/use-waveform-style";
 import { cn } from "@/lib/utils";
 
@@ -117,6 +123,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   >("aiff");
   const [waveformStyle, setWaveformStyleState] =
     useState<WaveformStyle>("starlib");
+  const [keyNotation, setKeyNotationState] = useState<KeyNotation>("camelot");
   const [loaded, setLoaded] = useState(false);
   const [checking, setChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateResult | null>(null);
@@ -173,6 +180,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       getSetting("autoUpdate"),
       api.getAppSettings(),
       getSetting("waveformStyle"),
+      getSetting("keyNotation"),
       api.getRootMusicFolder(),
       api.getAiSettings(),
       api.getAiStatus(),
@@ -183,6 +191,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         autoUpdate,
         appSettings,
         waveform,
+        notation,
         rootPath,
         settings,
         status,
@@ -194,6 +203,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           appSettings.preferred_output_format === "mp3" ? "mp3" : "aiff",
         );
         setWaveformStyleState(waveform);
+        setKeyNotationState(notation);
         setRootFolder(rootPath);
         setRootFolderDraft(rootPath);
         setAiSettings(settings);
@@ -237,6 +247,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   async function handleWaveformStyleChange(style: WaveformStyle) {
     setWaveformStyleState(style);
     await saveWaveformStyle(style);
+  }
+
+  async function handleKeyNotationChange(notation: KeyNotation) {
+    setKeyNotationState(notation);
+    await saveKeyNotation(notation);
   }
 
   async function handleSaveRootFolder() {
@@ -501,6 +516,31 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </ToggleGroupItem>
                     <ToggleGroupItem value="rekordbox_blue">
                       Rekordbox Blue
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label className="text-sm">SoundCloud key notation</Label>
+                  <p className="text-muted-foreground text-xs">
+                    How keys listed by SoundCloud are shown in the library and
+                    the analyser.
+                  </p>
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    value={keyNotation}
+                    onValueChange={(val) => {
+                      if (val) handleKeyNotationChange(val as KeyNotation);
+                    }}
+                    className="w-fit"
+                    data-testid="settings-key-notation"
+                  >
+                    <ToggleGroupItem value="camelot">
+                      Camelot (8A)
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="standard">
+                      Standard (Am)
                     </ToggleGroupItem>
                   </ToggleGroup>
                 </div>
