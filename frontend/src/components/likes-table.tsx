@@ -39,10 +39,7 @@ import {
   fetchAllPlaylistTracks,
   invalidatePlaylistTracks,
 } from "@/app/library/use-playlist-tracks";
-import {
-  mutateCachedUserPlaylists,
-  useUserPlaylists,
-} from "@/app/library/use-user-playlists";
+import { useUserPlaylists } from "@/app/library/use-user-playlists";
 import { CoverPlayButton } from "@/components/cover-play-button";
 import { CreatePlaylistDialog } from "@/components/create-playlist-dialog";
 import {
@@ -1782,9 +1779,6 @@ export function LikesTable({
           tracks={createTracks}
           open={createDialogOpen}
           onOpenChange={setCreateDialogOpen}
-          onCreated={(playlist) =>
-            mutateCachedUserPlaylists("me", (pls) => [playlist, ...pls])
-          }
         />
       )}
     </SoundcloudBpmCacheContext.Provider>

@@ -860,6 +860,8 @@ export function SoundcloudView() {
               onPlaylistDeleted={(urn) => {
                 if (nodeId === playlistNodeId(urn)) setNodeId(LIKES_NODE_ID);
               }}
+              onRefreshPlaylists={tab === "me" ? myPlaylists.reload : undefined}
+              playlistsLoading={myPlaylists.loading}
             />
           )}
 

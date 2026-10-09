@@ -124,6 +124,7 @@ Playlists are editable from the tree and from track rows:
 - **Right-click a track** → **Add to playlist** (submenu of your own playlists), **Remove from playlist** (when you're viewing one), or **Create playlist** seeded with the selected tracks
 - **Drag a track** onto one of your playlists in the tree to add it. Dragging a selected row adds the whole selection
 - **Right-click a playlist** in the tree to rename or delete it
+- **Hover the Playlists group** and click the refresh icon to reload your playlists from SoundCloud (e.g. after editing them on soundcloud.com)
 - Or run **Create playlist from N selected tracks** from the [command palette](command-palette.md)
 
 #### Playlist picks
