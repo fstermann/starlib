@@ -469,105 +469,168 @@ test.describe("soundcloud playlist context-menu actions", () => {
     ).playlist.tracks.map((t) => t.urn);
     expect(urns).toEqual([]);
   });
+});
 
-  test("creates a playlist from the selection and refreshes the sidebar", async ({
-    page,
-  }) => {
-    await authInit(page);
-    await commonRoutes(page);
-    // Pre-expand the sidebar "Playlists" group so its child nodes are visible.
-    await page.addInitScript(() => {
-      window.localStorage.setItem(
-        "tree-panel-expanded:library:soundcloud:me",
-        JSON.stringify(["playlists"]),
-      );
-    });
-    await page.route("https://api.soundcloud.com/me/likes/tracks*", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          collection: [
-            {
-              id: 42,
-              urn: "soundcloud:tracks:42",
-              title: "Track Alpha",
-              user: { id: 1, username: "me" },
-              duration: 200_000,
-            },
-            {
-              id: 99,
-              urn: "soundcloud:tracks:99",
-              title: "Track Bravo",
-              user: { id: 1, username: "me" },
-              duration: 200_000,
-            },
-          ],
-          next_href: null,
-        }),
-      }),
+const NEW_PLAYLIST = {
+  urn: "soundcloud:playlists:200",
+  title: "My Mix",
+  track_count: 2,
+  permalink_url: "https://soundcloud.com/me/sets/my-mix",
+};
+
+/** Likes view with two liked tracks and an expanded sidebar "Playlists" group.
+ *  GET /me/playlists returns `serverPlaylists.collection` at request time, so
+ *  a test can mutate it to simulate SoundCloud catching up. */
+async function setupCreateView(
+  page: import("@playwright/test").Page,
+  serverPlaylists: { collection: object[] } = { collection: [] },
+) {
+  await authInit(page);
+  await commonRoutes(page);
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "tree-panel-expanded:library:soundcloud:me",
+      JSON.stringify(["playlists"]),
     );
-    // Server keeps returning an empty list (SoundCloud's list is eventually
-    // consistent) — the sidebar must show the new playlist optimistically from
-    // the POST response, without waiting for a refetch.
-    await page.route("https://api.soundcloud.com/me/playlists*", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ collection: [], next_href: null }),
+  });
+  await page.route("https://api.soundcloud.com/me/likes/tracks*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        collection: [
+          {
+            id: 42,
+            urn: "soundcloud:tracks:42",
+            title: "Track Alpha",
+            user: { id: 1, username: "me" },
+            duration: 200_000,
+          },
+          {
+            id: 99,
+            urn: "soundcloud:tracks:99",
+            title: "Track Bravo",
+            user: { id: 1, username: "me" },
+            duration: 200_000,
+          },
+        ],
+        next_href: null,
       }),
-    );
-    // POST /playlists (create). `*` matches an optional query but not a
-    // subpath, so it won't catch /playlists/{urn}.
-    await page.route("https://api.soundcloud.com/playlists*", (route) => {
-      if (route.request().method() === "POST") {
-        return route.fulfill({
-          status: 201,
-          contentType: "application/json",
-          body: JSON.stringify({
-            urn: "soundcloud:playlists:200",
-            title: "My Mix",
-            track_count: 2,
-            permalink_url: "https://soundcloud.com/me/sets/my-mix",
-          }),
-        });
-      }
+    }),
+  );
+  await page.route("https://api.soundcloud.com/me/playlists*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ...serverPlaylists, next_href: null }),
+    }),
+  );
+  // POST /playlists (create). `*` matches an optional query but not a
+  // subpath, so it won't catch /playlists/{urn}.
+  await page.route("https://api.soundcloud.com/playlists*", (route) => {
+    if (route.request().method() === "POST") {
       return route.fulfill({
-        status: 200,
+        status: 201,
         contentType: "application/json",
-        body: "[]",
+        body: JSON.stringify(NEW_PLAYLIST),
       });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: "[]",
     });
+  });
+}
 
+/** Fill the open create dialog with "My Mix", submit, and return the POST. */
+async function submitCreateDialog(page: import("@playwright/test").Page) {
+  await page.getByLabel("Title").fill("My Mix");
+  const postPromise = page.waitForRequest(
+    (req) =>
+      req.method() === "POST" &&
+      req.url() === "https://api.soundcloud.com/playlists",
+  );
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  const post = await postPromise;
+  await expect(page.getByText('Playlist "My Mix" created')).toBeVisible();
+  return post;
+}
+
+test.describe("soundcloud create playlist → sidebar", () => {
+  // SoundCloud's playlist list is eventually consistent, so the server mock
+  // keeps returning an empty list: the sidebar must show the new playlist
+  // optimistically from the POST response.
+  test("from the row context menu", async ({ page }) => {
+    await setupCreateView(page);
     await page.goto("/library?source=soundcloud");
     await expect(page.locator("[data-index]")).toHaveCount(2, {
       timeout: 5000,
     });
 
-    // Select both rows.
     await page.getByRole("checkbox", { name: /select all/i }).click();
-
     await page.locator('[data-index="0"]').click({ button: "right" });
-    await page.getByTestId("playlist-create").click(); // label: "Create playlist (2)"
-
-    // Fill the create dialog and submit.
-    await page.getByLabel("Title").fill("My Mix");
-
-    const postPromise = page.waitForRequest(
-      (req) =>
-        req.method() === "POST" &&
-        req.url() === "https://api.soundcloud.com/playlists",
-    );
-    await page.getByRole("button", { name: "Create", exact: true }).click();
-    const post = await postPromise;
+    await page.getByTestId("playlist-create").click();
+    const post = await submitCreateDialog(page);
 
     const urns = (
       post.postDataJSON() as { playlist: { tracks: { urn: string }[] } }
     ).playlist.tracks.map((t) => t.urn);
     expect(urns).toEqual(["soundcloud:tracks:42", "soundcloud:tracks:99"]);
-
-    await expect(page.getByText('Playlist "My Mix" created')).toBeVisible();
-    // Sidebar refetched and now shows the new playlist node.
     await expect(page.getByRole("button", { name: /My Mix/ })).toBeVisible();
   });
+
+  test("from the toolbar button", async ({ page }) => {
+    await setupCreateView(page);
+    await page.goto("/library?source=soundcloud");
+    await expect(page.locator("[data-index]")).toHaveCount(2, {
+      timeout: 5000,
+    });
+
+    await page.getByRole("checkbox", { name: /select all/i }).click();
+    await page.getByRole("button", { name: "Create Playlist" }).click();
+    await submitCreateDialog(page);
+
+    await expect(page.getByRole("button", { name: /My Mix/ })).toBeVisible();
+  });
+
+  test("after the playlist cache has expired", async ({ page }) => {
+    await page.clock.install();
+    await setupCreateView(page);
+    await page.goto("/library?source=soundcloud");
+    await expect(page.locator("[data-index]")).toHaveCount(2, {
+      timeout: 5000,
+    });
+    // Past the 5-minute playlist cache TTL.
+    await page.clock.fastForward("06:00");
+
+    await page.locator('[data-index="0"]').click({ button: "right" });
+    await page.getByTestId("playlist-create").click();
+    await submitCreateDialog(page);
+
+    await expect(page.getByRole("button", { name: /My Mix/ })).toBeVisible();
+  });
+});
+
+test("refresh button on the Playlists group refetches the sidebar", async ({
+  page,
+}) => {
+  const serverPlaylists: { collection: object[] } = { collection: [] };
+  await setupCreateView(page, serverPlaylists);
+  await page.goto("/library?source=soundcloud");
+  await expect(page.locator("[data-index]")).toHaveCount(2, {
+    timeout: 5000,
+  });
+  await expect(page.getByRole("button", { name: /My Mix/ })).toHaveCount(0);
+
+  // Playlist created elsewhere (e.g. on soundcloud.com).
+  serverPlaylists.collection = [NEW_PLAYLIST];
+  await page.getByRole("button", { name: /^Playlists/ }).hover();
+  const refetch = page.waitForRequest((req) =>
+    req.url().startsWith("https://api.soundcloud.com/me/playlists"),
+  );
+  await page.getByTestId("playlists-refresh").click();
+  await refetch;
+
+  await expect(page.getByRole("button", { name: /My Mix/ })).toBeVisible();
 });

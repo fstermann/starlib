@@ -36,10 +36,11 @@ export function reloadUserPlaylists(userUrn: string | "me" | null) {
 
 /**
  * Apply an optimistic edit to the cached playlists for `userUrn` and refresh
- * every mounted useUserPlaylists — without refetching. Use for delete/rename:
- * SoundCloud's GET /me/playlists is eventually consistent and can still return
- * a just-deleted (or just-renamed) playlist, so a refetch would show stale
- * data until it propagates.
+ * every mounted useUserPlaylists — without refetching. Use for
+ * create/delete/rename: SoundCloud's GET /me/playlists is eventually
+ * consistent and can still omit a just-created playlist or return a
+ * just-deleted (or just-renamed) one, so a refetch would show stale data until
+ * it propagates.
  */
 export function mutateCachedUserPlaylists(
   userUrn: string | "me" | null,
@@ -49,7 +50,9 @@ export function mutateCachedUserPlaylists(
   if (entry) {
     cache.set(cacheKey(userUrn), {
       playlists: updater(entry.playlists),
-      fetchedAt: entry.fetchedAt,
+      // Restart the TTL: an expired entry would otherwise be refetched and the
+      // eventually-consistent server list would drop this edit.
+      fetchedAt: Date.now(),
     });
   }
   subscribers.forEach((fn) => fn());

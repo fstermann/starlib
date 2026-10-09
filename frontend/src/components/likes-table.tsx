@@ -39,10 +39,7 @@ import {
   fetchAllPlaylistTracks,
   invalidatePlaylistTracks,
 } from "@/app/library/use-playlist-tracks";
-import {
-  mutateCachedUserPlaylists,
-  useUserPlaylists,
-} from "@/app/library/use-user-playlists";
+import { useUserPlaylists } from "@/app/library/use-user-playlists";
 import { CoverPlayButton } from "@/components/cover-play-button";
 import { CreatePlaylistDialog } from "@/components/create-playlist-dialog";
 import {
@@ -51,6 +48,10 @@ import {
 } from "@/components/soundcloud-bpm-cell";
 import { SoundcloudLikeButton } from "@/components/soundcloud-like-button";
 import { SourceProfileAvatar } from "@/components/source-profile-avatar";
+import {
+  useTrackDraggable,
+  type TrackDragData,
+} from "@/components/track-playlist-dnd";
 import {
   TrackPlaylistSubmenu,
   type AddToPlaylistResult,
@@ -868,7 +869,11 @@ interface TrackRowProps {
     listeners: React.DOMAttributes<HTMLButtonElement> | undefined;
     isDragging: boolean;
   };
+  /** When set, the whole row can be dragged onto a playlist drop target. */
+  playlistDrag?: TrackDragData;
 }
+
+type RowDragListeners = React.DOMAttributes<HTMLDivElement> | undefined;
 
 function TrackRowInner({
   track,
@@ -888,7 +893,12 @@ function TrackRowInner({
   removeFromPlaylist,
   visibleColumns,
   dragHandle,
-}: TrackRowProps) {
+  rowDragListeners,
+  isRowDragging,
+}: TrackRowProps & {
+  rowDragListeners?: RowDragListeners;
+  isRowDragging?: boolean;
+}) {
   const imgUrl = artworkUrl(track);
   const scTrackId = extractId(track);
   const { activeTrack } = usePlayer();
@@ -992,7 +1002,8 @@ function TrackRowInner({
           role="row"
           tabIndex={0}
           aria-current={isCurrent ? "true" : undefined}
-          className={`group border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isCurrent ? "bg-[var(--brand-soft)]" : isSelected || isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging ? "opacity-40" : ""}`}
+          className={`group border-border flex h-10 cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isCurrent ? "bg-[var(--brand-soft)]" : isSelected || isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging || isRowDragging ? "opacity-40" : ""}`}
+          {...rowDragListeners}
           onClick={onExpand}
           onPointerEnter={onPointerEnter}
           onPointerLeave={onPointerLeave}
@@ -1098,10 +1109,40 @@ function SortableTrackRow(props: TrackRowProps & { sortableId: string }) {
   );
 }
 
-function TrackRow(props: TrackRowProps & { sortableId?: string }) {
-  const { sortableId, ...rest } = props;
+function PlaylistDraggableTrackRow(
+  props: TrackRowProps & { dragId: string; playlistDrag: TrackDragData },
+) {
+  const { dragId, ...rest } = props;
+  const { listeners, setNodeRef, isDragging } = useTrackDraggable(
+    dragId,
+    props.playlistDrag,
+  );
+  return (
+    <div ref={setNodeRef}>
+      <TrackRowInner
+        {...rest}
+        rowDragListeners={listeners as RowDragListeners}
+        isRowDragging={isDragging}
+      />
+    </div>
+  );
+}
+
+function TrackRow(
+  props: TrackRowProps & { sortableId?: string; dragId: string },
+) {
+  const { sortableId, dragId, ...rest } = props;
   if (sortableId) {
     return <SortableTrackRow {...rest} sortableId={sortableId} />;
+  }
+  if (rest.playlistDrag) {
+    return (
+      <PlaylistDraggableTrackRow
+        {...rest}
+        dragId={dragId}
+        playlistDrag={rest.playlistDrag}
+      />
+    );
   }
   return <TrackRowInner {...rest} />;
 }
@@ -1150,6 +1191,9 @@ interface LikesTableProps {
   /** Opt-in: add an "Add to playlist" submenu to each row's context menu,
    *  targeting the authenticated user's own SoundCloud playlists. */
   showAddToPlaylist?: boolean;
+  /** Rows become draggable onto playlist drop targets of an enclosing
+   *  TrackPlaylistDndProvider. Requires `showAddToPlaylist`. */
+  dragToPlaylist?: boolean;
   /** When set, each row's context menu gains "Remove from playlist" acting on
    *  this playlist. Only pass when viewing one of the user's own playlists.
    *  `onRemoved` fires after a successful remove so the caller can drop the
@@ -1182,6 +1226,7 @@ export function LikesTable({
   onOpenStation,
   onOpenPlaylistPicks,
   showAddToPlaylist,
+  dragToPlaylist,
   removeFromPlaylist,
 }: LikesTableProps) {
   const reorderEnabled = !!onReorderTracks;
@@ -1606,6 +1651,7 @@ export function LikesTable({
         return (
           <TrackRow
             sortableId={sortableId}
+            dragId={`track-drag:${track.urn ?? index}`}
             track={track}
             isSelected={selectedIds.has(id)}
             isExpanded={expandedId === id}
@@ -1656,6 +1702,15 @@ export function LikesTable({
                       handleAddToPlaylist(playlist, rowTargets),
                     createCount: rowTargets.length,
                     onCreatePlaylist: () => openCreatePlaylist(rowTargets),
+                  }
+                : undefined
+            }
+            playlistDrag={
+              showAddToPlaylist && dragToPlaylist
+                ? {
+                    tracks: rowTargets,
+                    onAdd: (playlist) =>
+                      handleAddToPlaylist(playlist, rowTargets),
                   }
                 : undefined
             }
@@ -1724,9 +1779,6 @@ export function LikesTable({
           tracks={createTracks}
           open={createDialogOpen}
           onOpenChange={setCreateDialogOpen}
-          onCreated={(playlist) =>
-            mutateCachedUserPlaylists("me", (pls) => [playlist, ...pls])
-          }
         />
       )}
     </SoundcloudBpmCacheContext.Provider>

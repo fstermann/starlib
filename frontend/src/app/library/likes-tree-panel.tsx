@@ -6,6 +6,7 @@ import {
   CalendarRange,
   Heart,
   ListMusic,
+  RefreshCw,
   Repeat2,
   Sparkles,
   User,
@@ -13,9 +14,12 @@ import {
 import { useMemo } from "react";
 
 import { PlaylistNodeMenu } from "@/components/playlist-node-menu";
+import { PlaylistDropTarget } from "@/components/track-playlist-dnd";
 import { TreeView } from "@/components/tree/tree-view";
+import { Button } from "@/components/ui/button";
 import type { SourceProfile } from "@/lib/profile-groups";
 import type { SCPlaylist } from "@/lib/soundcloud";
+import { cn } from "@/lib/utils";
 
 import type { SystemPlaylistSummary } from "./use-system-playlists";
 
@@ -105,12 +109,16 @@ interface LikesTreePanelProps {
    * member's playlists. Falls through to the flat `playlists` list when
    * absent or single-member. */
   playlistsByMember?: Array<{ source: SourceProfile; playlists: SCPlaylist[] }>;
-  /** When true, right-clicking a playlist node offers rename/delete. Only pass
-   *  for the user's own playlists (the "me" tab). */
+  /** When true, right-clicking a playlist node offers rename/delete and track
+   *  rows can be dropped onto it. Only pass for the user's own playlists (the
+   *  "me" tab), inside a TrackPlaylistDndProvider. */
   editable?: boolean;
   /** Called after a playlist is deleted, so the caller can navigate away if it
    *  was the one being viewed. */
   onPlaylistDeleted?: (urn: string) => void;
+  /** When set, hovering the "Playlists" group reveals a refresh button. */
+  onRefreshPlaylists?: () => void;
+  playlistsLoading?: boolean;
 }
 
 export function LikesTreePanel({
@@ -132,6 +140,8 @@ export function LikesTreePanel({
   playlistsByMember,
   editable,
   onPlaylistDeleted,
+  onRefreshPlaylists,
+  playlistsLoading,
 }: LikesTreePanelProps) {
   const tree = useMemo<LikesTreeNode>(() => {
     const toPlaylistNode = (pl: SCPlaylist, idx: number): LikesTreeNode => {
@@ -261,21 +271,41 @@ export function LikesTreePanel({
       onSelect={onSelect}
       storageKey={storageKey}
       hideRoot
-      wrapNode={
-        editable
-          ? (node, row) =>
-              node.kind === "playlist" && node.playlist?.urn ? (
-                <PlaylistNodeMenu
-                  playlist={node.playlist}
-                  onDeleted={onPlaylistDeleted}
-                >
-                  {row}
-                </PlaylistNodeMenu>
-              ) : (
-                row
-              )
-          : undefined
-      }
+      wrapNode={(node, row) => {
+        if (node.id === PLAYLISTS_GROUP_ID && onRefreshPlaylists) {
+          return (
+            <div className="group/playlists relative">
+              {row}
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Refresh playlists"
+                data-testid="playlists-refresh"
+                disabled={playlistsLoading}
+                onClick={onRefreshPlaylists}
+                className="bg-accent absolute top-1/2 right-1 size-5 -translate-y-1/2 opacity-0 group-hover/playlists:opacity-100 focus-visible:opacity-100 disabled:opacity-100"
+              >
+                <RefreshCw
+                  className={cn("size-3", playlistsLoading && "animate-spin")}
+                />
+              </Button>
+            </div>
+          );
+        }
+        if (editable && node.kind === "playlist" && node.playlist?.urn) {
+          return (
+            <PlaylistDropTarget playlist={node.playlist}>
+              <PlaylistNodeMenu
+                playlist={node.playlist}
+                onDeleted={onPlaylistDeleted}
+              >
+                {row}
+              </PlaylistNodeMenu>
+            </PlaylistDropTarget>
+          );
+        }
+        return row;
+      }}
       renderIcon={(node) => {
         if (node.kind === "new-today") {
           return (

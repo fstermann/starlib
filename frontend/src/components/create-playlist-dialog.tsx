@@ -4,6 +4,7 @@ import { ListPlus, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { mutateCachedUserPlaylists } from "@/app/library/use-user-playlists";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -86,6 +87,7 @@ export function CreatePlaylistDialog({
       });
       const url = (playlist as Record<string, unknown>).permalink_url as
         string | undefined;
+      mutateCachedUserPlaylists("me", (pls) => [playlist, ...pls]);
       onCreated?.(playlist);
       setOpen(false);
       toast.success(`Playlist "${title.trim()}" created`, {
