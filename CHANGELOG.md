@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.7.0](https://github.com/fstermann/starlib/compare/v0.6.0...v0.7.0) (2026-10-10)
+
+
+### Features
+
+* **analyser:** A/B alignment tool with original-BPM correction ([#620](https://github.com/fstermann/starlib/issues/620)) ([d4e1e42](https://github.com/fstermann/starlib/commit/d4e1e4267ee8479ecf3603d4ec7044fe771e0925))
+* **analyser:** auto-align tracks to the mix, mix points, SoundCloud BPM and lengths ([#645](https://github.com/fstermann/starlib/issues/645)) ([9b0cc05](https://github.com/fstermann/starlib/commit/9b0cc058b277a6164b5ee3cd800ef27f2e60db5e))
+* **breakdown:** Breakdown, with Track Breakdown for local and SoundCloud tracks ([#649](https://github.com/fstermann/starlib/issues/649)) ([bc0bb8f](https://github.com/fstermann/starlib/commit/bc0bb8fba41ad88f492d498c919f338ddd419b49))
+* **rekordbox:** SoundCloud ids from file tags, export to SoundCloud playlist ([#650](https://github.com/fstermann/starlib/issues/650)) ([e89eca9](https://github.com/fstermann/starlib/commit/e89eca9cdb25a14b38932b40f5fdabe594aaf294))
+* Set Analyser with Shazam integration ([#420](https://github.com/fstermann/starlib/issues/420)) ([e9f51cb](https://github.com/fstermann/starlib/commit/e9f51cb4e7d356d2446bff8ed13e5bd1a9bf161f))
+* **soundcloud:** add 16 metadata columns to the library table ([#569](https://github.com/fstermann/starlib/issues/569)) ([2ad97b6](https://github.com/fstermann/starlib/commit/2ad97b639d28d47f6e02cb7d42d01241b02d70a4))
+* **soundcloud:** drag tracks onto sidebar playlists, refresh playlists ([#646](https://github.com/fstermann/starlib/issues/646)) ([7a95113](https://github.com/fstermann/starlib/commit/7a95113f2c7260db7627ab920f4cd48c4a4f3c28))
+* **soundcloud:** playlist picks, SoundCloud BPM for Mixes and picks, key notation setting ([#644](https://github.com/fstermann/starlib/issues/644)) ([f8f9509](https://github.com/fstermann/starlib/commit/f8f9509c516d51d01ecdf14a8db27322f994bc37))
+* **soundcloud:** track stations from a track's context menu ([#608](https://github.com/fstermann/starlib/issues/608)) ([a5facd9](https://github.com/fstermann/starlib/commit/a5facd9d1dbb2e7dc5d9cccdd626dc270b641cad))
+
+
+### Bug Fixes
+
+* stop silent backend-sidecar failures ([#567](https://github.com/fstermann/starlib/issues/567)) ([563aac9](https://github.com/fstermann/starlib/commit/563aac908316c6fe96f65dcaebfdf3bfdfe8d638))
+
+
+### Performance
+
+* **backend:** cut redundant work out of scanning, browsing and upstream calls ([#575](https://github.com/fstermann/starlib/issues/575)) ([d16e6e9](https://github.com/fstermann/starlib/commit/d16e6e9d36334616401ed68761856fe131c9e931))
+
+
+### Refactoring
+
+* **backend:** layer the package into api / services / domain / infra ([#573](https://github.com/fstermann/starlib/issues/573)) ([006ebd5](https://github.com/fstermann/starlib/commit/006ebd5d68b8db06e94bbfcec58614797010e71b))
+* **frontend:** collapse the SC BPM reanalyze split button ([#577](https://github.com/fstermann/starlib/issues/577)) ([3023111](https://github.com/fstermann/starlib/commit/302311196affdb1bcf1fe6d4ae14aa5419bcb884))
+* move soundcloud_tools into backend, drop dead SC HTTP layer and weekly archiving ([#570](https://github.com/fstermann/starlib/issues/570)) ([90faf45](https://github.com/fstermann/starlib/commit/90faf45b054df01c471333636e2904a471dc8a5e))
+
+
+### Documentation
+
+* refresh for Rekordbox, player, and AI providers ([#574](https://github.com/fstermann/starlib/issues/574)) ([5510a8d](https://github.com/fstermann/starlib/commit/5510a8d1f64baa80c75abd933ed1bedceb44fdd7))
+* refresh screenshots and de-flake the weekly fixture ([#576](https://github.com/fstermann/starlib/issues/576)) ([0e9610f](https://github.com/fstermann/starlib/commit/0e9610fb6c84422c66901554639f8a4cc83a4df0))
+
 ## [0.6.0](https://github.com/fstermann/starlib/compare/v0.5.0...v0.6.0) (2026-07-18)
 
 
