@@ -22,9 +22,9 @@ export function TrackCommands({
 }) {
   useCommand({
     id: "breakdown.track.loop-section",
-    label: looping ? "Stop looping section" : "Loop section at playhead",
+    label: looping ? "Stop looping" : "Start looping",
     description:
-      "Loop the section under the playhead, synced across all stems.",
+      "Loop the selected bars, or the section under the playhead, synced across all stems.",
     icon: Repeat,
     keywords: ["loop", "repeat", "section", "stems"],
     group: "Breakdown",

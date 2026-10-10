@@ -32,6 +32,15 @@ export interface View {
   span: number;
 }
 
+/** Bars `start` up to, not including, `end`; both fractional and 1-based. */
+export interface BarRange {
+  start: number;
+  end: number;
+}
+
+/** Pointer travel that turns a click on a lane into a loop selection. */
+const SELECT_DRAG_PX = 4;
+
 /** Width of the lane name and controls column. */
 export const GUTTER_PX = 216;
 /** Bars visible at or below which waveforms get a 16th-note grid. */
@@ -76,12 +85,16 @@ function BarSvg({
   );
 }
 
-/** One timeline row: a fixed gutter for name and controls, then the plot. */
+/**
+ * One timeline row: a fixed gutter for name and controls, then the plot.
+ * Clicking the plot seeks; dragging across it selects bars.
+ */
 export function LaneRow({
   label,
   controls,
   height,
   onSeekBar,
+  onSelectBars,
   view,
   children,
   testId,
@@ -90,10 +103,35 @@ export function LaneRow({
   controls?: ReactNode;
   height: number;
   onSeekBar?: (bar: number) => void;
+  onSelectBars?: (from: number, to: number, done: boolean) => void;
   view: View;
   children: ReactNode;
   testId?: string;
 }) {
+  const dragged = useRef(false);
+
+  const startSelect = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!onSelectBars || e.button !== 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const barAt = (x: number) =>
+      view.start + ((x - rect.left) / rect.width) * view.span;
+    const x0 = e.clientX;
+    dragged.current = false;
+    const onMove = (ev: PointerEvent) => {
+      if (!dragged.current && Math.abs(ev.clientX - x0) < SELECT_DRAG_PX)
+        return;
+      dragged.current = true;
+      onSelectBars(barAt(x0), barAt(ev.clientX), false);
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (dragged.current) onSelectBars(barAt(x0), barAt(ev.clientX), true);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   return (
     <div
       className="grid border-b border-[var(--border)]"
@@ -108,8 +146,9 @@ export function LaneRow({
       </div>
       <div
         className="relative overflow-hidden"
+        onPointerDown={startSelect}
         onClick={(e) => {
-          if (!onSeekBar) return;
+          if (!onSeekBar || dragged.current) return;
           const rect = e.currentTarget.getBoundingClientRect();
           onSeekBar(
             view.start + ((e.clientX - rect.left) / rect.width) * view.span,
@@ -119,6 +158,91 @@ export function LaneRow({
         {children}
       </div>
     </div>
+  );
+}
+
+/** Where a bar range sits in the plot, as left and width percentages, clipped to view. */
+function rangeInView(view: View, range: BarRange) {
+  const left = Math.max(0, percent(view, range.start));
+  const right = Math.min(100, percent(view, range.end));
+  if (right <= left) return null;
+  return {
+    left,
+    width: right - left,
+    startsInView: range.start >= view.start,
+    endsInView: range.end <= view.start + view.span,
+  };
+}
+
+const plotX = (pct: number) =>
+  `calc(${GUTTER_PX}px + (100% - ${GUTTER_PX}px) * ${pct / 100})`;
+
+/** Loop brace along the top of the bar ruler; click it to turn looping on or off. */
+export function LoopBrace({
+  view,
+  loop,
+  active,
+  onToggle,
+}: {
+  view: View;
+  loop: BarRange;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  const shown = rangeInView(view, loop);
+  if (!shown) return null;
+  return (
+    <button
+      type="button"
+      className={cn(
+        "absolute top-0 z-10 h-1 rounded-b-sm",
+        active
+          ? "bg-[var(--brand)]"
+          : "bg-[var(--border-strong)] hover:bg-[var(--text-subtle)]",
+      )}
+      style={{
+        left: plotX(shown.left),
+        width: `calc((100% - ${GUTTER_PX}px) * ${shown.width / 100})`,
+      }}
+      onClick={onToggle}
+      aria-label={active ? "Stop looping" : "Loop"}
+      aria-pressed={active}
+      data-testid="track-loop-brace"
+      data-loop-start={loop.start}
+      data-loop-end={loop.end}
+    />
+  );
+}
+
+/** The loop region across every lane, tinted while looping. */
+export function LoopBand({
+  view,
+  loop,
+  active,
+}: {
+  view: View;
+  loop: BarRange;
+  active: boolean;
+}) {
+  const shown = rangeInView(view, loop);
+  if (!shown) return null;
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute inset-y-0 z-20",
+        active
+          ? "border-[var(--brand)] bg-[var(--brand-soft)]"
+          : "border-dashed border-[var(--border-strong)]",
+        shown.startsInView && "border-l",
+        shown.endsInView && "border-r",
+      )}
+      style={{
+        left: plotX(shown.left),
+        width: `calc((100% - ${GUTTER_PX}px) * ${shown.width / 100})`,
+      }}
+      data-testid="track-loop-band"
+      data-active={active}
+    />
   );
 }
 
@@ -157,7 +281,7 @@ export function Ruler({ view, grid }: { view: View; grid: Grid }) {
       {bars.map((bar) => (
         <div
           key={bar}
-          className="absolute top-0 flex h-full flex-col justify-between border-l border-[var(--border-strong)] pl-1"
+          className="absolute top-0 flex h-full flex-col justify-between border-l border-[var(--border-strong)] pt-1 pl-1"
           style={{ left: `${percent(view, bar)}%` }}
         >
           <span className="text-xs text-[var(--text)] tabular-nums">{bar}</span>
@@ -181,7 +305,8 @@ export function SectionLane({
 }: {
   view: View;
   sections: Section[];
-  loopIndex: number | null;
+  /** The section being looped, or -1. */
+  loopIndex: number;
   onChange: (sections: Section[]) => void;
   onSeekBar: (bar: number) => void;
   onLoop: (index: number) => void;
@@ -242,10 +367,7 @@ export function SectionLane({
                   data-label={s.label}
                   data-start-bar={s.start_bar}
                   data-end-bar={s.end_bar}
-                  className={cn(
-                    "absolute inset-y-1 flex items-center overflow-hidden rounded-sm px-1.5 text-xs font-medium text-black",
-                    loopIndex === i && "ring-2 ring-[var(--brand)] ring-inset",
-                  )}
+                  className="absolute inset-y-1 flex items-center overflow-hidden rounded-sm px-1.5 text-xs font-medium text-black"
                   style={{
                     left: `${left}%`,
                     width: `${width}%`,

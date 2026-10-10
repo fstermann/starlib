@@ -33,7 +33,7 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 | `breakdown.export-tracklist` | Export detected tracklist | on `/breakdown?view=set`, a job is loaded | `app/breakdown/_components/commands.tsx` |
 | `breakdown.link-soundcloud` | Find SoundCloud links for tracks | on `/breakdown?view=set`, a job is loaded | `app/breakdown/_components/commands.tsx` |
 | `breakdown.open-track` | Open selected track in Breakdown | on `/library?source=filesystem`, a track is selected | `app/library/filesystem-view.tsx` |
-| `breakdown.track.loop-section` | Loop section at playhead / Stop looping section | on `/breakdown?view=track`, a track is analysed | `app/breakdown/_track/commands.tsx` |
+| `breakdown.track.loop-section` | Start looping / Stop looping (loops the section at the playhead when no bars are selected) | on `/breakdown?view=track`, a track is analysed | `app/breakdown/_track/commands.tsx` |
 | `breakdown.track.reset-sections` | Reset sections to detected | on `/breakdown?view=track`, sections were edited | `app/breakdown/_track/commands.tsx` |
 
 ### Go to

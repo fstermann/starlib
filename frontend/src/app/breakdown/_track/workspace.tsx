@@ -14,6 +14,8 @@ import {
   Rows3,
   Ruler as RulerIcon,
   Sparkles,
+  ZoomIn,
+  ZoomOut,
   type LucideIcon,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -22,6 +24,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Tooltip,
   TooltipContent,
@@ -47,16 +50,19 @@ import { cn } from "@/lib/utils";
 
 import { SpectrumPanel, WaveformLane } from "./canvases";
 import { TrackCommands } from "./commands";
-import { GridEditor } from "./grid-editor";
+import { TrackHeader } from "./header";
 import {
   CurveLane,
   CURVES,
   GRID_MAX_SPAN,
   GUTTER_PX,
   LaneRow,
+  LoopBand,
+  LoopBrace,
   Overview,
   Ruler,
   SectionLane,
+  type BarRange,
   type CurveId,
   type View,
 } from "./lanes";
@@ -71,10 +77,10 @@ import {
 } from "./use-stem-player";
 
 const ZOOM_PRESETS = [
-  { label: "Track", span: null },
-  { label: "32 bars", span: 32 },
-  { label: "8 bars", span: 8 },
-  { label: "1 bar", span: 1 },
+  { label: "Fit", title: "Whole track", span: null },
+  { label: "32", title: "32 bars", span: 32 },
+  { label: "8", title: "8 bars", span: 8 },
+  { label: "1", title: "1 bar", span: 1 },
 ] as const;
 const MIN_SPAN = 1;
 
@@ -93,6 +99,17 @@ function pageTo(view: View, bar: number, nBars: number): View {
   if (bar >= view.start && bar < view.start + view.span) return view;
   const pages = Math.floor((bar - view.start) / view.span);
   return clampView({ ...view, start: view.start + pages * view.span }, nBars);
+}
+
+/** A loop length such as "16 bars" or "1.25 bars". */
+function formatBars(bars: number): string {
+  const n = Number(bars.toFixed(2));
+  return `${n} ${n === 1 ? "bar" : "bars"}`;
+}
+
+/** Bar `bar` rounded by `round` to a multiple of `step` bars from bar 1. */
+function snapBar(bar: number, step: number, round: (x: number) => number) {
+  return 1 + round((bar - 1) / step) * step;
 }
 
 function clampView(view: View, nBars: number): View {
@@ -119,7 +136,10 @@ export function TrackWorkspace({
   const gains = laneGains(player.mix);
   const [baseView, setBaseView] = useState<View>({ start: 1, span: nBars });
   const [sections, setSections] = useState(result.sections);
-  const [loopIndex, setLoopIndex] = useState<number | null>(null);
+  // Like Ableton's loop brace: it stays put while looping is off.
+  const [loop, setLoop] = useState<BarRange | null>(null);
+  const [looping, setLooping] = useState(false);
+  const [draftLoop, setDraftLoop] = useState<BarRange | null>(null);
   const [curves, setCurves] = useState<Record<CurveId, boolean>>({
     loudness: true,
     width: true,
@@ -170,9 +190,6 @@ export function TrackWorkspace({
     async (next: Section[]) => {
       const previous = sections;
       setSections(next);
-      // Edits shift section indices, so a running loop would point elsewhere.
-      setLoopIndex(null);
-      player.setLoop(null);
       try {
         onResult(await saveSections(result.digest, next));
       } catch (err) {
@@ -180,39 +197,79 @@ export function TrackWorkspace({
         toast.error(`Couldn't save sections: ${String(err)}`);
       }
     },
-    [onResult, player, result.digest, sections],
+    [onResult, result.digest, sections],
   );
 
   const reset = useCallback(async () => {
     const updated = await resetSections(result.digest);
     setSections(updated.sections);
-    setLoopIndex(null);
     onResult(updated);
   }, [onResult, result.digest]);
 
-  const toggleLoop = useCallback(
-    (index: number | null) => {
-      if (index === null || index < 0 || index === loopIndex) {
-        setLoopIndex(null);
-        player.setLoop(null);
+  const { setLoop: setPlayerLoop } = player;
+  useEffect(() => {
+    setPlayerLoop(
+      looping && loop
+        ? {
+            start: Math.max(0, barStartS(grid, loop.start)),
+            end: barStartS(grid, loop.end),
+          }
+        : null,
+    );
+  }, [grid, loop, looping, setPlayerLoop]);
+
+  const loopedSection =
+    looping && loop
+      ? sections.findIndex(
+          (s) => s.start_bar === loop.start && s.end_bar + 1 === loop.end,
+        )
+      : -1;
+
+  const loopSection = useCallback(
+    (index: number) => {
+      if (index === loopedSection) {
+        setLooping(false);
         return;
       }
       const s = sections[index];
-      setLoopIndex(index);
-      player.setLoop({
-        start: Math.max(0, barStartS(grid, s.start_bar)),
-        end: barStartS(grid, s.end_bar + 1),
-      });
+      setLoop({ start: s.start_bar, end: s.end_bar + 1 });
+      setLooping(true);
     },
-    [grid, loopIndex, player, sections],
+    [loopedSection, sections],
   );
 
-  const loopAtPlayhead = useCallback(
-    () =>
-      toggleLoop(
-        sectionIndexAt(sections, Math.max(1, Math.floor(playheadBar))),
-      ),
-    [playheadBar, sections, toggleLoop],
+  /** Turn looping on or off; with no loop yet, loop the section at the playhead. */
+  const toggleLooping = useCallback(() => {
+    if (looping || loop) {
+      setLooping(!looping);
+      return;
+    }
+    const index = sectionIndexAt(
+      sections,
+      Math.max(1, Math.floor(playheadBar)),
+    );
+    if (index >= 0) loopSection(index);
+  }, [loop, loopSection, looping, playheadBar, sections]);
+
+  /** Drag across the lanes to loop those bars, snapped to beats when zoomed in. */
+  const selectLoop = useCallback(
+    (from: number, to: number, done: boolean) => {
+      const step = view.span <= GRID_MAX_SPAN ? 1 / grid.beats_per_bar : 1;
+      const start = Math.max(1, snapBar(Math.min(from, to), step, Math.floor));
+      const end = Math.min(
+        nBars + 1,
+        Math.max(start + step, snapBar(Math.max(from, to), step, Math.ceil)),
+      );
+      if (!done) {
+        setDraftLoop({ start, end });
+        return;
+      }
+      setDraftLoop(null);
+      setLoop({ start, end });
+      setLooping(true);
+      setCue(Math.max(0, barStartS(grid, start)));
+    },
+    [grid, nBars, view.span],
   );
 
   // Ctrl/Cmd + wheel zooms around the pointer; horizontal wheel pans.
@@ -262,6 +319,13 @@ export function TrackWorkspace({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const zoomBy = (factor: number) =>
+    setBaseView((v) => {
+      const span = v.span * factor;
+      const center = player.position > 0 ? playheadBar : v.start + v.span / 2;
+      return clampView({ start: center - span / 2, span }, nBars);
+    });
+
   const zoomTo = (span: number | null) =>
     setBaseView((v) =>
       span === null
@@ -282,16 +346,17 @@ export function TrackWorkspace({
   const showGrid = view.span <= GRID_MAX_SPAN;
   const [drumPartsOpen, setDrumPartsOpen] = useState(false);
   const [curvesOpen, setCurvesOpen] = useState(false);
+  const shownLoop = draftLoop ?? loop;
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-4">
       <TrackCommands
         sectionsEdited={result.sections_edited}
-        looping={loopIndex !== null}
-        onLoop={loopAtPlayhead}
+        looping={looping}
+        onLoop={toggleLooping}
         onResetSections={() => void reset()}
       />
-      <Header result={result} onRemeasure={onRemeasure} />
+      <TrackHeader path={path} result={result} onRemeasure={onRemeasure} />
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -318,17 +383,26 @@ export function TrackWorkspace({
         <Button
           variant="ghost"
           size="sm"
-          onClick={loopAtPlayhead}
+          onClick={toggleLooping}
           className={cn(
-            loopIndex !== null && "bg-[var(--brand-soft)] text-[var(--brand)]",
+            looping && "bg-[var(--brand-soft)] text-[var(--brand)]",
           )}
-          aria-pressed={loopIndex !== null}
+          aria-pressed={looping}
           data-testid="track-loop"
         >
           <Repeat className="size-4" />
-          {loopIndex !== null
-            ? `Looping ${sections[loopIndex]?.label}`
-            : "Loop section"}
+          Loop
+          {loop && (
+            <span
+              className={cn(
+                "tabular-nums",
+                !looping && "text-[var(--text-muted)]",
+              )}
+              data-testid="track-loop-range"
+            >
+              {formatBars(loop.end - loop.start)}
+            </span>
+          )}
         </Button>
         {!player.ready && !player.error && (
           <span className="text-xs text-[var(--text-muted)]">
@@ -341,24 +415,55 @@ export function TrackWorkspace({
           </span>
         )}
         <div
-          className="ml-auto flex items-center gap-0.5"
+          className="ml-auto flex items-center gap-1"
           role="group"
           aria-label="Zoom"
         >
-          {ZOOM_PRESETS.map((z) => (
-            <Button
-              key={z.label}
-              variant="ghost"
-              size="sm"
-              onClick={() => zoomTo(z.span)}
-              className={cn(
-                (z.span ?? nBars) === view.span &&
-                  "bg-[var(--brand-soft)] text-[var(--brand)]",
-              )}
-            >
-              {z.label}
-            </Button>
-          ))}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => zoomBy(2)}
+            disabled={view.span >= nBars}
+            aria-label="Zoom out"
+          >
+            <ZoomOut className="size-4" />
+          </Button>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={
+              ZOOM_PRESETS.find((z) => (z.span ?? nBars) === view.span)
+                ?.label ?? ""
+            }
+            onValueChange={(label) => {
+              const preset = ZOOM_PRESETS.find((z) => z.label === label);
+              if (preset) zoomTo(preset.span);
+            }}
+            data-testid="track-zoom"
+          >
+            {ZOOM_PRESETS.map((z) => (
+              <ToggleGroupItem
+                key={z.label}
+                value={z.label}
+                title={z.title}
+                aria-label={z.title}
+                className="h-7 px-2.5 text-xs tabular-nums data-[state=on]:bg-[var(--brand-soft)] data-[state=on]:text-[var(--brand)]"
+              >
+                {z.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => zoomBy(0.5)}
+            disabled={view.span <= MIN_SPAN}
+            aria-label="Zoom in"
+          >
+            <ZoomIn className="size-4" />
+          </Button>
         </div>
       </div>
 
@@ -375,7 +480,7 @@ export function TrackWorkspace({
 
       <div
         ref={lanesRef}
-        className="min-h-0 shrink overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface-2)]"
+        className="min-h-0 shrink overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface-2)] select-none"
         data-testid="track-lanes"
       >
         <div className="relative">
@@ -383,6 +488,14 @@ export function TrackWorkspace({
             className="sticky top-0 z-10 bg-[var(--surface-2)]"
             data-testid="track-pinned-lanes"
           >
+            {shownLoop && (
+              <LoopBrace
+                view={view}
+                loop={shownLoop}
+                active={looping || draftLoop !== null}
+                onToggle={() => setLooping((on) => !on)}
+              />
+            )}
             {cueFrac >= 0 && cueFrac <= 1 && (
               <svg
                 className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 text-[var(--brand)]"
@@ -403,6 +516,7 @@ export function TrackWorkspace({
               height={36}
               view={view}
               onSeekBar={seekBar}
+              onSelectBars={selectLoop}
             >
               <Ruler view={view} grid={grid} />
             </LaneRow>
@@ -433,10 +547,10 @@ export function TrackWorkspace({
               <SectionLane
                 view={view}
                 sections={sections}
-                loopIndex={loopIndex}
+                loopIndex={loopedSection}
                 onChange={(next) => void persist(next)}
                 onSeekBar={seekBar}
-                onLoop={toggleLoop}
+                onLoop={loopSection}
               />
             </LaneRow>
           </div>
@@ -459,6 +573,7 @@ export function TrackWorkspace({
             height={96}
             view={view}
             onSeekBar={seekBar}
+            onSelectBars={selectLoop}
             testId={`track-lane-${ORIGINAL}`}
           >
             {/* The stems sum back to the original, so the original needn't decode to be drawn. */}
@@ -485,6 +600,7 @@ export function TrackWorkspace({
               height={72}
               view={view}
               onSeekBar={seekBar}
+              onSelectBars={selectLoop}
               testId="track-lane-curves"
             >
               <CurveLane view={view} features={features} visible={curves} />
@@ -510,6 +626,7 @@ export function TrackWorkspace({
                 height={48}
                 view={view}
                 onSeekBar={seekBar}
+                onSelectBars={selectLoop}
                 testId={`track-lane-${lane}`}
               >
                 <AudibleLane audible={gains[lane] > 0}>
@@ -539,6 +656,7 @@ export function TrackWorkspace({
                     height={36}
                     view={view}
                     onSeekBar={seekBar}
+                    onSelectBars={selectLoop}
                     testId={`track-drum-part-${part.id}`}
                   >
                     <AudibleLane
@@ -557,6 +675,13 @@ export function TrackWorkspace({
                 ))}
             </Fragment>
           ))}
+          {shownLoop && (
+            <LoopBand
+              view={view}
+              loop={shownLoop}
+              active={looping || draftLoop !== null}
+            />
+          )}
           {playheadFrac >= 0 && playheadFrac <= 1 && (
             <div
               className="pointer-events-none absolute inset-y-0 z-20 w-px bg-[var(--text)]"
@@ -675,75 +800,6 @@ function AudibleLane({
       data-audible={audible}
     >
       {children}
-    </div>
-  );
-}
-
-function Header({
-  result,
-  onRemeasure,
-}: {
-  result: TrackBreakdown;
-  onRemeasure: () => void;
-}) {
-  const { grid, tonal, duration_s } = result.features;
-  const bass = tonal.bass_peaks[0];
-  return (
-    <div
-      className="flex flex-wrap items-baseline gap-x-6 gap-y-1"
-      data-testid="track-header"
-    >
-      <Stat
-        label="Tempo"
-        value={`${Number(grid.bpm.toFixed(2))} BPM`}
-        testId="track-bpm"
-      />
-      <Stat
-        label="Root"
-        value={tonal.root ?? "–"}
-        detail={
-          bass ? `bass ${bass.note} at ${bass.hz.toFixed(1)} Hz` : undefined
-        }
-        testId="track-root"
-      />
-      <Stat label="Bars" value={String(grid.n_bars)} />
-      <Stat label="Length" value={formatClock(duration_s)} />
-      <GridEditor
-        digest={result.digest}
-        grid={grid}
-        edited={result.grid_edited}
-        onRemeasure={onRemeasure}
-      />
-      <p className="text-xs text-[var(--text-subtle)]">
-        Stems are machine-separated and approximate: expect bleed between lanes.
-      </p>
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  detail,
-  testId,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  testId?: string;
-}) {
-  return (
-    <div className="flex items-baseline gap-1.5">
-      <span className="text-xs text-[var(--text-muted)]">{label}</span>
-      <span
-        className="text-lg text-[var(--text)] tabular-nums"
-        data-testid={testId}
-      >
-        {value}
-      </span>
-      {detail && (
-        <span className="text-xs text-[var(--text-subtle)]">{detail}</span>
-      )}
     </div>
   );
 }

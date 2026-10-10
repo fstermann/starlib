@@ -24,7 +24,7 @@ The first analysis separates the track into stems and splits the drums, which ta
 | Drums, Bass, Other, Vocals / FX | Waveform of each stem in its own colour, all on the same scale so a quiet stem looks quiet. A muted lane, or one silenced by another lane's solo, is greyed out. A mostly silent vocals stem is labelled **FX**, since on instrumentals it picks up mid-range hits and effects. |
 | Kick, Snare, Hats | Click the arrow next to **Drums** to show the drum stem split into kick, snare and claps, and hats and cymbals. Each part has its own waveform, mute, solo and volume; solo **Kick** to hear the kick alone. Toms play with the kick. The parts come from a second separation model, so expect some bleed between them. |
 
-The header shows tempo, root note (from the strongest bass peak), bar count and where bar 1 starts.
+The header shows the track's cover, title and artist, then tempo, root note, bar count and length. Hover **Root** for the strongest bass peak it comes from, and **Bars** for where bar 1 starts.
 
 Stems are machine-separated and approximate. Expect some bleed between lanes.
 
@@ -37,8 +37,9 @@ All lanes play sample-locked to each other. Each lane has **M** (mute), **S** (s
 - Click a lane to set the cue (the marker in the bar ruler), as in Ableton. ++space++ plays from the cue and, pressed again, stops and returns to it. Clicking while playing jumps there.
 - ++shift+space++ pauses and resumes where playback is, without returning to the cue.
 - [Headphone sync](player.md#headphone-sync) in the top right also holds the playhead and spectrum back, so they match what you hear over Bluetooth.
-- **Loop section** loops the section under the playhead.
-- **Track / 32 bars / 8 bars / 1 bar** set the zoom. ++cmd++ + scroll zooms around the pointer; a horizontal scroll pans.
+- Drag across a lane or the bar ruler to loop those bars, as in Ableton. The loop snaps to bars, or to beats when zoomed to 16 bars or fewer, and sets the cue at its start. The looped bars are tinted across all lanes, with the loop brace along the top of the ruler.
+- **Loop** turns looping on and off. Turned off, the brace stays in place, greyed out; click it to loop again. With no loop yet, **Loop** loops the section under the playhead.
+- The zoom control at the right shows the whole track (**Fit**), 32, 8 or 1 bar; the magnifier buttons halve or double the visible bars. ++cmd++ + scroll zooms around the pointer; a horizontal scroll pans.
 - Click the strip above the lanes to move the visible window.
 
 ### Editing sections
@@ -52,7 +53,7 @@ Labels are a first guess. Edits are saved per track.
 
 ### Correcting the bar grid
 
-Bar 1 is assumed to start on the first kick, which holds for DJ-oriented tracks. If it doesn't, click **Bar 1** in the header, correct the tempo or nudge the downbeat, then **Re-measure**. Stems are reused, so this takes a few seconds.
+Bar 1 is assumed to start on the first kick, which holds for DJ-oriented tracks. If it doesn't, click **Bars** in the header, correct the tempo or nudge the downbeat, then **Re-measure**. Stems are reused, so this takes a few seconds.
 
 ## Setup
 

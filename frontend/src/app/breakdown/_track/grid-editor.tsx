@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,21 +10,28 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { resetGrid, saveGrid, type Grid } from "@/lib/track-breakdown";
 
 const NUDGES_S = [-0.01, -0.001, 0.001, 0.01];
 
-/** Shows where bar 1 starts; lets the user correct tempo and downbeat, then re-measure. */
+/** Wraps `children` to show where bar 1 starts on hover and, on click, correct tempo and downbeat, then re-measure. */
 export function GridEditor({
   digest,
   grid,
   edited,
   onRemeasure,
+  children,
 }: {
   digest: string;
   grid: Grid;
   edited: boolean;
   onRemeasure: () => void;
+  children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [bpm, setBpm] = useState(String(grid.bpm));
@@ -50,21 +57,24 @@ export function GridEditor({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex items-baseline gap-1.5 rounded-md px-1 hover:bg-[var(--surface-3)]"
-          data-testid="track-grid-trigger"
-        >
-          <span className="text-xs text-[var(--text-muted)]">Bar 1</span>
-          <span className="text-lg text-[var(--text)] tabular-nums">
-            {grid.downbeat_s.toFixed(3)} s
-          </span>
-          <span className="text-xs text-[var(--text-subtle)]">
-            {edited ? "set by hand" : "from first kick"}
-          </span>
-        </button>
-      </PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="rounded-md px-1 hover:bg-[var(--surface-3)]"
+              data-testid="track-grid-trigger"
+            >
+              {children}
+            </button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent data-testid="track-grid-hint">
+          Bar 1 at {grid.downbeat_s.toFixed(3)} s,{" "}
+          {edited ? "set by hand" : "from the first kick"}. Click to correct the
+          grid.
+        </TooltipContent>
+      </Tooltip>
       <PopoverContent className="w-72" align="start">
         <div className="flex flex-col gap-3 text-sm">
           <p className="text-xs text-[var(--text-muted)]">

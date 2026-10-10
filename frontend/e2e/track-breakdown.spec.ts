@@ -159,6 +159,17 @@ async function mockTrackApi(
   await page.route(`**/api/breakdown/tracks/${DIGEST}`, (route) =>
     route.fulfill({ json: breakdown() }),
   );
+  await page.route("**/api/metadata/files/*/info", (route) =>
+    route.fulfill({
+      json: {
+        file_path: PATH,
+        file_name: "Artist - Tune.aiff",
+        title: "Tune",
+        artist: "Artist",
+        has_artwork: false,
+      },
+    }),
+  );
   return mocks;
 }
 
@@ -269,6 +280,8 @@ test.describe("Track Breakdown", () => {
     await expect(page.getByTestId("track-breakdown-title")).toHaveText(
       "Artist - Tune",
     );
+    await expect(page.getByTestId("track-title")).toHaveText("Tune");
+    await expect(page.getByTestId("track-artist")).toHaveText("Artist");
     await expect(page.getByTestId("track-bpm")).toHaveText("128 BPM");
     await expect(page.getByTestId("track-root")).toHaveText("A");
     await expect(page.getByTestId("track-section")).toHaveCount(3);
@@ -541,15 +554,93 @@ test.describe("Track Breakdown", () => {
     );
   });
 
-  test("looping the section at the playhead", async ({ page }) => {
+  test("hovering bars shows where bar 1 starts", async ({ page }) => {
     await mockTrackApi(page);
     await page.goto(trackUrl);
 
-    await page.getByTestId("track-loop").click();
-    await expect(page.getByTestId("track-loop")).toHaveText(/Looping intro/);
+    await page.getByTestId("track-grid-trigger").hover();
+    await expect(page.getByTestId("track-grid-hint")).toContainText(
+      "Bar 1 at 0.250 s",
+    );
+  });
+
+  test("zoom presets and buttons set the visible bars", async ({ page }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+
+    const zoom = page.getByTestId("track-zoom");
+    await expect(
+      zoom.getByRole("radio", { name: "Whole track" }),
+    ).toHaveAttribute("data-state", "on");
+    await zoom.getByRole("radio", { name: "8 bars" }).click();
+    await expect(page.getByTestId("track-ruler")).toContainText("8");
+    await expect(zoom.getByRole("radio", { name: "8 bars" })).toHaveAttribute(
+      "data-state",
+      "on",
+    );
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await expect(zoom.getByRole("radio", { name: "1 bar" })).toHaveAttribute(
+      "data-state",
+      "on",
+    );
+    await expect(page.getByRole("button", { name: "Zoom in" })).toBeDisabled();
+  });
+
+  test("looping the section at the playhead shows across the lanes", async ({
+    page,
+  }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    const loop = page.getByTestId("track-loop");
+
+    await loop.click();
+    await expect(loop).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("track-loop-range")).toHaveText("16 bars");
+    await expect(page.getByTestId("track-loop-band")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+
+    // Off keeps the brace, like Ableton; the brace turns it back on.
+    await loop.click();
+    await expect(loop).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("track-loop-band")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+    await page.getByTestId("track-loop-brace").click();
+    await expect(loop).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("dragging across a lane loops those bars", async ({ page }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+
+    // 48 bars across the plot: drag from bar 13 to bar 25.
+    const plot = page.getByTestId("track-waveform-bass");
+    const box = (await plot.boundingBox())!;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width * (12.4 / 48), y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * (18 / 48), y, { steps: 4 });
+    await page.mouse.move(box.x + box.width * (23.6 / 48), y, { steps: 4 });
+    await page.mouse.up();
+
+    const brace = page.getByTestId("track-loop-brace");
+    await expect(brace).toHaveAttribute("data-loop-start", "13");
+    await expect(brace).toHaveAttribute("data-loop-end", "25");
     await expect(page.getByTestId("track-loop")).toHaveAttribute(
       "aria-pressed",
       "true",
+    );
+    await expect(page.getByTestId("track-loop-range")).toHaveText("12 bars");
+    // The drag sets the cue at the loop start instead of seeking.
+    await expect(page.getByTestId("track-cue")).toHaveAttribute(
+      "data-cue-bar",
+      "13",
     );
   });
 
