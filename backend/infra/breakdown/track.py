@@ -1,8 +1,9 @@
 """Per-track breakdown cache and the ``analyser-stream breakdown`` adapter.
 
-Each analysed track gets ``<cache_dir>/breakdown/tracks/<audio hash>/`` with
-its stems and ``features.json``. The hash covers decoded audio only, so tag
-edits don't invalidate the cache.
+Each analysed track gets ``<breakdown cache>/<audio hash>/`` with its stems
+and ``features.json``. The breakdown cache is the ``breakdown_cache_dir``
+setting, or ``<cache_dir>/breakdown/tracks``. The hash covers decoded audio
+only, so tag edits don't invalidate the cache.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.config import get_backend_settings
+from backend.infra import settings_store
 from backend.infra.audio.track_handler import _find_binary
 from backend.infra.breakdown import binary as binary_locator
 from backend.infra.breakdown.pipeline import run_binary
@@ -59,7 +61,9 @@ async def audio_hash(path: Path) -> str:
 
 def track_dir(digest: str) -> Path:
     """Cache directory for the track with audio hash ``digest``."""
-    return get_backend_settings().cache_dir / "breakdown" / "tracks" / digest
+    configured = settings_store.load().app.breakdown_cache_dir
+    root = Path(configured).expanduser() if configured else get_backend_settings().cache_dir / "breakdown" / "tracks"
+    return root / digest
 
 
 async def measure(
@@ -67,6 +71,7 @@ async def measure(
     stems: Mapping[str, Path],
     out: Path,
     on_stage: Callable[[str], None] = lambda _: None,
+    grid: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     """Run ``analyser-stream breakdown`` and return the parsed features.
 
@@ -75,6 +80,7 @@ async def measure(
         stems: Stem name to audio file.
         out: Where the binary writes ``features.json``.
         on_stage: Called with each source name as the binary reaches it.
+        grid: ``(bpm, downbeat_s)`` to use instead of estimating the grid.
 
     Returns:
         The features document.
@@ -85,6 +91,8 @@ async def measure(
     argv = [binary_locator.find_analyser_binary(), "breakdown", "--input", str(mix), "--out", str(out)]
     for name, path in stems.items():
         argv += ["--stem", f"{name}={path}"]
+    if grid is not None:
+        argv += ["--bpm", str(grid[0]), "--downbeat-s", str(grid[1])]
     errors: list[str] = []
 
     async def listener(event: dict) -> None:

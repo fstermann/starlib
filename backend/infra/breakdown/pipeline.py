@@ -128,7 +128,7 @@ async def run_binary(argv: Sequence[str], listener: EventListener) -> int:
 
     try:
         await _read_stdout(proc, listener)
-    except Exception:
+    except BaseException:
         proc.kill()
         await proc.wait()
         await stderr_task

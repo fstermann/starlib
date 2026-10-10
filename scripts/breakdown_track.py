@@ -1,8 +1,10 @@
 """Analyse one local track and print its grid, root note and sections.
 
 Usage:
-  STARLIB_DEMUCS_PYTHON=/path/to/demucs-env/bin/python \\
-    uv run python scripts/breakdown_track.py <audio file>
+  uv run python scripts/breakdown_track.py <audio file>
+
+Demucs comes from the ``demucs_python`` setting (Settings > Breakdown) or the
+``STARLIB_DEMUCS_PYTHON`` environment variable.
 
 Stems and features are cached under ``<cache_dir>/breakdown/tracks/``, so a
 second run on the same audio only re-runs the sectioning.
@@ -27,8 +29,9 @@ def main() -> None:
 
     started = time.monotonic()
 
-    def on_stage(stage: str) -> None:
-        print(f"[{time.monotonic() - started:6.1f}s] {stage}", file=sys.stderr)
+    def on_stage(stage: str, progress: float | None) -> None:
+        done = f" {progress:.0%}" if progress is not None else ""
+        print(f"[{time.monotonic() - started:6.1f}s] {stage}{done}", file=sys.stderr)
 
     result = asyncio.run(analyse_track(args.path, on_stage))
     grid = result.features["grid"]

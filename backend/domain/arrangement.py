@@ -154,3 +154,30 @@ def _label(profiles: list[_Profile], bars: list[BarLevels]) -> list[str]:
         else:
             labels.append("break")
     return labels
+
+
+MAX_LABEL_LENGTH = 40
+
+
+def validate_sections(sections: list[Section], n_bars: int) -> None:
+    """Check that ``sections`` cover bars 1 to ``n_bars`` in order without gaps.
+
+    Args:
+        sections: Sections to check.
+        n_bars: Number of bars in the track.
+
+    Raises:
+        ValueError: The sections leave a gap, overlap, run past the track or
+            carry an empty or overlong label.
+    """
+    expected_start = 1
+    for s in sections:
+        if s.start_bar != expected_start:
+            raise ValueError(f"section starting at bar {s.start_bar} should start at bar {expected_start}")
+        if s.end_bar < s.start_bar:
+            raise ValueError(f"section {s.start_bar}-{s.end_bar} ends before it starts")
+        if not s.label.strip() or len(s.label) > MAX_LABEL_LENGTH:
+            raise ValueError(f"section {s.start_bar}-{s.end_bar} needs a label of 1 to {MAX_LABEL_LENGTH} characters")
+        expected_start = s.end_bar + 1
+    if expected_start != n_bars + 1:
+        raise ValueError(f"sections end at bar {expected_start - 1}, the track has {n_bars} bars")

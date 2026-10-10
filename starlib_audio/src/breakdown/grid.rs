@@ -33,8 +33,9 @@ pub const BEATS_PER_BAR: u32 = 4;
 pub struct Grid {
     pub bpm: f64,
     pub bpm_rough: f64,
-    /// Phase concentration of kick onsets at `bpm`, 0..1.
-    pub concentration: f64,
+    /// Phase concentration of kick onsets at `bpm`, 0..1; `None` when the
+    /// grid was supplied rather than estimated.
+    pub concentration: Option<f64>,
     pub downbeat_s: f64,
     pub bar_s: f64,
     pub n_bars: usize,
@@ -48,7 +49,7 @@ impl Grid {
         Self {
             bpm,
             bpm_rough: bpm,
-            concentration: f64::NAN,
+            concentration: None,
             downbeat_s,
             bar_s,
             n_bars: count_bars(duration_s, downbeat_s, bar_s),
@@ -72,7 +73,7 @@ pub fn estimate(mono: &[f32], sr: u32) -> Result<Grid> {
     Ok(Grid {
         bpm,
         bpm_rough: rough,
-        concentration,
+        concentration: Some(concentration),
         downbeat_s,
         bar_s,
         n_bars: count_bars(duration_s, downbeat_s, bar_s),

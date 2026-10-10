@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from backend.domain.arrangement import BarLevels, Section, detect_sections
+import pytest
+
+from backend.domain.arrangement import BarLevels, Section, detect_sections, validate_sections
 
 SILENT = -70.0
 KICK = BarLevels(kick_db=-11, bass_db=SILENT, mix_db=-2.5, high_db=-16, width=0.02)
@@ -52,3 +54,24 @@ def test_boundaries_snap_to_phrases() -> None:
 
 def test_empty_track_has_no_sections() -> None:
     assert detect_sections([]) == []
+
+
+def test_valid_sections_pass() -> None:
+    validate_sections([Section(1, 16, "intro"), Section(17, 32, "drop")], n_bars=32)
+
+
+@pytest.mark.parametrize(
+    "sections",
+    [
+        [Section(1, 16, "intro"), Section(18, 32, "drop")],
+        [Section(1, 16, "intro"), Section(16, 32, "drop")],
+        [Section(1, 16, "intro")],
+        [Section(1, 40, "intro")],
+        [Section(1, 32, " ")],
+        [Section(2, 32, "drop")],
+    ],
+    ids=["gap", "overlap", "short", "too-long", "blank-label", "late-start"],
+)
+def test_invalid_sections_raise(sections: list[Section]) -> None:
+    with pytest.raises(ValueError):
+        validate_sections(sections, n_bars=32)

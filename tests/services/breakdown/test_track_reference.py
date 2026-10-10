@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+from backend.infra.db import engine as db_engine
+from backend.infra.db.migrations import run_migrations
 from backend.services.breakdown.track import analyse_track
 
 REFERENCE = os.environ.get("STARLIB_BREAKDOWN_REFERENCE")
@@ -20,6 +23,14 @@ pytestmark = pytest.mark.skipif(
     not (REFERENCE and os.environ.get("STARLIB_DEMUCS_PYTHON")),
     reason="set STARLIB_BREAKDOWN_REFERENCE and STARLIB_DEMUCS_PYTHON to run",
 )
+
+
+@pytest.fixture(autouse=True)
+def _temp_db(tmp_path: Path) -> Iterator[None]:
+    engine = db_engine.init_engine(tmp_path / "db.sqlite")
+    run_migrations(engine, tmp_path / "db.sqlite")
+    yield
+    engine.dispose()
 
 
 def test_bumper_matches_the_hand_analysis() -> None:

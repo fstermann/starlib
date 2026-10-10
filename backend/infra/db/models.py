@@ -249,6 +249,22 @@ class SoundcloudBpmOverride(SQLModel, table=True):
     updated_at: float  # unix epoch seconds
 
 
+class BreakdownTrackEdit(SQLModel, table=True):
+    """User edits to one track's breakdown, keyed by its decoded-audio hash.
+
+    ``sections_json`` replaces the detected sections when set; ``bpm`` and
+    ``downbeat_s`` replace the estimated bar grid when set.
+    """
+
+    __tablename__ = "breakdown_track_edits"  # type: ignore[assignment]
+
+    digest: str = Field(primary_key=True)
+    sections_json: str | None = None
+    bpm: float | None = None
+    downbeat_s: float | None = None
+    updated_at: float
+
+
 # ---------------------------------------------------------------------------
 # Registry parity — fail loudly at import time if a SIMPLE_TAG_FIELDS entry
 # doesn't have a matching Track column.
