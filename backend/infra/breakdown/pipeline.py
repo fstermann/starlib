@@ -108,7 +108,15 @@ async def run_analyser_subprocess(
     Returns the subprocess exit code. Any exception inside the listener
     propagates after best-effort subprocess termination.
     """
-    argv = [binary_path, *options.to_argv(input_path=input_path)]
+    return await run_binary([binary_path, *options.to_argv(input_path=input_path)], listener)
+
+
+async def run_binary(argv: Sequence[str], listener: EventListener) -> int:
+    """Spawn ``argv`` and dispatch its JSON-line stdout events to ``listener``.
+
+    Returns the subprocess exit code. Any exception inside the listener
+    propagates after best-effort subprocess termination.
+    """
     logger.info("breakdown: spawning %s", " ".join(argv))
     proc = await asyncio.create_subprocess_exec(
         *argv,

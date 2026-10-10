@@ -18,6 +18,11 @@
 //!                           [--no-sections] [--no-octave-correction]
 //!                           [--bpm-range MIN-MAX] [--strong]
 //!                           [--start-s S] [--end-s S]
+//!   analyser-stream breakdown --input <path> --out <json> [--stem NAME=PATH]...
+//!                             [--bpm B --downbeat-s S]
+//!     emits {"type":"breakdown.stage","source":...} per source measured,
+//!     writes the measured `starlib_audio::breakdown::Breakdown` to <json>
+//!     and emits {"type":"job.complete"}.
 //!   analyser-stream align --mix <path> --original <path> [--rate-hint R]...
 //!     emits {"type":"alignment",...} (see `starlib_audio::align::Alignment`)
 //!     or {"type":"alignment.none"} when the original isn't found.
@@ -29,6 +34,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 
 use starlib_audio::align::{align, Alignment, ALIGN_SR};
+use starlib_audio::breakdown::{self, GridOverride};
 use starlib_audio::chunk::{analyze_chunks, ChunkOptions, ChunkResult};
 use starlib_audio::decode::decode_file;
 use starlib_audio::segment::{segment, Section, SegmentOptions};
@@ -55,6 +61,10 @@ enum Event<'a> {
         end_s: f32,
         confidence: f32,
     },
+    #[serde(rename = "breakdown.stage")]
+    BreakdownStage {
+        source: &'a str,
+    },
     #[serde(rename = "job.complete")]
     JobComplete,
     Alignment(Alignment),
@@ -73,10 +83,10 @@ fn emit(ev: &Event<'_>) {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let result = if args.first().map(String::as_str) == Some("align") {
-        run_align(args)
-    } else {
-        run(args)
+    let result = match args.first().map(String::as_str) {
+        Some("align") => run_align(args),
+        Some("breakdown") => run_breakdown(args),
+        _ => run(args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -217,6 +227,45 @@ fn run(args: Vec<String>) -> Result<()> {
         }
     }
 
+    emit(&Event::JobComplete);
+    Ok(())
+}
+
+fn run_breakdown(args: Vec<String>) -> Result<()> {
+    let mut iter = args.into_iter().skip(1);
+    let mut input: Option<PathBuf> = None;
+    let mut out: Option<PathBuf> = None;
+    let mut bpm: Option<f64> = None;
+    let mut downbeat_s: Option<f64> = None;
+    let mut stems: Vec<(String, PathBuf)> = Vec::new();
+    while let Some(flag) = iter.next() {
+        let value = iter.next().ok_or_else(|| anyhow!("missing value for {flag}"))?;
+        match flag.as_str() {
+            "--input" => input = Some(PathBuf::from(value)),
+            "--out" => out = Some(PathBuf::from(value)),
+            "--bpm" => bpm = Some(value.parse()?),
+            "--downbeat-s" => downbeat_s = Some(value.parse()?),
+            "--stem" => {
+                let (name, path) = value
+                    .split_once('=')
+                    .ok_or_else(|| anyhow!("--stem expects NAME=PATH, got {value}"))?;
+                stems.push((name.to_owned(), PathBuf::from(path)));
+            }
+            other => return Err(anyhow!("unknown flag: {other}")),
+        }
+    }
+    let input = input.ok_or_else(|| anyhow!("--input is required"))?;
+    let out = out.ok_or_else(|| anyhow!("--out is required"))?;
+    let grid_override = match (bpm, downbeat_s) {
+        (Some(bpm), Some(downbeat_s)) => Some(GridOverride { bpm, downbeat_s }),
+        (None, None) => None,
+        _ => return Err(anyhow!("--bpm and --downbeat-s go together")),
+    };
+    let result = breakdown::analyse(&input, &stems, grid_override, |source| {
+        emit(&Event::BreakdownStage { source })
+    })?;
+    let json = serde_json::to_vec(&result)?;
+    std::fs::write(&out, json).with_context(|| format!("write {}", out.display()))?;
     emit(&Event::JobComplete);
     Ok(())
 }

@@ -1,4 +1,4 @@
-//! Audio decoding to mono f32 PCM at a configurable target sample rate.
+//! Audio decoding to f32 PCM (mono, or stereo for breakdown analysis).
 //!
 //! Uses symphonia for decoding (fMP4/AAC, MP3, FLAC, WAV, Vorbis) and a
 //! simple linear resampler — good enough for tempo detection, where spectral
@@ -35,11 +35,60 @@ pub fn decode_file(path: &Path, options: &BpmOptions) -> Result<Vec<f32>> {
     decode_from_source(Box::new(file), hint.as_deref(), options)
 }
 
+/// Decode an audio file from disk to stereo f32 PCM at `target_sr`.
+///
+/// Mono files are duplicated to both channels; channels beyond the second
+/// are dropped.
+pub fn decode_file_stereo(path: &Path, target_sr: u32) -> Result<Stereo> {
+    let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let hint = path.extension().and_then(|e| e.to_str()).map(str::to_owned);
+    let mut left: Vec<f32> = Vec::new();
+    let mut right: Vec<f32> = Vec::new();
+    let src_sr = decode_frames(Box::new(file), hint.as_deref(), |frame| {
+        left.push(frame[0]);
+        right.push(*frame.get(1).unwrap_or(&frame[0]));
+    })?;
+    if src_sr != target_sr {
+        left = linear_resample(&left, src_sr, target_sr);
+        right = linear_resample(&right, src_sr, target_sr);
+    }
+    Ok(Stereo {
+        left,
+        right,
+        sr: target_sr,
+    })
+}
+
+/// Two-channel PCM at a known sample rate.
+pub struct Stereo {
+    pub left: Vec<f32>,
+    pub right: Vec<f32>,
+    pub sr: u32,
+}
+
 fn decode_from_source(
     src: Box<dyn MediaSource>,
     hint: Option<&str>,
     options: &BpmOptions,
 ) -> Result<Vec<f32>> {
+    let mut pcm: Vec<f32> = Vec::new();
+    let src_sr = decode_frames(src, hint, |frame| {
+        pcm.push(frame.iter().sum::<f32>() / frame.len() as f32);
+    })?;
+    if src_sr == options.target_sr {
+        Ok(pcm)
+    } else {
+        Ok(linear_resample(&pcm, src_sr, options.target_sr))
+    }
+}
+
+/// Decode every audio frame, handing each interleaved frame to `on_frame`.
+/// Returns the source sample rate.
+fn decode_frames(
+    src: Box<dyn MediaSource>,
+    hint: Option<&str>,
+    mut on_frame: impl FnMut(&[f32]),
+) -> Result<u32> {
     let mss = MediaSourceStream::new(src, Default::default());
     let mut probe_hint = Hint::new();
     if let Some(h) = hint {
@@ -69,7 +118,6 @@ fn decode_from_source(
         .make_audio_decoder(audio_params, &AudioDecoderOptions::default())
         .context("decoder init failed")?;
 
-    let mut pcm: Vec<f32> = Vec::new();
     let mut interleaved: Vec<f32> = Vec::new();
     loop {
         let packet = match format.next_packet() {
@@ -87,21 +135,14 @@ fn decode_from_source(
                 let frames = decoded.frames();
                 interleaved.resize(frames * ch, 0.0);
                 decoded.copy_to_slice_interleaved::<f32, _>(&mut interleaved[..]);
-                for frame in interleaved.chunks(ch) {
-                    let s = frame.iter().sum::<f32>() / ch as f32;
-                    pcm.push(s);
-                }
+                interleaved.chunks(ch).for_each(&mut on_frame);
             }
             Err(SymphError::DecodeError(_)) => continue,
             Err(e) => return Err(e.into()),
         }
     }
 
-    if src_sr == options.target_sr {
-        Ok(pcm)
-    } else {
-        Ok(linear_resample(&pcm, src_sr, options.target_sr))
-    }
+    Ok(src_sr)
 }
 
 /// Linear-interpolation resampler. Not a high-quality resampler — it's fine
