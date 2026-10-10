@@ -21,8 +21,7 @@ The first analysis separates the track into stems, which takes about half a minu
 | Sections | Detected sections, coloured by type. Click one to jump to it. |
 | Waveform | The stems summed back into the full mix: peaks in the outer shade, loudness (RMS) in the inner one. Sharp down to a single bar. |
 | Loudness, Width, Brightness | Mix level, stereo width (side over mid power) and spectral centroid per bar. |
-| Bands (mix) | Energy in six bands from 20 Hz to 20 kHz. Each band is scaled to its own peak, so filter sweeps show as a band fading out and back. |
-| Original, Drums, Bass, Other, Vocals / FX | Level per bar of the original and each stem. A mostly silent vocals stem is labelled **FX / shots**, since on instrumentals it picks up mid-range hits and effects. |
+| Original, Drums, Bass, Other, Vocals / FX | Waveform of each stem, all on the same scale so a quiet stem looks quiet. The original's waveform appears once you unmute or solo it. A mostly silent vocals stem is labelled **FX / shots**, since on instrumentals it picks up mid-range hits and effects. |
 | Kick, Bass, Drum mids, Tops 16ths | Energy per 16th note. Shown when zoomed to 16 bars or fewer: use it to see where the kick sits, what the bass leaves free and how a build-up's roll accelerates. |
 
 The header shows tempo, root note (from the strongest bass peak), bar count and where bar 1 starts.

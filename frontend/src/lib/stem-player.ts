@@ -14,7 +14,7 @@ import { getSharedAudioContext } from "./looping-web-audio-player";
 export const WAVEFORM_BLOCK = 64;
 const ANALYSER_FFT_SIZE = 8192;
 
-/** Min/max and energy of the summed stems per block of {@link WAVEFORM_BLOCK} samples. */
+/** Min/max and energy of one or more summed lanes per block of {@link WAVEFORM_BLOCK} samples. */
 export interface Waveform {
   /** Interleaved `[min, max]` per block. */
   blocks: Float32Array;
@@ -45,7 +45,7 @@ export class StemPlayer {
   private readonly master: GainNode;
   /** Spectrum of everything audible, after mute/solo/volume. */
   readonly analyser: AnalyserNode;
-  private waveformCache: Waveform | null = null;
+  private readonly waveforms = new Map<string, Waveform>();
   private readonly lanes = new Map<string, Lane>();
   private startCtxTime = 0;
   private startOffset = 0;
@@ -58,6 +58,7 @@ export class StemPlayer {
   constructor(
     urls: Record<string, string>,
     private readonly onEnded: () => void = () => {},
+    private readonly onLoaded: (name: string) => void = () => {},
   ) {
     this.ctx = getSharedAudioContext();
     this.master = this.ctx.createGain();
@@ -96,6 +97,7 @@ export class StemPlayer {
       if (this.destroyed) return;
       lane.buffer = buffer;
       this.duration = Math.max(this.duration, buffer.duration);
+      this.onLoaded(name);
       if (this.playing)
         this.startLane(lane, this.ctx.currentTime + START_LEAD_S);
     })();
@@ -197,7 +199,9 @@ export class StemPlayer {
 
   /** Waveform of the named lanes summed, built once all of them are decoded. */
   waveform(names: string[]): Waveform | null {
-    if (this.waveformCache) return this.waveformCache;
+    const key = names.join(",");
+    const cached = this.waveforms.get(key);
+    if (cached) return cached;
     const buffers = names.map((n) => this.lanes.get(n)?.buffer);
     if (buffers.some((b) => !b)) return null;
     const channels = (buffers as AudioBuffer[]).flatMap((b) =>
@@ -226,12 +230,13 @@ export class StemPlayer {
       blocks[2 * b + 1] = max;
       energy[b] = sumSq;
     }
-    this.waveformCache = {
+    const waveform = {
       blocks,
       energy,
       blockS: WAVEFORM_BLOCK / (buffers[0] as AudioBuffer).sampleRate,
     };
-    return this.waveformCache;
+    this.waveforms.set(key, waveform);
+    return waveform;
   }
 
   isLoaded(name: string): boolean {

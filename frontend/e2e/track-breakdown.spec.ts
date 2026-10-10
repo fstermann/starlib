@@ -277,8 +277,12 @@ test.describe("Track Breakdown", () => {
       "breakdown",
     );
     for (const lane of ["original", "drums", "bass", "other", "vocals"]) {
-      await expect(page.getByTestId(`track-lane-${lane}`)).toBeVisible();
+      await expect(page.getByTestId(`track-waveform-${lane}`)).toBeVisible();
     }
+    // The original decodes only once it's audible.
+    await expect(page.getByTestId("track-lane-original")).toContainText(
+      "Unmute or solo to load the original",
+    );
     // The vocals stem is silent here, so it is labelled as FX rather than vocals.
     await expect(page.getByTestId("track-lane-vocals")).toContainText(
       "FX / shots",
@@ -348,6 +352,11 @@ test.describe("Track Breakdown", () => {
     await expect(page.getByTestId("track-mute-drums")).toHaveAttribute(
       "aria-pressed",
       "true",
+    );
+
+    await page.getByTestId("track-solo-original").click();
+    await expect(page.getByTestId("track-lane-original")).not.toContainText(
+      "Unmute or solo to load the original",
     );
   });
 

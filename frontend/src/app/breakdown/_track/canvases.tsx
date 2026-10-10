@@ -50,15 +50,22 @@ function useRedraw(
   }, [canvas, draw, resolvedTheme]);
 }
 
-/** Waveform of the summed stems for the visible bars. */
+/**
+ * Waveform for the visible bars, on a fixed full-scale axis so lanes compare.
+ * Peaks are drawn translucent and RMS solid; without `color` it uses text greys.
+ */
 export function WaveformLane({
   view,
   grid,
   waveform,
+  color,
+  testId = "track-waveform",
 }: {
   view: View;
   grid: Grid;
   waveform: Waveform | null;
+  color?: string;
+  testId?: string;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
@@ -72,8 +79,10 @@ export function WaveformLane({
     const spanS = view.span * grid.bar_s;
     const nBlocks = waveform.blocks.length / 2;
     const mid = height / 2;
-    const peak = token("--text-subtle");
-    const body = token("--text-muted");
+    const fill = color && token(color.replace(/^var\((.+)\)$/, "$1"));
+    const peak = fill || token("--text-subtle");
+    const body = fill || token("--text-muted");
+    const peakAlpha = fill ? 0.45 : 1;
     for (let x = 0; x < width; x++) {
       const from = Math.floor((startS + (x / width) * spanS) / waveform.blockS);
       const to = Math.max(
@@ -94,7 +103,9 @@ export function WaveformLane({
       const top = mid - Math.min(1, max) * mid;
       const bottom = mid - Math.max(-1, min) * mid;
       ctx.fillStyle = peak;
+      ctx.globalAlpha = peakAlpha;
       ctx.fillRect(x, top, 1, Math.max(1, bottom - top));
+      ctx.globalAlpha = 1;
       const rms = Math.min(
         1,
         Math.sqrt(sumSq / ((last - first) * WAVEFORM_BLOCK)),
@@ -102,16 +113,12 @@ export function WaveformLane({
       ctx.fillStyle = body;
       ctx.fillRect(x, mid - rms * mid, 1, Math.max(1, 2 * rms * mid));
     }
-  }, [grid, view, waveform]);
+  }, [color, grid, view, waveform]);
 
   useRedraw(ref, draw);
 
   return (
-    <canvas
-      ref={ref}
-      className="block h-full w-full"
-      data-testid="track-waveform"
-    />
+    <canvas ref={ref} className="block h-full w-full" data-testid={testId} />
   );
 }
 

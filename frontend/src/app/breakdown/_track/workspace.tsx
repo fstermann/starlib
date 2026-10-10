@@ -31,7 +31,6 @@ import { SpectrumPanel, WaveformLane } from "./canvases";
 import { TrackCommands } from "./commands";
 import { GridEditor } from "./grid-editor";
 import {
-  BandLane,
   CurveLane,
   CURVES,
   GROOVE_LANES,
@@ -39,7 +38,6 @@ import {
   GrooveLane,
   GUTTER_PX,
   LaneRow,
-  LevelLane,
   Overview,
   Ruler,
   SectionLane,
@@ -369,7 +367,11 @@ export function TrackWorkspace({
           />
         </LaneRow>
         <LaneRow label="Waveform" height={96} view={view} onSeekBar={seekBar}>
-          <WaveformLane view={view} grid={grid} waveform={player.waveform()} />
+          <WaveformLane
+            view={view}
+            grid={grid}
+            waveform={player.waveform(STEM_NAMES)}
+          />
         </LaneRow>
         <LaneRow
           label={
@@ -384,31 +386,28 @@ export function TrackWorkspace({
         >
           <CurveLane view={view} features={features} visible={curves} />
         </LaneRow>
-        <LaneRow
-          label="Bands (mix)"
-          height={60}
-          view={view}
-          onSeekBar={seekBar}
-        >
-          <BandLane view={view} features={features} />
-        </LaneRow>
         {([ORIGINAL, ...STEM_NAMES] as LaneName[]).map((lane) => (
           <LaneRow
             key={lane}
             label={lane === ORIGINAL ? "Original" : stemLabel(lane, features)}
             controls={<LaneControls lane={lane} player={player} />}
-            height={40}
+            height={48}
             view={view}
             onSeekBar={seekBar}
             testId={`track-lane-${lane}`}
           >
-            <LevelLane
+            <WaveformLane
               view={view}
-              levels={
-                features.sources[lane === ORIGINAL ? "mix" : lane]?.db ?? []
-              }
+              grid={grid}
+              waveform={player.waveform([lane])}
               color={LANE_COLORS[lane]}
+              testId={`track-waveform-${lane}`}
             />
+            {lane === ORIGINAL && !player.waveform([lane]) && (
+              <span className="pointer-events-none absolute inset-0 flex items-center px-3 text-xs text-[var(--text-subtle)]">
+                Unmute or solo to load the original
+              </span>
+            )}
           </LaneRow>
         ))}
         {showGroove ? (

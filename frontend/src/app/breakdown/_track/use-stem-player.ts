@@ -49,6 +49,7 @@ export function useStemPlayer(digest: string, originalUrl: string) {
   const [position, setPosition] = useState(0);
   const [loop, setLoopState] = useState<LoopRegion | null>(null);
   const [mix, setMix] = useState(initialMix);
+  const [loaded, setLoaded] = useState<ReadonlySet<string>>(new Set());
   const playerRef = useRef<StemPlayer | null>(null);
   const frame = useRef<number | null>(null);
 
@@ -64,6 +65,10 @@ export function useStemPlayer(digest: string, originalUrl: string) {
         setPlaying(false);
         setPosition(0);
         releasePlayback(PLAYBACK_SLOT);
+      },
+      (name) => {
+        if (playerRef.current === player)
+          setLoaded((prev) => new Set(prev).add(name));
       },
     );
     playerRef.current = player;
@@ -138,10 +143,13 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     setPosition(player.currentTime());
   }, []);
 
+  /** Waveform of the named lanes summed, or `null` until they are all decoded. */
   const waveform = useCallback(
-    () =>
-      ready ? (playerRef.current?.waveform([...STEM_NAMES]) ?? null) : null,
-    [ready],
+    (lanes: readonly LaneName[]) =>
+      lanes.every((lane) => loaded.has(lane))
+        ? (playerRef.current?.waveform([...lanes]) ?? null)
+        : null,
+    [loaded],
   );
 
   const analyser = useCallback(() => playerRef.current?.analyser ?? null, []);
