@@ -78,7 +78,8 @@ cat > "$OUT" << STUB
 # child process doesn't depend on PATH, CWD, or uv auto-discovery.
 cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}:\${PYTHONPATH:-}"
-exec "${VENV_PY}" -m backend.main "\$@"
+# Same entry as the PyInstaller build, so the sidecar exits when the app dies.
+exec "${VENV_PY}" "${REPO_ROOT}/desktop/sidecar_entry.py" "\$@"
 STUB
 
 chmod +x "$OUT"
