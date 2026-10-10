@@ -1,6 +1,22 @@
 "use client";
 
-import { ChevronRight, Pause, Play, Repeat, RotateCcw } from "lucide-react";
+import {
+  AudioWaveform,
+  ChartSpline,
+  ChevronRight,
+  Drum,
+  Guitar,
+  MicVocal,
+  Pause,
+  Piano,
+  Play,
+  Repeat,
+  RotateCcw,
+  Rows3,
+  Ruler as RulerIcon,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -24,6 +40,7 @@ import {
   STEM_NAMES,
   stemLabel,
   type Section,
+  type StemName,
   type TrackBreakdown,
 } from "@/lib/track-breakdown";
 import { sectionIndexAt } from "@/lib/track-breakdown-sections";
@@ -61,6 +78,16 @@ const ZOOM_PRESETS = [
   { label: "1 bar", span: 1 },
 ] as const;
 const MIN_SPAN = 1;
+
+const STEM_ICONS: Record<StemName, LucideIcon> = {
+  drums: Drum,
+  bass: Guitar,
+  other: Piano,
+  vocals: MicVocal,
+};
+
+const FX_HINT =
+  "Vocals stem, mostly silent: on instrumentals it picks up mid-range hits and effects";
 
 /** While playing, show the page of `view`'s width that holds the playhead. */
 function pageTo(view: View, bar: number, nBars: number): View {
@@ -232,6 +259,7 @@ export function TrackWorkspace({
   const playheadFrac = (playheadBar - view.start) / view.span;
   const showGrid = view.span <= GRID_MAX_SPAN;
   const [drumPartsOpen, setDrumPartsOpen] = useState(false);
+  const [curvesOpen, setCurvesOpen] = useState(false);
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-4">
@@ -325,157 +353,179 @@ export function TrackWorkspace({
 
       <div
         ref={lanesRef}
-        className="relative min-h-0 shrink overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface-2)]"
+        className="min-h-0 shrink overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface-2)]"
         data-testid="track-lanes"
       >
-        <LaneRow label="Bar" height={36} view={view} onSeekBar={seekBar}>
-          <Ruler view={view} grid={grid} />
-        </LaneRow>
-        <LaneRow
-          label="Sections"
-          height={36}
-          view={view}
-          controls={
-            result.sections_edited && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-6"
-                    onClick={() => void reset()}
-                    aria-label="Reset sections to detected"
-                    data-testid="track-sections-reset"
-                  >
-                    <RotateCcw className="size-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Reset sections to detected</TooltipContent>
-              </Tooltip>
-            )
-          }
-        >
-          <SectionLane
-            view={view}
-            sections={sections}
-            loopIndex={loopIndex}
-            onChange={(next) => void persist(next)}
-            onSeekBar={seekBar}
-            onLoop={toggleLoop}
-          />
-        </LaneRow>
-        <LaneRow
-          label="Original"
-          controls={<LaneControls lane={ORIGINAL} player={player} />}
-          height={96}
-          view={view}
-          onSeekBar={seekBar}
-          testId={`track-lane-${ORIGINAL}`}
-        >
-          {/* The stems sum back to the original, so the original needn't decode to be drawn. */}
-          <AudibleLane audible={gains[ORIGINAL] > 0}>
-            <WaveformLane
-              view={view}
-              grid={grid}
-              waveform={player.waveform(PLAYED_STEMS)}
-            />
-          </AudibleLane>
-        </LaneRow>
-        <LaneRow
-          label={
-            <CurveLegend
-              visible={curves}
-              onToggle={(id) => setCurves((c) => ({ ...c, [id]: !c[id] }))}
-            />
-          }
-          height={72}
-          view={view}
-          onSeekBar={seekBar}
-        >
-          <CurveLane view={view} features={features} visible={curves} />
-        </LaneRow>
-        {STEM_NAMES.map((lane) => (
-          <Fragment key={lane}>
+        <div className="relative">
+          <div
+            className="sticky top-0 z-10 bg-[var(--surface-2)]"
+            data-testid="track-pinned-lanes"
+          >
             <LaneRow
-              label={
-                lane === "drums" ? (
-                  <button
-                    type="button"
-                    className="-ml-1 flex items-center gap-0.5 hover:text-[var(--text)]"
-                    onClick={() => setDrumPartsOpen((open) => !open)}
-                    aria-expanded={drumPartsOpen}
-                    data-testid="track-drum-parts-toggle"
-                  >
-                    <ChevronRight
-                      className={cn(
-                        "size-3 shrink-0 transition-transform duration-[var(--dur-2)]",
-                        drumPartsOpen && "rotate-90",
-                      )}
-                    />
-                    {stemLabel(lane, features)}
-                  </button>
-                ) : (
-                  stemLabel(lane, features)
-                )
-              }
-              controls={<LaneControls lane={lane} player={player} />}
-              height={48}
+              label={<LaneLabel icon={RulerIcon}>Bar</LaneLabel>}
+              height={36}
               view={view}
               onSeekBar={seekBar}
-              testId={`track-lane-${lane}`}
             >
-              <AudibleLane audible={gains[lane] > 0}>
-                <WaveformLane
-                  view={view}
-                  grid={grid}
-                  waveform={player.waveform(
-                    lane === "drums" ? DRUM_PART_NAMES : [lane],
-                  )}
-                  color={STEM_COLORS[lane]}
-                  showGrid={showGrid}
-                  testId={`track-waveform-${lane}`}
-                />
-              </AudibleLane>
+              <Ruler view={view} grid={grid} />
             </LaneRow>
-            {lane === "drums" &&
-              drumPartsOpen &&
-              DRUM_PARTS.map((part) => (
-                <LaneRow
-                  key={part.id}
-                  label={
-                    <span className="pl-3 text-xs" title={part.hint}>
-                      {part.label}
-                    </span>
-                  }
-                  controls={<LaneControls lane={part.id} player={player} />}
-                  height={36}
-                  view={view}
-                  onSeekBar={seekBar}
-                  testId={`track-drum-part-${part.id}`}
+            <LaneRow
+              label={<LaneLabel icon={Rows3}>Sections</LaneLabel>}
+              height={36}
+              view={view}
+              controls={
+                result.sections_edited && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-6"
+                        onClick={() => void reset()}
+                        aria-label="Reset sections to detected"
+                        data-testid="track-sections-reset"
+                      >
+                        <RotateCcw className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Reset sections to detected</TooltipContent>
+                  </Tooltip>
+                )
+              }
+            >
+              <SectionLane
+                view={view}
+                sections={sections}
+                loopIndex={loopIndex}
+                onChange={(next) => void persist(next)}
+                onSeekBar={seekBar}
+                onLoop={toggleLoop}
+              />
+            </LaneRow>
+          </div>
+          <LaneRow
+            label={<LaneLabel icon={AudioWaveform}>Original</LaneLabel>}
+            controls={<LaneControls lane={ORIGINAL} player={player} />}
+            height={96}
+            view={view}
+            onSeekBar={seekBar}
+            testId={`track-lane-${ORIGINAL}`}
+          >
+            {/* The stems sum back to the original, so the original needn't decode to be drawn. */}
+            <AudibleLane audible={gains[ORIGINAL] > 0}>
+              <WaveformLane
+                view={view}
+                grid={grid}
+                waveform={player.waveform(PLAYED_STEMS)}
+              />
+            </AudibleLane>
+          </LaneRow>
+          <LaneRow
+            label={
+              <span className="flex flex-col gap-1">
+                <ExpandToggle
+                  open={curvesOpen}
+                  onToggle={() => setCurvesOpen((open) => !open)}
+                  testId="track-curves-toggle"
                 >
-                  <AudibleLane audible={gains.drums > 0 && gains[part.id] > 0}>
-                    <WaveformLane
-                      view={view}
-                      grid={grid}
-                      waveform={player.waveform([part.id])}
-                      color={STEM_COLORS.drums}
-                      showGrid={showGrid}
-                      testId={`track-waveform-${part.id}`}
-                    />
-                  </AudibleLane>
-                </LaneRow>
-              ))}
-          </Fragment>
-        ))}
-        {playheadFrac >= 0 && playheadFrac <= 1 && (
-          <div
-            className="pointer-events-none absolute inset-y-0 w-px bg-[var(--text)]"
-            style={{
-              left: `calc(${GUTTER_PX}px + (100% - ${GUTTER_PX}px) * ${playheadFrac})`,
-            }}
-            data-testid="track-playhead"
-          />
-        )}
+                  <LaneLabel icon={ChartSpline}>Curves</LaneLabel>
+                </ExpandToggle>
+                {curvesOpen && (
+                  <CurveLegend
+                    visible={curves}
+                    onToggle={(id) =>
+                      setCurves((c) => ({ ...c, [id]: !c[id] }))
+                    }
+                  />
+                )}
+              </span>
+            }
+            height={curvesOpen ? 80 : 32}
+            view={view}
+            onSeekBar={seekBar}
+            testId="track-lane-curves"
+          >
+            {curvesOpen && (
+              <CurveLane view={view} features={features} visible={curves} />
+            )}
+          </LaneRow>
+          {STEM_NAMES.map((lane) => (
+            <Fragment key={lane}>
+              <LaneRow
+                label={
+                  lane === "drums" ? (
+                    <ExpandToggle
+                      open={drumPartsOpen}
+                      onToggle={() => setDrumPartsOpen((open) => !open)}
+                      testId="track-drum-parts-toggle"
+                    >
+                      <StemLabel lane={lane} features={features} />
+                    </ExpandToggle>
+                  ) : (
+                    <StemLabel lane={lane} features={features} />
+                  )
+                }
+                controls={<LaneControls lane={lane} player={player} />}
+                height={48}
+                view={view}
+                onSeekBar={seekBar}
+                testId={`track-lane-${lane}`}
+              >
+                <AudibleLane audible={gains[lane] > 0}>
+                  <WaveformLane
+                    view={view}
+                    grid={grid}
+                    waveform={player.waveform(
+                      lane === "drums" ? DRUM_PART_NAMES : [lane],
+                    )}
+                    color={STEM_COLORS[lane]}
+                    showGrid={showGrid}
+                    testId={`track-waveform-${lane}`}
+                  />
+                </AudibleLane>
+              </LaneRow>
+              {lane === "drums" &&
+                drumPartsOpen &&
+                DRUM_PARTS.map((part) => (
+                  <LaneRow
+                    key={part.id}
+                    label={
+                      <span className="pl-[22px] text-xs" title={part.hint}>
+                        {part.label}
+                      </span>
+                    }
+                    controls={<LaneControls lane={part.id} player={player} />}
+                    height={36}
+                    view={view}
+                    onSeekBar={seekBar}
+                    testId={`track-drum-part-${part.id}`}
+                  >
+                    <AudibleLane
+                      audible={gains.drums > 0 && gains[part.id] > 0}
+                    >
+                      <WaveformLane
+                        view={view}
+                        grid={grid}
+                        waveform={player.waveform([part.id])}
+                        color={STEM_COLORS.drums}
+                        showGrid={showGrid}
+                        testId={`track-waveform-${part.id}`}
+                      />
+                    </AudibleLane>
+                  </LaneRow>
+                ))}
+            </Fragment>
+          ))}
+          {playheadFrac >= 0 && playheadFrac <= 1 && (
+            <div
+              className="pointer-events-none absolute inset-y-0 z-20 w-px bg-[var(--text)]"
+              style={{
+                left: `calc(${GUTTER_PX}px + (100% - ${GUTTER_PX}px) * ${playheadFrac})`,
+              }}
+              data-testid="track-playhead"
+            />
+          )}
+        </div>
       </div>
 
       <section
@@ -493,6 +543,75 @@ export function TrackWorkspace({
         </div>
       </section>
     </main>
+  );
+}
+
+function LaneLabel({
+  icon: Icon,
+  color = "currentColor",
+  title,
+  children,
+}: {
+  icon: LucideIcon;
+  color?: string;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="flex min-w-0 items-center gap-2" title={title}>
+      <Icon className="size-3.5 shrink-0" style={{ color }} aria-hidden />
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+function StemLabel({
+  lane,
+  features,
+}: {
+  lane: StemName;
+  features: TrackBreakdown["features"];
+}) {
+  const label = stemLabel(lane, features);
+  const fx = label === "FX";
+  return (
+    <LaneLabel
+      icon={fx ? Sparkles : STEM_ICONS[lane]}
+      color={STEM_COLORS[lane]}
+      title={fx ? FX_HINT : undefined}
+    >
+      {label}
+    </LaneLabel>
+  );
+}
+
+function ExpandToggle({
+  open,
+  onToggle,
+  testId,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex min-w-0 items-center gap-1 hover:text-[var(--text)]"
+      onClick={onToggle}
+      aria-expanded={open}
+      data-testid={testId}
+    >
+      {children}
+      <ChevronRight
+        className={cn(
+          "size-3 shrink-0 transition-transform duration-[var(--dur-2)]",
+          open && "rotate-90",
+        )}
+      />
+    </button>
   );
 }
 

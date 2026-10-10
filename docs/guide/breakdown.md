@@ -18,10 +18,10 @@ The first analysis separates the track into stems and splits the drums, which ta
 | Lane | Shows |
 |------|-------|
 | Bar | Bar numbers and times. Beat ticks appear when zoomed to 8 bars or fewer. When zoomed to 16 bars or fewer, the waveforms get beat lines, and 16th-note lines once there's room: use them to see where the kick sits and what the bass leaves free. |
-| Sections | Detected sections, coloured by type. Click one to jump to it. |
+| Sections | Detected sections, coloured by type, with their length in bars. Hover for the bar range; click one to jump to it. Bar and Sections stay pinned at the top while the lanes scroll. |
 | Original | The full mix, drawn from the stems summed back together: peaks in the outer shade, loudness (RMS) in the inner one. Sharp down to a single bar. |
-| Loudness, Width, Brightness | Mix level (solid), stereo width as side over mid power (dashed) and spectral centroid (dotted) per bar. Click a name to hide its line. |
-| Drums, Bass, Other, Vocals / FX | Waveform of each stem in its own colour, all on the same scale so a quiet stem looks quiet. A muted lane, or one silenced by another lane's solo, is greyed out. A mostly silent vocals stem is labelled **FX / shots**, since on instrumentals it picks up mid-range hits and effects. |
+| Curves | Collapsed by default; click **Curves** to show loudness, width and brightness: mix level (solid), stereo width as side over mid power (dashed) and spectral centroid (dotted) per bar. Click a name to hide its line. |
+| Drums, Bass, Other, Vocals / FX | Waveform of each stem in its own colour, all on the same scale so a quiet stem looks quiet. A muted lane, or one silenced by another lane's solo, is greyed out. A mostly silent vocals stem is labelled **FX**, since on instrumentals it picks up mid-range hits and effects. |
 | Kick, Snare, Hats | Click the arrow next to **Drums** to show the drum stem split into kick, snare and claps, and hats and cymbals. Each part has its own waveform, mute, solo and volume; solo **Kick** to hear the kick alone. Toms play with the kick. The parts come from a second separation model, so expect some bleed between them. |
 
 The header shows tempo, root note (from the strongest bass peak), bar count and where bar 1 starts.

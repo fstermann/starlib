@@ -33,7 +33,7 @@ export interface View {
 }
 
 /** Width of the lane name and controls column. */
-export const GUTTER_PX = 176;
+export const GUTTER_PX = 200;
 /** Bars visible at or below which waveforms get a 16th-note grid. */
 export const GRID_MAX_SPAN = 16;
 const LEVEL_FLOOR_DB = -50;
@@ -120,6 +120,10 @@ export function LaneRow({
       </div>
     </div>
   );
+}
+
+function barCount(section: Section): number {
+  return section.end_bar - section.start_bar + 1;
 }
 
 /** Bar numbers with times; beat ticks when zoomed to a few bars. */
@@ -232,7 +236,8 @@ export function SectionLane({
                 <div
                   role="button"
                   tabIndex={0}
-                  aria-label={`${s.label}, bars ${s.start_bar} to ${s.end_bar}`}
+                  aria-label={`${s.label}, ${barCount(s)} bars, bars ${s.start_bar} to ${s.end_bar}`}
+                  title={`Bars ${s.start_bar}–${s.end_bar}`}
                   data-testid="track-section"
                   data-label={s.label}
                   data-start-bar={s.start_bar}
@@ -274,8 +279,11 @@ export function SectionLane({
                       }}
                     >
                       {s.label}
-                      <span className="ml-1 font-normal tabular-nums opacity-60">
-                        {s.start_bar}–{s.end_bar}
+                      <span
+                        className="ml-1 font-normal tabular-nums opacity-60"
+                        data-testid="track-section-bars"
+                      >
+                        {barCount(s)} {barCount(s) === 1 ? "bar" : "bars"}
                       </span>
                     </span>
                   )}

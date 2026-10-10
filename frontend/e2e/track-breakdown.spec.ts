@@ -276,6 +276,9 @@ test.describe("Track Breakdown", () => {
       "data-label",
       "breakdown",
     );
+    await expect(page.getByTestId("track-section-bars").first()).toHaveText(
+      "16 bars",
+    );
     await expect(
       page.getByTestId("track-lane-original").getByTestId("track-waveform"),
     ).toBeVisible();
@@ -283,9 +286,7 @@ test.describe("Track Breakdown", () => {
       await expect(page.getByTestId(`track-waveform-${lane}`)).toBeVisible();
     }
     // The vocals stem is silent here, so it is labelled as FX rather than vocals.
-    await expect(page.getByTestId("track-lane-vocals")).toContainText(
-      "FX / shots",
-    );
+    await expect(page.getByTestId("track-lane-vocals")).toContainText("FX");
     await expect(page.getByText("Loading stems…")).toHaveCount(0);
     await expect(page.getByTestId("track-play")).toBeEnabled();
     await expect(page.getByTestId("track-waveform")).toBeVisible();
@@ -412,6 +413,40 @@ test.describe("Track Breakdown", () => {
 
     await toggle.click();
     await expect(page.getByTestId("track-drum-part-kick")).toHaveCount(0);
+  });
+
+  test("the curves lane starts collapsed and expands", async ({ page }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+
+    const toggle = page.getByTestId("track-curves-toggle");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("button", { name: "Loudness" })).toHaveCount(0);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("button", { name: "Loudness" })).toBeVisible();
+  });
+
+  test("bar and sections stay pinned while the lanes scroll", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 640 });
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await page.getByTestId("track-drum-parts-toggle").click();
+
+    const lanes = page.getByTestId("track-lanes");
+    await lanes.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await expect
+      .poll(() => lanes.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(0);
+
+    const lanesTop = (await lanes.boundingBox())!.y;
+    const pinnedTop = (await page
+      .getByTestId("track-pinned-lanes")
+      .boundingBox())!.y;
+    expect(Math.abs(pinnedTop - lanesTop)).toBeLessThan(2);
   });
 
   test("looping the section at the playhead", async ({ page }) => {

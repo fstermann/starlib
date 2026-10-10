@@ -213,7 +213,7 @@ export function stemLabel(stem: StemName, features: TrackFeatures): string {
   if (stem !== "vocals") return stem[0].toUpperCase() + stem.slice(1);
   const levels = [...(features.sources.vocals?.db ?? [])].sort((a, b) => a - b);
   const median = levels[Math.floor(levels.length / 2)] ?? -120;
-  return median < MOSTLY_SILENT_DB ? "FX / shots" : "Vocals";
+  return median < MOSTLY_SILENT_DB ? "FX" : "Vocals";
 }
 
 /** Median level below which the vocals stem counts as mostly silent. */
