@@ -1,4 +1,6 @@
-"""Analyse one local track: stems, measurements, then first-guess sections.
+"""Analyse one track: stems, measurements, then first-guess sections.
+
+Tracks are local files or SoundCloud tracks, which are downloaded first.
 
 Analysis runs as an in-memory background job per file, with progress events
 for an SSE stream. Results live on disk and edits in SQLite, so a restarted
@@ -12,7 +14,7 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -31,6 +33,31 @@ StageCallback = Callable[[str, float | None], None]
 
 
 @dataclass(frozen=True)
+class SoundCloudTrack:
+    """The SoundCloud track a download came from.
+
+    Attributes:
+        id: SoundCloud track id.
+        title: Track title.
+        artist: Uploader name.
+        artwork_url: Cover image.
+    """
+
+    id: int
+    title: str | None = None
+    artist: str | None = None
+    artwork_url: str | None = None
+
+
+# Downloads a SoundCloud track's audio; returns the file and the track's details.
+FetchSoundCloud = Callable[[], Awaitable[tuple[Path, SoundCloudTrack]]]
+
+
+class DownloadError(RuntimeError):
+    """The SoundCloud audio couldn't be downloaded."""
+
+
+@dataclass(frozen=True)
 class TrackBreakdown:
     """Measured features and sections of one track.
 
@@ -41,6 +68,7 @@ class TrackBreakdown:
         detected_sections: Sections as detected from the features.
         sections_edited: Whether ``sections`` are user edits.
         grid_edited: Whether the bar grid is a user edit.
+        soundcloud: The SoundCloud track it was last opened from, if any.
     """
 
     digest: str
@@ -49,15 +77,21 @@ class TrackBreakdown:
     detected_sections: list[Section]
     sections_edited: bool
     grid_edited: bool
+    soundcloud: SoundCloudTrack | None = None
 
 
-async def analyse_track(path: Path, on_stage: StageCallback = lambda _stage, _progress: None) -> TrackBreakdown:
+async def analyse_track(
+    path: Path,
+    on_stage: StageCallback = lambda _stage, _progress: None,
+    soundcloud: SoundCloudTrack | None = None,
+) -> TrackBreakdown:
     """Analyse ``path``, reusing cached stems and features when they still apply.
 
     Args:
         path: Local audio file.
         on_stage: Called with ``"hash"``, ``"stems"`` and ``"drum_parts"``
             (with progress 0 to 1), then each measured source name.
+        soundcloud: The SoundCloud track ``path`` was downloaded from, if any.
 
     Returns:
         The track's features and sections.
@@ -75,9 +109,9 @@ async def analyse_track(path: Path, on_stage: StageCallback = lambda _stage, _pr
         await track_infra.measure(path, stems, features_path, lambda source: on_stage(source, None), grid)
     else:
         await _split_drums(stems_dir, on_stage)
+    _record_opened(path, digest, soundcloud)
     result = load_result(digest)
     assert result is not None
-    _record_opened(path, result)
     return result
 
 
@@ -87,17 +121,22 @@ async def _split_drums(stems_dir: Path, on_stage: StageCallback) -> None:
         await stems_infra.separate_drums(stems_dir / "drums.flac", stems_dir, lambda done: on_stage("drum_parts", done))
 
 
-def _record_opened(path: Path, result: TrackBreakdown) -> None:
-    grid = result.features["grid"]
+def _record_opened(path: Path, digest: str, soundcloud: SoundCloudTrack | None) -> None:
+    features = json.loads((track_infra.track_dir(digest) / "features.json").read_text())
+    grid = features["grid"]
     track_db.record_opened(
         track_db.HistoryEntry(
-            digest=result.digest,
+            digest=digest,
             path=str(path),
             bpm=grid["bpm"],
-            root=result.features["tonal"]["root"],
+            root=features["tonal"]["root"],
             n_bars=grid["n_bars"],
-            duration_s=result.features["duration_s"],
+            duration_s=features["duration_s"],
             opened_at=time.time(),
+            soundcloud_id=soundcloud.id if soundcloud else None,
+            title=soundcloud.title if soundcloud else None,
+            artist=soundcloud.artist if soundcloud else None,
+            artwork_url=soundcloud.artwork_url if soundcloud else None,
         )
     )
 
@@ -159,6 +198,7 @@ def load_result(digest: str) -> TrackBreakdown | None:
         except ValueError:
             # A grid edit changed the bar count; the old sections no longer fit.
             edited = None
+    opened = track_db.get_history(digest)
     return TrackBreakdown(
         digest=digest,
         features=features,
@@ -166,6 +206,11 @@ def load_result(digest: str) -> TrackBreakdown | None:
         detected_sections=detected,
         sections_edited=edited is not None,
         grid_edited=edit.grid is not None,
+        soundcloud=(
+            SoundCloudTrack(opened.soundcloud_id, opened.title, opened.artist, opened.artwork_url)
+            if opened is not None and opened.soundcloud_id is not None
+            else None
+        ),
     )
 
 
@@ -251,10 +296,15 @@ def bar_levels(features: dict[str, Any]) -> list[BarLevels]:
 # ---------------------------------------------------------------------------
 
 
+FetchAudio = Callable[[StageCallback], Awaitable[tuple[Path, SoundCloudTrack | None]]]
+
+
 @dataclass
 class _Job:
     id: str
-    path: Path
+    key: str
+    """What is analysed: a file path or ``soundcloud:<id>``; one job runs per key."""
+    fetch: FetchAudio
     events: list[dict[str, Any]] = field(default_factory=list)
     listeners: set[asyncio.Queue[dict[str, Any] | None]] = field(default_factory=set)
     task: asyncio.Task[None] | None = None
@@ -277,10 +327,39 @@ def start_job(path: Path) -> str:
     Returns:
         The job id.
     """
+
+    async def local(_on_stage: StageCallback) -> tuple[Path, SoundCloudTrack | None]:
+        return path, None
+
+    return _start(str(path), local)
+
+
+def start_soundcloud_job(track_id: int, fetch: FetchSoundCloud) -> str:
+    """Download and analyse a SoundCloud track in the background, or join a running job for it.
+
+    Args:
+        track_id: SoundCloud track id.
+        fetch: Downloads the audio; a cached download returns at once.
+
+    Returns:
+        The job id.
+    """
+
+    async def download(on_stage: StageCallback) -> tuple[Path, SoundCloudTrack | None]:
+        on_stage("download", None)
+        try:
+            return await fetch()
+        except Exception as exc:
+            raise DownloadError(f"Couldn't download the track from SoundCloud: {exc}") from exc
+
+    return _start(f"soundcloud:{track_id}", download)
+
+
+def _start(key: str, fetch: FetchAudio) -> str:
     for job in _jobs.values():
-        if job.path == path and not job.done:
+        if job.key == key and not job.done:
             return job.id
-    job = _Job(id=uuid.uuid4().hex, path=path)
+    job = _Job(id=uuid.uuid4().hex, key=key, fetch=fetch)
     _jobs[job.id] = job
     job.task = asyncio.create_task(_run(job))
     job.task.add_done_callback(lambda _task: _finish(job))
@@ -339,14 +418,15 @@ async def _run(job: _Job) -> None:
         _emit(job, {"type": "stage", "stage": stage, "progress": progress})
 
     try:
-        result = await analyse_track(job.path, on_stage)
+        path, soundcloud = await job.fetch(on_stage)
+        result = await analyse_track(path, on_stage, soundcloud)
         _emit(job, {"type": "complete", "digest": result.digest})
     except stems_infra.StemsUnavailableError as exc:
         _emit(job, {"type": "error", "code": "stems_unavailable", "message": str(exc)})
-    except track_infra.MeasureError as exc:
+    except (DownloadError, track_infra.MeasureError) as exc:
         _emit(job, {"type": "error", "message": str(exc)})
     except Exception:
-        logger.exception("track breakdown failed for %s", job.path)
+        logger.exception("track breakdown failed for %s", job.key)
         _emit(job, {"type": "error", "message": "Analysis failed; see the backend log."})
 
 

@@ -5,7 +5,7 @@
  * `analyser-stream breakdown`. Per-bar arrays are indexed by bar - 1.
  */
 
-import { fetchApi } from "./api";
+import { api, fetchApi } from "./api";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -71,6 +71,14 @@ export interface Section {
   label: string;
 }
 
+/** The SoundCloud track a breakdown's audio was downloaded from. */
+export interface SoundCloudOrigin {
+  id: number;
+  title: string | null;
+  artist: string | null;
+  artwork_url: string | null;
+}
+
 export interface TrackBreakdown {
   digest: string;
   features: TrackFeatures;
@@ -78,6 +86,32 @@ export interface TrackBreakdown {
   detected_sections: Section[];
   sections_edited: boolean;
   grid_edited: boolean;
+  soundcloud: SoundCloudOrigin | null;
+}
+
+/** What to break down: a file in the collection or a SoundCloud track. */
+export type TrackSource =
+  { kind: "file"; path: string } | { kind: "soundcloud"; id: number };
+
+/** The source named by the Track view's `path` or `sc` query parameter. */
+export function trackSourceFrom(params: URLSearchParams): TrackSource | null {
+  const path = params.get("path");
+  if (path) return { kind: "file", path };
+  const id = Number(params.get("sc"));
+  return Number.isInteger(id) && id > 0 ? { kind: "soundcloud", id } : null;
+}
+
+export function trackSourceHref(source: TrackSource): string {
+  return source.kind === "file"
+    ? trackBreakdownHref(source.path)
+    : `/breakdown?view=track&sc=${source.id}`;
+}
+
+/** Audio of the whole track, for the Original lane. */
+export function originalAudioUrl(source: TrackSource): string {
+  return source.kind === "file"
+    ? api.getAudioUrl(source.path)
+    : `${API_BASE_URL}/api/breakdown/tracks/soundcloud/${source.id}/audio`;
 }
 
 export type TrackJobEvent =
@@ -114,6 +148,11 @@ export interface RecentTrack {
   duration_s: number;
   /** Unix seconds. */
   opened_at: number;
+  /** Set when the audio was downloaded from SoundCloud, with its details. */
+  soundcloud_id: number | null;
+  title: string | null;
+  artist: string | null;
+  artwork_url: string | null;
   /** The file is no longer at `path`. */
   missing: boolean;
 }
@@ -129,10 +168,14 @@ export function deleteTrackBreakdown(digest: string): Promise<void> {
   return fetchApi(`/api/breakdown/tracks/${digest}`, { method: "DELETE" });
 }
 
-export async function startTrackJob(path: string): Promise<string> {
+export async function startTrackJob(source: TrackSource): Promise<string> {
+  const body =
+    source.kind === "file"
+      ? { path: source.path }
+      : { soundcloud_id: source.id };
   const { job_id } = await fetchApi<{ job_id: string }>(
     "/api/breakdown/tracks/jobs",
-    { method: "POST", body: JSON.stringify({ path }) },
+    { method: "POST", body: JSON.stringify(body) },
   );
   return job_id;
 }

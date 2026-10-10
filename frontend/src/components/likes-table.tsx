@@ -18,6 +18,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  AudioLines,
   Ban,
   Check,
   ChevronDown,
@@ -31,6 +32,7 @@ import {
   Search,
   ShoppingCart,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -92,6 +94,7 @@ import {
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
 } from "@/lib/soundcloud-cache";
+import { trackSourceHref } from "@/lib/track-breakdown";
 import { useKeyNotation } from "@/lib/use-key-notation";
 import { cn } from "@/lib/utils";
 
@@ -904,6 +907,7 @@ function TrackRowInner({
   const { activeTrack } = usePlayer();
   const isCurrent = activeTrack?.filePath === `soundcloud:${scTrackId}`;
   const unplayable = useIsScUnplayable(scTrackId || null);
+  const router = useRouter();
 
   // Hover prefetch: warm the stream URL + peaks cache after a short dwell.
   // Eliminates the 500–700ms cold SC resolve for rows the user is about
@@ -935,11 +939,27 @@ function TrackRowInner({
       onAddToQueue={onAddToQueue}
       disabled={unplayable}
       extraItems={
+        scTrackId > 0 ||
         onOpenStation ||
         onOpenPlaylistPicks ||
         addToPlaylist ||
         removeFromPlaylist ? (
           <>
+            {scTrackId > 0 && (
+              <ContextMenuItem
+                data-testid="open-in-breakdown"
+                disabled={unplayable}
+                onSelect={() =>
+                  router.push(
+                    trackSourceHref({ kind: "soundcloud", id: scTrackId }),
+                  )
+                }
+                className="text-xs"
+              >
+                <AudioLines className="size-3.5" />
+                Open in Breakdown
+              </ContextMenuItem>
+            )}
             {onOpenStation && (
               <ContextMenuItem
                 data-testid="open-station"

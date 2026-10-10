@@ -41,7 +41,19 @@ const grooveLane = () =>
     Array.from({ length: 16 }, (_, slot) => (slot % 4 === 0 ? 0 : -40)),
   );
 
-function breakdown(sections = SECTIONS, edited = false) {
+const SC_ID = 4242;
+const SC_TRACK = {
+  id: SC_ID,
+  title: "Cloud Tune",
+  artist: "Cloud Artist",
+  artwork_url: null,
+};
+
+function breakdown(
+  sections = SECTIONS,
+  edited = false,
+  soundcloud: typeof SC_TRACK | null = null,
+) {
   return {
     digest: DIGEST,
     features: {
@@ -88,6 +100,7 @@ function breakdown(sections = SECTIONS, edited = false) {
     detected_sections: SECTIONS,
     sections_edited: edited,
     grid_edited: false,
+    soundcloud,
   };
 }
 
@@ -244,6 +257,20 @@ test.describe("Track Breakdown", () => {
         opened_at: 0,
         missing: true,
       },
+      {
+        digest: "sc",
+        path: "/cache/4242.mp4",
+        bpm: 125,
+        root: "F",
+        n_bars: 96,
+        duration_s: 185,
+        opened_at: 0,
+        soundcloud_id: SC_ID,
+        title: "Cloud Tune",
+        artist: "Cloud Artist",
+        artwork_url: null,
+        missing: false,
+      },
     ];
     let deleted: string | null = null;
     await page.route(/\/api\/breakdown\/tracks$/, (route) =>
@@ -257,14 +284,16 @@ test.describe("Track Breakdown", () => {
     await page.goto("/breakdown?view=track");
 
     const rows = page.getByTestId("recent-track");
-    await expect(rows).toHaveCount(2);
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(2)).toContainText("Cloud Artist - Cloud Tune");
+    await expect(rows.nth(2).getByRole("button").first()).toBeEnabled();
     await expect(rows.first()).toContainText("128 BPM · A · 48 bars · 1:30");
     await expect(rows.nth(1)).toContainText("File not found");
     await expect(rows.nth(1).getByRole("button").first()).toBeDisabled();
 
     await rows.nth(1).getByTestId("delete-recent-track").click();
     await page.getByTestId("delete-recent-track-confirm").click();
-    await expect(rows).toHaveCount(1);
+    await expect(rows).toHaveCount(2);
     expect(deleted).toBe("gone");
 
     await rows.first().getByText("Artist - Tune").click();
@@ -717,6 +746,100 @@ test.describe("Track Breakdown", () => {
       "ready",
       { timeout: 10_000 },
     );
+  });
+
+  test("a SoundCloud track downloads, then opens like a local one", async ({
+    page,
+  }) => {
+    let started: unknown = null;
+    await mockTrackApi(page, [
+      { type: "stage", stage: "download", progress: null },
+      { type: "complete", digest: DIGEST },
+    ]);
+    await page.route("**/api/breakdown/tracks/jobs", (route) => {
+      started = route.request().postDataJSON();
+      return route.fulfill({ json: { job_id: "job-1" } });
+    });
+    await page.route(`**/api/breakdown/tracks/${DIGEST}`, (route) =>
+      route.fulfill({ json: breakdown(SECTIONS, false, SC_TRACK) }),
+    );
+    let originalRequested = false;
+    await page.route(
+      `**/api/breakdown/tracks/soundcloud/${SC_ID}/audio`,
+      (route) => {
+        originalRequested = true;
+        return route.fulfill({ contentType: "audio/wav", body: silentWav() });
+      },
+    );
+    await page.goto(`/breakdown?view=track&sc=${SC_ID}`);
+
+    await expect(page.getByTestId("track-title")).toHaveText("Cloud Tune");
+    await expect(page.getByTestId("track-artist")).toHaveText("Cloud Artist");
+    await expect(page.getByTestId("track-breakdown-title")).toHaveText(
+      "Cloud Artist - Cloud Tune",
+    );
+    expect(started).toEqual({ soundcloud_id: SC_ID });
+    // The original only decodes once it is heard.
+    await page.getByTestId("track-solo-original").click();
+    await expect.poll(() => originalRequested).toBe(true);
+  });
+
+  test("shows the SoundCloud download as the first step", async ({ page }) => {
+    await mockTrackApi(page, [
+      { type: "stage", stage: "download", progress: null },
+    ]);
+    await page.goto(`/breakdown?view=track&sc=${SC_ID}`);
+
+    await expect(page.getByTestId("track-breakdown-progress")).toContainText(
+      "Downloading from SoundCloud",
+    );
+    await expect(page.getByTestId("track-breakdown-title")).toHaveText(
+      "SoundCloud track",
+    );
+  });
+
+  test("SoundCloud rows open in Breakdown from the context menu", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("access_token", "fake-token");
+      localStorage.setItem("token_expires_at", String(Date.now() + 3_600_000));
+      localStorage.setItem(
+        "sc_user",
+        JSON.stringify({ id: 1, username: "me", permalink: "me" }),
+      );
+    });
+    await page.route("https://api.soundcloud.com/**", (route) =>
+      route.fulfill({ json: { collection: [], next_href: null } }),
+    );
+    await page.route("https://api.soundcloud.com/me/likes/tracks*", (route) =>
+      route.fulfill({
+        json: {
+          collection: [
+            {
+              id: SC_ID,
+              urn: `soundcloud:tracks:${SC_ID}`,
+              title: "Cloud Tune",
+              user: { id: 2, username: "Cloud Artist" },
+              duration: 185_000,
+              permalink_url: "https://soundcloud.com/cloud/tune",
+            },
+          ],
+          next_href: null,
+        },
+      }),
+    );
+    await page.route("**/api/metadata/collection/soundcloud-ids", (route) =>
+      route.fulfill({ json: [] }),
+    );
+    await page.route("**/api/bpm/soundcloud/bulk", (route) =>
+      route.fulfill({ json: { bpms: {} } }),
+    );
+    await page.goto("/library?source=soundcloud");
+
+    await page.getByText("Cloud Tune").click({ button: "right" });
+    await page.getByTestId("open-in-breakdown").click();
+    await expect(page).toHaveURL(new RegExp(`view=track&sc=${SC_ID}$`));
   });
 
   test("library rows open in Breakdown from the context menu", async ({

@@ -3,6 +3,7 @@
 import { FileAudio, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +22,7 @@ import {
   deleteTrackBreakdown,
   listRecentTracks,
   type RecentTrack,
+  type TrackSource,
 } from "@/lib/track-breakdown";
 
 interface Match {
@@ -48,7 +50,11 @@ function formatDuration(seconds: number): string {
 }
 
 /** Search the local collection and pick a track to break down. */
-export function TrackPicker({ onPick }: { onPick: (path: string) => void }) {
+export function TrackPicker({
+  onPick,
+}: {
+  onPick: (source: TrackSource) => void;
+}) {
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
   const [recent, setRecent] = useState<RecentTrack[]>([]);
@@ -111,7 +117,7 @@ export function TrackPicker({ onPick }: { onPick: (path: string) => void }) {
           <li key={m.file_path}>
             <button
               type="button"
-              onClick={() => onPick(m.file_path)}
+              onClick={() => onPick({ kind: "file", path: m.file_path })}
               className="flex h-10 w-full items-center gap-3 rounded-md px-3 text-left hover:bg-[var(--surface-3)]"
               data-testid="track-picker-result"
             >
@@ -135,13 +141,25 @@ export function TrackPicker({ onPick }: { onPick: (path: string) => void }) {
   );
 }
 
+function recentSource(track: RecentTrack): TrackSource {
+  return track.soundcloud_id
+    ? { kind: "soundcloud", id: track.soundcloud_id }
+    : { kind: "file", path: track.path };
+}
+
+function recentName(track: RecentTrack): string {
+  if (!track.soundcloud_id) return fileStem(track.path);
+  const title = track.title ?? `SoundCloud track ${track.soundcloud_id}`;
+  return track.artist ? `${track.artist} - ${title}` : title;
+}
+
 function RecentTracks({
   tracks,
   onPick,
   onDelete,
 }: {
   tracks: RecentTrack[];
-  onPick: (path: string) => void;
+  onPick: (source: TrackSource) => void;
   onDelete: (digest: string) => Promise<void>;
 }) {
   return (
@@ -159,13 +177,23 @@ function RecentTracks({
             <button
               type="button"
               disabled={t.missing}
-              onClick={() => onPick(t.path)}
-              title={t.missing ? `File not found: ${t.path}` : t.path}
+              onClick={() => onPick(recentSource(t))}
+              title={
+                t.missing
+                  ? `File not found: ${t.path}`
+                  : !t.soundcloud_id
+                    ? t.path
+                    : "From SoundCloud"
+              }
               className="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-md px-3 text-left enabled:hover:bg-[var(--surface-3)] disabled:opacity-50"
             >
-              <FileAudio className="size-4 shrink-0 text-[var(--text-muted)]" />
+              {!t.soundcloud_id ? (
+                <FileAudio className="size-4 shrink-0 text-[var(--text-muted)]" />
+              ) : (
+                <SoundCloudLogo className="size-4 shrink-0 text-[var(--text-muted)]" />
+              )}
               <span className="truncate text-sm text-[var(--text)]">
-                {fileStem(t.path)}
+                {recentName(t)}
               </span>
               <span className="ml-auto shrink-0 text-xs text-[var(--text-subtle)] tabular-nums">
                 {t.missing
@@ -198,7 +226,9 @@ function RecentTracks({
                 <AlertDialogHeader>
                   <AlertDialogTitle>Delete breakdown?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    {`The stems, measurements and section edits for "${fileStem(t.path)}" will be removed. The audio file stays.`}
+                    {!t.soundcloud_id
+                      ? `The stems, measurements and section edits for "${recentName(t)}" will be removed. The audio file stays.`
+                      : `The stems, measurements and section edits for "${recentName(t)}" will be removed.`}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

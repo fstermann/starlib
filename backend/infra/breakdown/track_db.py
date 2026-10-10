@@ -33,12 +33,16 @@ class HistoryEntry:
 
     Attributes:
         digest: Decoded-audio hash.
-        path: File the track was last opened from.
+        path: File the track was last opened from; for SoundCloud, the cached download.
         bpm: Tempo of the bar grid.
         root: Root note from the strongest bass peak, if any.
         n_bars: Bar count.
         duration_s: Track length in seconds.
         opened_at: Unix time it was last opened.
+        soundcloud_id: SoundCloud track the audio was streamed from, if any.
+        title: SoundCloud title; local files show their file name.
+        artist: SoundCloud uploader.
+        artwork_url: SoundCloud artwork.
     """
 
     digest: str
@@ -48,6 +52,10 @@ class HistoryEntry:
     n_bars: int
     duration_s: float
     opened_at: float
+    soundcloud_id: int | None = None
+    title: str | None = None
+    artist: str | None = None
+    artwork_url: str | None = None
 
 
 def get_edit(digest: str) -> TrackEdit:
@@ -130,6 +138,21 @@ def list_history(limit: int) -> list[HistoryEntry]:
     with get_engine().connect() as conn:
         rows = conn.execute(select(table).order_by(table.c.opened_at.desc()).limit(limit)).all()
     return [HistoryEntry(**row._mapping) for row in rows]
+
+
+def get_history(digest: str) -> HistoryEntry | None:
+    """Return the track's recent-list entry, or ``None`` if it has none.
+
+    Args:
+        digest: Decoded-audio hash.
+
+    Returns:
+        The entry.
+    """
+    table = BreakdownTrackHistory.__table__
+    with get_engine().connect() as conn:
+        row = conn.execute(select(table).where(table.c.digest == digest)).first()
+    return HistoryEntry(**row._mapping) if row is not None else None
 
 
 def forget(digest: str) -> None:

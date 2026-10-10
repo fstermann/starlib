@@ -9,6 +9,7 @@ import {
   trackJobEventsUrl,
   type TrackBreakdown,
   type TrackJobEvent,
+  type TrackSource,
 } from "@/lib/track-breakdown";
 
 export type TrackJobState =
@@ -31,12 +32,13 @@ const STARTING: TrackJobState = {
 };
 
 /**
- * Analyse `path` as soon as it is set and follow the job to its result.
+ * Analyse `source` as soon as it is set and follow the job to its result.
  * A cached analysis completes within a second or two.
  */
-export function useTrackJob(path: string | null) {
+export function useTrackJob(source: TrackSource | null) {
   const [runToken, setRunToken] = useState(0);
-  const runKey = `${path}#${runToken}`;
+  const sourceKey = source && JSON.stringify(source);
+  const runKey = `${sourceKey}#${runToken}`;
   // State belongs to one run; a new path or re-run starts from STARTING.
   const [tracked, setTracked] = useState<{
     key: string;
@@ -44,14 +46,14 @@ export function useTrackJob(path: string | null) {
   } | null>(null);
   const jobIdRef = useRef<string | null>(null);
 
-  const state: TrackJobState = !path
+  const state: TrackJobState = !sourceKey
     ? { status: "idle" }
     : tracked?.key === runKey
       ? tracked.state
       : STARTING;
 
   useEffect(() => {
-    if (!path) return;
+    if (!sourceKey) return;
     let source: EventSource | null = null;
     let disposed = false;
     const update = (next: TrackJobState) => {
@@ -89,7 +91,7 @@ export function useTrackJob(path: string | null) {
       }
     };
 
-    startTrackJob(path)
+    startTrackJob(JSON.parse(sourceKey) as TrackSource)
       .then((jobId) => {
         if (disposed) return;
         jobIdRef.current = jobId;
@@ -114,7 +116,7 @@ export function useTrackJob(path: string | null) {
       disposed = true;
       source?.close();
     };
-  }, [path, runKey]);
+  }, [sourceKey, runKey]);
 
   const cancel = useCallback(() => {
     if (jobIdRef.current) void cancelTrackJob(jobIdRef.current);

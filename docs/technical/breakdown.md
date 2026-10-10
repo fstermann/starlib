@@ -1,12 +1,13 @@
 # Track Breakdown pipeline
 
-Track Breakdown measures one local track and interprets the measurements as sections. The two stay separate: measuring is deterministic Rust, interpretation is a pure Python module that can be swapped or extended (for example, by sending a section's features to an LLM for a written breakdown).
+Track Breakdown measures one track, a local file or a SoundCloud track, and interprets the measurements as sections. The two stay separate: measuring is deterministic Rust, interpretation is a pure Python module that can be swapped or extended (for example, by sending a section's features to an LLM for a written breakdown).
 
 ## Flow
 
 ```
-POST /api/breakdown/tracks/jobs {path}
+POST /api/breakdown/tracks/jobs {path} | {soundcloud_id}
   services/breakdown/track.py      background job, SSE progress, cancel
+    infra/breakdown/cache.py       SoundCloud only: HLS download to <cache_dir>/breakdown/sets
     ffmpeg -f hash                 SHA-256 of the decoded audio → cache key
     infra/breakdown/stems.py       demucs htdemucs (managed venv, MPS on Apple Silicon)
                                    then DrumSep on drums.flac → kick, snare, hats
@@ -25,7 +26,9 @@ Cache layout, under the `breakdown_cache_dir` setting or `<cache_dir>/breakdown/
 
 User edits live in the `breakdown_track_edits` table, keyed by the same hash: edited sections (JSON) and an edited bar grid (`bpm`, `downbeat_s`). A grid edit makes the next job re-measure on that grid, reusing the stems.
 
-Every finished job upserts the track into `breakdown_track_history` (path, tempo, root, bars, length, `opened_at`), which `GET /api/breakdown/tracks` lists newest first with a `missing` flag for moved files. `DELETE /api/breakdown/tracks/{digest}` removes the cache folder, the edits and the history row.
+A SoundCloud job first downloads the stream with the same cache the Set view uses (one job per track id, emitting a `download` stage), then analyses the downloaded file like a local one. `GET /api/breakdown/tracks/soundcloud/{id}/audio` serves that download for the Original lane. The download cache is size-capped; an evicted track downloads again the next time it's opened, and its stems stay cached by hash.
+
+Every finished job upserts the track into `breakdown_track_history` (path, tempo, root, bars, length, `opened_at`, and for SoundCloud the track id, title, artist and artwork), which `GET /api/breakdown/tracks` lists newest first with a `missing` flag for moved files. SoundCloud entries are never missing. A breakdown's response carries its `soundcloud` details from that row, for the header. `DELETE /api/breakdown/tracks/{digest}` removes the cache folder, the edits and the history row.
 
 ## Demucs install (`infra/breakdown/demucs_env.py`)
 

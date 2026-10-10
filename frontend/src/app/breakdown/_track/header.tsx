@@ -9,18 +9,23 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api, type TrackInfo } from "@/lib/api";
-import { formatClock, type TrackBreakdown } from "@/lib/track-breakdown";
+import {
+  formatClock,
+  type SoundCloudOrigin,
+  type TrackBreakdown,
+  type TrackSource,
+} from "@/lib/track-breakdown";
 
 import { GridEditor } from "./grid-editor";
 import { fileStem } from "./track-picker";
 
 /** Cover, title and artist, then the track's measured tempo, key and length. */
 export function TrackHeader({
-  path,
+  source,
   result,
   onRemeasure,
 }: {
-  path: string;
+  source: TrackSource;
   result: TrackBreakdown;
   onRemeasure: () => void;
 }) {
@@ -31,7 +36,11 @@ export function TrackHeader({
       className="flex flex-wrap items-center gap-x-6 gap-y-2"
       data-testid="track-header"
     >
-      <TrackIdentity path={path} />
+      {result.soundcloud ? (
+        <SoundCloudIdentity track={result.soundcloud} />
+      ) : (
+        source.kind === "file" && <FileIdentity path={source.path} />
+      )}
       <Stat
         label="Tempo"
         value={`${Number(grid.bpm.toFixed(2))} BPM`}
@@ -61,7 +70,17 @@ function artistText(artist: TrackInfo["artist"]): string | null {
   return Array.isArray(artist) ? artist.join(", ") : artist;
 }
 
-function TrackIdentity({ path }: { path: string }) {
+function SoundCloudIdentity({ track }: { track: SoundCloudOrigin }) {
+  return (
+    <Identity
+      title={track.title ?? `SoundCloud track ${track.id}`}
+      artist={track.artist}
+      artworkUrl={track.artwork_url && api.proxyImageUrl(track.artwork_url)}
+    />
+  );
+}
+
+function FileIdentity({ path }: { path: string }) {
   const [info, setInfo] = useState<TrackInfo | null>(null);
   useEffect(() => {
     let live = true;
@@ -74,13 +93,30 @@ function TrackIdentity({ path }: { path: string }) {
     };
   }, [path]);
 
-  const artist = artistText(info?.artist);
+  return (
+    <Identity
+      title={info?.title || fileStem(path)}
+      artist={artistText(info?.artist)}
+      artworkUrl={info?.has_artwork ? api.getArtworkUrl(path) : null}
+    />
+  );
+}
+
+function Identity({
+  title,
+  artist,
+  artworkUrl,
+}: {
+  title: string;
+  artist: string | null;
+  artworkUrl: string | null;
+}) {
   return (
     <div className="flex max-w-80 min-w-0 items-center gap-3 border-r border-[var(--border)] pr-6">
       <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--surface-3)]">
-        {info?.has_artwork ? (
+        {artworkUrl ? (
           <img
-            src={api.getArtworkUrl(path)}
+            src={artworkUrl}
             alt=""
             className="size-10 object-cover"
             data-testid="track-cover"
@@ -94,7 +130,7 @@ function TrackIdentity({ path }: { path: string }) {
           className="truncate text-sm text-[var(--text)]"
           data-testid="track-title"
         >
-          {info?.title || fileStem(path)}
+          {title}
         </span>
         {artist && (
           <span

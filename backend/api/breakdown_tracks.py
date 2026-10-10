@@ -10,10 +10,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from backend.api.deps import get_root_folder, validate_file_path
 from backend.domain.arrangement import Section
+from backend.infra.breakdown import cache as audio_cache
 from backend.services.breakdown import track as track_service
 
 logger = logging.getLogger(__name__)
@@ -22,9 +23,16 @@ router = APIRouter(prefix="/api/breakdown/tracks", tags=["breakdown"])
 
 
 class StartTrackJobRequest(BaseModel):
-    """Body for starting an analysis."""
+    """Body for starting an analysis: a local file or a SoundCloud track id."""
 
-    path: str
+    path: str | None = None
+    soundcloud_id: int | None = None
+
+    @model_validator(mode="after")
+    def _one_source(self) -> StartTrackJobRequest:
+        if (self.path is None) == (self.soundcloud_id is None):
+            raise ValueError("give exactly one of path or soundcloud_id")
+        return self
 
 
 class StartTrackJobResponse(BaseModel):
@@ -41,6 +49,15 @@ class SectionModel(BaseModel):
     label: str
 
 
+class SoundCloudTrackModel(BaseModel):
+    """The SoundCloud track a breakdown's audio was streamed from."""
+
+    id: int
+    title: str | None
+    artist: str | None
+    artwork_url: str | None
+
+
 class TrackBreakdownResponse(BaseModel):
     """Features and sections of an analysed track."""
 
@@ -50,6 +67,7 @@ class TrackBreakdownResponse(BaseModel):
     detected_sections: list[SectionModel]
     sections_edited: bool
     grid_edited: bool
+    soundcloud: SoundCloudTrackModel | None
 
 
 class SectionsRequest(BaseModel):
@@ -75,8 +93,12 @@ class RecentTrack(BaseModel):
     n_bars: int
     duration_s: float
     opened_at: float
+    soundcloud_id: int | None
+    title: str | None
+    artist: str | None
+    artwork_url: str | None
     missing: bool
-    """Whether the file is no longer at ``path``."""
+    """Whether the file is no longer at ``path``; SoundCloud tracks download again."""
 
 
 class RecentTracksResponse(BaseModel):
@@ -93,6 +115,7 @@ def _response(result: track_service.TrackBreakdown) -> TrackBreakdownResponse:
         detected_sections=[SectionModel(**s.__dict__) for s in result.detected_sections],
         sections_edited=result.sections_edited,
         grid_edited=result.grid_edited,
+        soundcloud=SoundCloudTrackModel(**result.soundcloud.__dict__) if result.soundcloud else None,
     )
 
 
@@ -104,9 +127,47 @@ def _not_analysed(digest: str) -> HTTPException:
 async def start_job(
     body: StartTrackJobRequest, root_folder: Annotated[Path, Depends(get_root_folder)]
 ) -> StartTrackJobResponse:
-    """Start analysing a local file, or join the running job for it."""
+    """Start analysing a local file or a SoundCloud track, or join the running job for it."""
+    if body.soundcloud_id is not None:
+        track_id = body.soundcloud_id
+        return StartTrackJobResponse(
+            job_id=track_service.start_soundcloud_job(track_id, lambda: _download_soundcloud(track_id))
+        )
+    assert body.path is not None
     path = validate_file_path(body.path, root_folder)
     return StartTrackJobResponse(job_id=track_service.start_job(path))
+
+
+async def _download_soundcloud(track_id: int) -> tuple[Path, track_service.SoundCloudTrack]:
+    from backend.api.breakdown import _make_soundcloud_fetcher
+    from backend.api.soundcloud.tracks import _fetch_track_meta
+
+    path = await _make_soundcloud_fetcher(track_id)()
+    try:
+        meta = await _fetch_track_meta(track_id) or {}
+    except HTTPException as exc:  # The analysis doesn't need the title; keep going without it.
+        logger.warning("track breakdown: SoundCloud metadata fetch failed for %s: %s", track_id, exc)
+        meta = {}
+    user = meta.get("user")
+    if not isinstance(user, dict):
+        user = {}
+    return path, track_service.SoundCloudTrack(
+        id=track_id,
+        title=meta.get("title") or None,
+        artist=user.get("username") or None,
+        artwork_url=meta.get("artwork_url") or None,
+    )
+
+
+@router.get("/soundcloud/{track_id}/audio", response_model=None)
+async def get_soundcloud_audio(track_id: int) -> FileResponse:
+    """Serve a SoundCloud track's downloaded audio, for the Original lane."""
+    path = audio_cache.cached_set_path(track_id)
+    if path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"SoundCloud track {track_id} isn't downloaded"
+        )
+    return FileResponse(path, media_type="audio/mp4")
 
 
 @router.post("/jobs/{job_id}/cancel")
@@ -147,7 +208,7 @@ async def recent_tracks() -> RecentTracksResponse:
     """List the most recently opened tracks."""
     return RecentTracksResponse(
         tracks=[
-            RecentTrack(**entry.__dict__, missing=not Path(entry.path).exists())
+            RecentTrack(**entry.__dict__, missing=entry.soundcloud_id is None and not Path(entry.path).exists())
             for entry in track_service.recent_tracks()
         ]
     )

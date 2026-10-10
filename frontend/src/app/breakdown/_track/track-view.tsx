@@ -5,7 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTopBar } from "@/components/layout/top-bar-context";
 import { StemSetup } from "@/components/stem-setup";
 import { Button } from "@/components/ui/button";
-import { trackBreakdownHref } from "@/lib/track-breakdown";
+import {
+  trackSourceFrom,
+  trackSourceHref,
+  type TrackBreakdown,
+  type TrackSource,
+} from "@/lib/track-breakdown";
 
 import { BreakdownTitle } from "../_components/breakdown-title";
 import { fileStem, TrackPicker } from "./track-picker";
@@ -13,32 +18,42 @@ import { TrackProgress } from "./track-progress";
 import { useTrackJob } from "./use-track-job";
 import { TrackWorkspace } from "./workspace";
 
-/** `/breakdown?view=track&path=…` — analyse one local track and explore it. */
+/** Name of the track, once known for a SoundCloud one. */
+function sourceTitle(source: TrackSource, result: TrackBreakdown | null) {
+  if (source.kind === "file") return fileStem(source.path);
+  const sc = result?.soundcloud;
+  if (sc?.title) return sc.artist ? `${sc.artist} - ${sc.title}` : sc.title;
+  return "SoundCloud track";
+}
+
+/** `/breakdown?view=track&path=…` or `&sc=<id>`: analyse one track and explore it. */
 export function TrackBreakdownView() {
   const router = useRouter();
-  const path = useSearchParams().get("path");
-  const { state, cancel, rerun, setResult } = useTrackJob(path);
+  const params = useSearchParams();
+  const source = trackSourceFrom(params);
+  const { state, cancel, rerun, setResult } = useTrackJob(source);
+  const title =
+    source &&
+    sourceTitle(source, state.status === "ready" ? state.result : null);
 
   useTopBar({
     title: (
       <BreakdownTitle view="track">
-        {path && (
+        {title && (
           <span
             className="truncate text-sm text-[var(--text-muted)]"
             data-testid="track-breakdown-title"
           >
-            {fileStem(path)}
+            {title}
           </span>
         )}
       </BreakdownTitle>
     ),
   });
 
-  if (!path) {
+  if (!source || !title) {
     return (
-      <TrackPicker
-        onPick={(picked) => router.push(trackBreakdownHref(picked))}
-      />
+      <TrackPicker onPick={(picked) => router.push(trackSourceHref(picked))} />
     );
   }
 
@@ -46,6 +61,7 @@ export function TrackBreakdownView() {
     return (
       <TrackWorkspace
         key={state.result.digest}
+        source={source}
         result={state.result}
         onResult={setResult}
         onRemeasure={rerun}
@@ -57,7 +73,7 @@ export function TrackBreakdownView() {
     <main className="flex flex-1 items-center justify-center px-6 py-4">
       {state.status === "running" || state.status === "idle" ? (
         <TrackProgress
-          title={fileStem(path)}
+          title={title}
           stage={state.status === "running" ? state.stage : null}
           progress={state.status === "running" ? state.progress : null}
           onCancel={cancel}

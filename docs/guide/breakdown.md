@@ -3,13 +3,13 @@
 Breakdown has two views, switched with the **Set / Track** toggle at the top left.
 
 - **Set** finds the tracks in a SoundCloud DJ set: BPM per window, sections, Shazam matches and a tracklist.
-- **Track** takes one track from your collection apart so you can study its arrangement.
+- **Track** takes one track from your collection or SoundCloud apart so you can study its arrangement.
 
 ## Track view
 
-Open a track with **Open in Breakdown** in the library row's right-click menu, the **Open selected track in Breakdown** palette command, or the search box on the Track view.
+Open a track with **Open in Breakdown** in the library row's right-click menu, the **Open selected track in Breakdown** palette command, or the search box on the Track view. SoundCloud rows in the library and on Weekly have **Open in Breakdown** too: the track downloads first, then is analysed like a local file. A track SoundCloud won't stream can't be broken down.
 
-**Recent** under the search box lists the tracks you've opened, newest first. A track whose file moved is greyed out. The trash button deletes its stems, measurements and section edits; the audio file stays.
+**Recent** under the search box lists the tracks you've opened, newest first, with SoundCloud ones marked by its logo. A local track whose file moved is greyed out. The trash button deletes its stems, measurements and section edits; the audio file stays.
 
 The first analysis separates the track into stems and splits the drums, which takes about a minute on Apple Silicon. Results are cached by the track's audio, so editing its tags doesn't trigger a new analysis. You can cancel while it runs.
 

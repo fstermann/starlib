@@ -279,3 +279,85 @@ def test_delete_removes_stems_edits_and_recent_entry(client: TestClient, music: 
     assert client.get(f"/api/breakdown/tracks/{DIGEST}").status_code == 404
     _analyse(client, music)
     assert client.get(f"/api/breakdown/tracks/{DIGEST}").json()["grid_edited"] is False
+
+
+SC_ID = 42
+
+
+@pytest.fixture()
+def soundcloud(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Fake SoundCloud download into ``tmp_path``; counts downloads and can fail."""
+    from backend.api import breakdown_tracks
+
+    state: dict[str, Any] = {"downloads": 0, "fail": False}
+    audio = tmp_path / "sets" / f"{SC_ID}.mp4"
+
+    async def fake_download(track_id: int) -> tuple[Path, track_service.SoundCloudTrack]:
+        if state["fail"]:
+            raise RuntimeError("ffmpeg HLS download failed")
+        state["downloads"] += 1
+        audio.parent.mkdir(exist_ok=True)
+        audio.write_bytes(b"aac")
+        return audio, track_service.SoundCloudTrack(
+            id=track_id, title="Tune", artist="Artist", artwork_url="https://i1.sndcdn.com/a.jpg"
+        )
+
+    monkeypatch.setattr(breakdown_tracks, "_download_soundcloud", fake_download)
+    monkeypatch.setattr(
+        breakdown_tracks.audio_cache, "cached_set_path", lambda track_id: audio if audio.exists() else None
+    )
+    return state
+
+
+def _analyse_soundcloud(client: TestClient) -> list[dict[str, Any]]:
+    job_id = client.post("/api/breakdown/tracks/jobs", json={"soundcloud_id": SC_ID}).json()["job_id"]
+    return _events(client, job_id)
+
+
+def test_soundcloud_track_downloads_then_analyses(client: TestClient, soundcloud: dict[str, Any]) -> None:
+    events = _analyse_soundcloud(client)
+
+    assert events[0] == {"type": "stage", "stage": "download", "progress": None}
+    assert events[-1] == {"type": "complete", "digest": DIGEST}
+    assert soundcloud["downloads"] == 1
+    result = client.get(f"/api/breakdown/tracks/{DIGEST}").json()
+    assert result["soundcloud"] == {
+        "id": SC_ID,
+        "title": "Tune",
+        "artist": "Artist",
+        "artwork_url": "https://i1.sndcdn.com/a.jpg",
+    }
+    assert client.get(f"/api/breakdown/tracks/soundcloud/{SC_ID}/audio").content == b"aac"
+
+
+def test_soundcloud_track_is_listed_as_recent_and_never_missing(
+    client: TestClient, soundcloud: dict[str, Any], tmp_path: Path
+) -> None:
+    _analyse_soundcloud(client)
+    (tmp_path / "sets" / f"{SC_ID}.mp4").unlink()
+
+    [track] = client.get("/api/breakdown/tracks").json()["tracks"]
+    assert (track["soundcloud_id"], track["title"], track["artist"]) == (SC_ID, "Tune", "Artist")
+    assert track["missing"] is False
+    assert client.get(f"/api/breakdown/tracks/soundcloud/{SC_ID}/audio").status_code == 404
+
+
+def test_soundcloud_download_failure_is_reported(client: TestClient, soundcloud: dict[str, Any]) -> None:
+    soundcloud["fail"] = True
+
+    event = _analyse_soundcloud(client)[-1]
+
+    assert event["type"] == "error"
+    assert event["message"].startswith("Couldn't download the track from SoundCloud")
+
+
+def test_local_file_result_has_no_soundcloud_track(client: TestClient, music: Path) -> None:
+    _analyse(client, music)
+
+    assert client.get(f"/api/breakdown/tracks/{DIGEST}").json()["soundcloud"] is None
+
+
+def test_job_needs_exactly_one_source(client: TestClient, music: Path) -> None:
+    assert client.post("/api/breakdown/tracks/jobs", json={}).status_code == 422
+    both = {"path": str(music / "track.aiff"), "soundcloud_id": SC_ID}
+    assert client.post("/api/breakdown/tracks/jobs", json=both).status_code == 422

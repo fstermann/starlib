@@ -35,7 +35,7 @@ function formatElapsed(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-/** Analysis progress: read, separate into stems, split the drums, then measure each source. */
+/** Analysis progress: download or read, separate into stems, split the drums, then measure each source. */
 export function TrackProgress({
   title,
   stage,
@@ -59,7 +59,7 @@ export function TrackProgress({
 
   const measuring = SOURCES.indexOf(stage as Source);
   const step =
-    stage === "hash"
+    stage === "download" || stage === "hash"
       ? 0
       : stage === "stems"
         ? 1
@@ -90,7 +90,14 @@ export function TrackProgress({
       </header>
 
       <ol className="flex flex-col">
-        <Step state={stepState(0, step)} label="Reading audio" />
+        <Step
+          state={stepState(0, step)}
+          label={
+            stage === "download"
+              ? "Downloading from SoundCloud"
+              : "Reading audio"
+          }
+        />
         <Step
           state={stepState(1, step)}
           label="Separating stems"

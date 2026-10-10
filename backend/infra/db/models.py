@@ -277,6 +277,10 @@ class BreakdownTrackHistory(SQLModel, table=True):
     n_bars: int
     duration_s: float
     opened_at: float
+    soundcloud_id: int | None = None
+    title: str | None = None
+    artist: str | None = None
+    artwork_url: str | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,6 @@ import {
   ZoomOut,
   type LucideIcon,
 } from "lucide-react";
-import { useSearchParams } from "next/navigation";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -30,12 +29,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { api } from "@/lib/api";
 import {
   barAt,
   barStartS,
   DRUM_PART_NAMES,
   formatClock,
+  originalAudioUrl,
   resetSections,
   saveSections,
   STEM_COLORS,
@@ -44,6 +43,7 @@ import {
   type Section,
   type StemName,
   type TrackBreakdown,
+  type TrackSource,
 } from "@/lib/track-breakdown";
 import { sectionIndexAt } from "@/lib/track-breakdown-sections";
 import { cn } from "@/lib/utils";
@@ -120,19 +120,20 @@ function clampView(view: View, nBars: number): View {
 
 /** Explore one analysed track: sections, stems, curves and groove on a bar timeline. */
 export function TrackWorkspace({
+  source,
   result,
   onResult,
   onRemeasure,
 }: {
+  source: TrackSource;
   result: TrackBreakdown;
   onResult: (result: TrackBreakdown) => void;
   onRemeasure: () => void;
 }) {
-  const path = useSearchParams().get("path") ?? "";
   const { features } = result;
   const grid = features.grid;
   const nBars = grid.n_bars;
-  const player = useStemPlayer(result.digest, api.getAudioUrl(path));
+  const player = useStemPlayer(result.digest, originalAudioUrl(source));
   const gains = laneGains(player.mix);
   const [baseView, setBaseView] = useState<View>({ start: 1, span: nBars });
   const [sections, setSections] = useState(result.sections);
@@ -356,7 +357,7 @@ export function TrackWorkspace({
         onLoop={toggleLooping}
         onResetSections={() => void reset()}
       />
-      <TrackHeader path={path} result={result} onRemeasure={onRemeasure} />
+      <TrackHeader source={source} result={result} onRemeasure={onRemeasure} />
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
