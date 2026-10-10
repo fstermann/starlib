@@ -19,10 +19,10 @@ import {
   formatClock,
   resetSections,
   saveSections,
+  STEM_COLORS,
   STEM_NAMES,
   stemLabel,
   type Section,
-  type StemName,
   type TrackBreakdown,
 } from "@/lib/track-breakdown";
 import { sectionIndexAt } from "@/lib/track-breakdown-sections";
@@ -60,12 +60,6 @@ const ZOOM_PRESETS = [
   { label: "1 bar", span: 1 },
 ] as const;
 const MIN_SPAN = 1;
-const LANE_COLORS: Record<StemName, string> = {
-  drums: "var(--chart-1)",
-  bass: "var(--chart-2)",
-  other: "var(--chart-3)",
-  vocals: "var(--chart-4)",
-};
 
 /** While playing, show the page of `view`'s width that holds the playhead. */
 function pageTo(view: View, bar: number, nBars: number): View {
@@ -413,7 +407,7 @@ export function TrackWorkspace({
                 view={view}
                 grid={grid}
                 waveform={player.waveform([lane])}
-                color={LANE_COLORS[lane]}
+                color={STEM_COLORS[lane]}
                 testId={`track-waveform-${lane}`}
               />
             </AudibleLane>

@@ -57,6 +57,7 @@ export function TrackBreakdownView() {
     <main className="flex flex-1 items-center justify-center px-6 py-4">
       {state.status === "running" || state.status === "idle" ? (
         <TrackProgress
+          title={fileStem(path)}
           stage={state.status === "running" ? state.stage : null}
           progress={state.status === "running" ? state.progress : null}
           onCancel={cancel}

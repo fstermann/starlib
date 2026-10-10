@@ -12,6 +12,14 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export const STEM_NAMES = ["drums", "bass", "other", "vocals"] as const;
 export type StemName = (typeof STEM_NAMES)[number];
 
+/** One chart colour per stem, shared by its lanes and the analysis progress. */
+export const STEM_COLORS: Record<StemName, string> = {
+  drums: "var(--chart-1)",
+  bass: "var(--chart-2)",
+  other: "var(--chart-3)",
+  vocals: "var(--chart-4)",
+};
+
 export interface Grid {
   bpm: number;
   bpm_rough: number;
