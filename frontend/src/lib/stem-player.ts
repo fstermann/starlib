@@ -29,6 +29,37 @@ export interface Band {
   lowpassHz?: number;
 }
 
+/** Butterworth Q, in the dB units Web Audio uses for lowpass and highpass. */
+const BUTTERWORTH_Q_DB = 20 * Math.log10(Math.SQRT1_2);
+
+/**
+ * Route `from` through a band-pass made of Linkwitz-Riley edges (two
+ * Butterworth biquads each, 24 dB/octave), so adjacent bands split at the
+ * same frequency add back up to the input. Returns the last node.
+ */
+function connectBand(
+  ctx: BaseAudioContext,
+  from: AudioNode,
+  band: Band,
+): AudioNode {
+  let node = from;
+  for (const [type, hz] of [
+    ["highpass", band.highpassHz],
+    ["highpass", band.highpassHz],
+    ["lowpass", band.lowpassHz],
+    ["lowpass", band.lowpassHz],
+  ] as const) {
+    if (hz == null) continue;
+    const filter = ctx.createBiquadFilter();
+    filter.type = type;
+    filter.frequency.value = hz;
+    filter.Q.value = BUTTERWORTH_Q_DB;
+    node.connect(filter);
+    node = filter;
+  }
+  return node;
+}
+
 function blocksOf(
   channels: { data: Float32Array; weight: number }[],
   sampleRate: number,
@@ -67,6 +98,8 @@ export interface LoopRegion {
 
 interface Lane {
   url: string;
+  /** Where sources connect: straight to `gain`, or through the lane's parts. */
+  input: GainNode;
   gain: GainNode;
   buffer: AudioBuffer | null;
   loading: Promise<void> | null;
@@ -80,6 +113,7 @@ export class StemPlayer {
   readonly analyser: AnalyserNode;
   private readonly waveforms = new Map<string, Waveform>();
   private readonly lanes = new Map<string, Lane>();
+  private readonly partGains = new Map<string, GainNode>();
   private startCtxTime = 0;
   private startOffset = 0;
   private pausedAt = 0;
@@ -92,6 +126,8 @@ export class StemPlayer {
     urls: Record<string, string>,
     private readonly onEnded: () => void = () => {},
     private readonly onLoaded: (name: string) => void = () => {},
+    /** Lanes played as bands with their own gains, e.g. drums as kick, mids, tops. */
+    parts: Record<string, { name: string; band: Band }[]> = {},
   ) {
     this.ctx = getSharedAudioContext();
     this.master = this.ctx.createGain();
@@ -103,8 +139,20 @@ export class StemPlayer {
     for (const [name, url] of Object.entries(urls)) {
       const gain = this.ctx.createGain();
       gain.connect(this.master);
+      const input = this.ctx.createGain();
+      if (parts[name]) {
+        for (const part of parts[name]) {
+          const partGain = this.ctx.createGain();
+          connectBand(this.ctx, input, part.band).connect(partGain);
+          partGain.connect(gain);
+          this.partGains.set(part.name, partGain);
+        }
+      } else {
+        input.connect(gain);
+      }
       this.lanes.set(name, {
         url,
+        input,
         gain,
         buffer: null,
         loading: null,
@@ -169,7 +217,7 @@ export class StemPlayer {
       source.loopStart = this.loop.start;
       source.loopEnd = this.loop.end;
     }
-    source.connect(lane.gain);
+    source.connect(lane.input);
     source.onended = () => {
       if (lane.source !== source || !this.playing) return;
       this.playing = false;
@@ -223,6 +271,11 @@ export class StemPlayer {
   setGains(gains: Record<string, number>): void {
     const now = this.ctx.currentTime;
     for (const [name, value] of Object.entries(gains)) {
+      const partGain = this.partGains.get(name);
+      if (partGain) {
+        partGain.gain.setTargetAtTime(value, now, GAIN_SMOOTHING_S);
+        continue;
+      }
       const lane = this.lanes.get(name);
       if (!lane) continue;
       lane.gain.gain.setTargetAtTime(value, now, GAIN_SMOOTHING_S);
@@ -265,21 +318,7 @@ export class StemPlayer {
     );
     const source = offline.createBufferSource();
     source.buffer = buffer;
-    let node: AudioNode = source;
-    // Two biquads per edge give a 24 dB/octave slope.
-    for (const [type, hz] of [
-      ["highpass", band.highpassHz],
-      ["highpass", band.highpassHz],
-      ["lowpass", band.lowpassHz],
-      ["lowpass", band.lowpassHz],
-    ] as const) {
-      if (hz == null) continue;
-      const filter = offline.createBiquadFilter();
-      filter.type = type;
-      filter.frequency.value = hz;
-      node.connect(filter);
-      node = filter;
-    }
+    const node = connectBand(offline, source, band);
     node.connect(offline.destination);
     source.start();
     const rendered = await offline.startRendering();

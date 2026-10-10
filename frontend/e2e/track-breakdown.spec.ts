@@ -376,7 +376,38 @@ test.describe("Track Breakdown", () => {
       await expect(page.getByTestId(`track-waveform-${part}`)).toBeVisible();
     }
     await expect(page.getByTestId("track-drum-part-mids")).toContainText(
-      "Snare, clap, toms",
+      "Snare",
+    );
+
+    // Soloing the kick plays the drums with only the kick.
+    await page.getByTestId("track-solo-kick").click();
+    const audible = (testId: string) =>
+      page.getByTestId(testId).locator("[data-audible]");
+    await expect(audible("track-drum-part-kick")).toHaveAttribute(
+      "data-audible",
+      "true",
+    );
+    await expect(audible("track-drum-part-tops")).toHaveAttribute(
+      "data-audible",
+      "false",
+    );
+    await expect(audible("track-lane-drums")).toHaveAttribute(
+      "data-audible",
+      "true",
+    );
+    await expect(audible("track-lane-bass")).toHaveAttribute(
+      "data-audible",
+      "false",
+    );
+    await page.getByTestId("track-solo-kick").click();
+    await page.getByTestId("track-mute-tops").click();
+    await expect(audible("track-drum-part-tops")).toHaveAttribute(
+      "data-audible",
+      "false",
+    );
+    await expect(audible("track-drum-part-kick")).toHaveAttribute(
+      "data-audible",
+      "true",
     );
 
     await toggle.click();

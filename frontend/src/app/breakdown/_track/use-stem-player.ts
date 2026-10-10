@@ -7,8 +7,41 @@ import { StemPlayer, type Band, type LoopRegion } from "@/lib/stem-player";
 import { STEM_NAMES, stemUrl } from "@/lib/track-breakdown";
 
 export const ORIGINAL = "original";
+
+/**
+ * The drums stem played as three bands with their own mute, solo and volume.
+ * Crossovers at 150 Hz and 3 kHz, so the parts add back up to the drums.
+ */
+export const DRUM_PARTS = [
+  {
+    id: "kick",
+    label: "Kick",
+    hint: "Kick, below 150 Hz",
+    band: { lowpassHz: 150 },
+  },
+  {
+    id: "mids",
+    label: "Snare",
+    hint: "Snare, clap, toms: 150 Hz to 3 kHz",
+    band: { highpassHz: 150, lowpassHz: 3000 },
+  },
+  {
+    id: "tops",
+    label: "Hats",
+    hint: "Hats, cymbals: above 3 kHz",
+    band: { highpassHz: 3000 },
+  },
+] as const satisfies readonly {
+  id: string;
+  label: string;
+  hint: string;
+  band: Band;
+}[];
+export type DrumPart = (typeof DRUM_PARTS)[number]["id"];
+
 export const LANES = [ORIGINAL, ...STEM_NAMES] as const;
-export type LaneName = (typeof LANES)[number];
+const MIX_KEYS = [...LANES, ...DRUM_PARTS.map((p) => p.id)] as const;
+export type LaneName = (typeof MIX_KEYS)[number];
 
 export interface LaneMix {
   volume: number;
@@ -20,25 +53,38 @@ const PLAYBACK_SLOT = "breakdown-track";
 
 function initialMix(): Record<LaneName, LaneMix> {
   return Object.fromEntries(
-    LANES.map((lane) => [
+    MIX_KEYS.map((lane) => [
       lane,
       { volume: 1, muted: lane === ORIGINAL, solo: false },
     ]),
   ) as Record<LaneName, LaneMix>;
 }
 
-/** Effective gain per lane: soloed lanes only when any is soloed, else unmuted ones. */
+/**
+ * Effective gain per lane and drum part. While anything is soloed only soloed
+ * lanes play; soloing a drum part plays the drums with just that part (and
+ * any other soloed part). A drum part's gain is applied after the drums'.
+ */
 export function laneGains(
   mix: Record<LaneName, LaneMix>,
 ): Record<LaneName, number> {
-  const anySolo = LANES.some((lane) => mix[lane].solo);
-  return Object.fromEntries(
+  const parts = DRUM_PARTS.map((p) => p.id);
+  const anyPartSolo = parts.some((part) => mix[part].solo);
+  const anySolo = anyPartSolo || LANES.some((lane) => mix[lane].solo);
+  const gains = Object.fromEntries(
     LANES.map((lane) => {
       const { volume, muted, solo } = mix[lane];
-      const audible = anySolo ? solo : !muted;
+      const audible = anySolo
+        ? solo || (lane === "drums" && anyPartSolo)
+        : !muted;
       return [lane, audible ? volume : 0];
     }),
   ) as Record<LaneName, number>;
+  for (const part of parts) {
+    const { volume, muted, solo } = mix[part];
+    gains[part] = !muted && (!anyPartSolo || solo) ? volume : 0;
+  }
+  return gains;
 }
 
 /** Synced stem + original playback for one analysed track. */
@@ -69,6 +115,9 @@ export function useStemPlayer(digest: string, originalUrl: string) {
       (name) => {
         if (playerRef.current === player)
           setLoaded((prev) => new Set(prev).add(name));
+      },
+      {
+        drums: DRUM_PARTS.map((part) => ({ name: part.id, band: part.band })),
       },
     );
     playerRef.current = player;

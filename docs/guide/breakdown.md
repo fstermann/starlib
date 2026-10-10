@@ -22,7 +22,7 @@ The first analysis separates the track into stems, which takes about half a minu
 | Original | The full mix, drawn from the stems summed back together: peaks in the outer shade, loudness (RMS) in the inner one. Sharp down to a single bar. |
 | Loudness, Width, Brightness | Mix level (solid), stereo width as side over mid power (dashed) and spectral centroid (dotted) per bar. Click a name to hide its line. |
 | Drums, Bass, Other, Vocals / FX | Waveform of each stem in its own colour, all on the same scale so a quiet stem looks quiet. A muted lane, or one silenced by another lane's solo, is greyed out. A mostly silent vocals stem is labelled **FX / shots**, since on instrumentals it picks up mid-range hits and effects. |
-| Kick, Snare / clap / toms, Hats / cymbals | Click the arrow next to **Drums** to split the drum stem by frequency into three waveforms. Snares and hats overlap a little, since they share frequencies. |
+| Kick, Snare, Hats | Click the arrow next to **Drums** to split the drum stem by frequency: kick below 150 Hz, snare, claps and toms up to 3 kHz, hats and cymbals above. Each part has its own mute, solo and volume; solo **Kick** to hear the kick alone. Together the parts sound exactly like the drums. Snares and hats overlap a little, since they share frequencies. |
 
 The header shows tempo, root note (from the strongest bass peak), bar count and where bar 1 starts.
 

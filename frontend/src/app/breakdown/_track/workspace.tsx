@@ -46,6 +46,7 @@ import {
   type View,
 } from "./lanes";
 import {
+  DRUM_PARTS,
   laneGains,
   ORIGINAL,
   useStemPlayer,
@@ -439,13 +440,18 @@ export function TrackWorkspace({
               DRUM_PARTS.map((part) => (
                 <LaneRow
                   key={part.id}
-                  label={<span className="pl-5 text-xs">{part.label}</span>}
+                  label={
+                    <span className="pl-3 text-xs" title={part.hint}>
+                      {part.label}
+                    </span>
+                  }
+                  controls={<LaneControls lane={part.id} player={player} />}
                   height={36}
                   view={view}
                   onSeekBar={seekBar}
                   testId={`track-drum-part-${part.id}`}
                 >
-                  <AudibleLane audible={gains.drums > 0}>
+                  <AudibleLane audible={gains.drums > 0 && gains[part.id] > 0}>
                     <DrumPartLane
                       view={view}
                       grid={grid}
@@ -487,17 +493,6 @@ export function TrackWorkspace({
     </main>
   );
 }
-
-/** Bands of the drums stem, matching the measured kick / mids / tops ranges. */
-const DRUM_PARTS: { id: string; label: string; band: Band }[] = [
-  { id: "kick", label: "Kick", band: { lowpassHz: 120 } },
-  {
-    id: "mids",
-    label: "Snare, clap, toms",
-    band: { highpassHz: 300, lowpassHz: 3000 },
-  },
-  { id: "tops", label: "Hats, cymbals", band: { highpassHz: 3000 } },
-];
 
 /** One band of the drums stem, filtered once when first shown. */
 function DrumPartLane({
