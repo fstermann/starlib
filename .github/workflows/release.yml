@@ -148,8 +148,8 @@ jobs:
               run: chmod +x desktop/src-tauri/binaries/${{ env.SIDECAR_NAME }}-${{ matrix.arch }}
 
             # ── Rust toolchain ──────────────────────────────────────────────────
-            - name: Install Rust stable
-              uses: dtolnay/rust-toolchain@stable
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@1.99.0
               with:
                   targets: ${{ matrix.tauri-target }}
 
