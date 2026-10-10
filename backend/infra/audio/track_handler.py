@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterable
-from functools import cached_property
+from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -500,3 +500,36 @@ class TrackHandler(BaseModel):
     def rename(self, new_name: str):
         safe_name = new_name.replace("/", "-")
         return self.file.rename(Path(self.file.parent, safe_name + self.file.suffix))
+
+
+def read_starlib_meta(file: Path) -> StarlibMeta | None:
+    """Read the app-managed ``TXXX:starlib`` metadata from an audio file.
+
+    Cached per file modification time, so repeated reads of an unchanged
+    library cost one ``stat`` per file.
+
+    Args:
+        file: Path to the audio file.
+
+    Returns:
+        The parsed metadata, or ``None`` if the file is missing, unreadable,
+        or carries no starlib metadata.
+    """
+    try:
+        mtime_ns = file.stat().st_mtime_ns
+    except OSError:
+        return None
+    return _read_starlib_meta_cached(str(file), mtime_ns)
+
+
+@lru_cache(maxsize=65536)
+def _read_starlib_meta_cached(path: str, mtime_ns: int) -> StarlibMeta | None:
+    file = Path(path)
+    if file.suffix not in FILETYPE_MAP:
+        return None
+    try:
+        handler = TrackHandler(root_folder=file.parent, file=file)
+        return handler._read_simple(handler.track).get("starlib_meta")
+    except Exception:
+        logger.debug("Could not read starlib metadata from %s", path, exc_info=True)
+        return None

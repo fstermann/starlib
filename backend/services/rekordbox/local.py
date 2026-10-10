@@ -20,9 +20,9 @@ from .base import (
     RekordboxSource,
     RekordboxTrack,
     RekordboxUnavailable,
-    extract_soundcloud_id,
     read_pwav,
     read_pwv4,
+    resolve_soundcloud_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,6 +113,7 @@ class LocalMasterDbSource(RekordboxSource):
         bpm = float(bpm_raw) / 100.0 if bpm_raw else None
         image_path = getattr(row, "ImagePath", None) or None
         analysis_path = getattr(row, "AnalysisDataPath", None) or None
+        folder_path = getattr(row, "FolderPath", None)
         release_raw = getattr(row, "ReleaseDate", None)
         stock_raw = getattr(row, "StockDate", None)
         return RekordboxTrack(
@@ -124,9 +125,11 @@ class LocalMasterDbSource(RekordboxSource):
             bpm=bpm,
             key=getattr(key, "ScaleName", None) if key else None,
             duration_seconds=getattr(row, "Length", None),
-            file_path=getattr(row, "FolderPath", None),
+            file_path=folder_path,
             comment=str(comment) if comment else None,
-            soundcloud_id=extract_soundcloud_id(str(comment) if comment else None),
+            soundcloud_id=resolve_soundcloud_id(
+                str(comment) if comment else None, Path(folder_path) if folder_path else None
+            ),
             date_added=str(stock_raw) if stock_raw else None,
             release_date=str(release_raw) if release_raw else None,
             has_artwork=bool(image_path),

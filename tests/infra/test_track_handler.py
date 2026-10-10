@@ -17,7 +17,7 @@ from backend.domain.tags import (
     StarlibMeta,
     TrackInfo,
 )
-from backend.infra.audio.track_handler import TrackHandler
+from backend.infra.audio.track_handler import TrackHandler, read_starlib_meta
 
 
 def _make_silent_mp3(path: Path) -> None:
@@ -219,3 +219,18 @@ def test_schemas_include_every_registry_field() -> None:
         assert expected <= set(schema.model_fields), (
             f"{schema.__name__} is missing registry fields: {expected - set(schema.model_fields)}"
         )
+
+
+def test_read_starlib_meta(handler: TrackHandler, mp3_file: Path) -> None:
+    handler.add_info(TrackInfo(title="X", starlib_meta=StarlibMeta(soundcloud_id=123)))
+    meta = read_starlib_meta(mp3_file)
+    assert meta is not None
+    assert meta.soundcloud_id == 123
+
+
+def test_read_starlib_meta_missing_file(tmp_path: Path) -> None:
+    assert read_starlib_meta(tmp_path / "missing.mp3") is None
+
+
+def test_read_starlib_meta_untagged_file(mp3_file: Path) -> None:
+    assert read_starlib_meta(mp3_file) is None

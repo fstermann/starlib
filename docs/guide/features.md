@@ -160,6 +160,8 @@ Tracks carry their Rekordbox analysis, which means:
 
 Filter by search, genre, key, and BPM range. With BPM pitching enabled, the key column shows the pitched key next to the original.
 
+The **SoundCloud** column shows the track's SoundCloud id. Starlib reads it from the Rekordbox comment (`sc:<id>`, `soundcloud:<id>`, or a bare number), else from the audio file's Starlib tag. Click **SoundCloud playlist** in the toolbar to create a SoundCloud playlist from the selected tracks, or from the whole filtered playlist when nothing is selected. Tracks without a SoundCloud id are skipped.
+
 ### Settings
 
 The Library is configured through **Settings** (gear icon in the sidebar). Relevant sections: **Folders**, **Rulesets**, and **Library**.
