@@ -65,9 +65,11 @@ Arrays are indexed by bar − 1. Bars after the music ends (reverb tail) are kep
 
 ## Sections (`backend/domain/arrangement.py`)
 
-16-bar phrases from bar 1 are compared on clipped kick, bass, mix and high-band levels plus width; a boundary goes where adjacent phrases differ by more than 6 (Euclidean, dB-scale). Runs are labelled by rule: `filtered` (kick and bass, highs 6 dB under the groove median), `groove` / `main` (kick and bass, before / after the first break), `intro` / `outro` (kick without bass before the first / after the last bass), `build` (no bass, kick or bright highs, right before a full section), `breakdown` (wide, no kick or bass), `break`, and a quiet final `tail`.
+The stems carry the arrangement. Each bar becomes a vector of kick (drums stem below 60 Hz), drums, bass and other levels, mix highs and width, with levels clipped at −40 dB. A 5-bar median filter removes one- and two-bar fills. Every bar is scored by the distance between the mean vectors of the four bars before and after it; peaks above 8 at least four bars apart become boundaries, moved onto the nearest 4-bar line when that line scores within 80% of the peak. A section inside the track shorter than 8 bars joins its more similar neighbour.
 
-Limits: boundaries only fall on 16-bar lines, and the thresholds were tuned on one reference track (Entasia – Bumper: 144 BPM, root B, 224 bars, nine sections). `tests/services/breakdown/test_track_reference.py` checks it when `STARLIB_BREAKDOWN_REFERENCE` points at the file.
+Labels come from which stems play in most of a section's bars: `filtered` (bass, highs 6 dB under the groove median), `groove` / `main` (kick and bass, before / after the first section without them), `intro` / `outro` (kick or drums before the first / after the last bass), `build` (kick or drums without bass, leading into a full section or another build), `break` (kick without bass, at most 8 bars between two full sections), `breakdown` (no kick and no bass) and a quiet final `tail`. Neighbours with the same label merge.
+
+Limits: the thresholds were tuned on three techno tracks, with Entasia – Bumper (144 BPM, root B, 224 bars, nine sections) as the checked reference. `tests/services/breakdown/test_track_reference.py` checks it when `STARLIB_BREAKDOWN_REFERENCE` points at the file.
 
 ## Playback
 

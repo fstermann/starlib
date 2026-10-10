@@ -64,8 +64,9 @@ def make_features(bars: list[dict[str, Any]], *, grid: tuple[float, float] | Non
         "bands_hz": [[20, 60], [60, 150], [150, 500], [500, 2000], [2000, 6000], [6000, 20000]],
         "sources": {
             "mix": source([b["mix"] for b in bars]),
-            "drums": source([-6.0] * n, kick=[b["kick"] for b in bars]),
+            "drums": source([-6.0 if b["kick"] > SILENT else SILENT for b in bars], kick=[b["kick"] for b in bars]),
             "bass": source([b["bass"] for b in bars]),
+            "other": source([-20.0] * n),
         },
         "groove": {},
         "tonal": {"root": "A", "bass_peaks": [], "chroma": [[0.0] * 12] * n},

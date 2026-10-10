@@ -215,17 +215,19 @@ def bar_levels(features: dict[str, Any]) -> list[BarLevels]:
     """Pick the per-bar levels sectioning needs out of a features document.
 
     Args:
-        features: The ``features.json`` document, with drums and bass stems.
+        features: The ``features.json`` document, with drums, bass and other stems.
 
     Returns:
         One entry per bar.
     """
     sources = features["sources"]
-    mix, drums, bass = sources["mix"], sources["drums"], sources["bass"]
+    mix, drums, bass, other = sources["mix"], sources["drums"], sources["bass"], sources["other"]
     return [
         BarLevels(
             kick_db=drums["bands_db"][i][0],
+            drums_db=drums["db"][i],
             bass_db=bass["db"][i],
+            other_db=other["db"][i],
             mix_db=mix["db"][i],
             high_db=mix["bands_db"][i][5],
             width=mix["width"][i],
