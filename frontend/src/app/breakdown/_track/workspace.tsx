@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Drum,
   Guitar,
-  Headphones,
   MicVocal,
   Pause,
   Piano,
@@ -331,7 +330,6 @@ export function TrackWorkspace({
             ? `Looping ${sections[loopIndex]?.label}`
             : "Loop section"}
         </Button>
-        <HeadphoneDelayToggle player={player} />
         {!player.ready && !player.error && (
           <span className="text-xs text-[var(--text-muted)]">
             Loading stems…
@@ -657,37 +655,6 @@ function ExpandToggle({
         )}
       />
     </button>
-  );
-}
-
-/** Holds the playhead and spectrum back by the output delay, for Bluetooth headphones. */
-function HeadphoneDelayToggle({ player }: { player: StemPlayerControls }) {
-  const delayMs = Math.round(player.displayDelay() * 1000);
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => player.setDelayed(!player.delayed)}
-          className={cn(
-            player.delayed && "bg-[var(--brand-soft)] text-[var(--brand)]",
-          )}
-          aria-pressed={player.delayed}
-          aria-label="Sync to headphone delay"
-          data-testid="track-headphone-delay"
-        >
-          <Headphones className="size-4" />
-          {player.delayed && delayMs > 0 && (
-            <span className="tabular-nums">{delayMs} ms</span>
-          )}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        Sync the playhead and spectrum to what you hear, for Bluetooth
-        headphones. Uses the delay your output device reports.
-      </TooltipContent>
-    </Tooltip>
   );
 }
 

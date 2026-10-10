@@ -15,6 +15,7 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 |----|-------|------|--------|
 | `settings:open` | Open Settings | always | `components/sidebar.tsx` |
 | `theme:toggle` | Switch to Light/Dark Theme | always | `components/sidebar.tsx` |
+| `headphone-sync:toggle` | Turn on/off headphone sync | always | `components/layout/headphone-sync-toggle.tsx` |
 | `auth:connect` | Connect SoundCloud | no SoundCloud user connected | `components/sidebar.tsx` |
 | `auth:disconnect` | Disconnect SoundCloud (`<username>`) | SoundCloud user connected | `components/sidebar.tsx` |
 | `sc:create-playlist-from-selection` | Create playlist from N selected tracks | on `/library?source=soundcloud`, 1 ≤ selection ≤ 500 | `app/library/soundcloud-view.tsx` |

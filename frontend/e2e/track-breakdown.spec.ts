@@ -504,7 +504,7 @@ test.describe("Track Breakdown", () => {
     await expect(position).not.toContainText("Bar 25.0");
   });
 
-  test("the headphone toggle holds the playhead back by the output delay", async ({
+  test("headphone sync in the top bar holds the playhead back by the output delay", async ({
     page,
   }) => {
     await page.addInitScript(() =>
@@ -522,12 +522,12 @@ test.describe("Track Breakdown", () => {
     const position = page.getByTestId("track-position");
     await expect(position).toContainText("Bar 25.0");
 
-    const toggle = page.getByTestId("track-headphone-delay");
+    const toggle = page.getByTestId("headphone-sync");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await toggle.blur();
 
     await page.keyboard.press("Space");
-    await expect(toggle).toContainText(/\d+ ms/);
     // Half a second of delay: the playhead waits at the cue for what you hear.
     await page.waitForTimeout(250);
     await expect(position).toContainText("Bar 25.0");
@@ -535,7 +535,7 @@ test.describe("Track Breakdown", () => {
     await page.keyboard.press("Space");
 
     await page.reload();
-    await expect(page.getByTestId("track-headphone-delay")).toHaveAttribute(
+    await expect(page.getByTestId("headphone-sync")).toHaveAttribute(
       "aria-pressed",
       "true",
     );

@@ -21,6 +21,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   // Actions
   "settings:open",
   "theme:toggle",
+  "headphone-sync:toggle",
   "auth:connect",
   "auth:disconnect",
   "sc:create-playlist-from-selection",

@@ -147,15 +147,9 @@ export class StemPlayer {
     return this.playing ? this.positionAt(this.ctx.currentTime) : this.pausedAt;
   }
 
-  /**
-   * Seconds between scheduling audio and hearing it: `deviceLatency` when
-   * known, else what the browser reports (0 while idle).
-   */
-  outputDelay(deviceLatency: number | null = null): number {
-    return (
-      (deviceLatency ?? this.ctx.outputLatency ?? 0) +
-      (this.ctx.baseLatency ?? 0)
-    );
+  /** The context whose clock drives playback. */
+  get context(): AudioContext {
+    return this.ctx;
   }
 
   /** The position heard now, `delay` seconds behind what is being scheduled. */

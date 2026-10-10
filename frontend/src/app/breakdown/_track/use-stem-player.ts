@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { claimPlayback, releasePlayback } from "@/lib/exclusive-audio";
-import { getRaw, setRaw } from "@/lib/settings";
+import { headphoneDelay } from "@/lib/headphone-sync";
 import { StemPlayer, type LoopRegion } from "@/lib/stem-player";
-import { isTauri, outputLatency } from "@/lib/tauri";
 import {
   DRUM_PART_NAMES,
   STEM_NAMES,
@@ -80,8 +79,6 @@ export function laneGains(
   return gains;
 }
 
-const HEADPHONE_DELAY_KEY = "breakdown.headphoneDelay";
-
 /** Synced stem + original playback for one analysed track. */
 export function useStemPlayer(digest: string, originalUrl: string) {
   const [ready, setReady] = useState(false);
@@ -93,50 +90,11 @@ export function useStemPlayer(digest: string, originalUrl: string) {
   const [loaded, setLoaded] = useState<ReadonlySet<string>>(new Set());
   const playerRef = useRef<StemPlayer | null>(null);
   const frame = useRef<number | null>(null);
-  const [delayed, setDelayedState] = useState(false);
-  const delayedRef = useRef(delayed);
-
-  useEffect(() => {
-    void getRaw(HEADPHONE_DELAY_KEY, false).then((on) => {
-      delayedRef.current = on;
-      setDelayedState(on);
-    });
-  }, []);
-
-  const deviceLatency = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!delayed || !isTauri()) return;
-    let cancelled = false;
-    const read = () =>
-      outputLatency()
-        .catch(() => null)
-        .then((seconds) => {
-          if (!cancelled) deviceLatency.current = seconds;
-        });
-    void read();
-    // Polled so switching output devices is picked up within a second.
-    const timer = window.setInterval(read, 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [delayed]);
-
   /** Seconds the playhead and spectrum wait so they match what you hear. */
   const displayDelay = useCallback(
-    () =>
-      delayedRef.current
-        ? (playerRef.current?.outputDelay(deviceLatency.current) ?? 0)
-        : 0,
+    () => headphoneDelay(playerRef.current?.context),
     [],
   );
-
-  const setDelayed = useCallback((on: boolean) => {
-    delayedRef.current = on;
-    setDelayedState(on);
-    void setRaw(HEADPHONE_DELAY_KEY, on);
-  }, []);
 
   useEffect(() => {
     const player = new StemPlayer(
@@ -263,8 +221,6 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     updateLane,
     waveform,
     analyser,
-    delayed,
-    setDelayed,
     displayDelay,
     clock,
   };
