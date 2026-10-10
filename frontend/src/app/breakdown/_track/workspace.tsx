@@ -130,18 +130,39 @@ export function TrackWorkspace({
   const playheadBar = barAt(grid, player.position);
   const view = player.playing ? pageTo(baseView, playheadBar, nBars) : baseView;
 
+  // Like Ableton's start marker: play starts at the cue and stop returns to it.
+  const [cue, setCue] = useState(0);
+  const cueBar = barAt(grid, cue);
+
   const togglePlayback = useCallback(() => {
+    if (player.playing) {
+      player.pause();
+      player.seek(cue);
+      setBaseView(pageTo(view, cueBar, nBars));
+    } else {
+      player.seek(cue);
+      void player.play();
+    }
+  }, [cue, cueBar, nBars, player, view]);
+
+  /** Pause and resume where playback is, leaving the cue alone. */
+  const continuePlayback = useCallback(() => {
     // Keep the page playback had reached instead of jumping back on pause.
     if (player.playing) setBaseView(view);
     player.toggle();
   }, [player, view]);
-  const toggleRef = useRef(togglePlayback);
+
+  const keyActions = useRef({ togglePlayback, continuePlayback });
   useEffect(() => {
-    toggleRef.current = togglePlayback;
+    keyActions.current = { togglePlayback, continuePlayback };
   });
 
   const seekBar = useCallback(
-    (bar: number) => player.seek(Math.max(0, barStartS(grid, bar))),
+    (bar: number) => {
+      const seconds = Math.max(0, barStartS(grid, bar));
+      setCue(seconds);
+      player.seek(seconds);
+    },
     [grid, player],
   );
 
@@ -224,7 +245,7 @@ export function TrackWorkspace({
     return () => el.removeEventListener("wheel", onWheel);
   }, [nBars]);
 
-  // Space toggles playback unless typing.
+  // Space plays from the cue and stops back to it; Shift+Space continues in place.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -234,7 +255,8 @@ export function TrackWorkspace({
       )
         return;
       e.preventDefault();
-      toggleRef.current();
+      if (e.shiftKey) keyActions.current.continuePlayback();
+      else keyActions.current.togglePlayback();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -256,6 +278,7 @@ export function TrackWorkspace({
     );
 
   const playheadFrac = (playheadBar - view.start) / view.span;
+  const cueFrac = (cueBar - view.start) / view.span;
   const showGrid = view.span <= GRID_MAX_SPAN;
   const [drumPartsOpen, setDrumPartsOpen] = useState(false);
   const [curvesOpen, setCurvesOpen] = useState(false);
@@ -360,6 +383,21 @@ export function TrackWorkspace({
             className="sticky top-0 z-10 bg-[var(--surface-2)]"
             data-testid="track-pinned-lanes"
           >
+            {cueFrac >= 0 && cueFrac <= 1 && (
+              <svg
+                className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 text-[var(--brand)]"
+                style={{
+                  left: `calc(${GUTTER_PX}px + (100% - ${GUTTER_PX}px) * ${cueFrac})`,
+                }}
+                width={10}
+                height={7}
+                aria-hidden
+                data-testid="track-cue"
+                data-cue-bar={cueBar}
+              >
+                <path d="M0 0H10L5 7Z" fill="currentColor" />
+              </svg>
+            )}
             <LaneRow
               label={<LaneLabel icon={RulerIcon}>Bar</LaneLabel>}
               height={36}

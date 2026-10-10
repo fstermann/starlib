@@ -94,7 +94,7 @@ function breakdown(sections = SECTIONS, edited = false) {
 /** One second of 16-bit mono silence as a WAV file. */
 function silentWav(): Buffer {
   const rate = 8000;
-  const samples = rate;
+  const samples = Math.ceil((rate * N_BARS * 240) / BPM);
   const buf = Buffer.alloc(44 + samples * 2);
   buf.write("RIFF", 0);
   buf.writeUInt32LE(36 + samples * 2, 4);
@@ -468,6 +468,40 @@ test.describe("Track Breakdown", () => {
 
     await page.mouse.move(box.x + box.width / 2, box.y - 40);
     await expect(readout).toBeHidden();
+  });
+
+  test("stop returns to the cue set by clicking, like Ableton", async ({
+    page,
+  }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+
+    // 48 bars across the plot, so its middle is bar 25.
+    const plot = page.getByTestId("track-waveform-bass");
+    const box = (await plot.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    const position = page.getByTestId("track-position");
+    await expect(position).toContainText("Bar 25.0");
+    await expect(page.getByTestId("track-cue")).toHaveAttribute(
+      "data-cue-bar",
+      "25",
+    );
+
+    await page.keyboard.press("Space");
+    await expect(position).not.toContainText("Bar 25.0");
+    await page.keyboard.press("Space");
+    await expect(position).toContainText("Bar 25.0");
+
+    // Shift+Space pauses in place instead.
+    await page.keyboard.press("Space");
+    await expect(position).not.toContainText("Bar 25.0");
+    await page.keyboard.press("Shift+Space");
+    await expect(page.getByTestId("track-play")).toHaveAttribute(
+      "aria-label",
+      "Play",
+    );
+    await expect(position).not.toContainText("Bar 25.0");
   });
 
   test("looping the section at the playhead", async ({ page }) => {

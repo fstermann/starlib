@@ -34,7 +34,8 @@ Below the lanes, **Spectrum** shows a live frequency analysis of what you hear, 
 
 All lanes play sample-locked to each other. Each lane has **M** (mute), **S** (solo) and a volume slider. The original starts muted; solo it to compare against the stems.
 
-- ++space++ plays and pauses.
+- Click a lane to set the cue (the marker in the bar ruler), as in Ableton. ++space++ plays from the cue and, pressed again, stops and returns to it. Clicking while playing jumps there.
+- ++shift+space++ pauses and resumes where playback is, without returning to the cue.
 - **Loop section** loops the section under the playhead.
 - **Track / 32 bars / 8 bars / 1 bar** set the zoom. ++cmd++ + scroll zooms around the pointer; a horizontal scroll pans.
 - Click the strip above the lanes to move the visible window.
