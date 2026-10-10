@@ -12,8 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from backend.domain.tags import StarlibMeta, TrackInfo
+from backend.infra.audio.track_handler import TrackHandler
 from backend.services.rekordbox import RekordboxUnavailable, UsbExportSource
 from backend.services.rekordbox.usb import _DEVICE_LIBRARY_KEY
+from tests.infra.test_track_handler import _make_silent_mp3
 
 sqlite = pytest.importorskip("sqlcipher3").dbapi2
 
@@ -306,3 +309,15 @@ def test_eject_device_raises_on_nonzero_exit(monkeypatch) -> None:
     monkeypatch.setattr(dev_mod.subprocess, "run", lambda *a, **k: _Result())
     with pytest.raises(EjectError, match="busy"):
         dev_mod.eject_device("/Volumes/X")
+
+
+def test_soundcloud_id_falls_back_to_file_tag(device: Path) -> None:
+    """Rekordbox never imports TXXX:starlib, so the id is read off the audio file."""
+    audio = device / "Contents" / "BoC" / "Music" / "olson.mp3"
+    _make_silent_mp3(audio)
+    TrackHandler(root_folder=audio.parent, file=audio).add_info(
+        TrackInfo(title="Olson", starlib_meta=StarlibMeta(soundcloud_id=99))
+    )
+    tracks = {t.id: t for t in UsbExportSource(device).list_all_tracks()}
+    assert tracks["11"].soundcloud_id == 99
+    assert tracks["10"].soundcloud_id == 42  # the comment still wins

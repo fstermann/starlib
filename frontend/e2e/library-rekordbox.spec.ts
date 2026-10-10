@@ -217,4 +217,45 @@ test.describe("Library: Rekordbox source", () => {
     await expect(page.getByText("Rekordbox isn't available")).toBeVisible();
     await expect(page.getByText("Rekordbox not installed")).toBeVisible();
   });
+
+  test("exports tracks with a SoundCloud id to a SoundCloud playlist", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("access_token", "fake-token");
+      window.localStorage.setItem(
+        "token_expires_at",
+        String(Date.now() + 60 * 60 * 1000),
+      );
+    });
+    await page.route("https://api.soundcloud.com/playlists*", (route) =>
+      route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          urn: "soundcloud:playlists:777",
+          title: "Sunday Mix",
+          permalink_url: "https://soundcloud.com/me/sets/sunday-mix",
+        }),
+      }),
+    );
+
+    await page.goto("/library?source=rekordbox&playlist=pl-1");
+    // Only Foo carries a SoundCloud id; Baz is skipped.
+    await page.getByRole("button", { name: "SoundCloud playlist (1)" }).click();
+    await expect(page.getByLabel("Title")).toHaveValue("Sunday Mix");
+
+    const postPromise = page.waitForRequest(
+      (req) =>
+        req.method() === "POST" &&
+        req.url() === "https://api.soundcloud.com/playlists",
+    );
+    await page.getByRole("button", { name: "Create", exact: true }).click();
+    const post = await postPromise;
+    const urns = (
+      post.postDataJSON() as { playlist: { tracks: { urn: string }[] } }
+    ).playlist.tracks.map((t) => t.urn);
+    expect(urns).toEqual(["soundcloud:tracks:12345"]);
+    await expect(page.getByText('Playlist "Sunday Mix" created')).toBeVisible();
+  });
 });

@@ -27,9 +27,9 @@ from .base import (
     RekordboxSource,
     RekordboxTrack,
     RekordboxUnavailable,
-    extract_soundcloud_id,
     read_pwav,
     read_pwv4,
+    resolve_soundcloud_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,6 +117,7 @@ class UsbExportSource(RekordboxSource):
 
     def _row_to_track(self, row: Any) -> RekordboxTrack:
         comment = _clean(row["djComment"])
+        rel_path = _clean(row["path"])
         bpm_raw = row["bpmx100"]
         return RekordboxTrack(
             id=str(row["content_id"]),
@@ -127,9 +128,9 @@ class UsbExportSource(RekordboxSource):
             bpm=float(bpm_raw) / 100.0 if bpm_raw else None,
             key=_clean(row["key_name"]),
             duration_seconds=row["length"] or None,
-            file_path=_clean(row["path"]),
+            file_path=rel_path,
             comment=comment,
-            soundcloud_id=extract_soundcloud_id(comment),
+            soundcloud_id=resolve_soundcloud_id(comment, self._resolve(rel_path) if rel_path else None),
             date_added=_clean(row["dateAdded"]),
             release_date=_clean(row["releaseDate"]),
             has_artwork=bool(row["image_id"]),

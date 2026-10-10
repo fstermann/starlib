@@ -1,12 +1,20 @@
 "use client";
 
-import { Folder, HardDrive, Sparkles, Unplug, Usb } from "lucide-react";
+import {
+  Folder,
+  HardDrive,
+  ListPlus,
+  Sparkles,
+  Unplug,
+  Usb,
+} from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
 import { CoverPlayButton } from "@/components/cover-play-button";
+import { CreatePlaylistDialog } from "@/components/create-playlist-dialog";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
 import { RekordboxLogo } from "@/components/icons/rekordbox-logo";
 import {
@@ -42,6 +50,7 @@ import {
 } from "@/lib/filters/rekordbox-adapter";
 import { useFilterState } from "@/lib/filters/use-filter-state";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
+import type { SCTrack } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
 import { LibraryTitle } from "./library-title";
@@ -360,9 +369,8 @@ export function RekordboxView() {
     REKORDBOX_COLUMN_DEFS,
   );
 
-  // Row selection (no batch actions yet — kept for parity with the other
-  // library views). Keyed by track id; duplicate playlist entries of the
-  // same track select together.
+  // Row selection, scoping the SoundCloud playlist export. Keyed by track id;
+  // duplicate playlist entries of the same track select together.
   const [selection, setSelection] = useState<{
     ids: Set<string>;
     /** Last-clicked row index — the shift-select range anchor. */
@@ -376,6 +384,26 @@ export function RekordboxView() {
     setPrevPlaylistId(selectedId);
     setSelection({ ids: new Set(), anchor: null });
   }
+
+  // Export the selection, or the whole filtered playlist when nothing is
+  // selected. Tracks without a SoundCloud id can't be added and are skipped.
+  const soundcloudTracks = useMemo(() => {
+    const source =
+      selectedIds.size > 0
+        ? filteredTracks.filter((t) => selectedIds.has(t.id))
+        : filteredTracks;
+    const seen = new Set<number>();
+    const out: SCTrack[] = [];
+    for (const t of source) {
+      if (t.soundcloud_id == null || seen.has(t.soundcloud_id)) continue;
+      seen.add(t.soundcloud_id);
+      out.push({
+        urn: `soundcloud:tracks:${t.soundcloud_id}`,
+        duration: (t.duration_seconds ?? 0) * 1000,
+      } as SCTrack);
+    }
+    return out;
+  }, [filteredTracks, selectedIds]);
 
   const toggleSelect = useCallback(
     (index: number, shiftKey: boolean) => {
@@ -585,15 +613,37 @@ export function RekordboxView() {
               filtered={filteredTracks.length}
               total={tracksResp.data.tracks.length}
               actions={
-                <ColumnVisibilityMenu
-                  columns={REKORDBOX_COLUMN_DEFS}
-                  isVisible={columnPrefs.isVisible}
-                  setHidden={columnPrefs.setHidden}
-                  onResetVisibility={columnPrefs.resetVisibility}
-                  onResetOrder={columnPrefs.resetOrder}
-                  onResetWidths={columnPrefs.resetWidths}
-                  className="text-muted-foreground h-7 gap-1.5 text-xs"
-                />
+                <>
+                  <CreatePlaylistDialog
+                    tracks={soundcloudTracks}
+                    defaultTitle={selectedPl.name}
+                    trigger={
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground h-7 gap-1.5 text-xs"
+                        disabled={soundcloudTracks.length === 0}
+                        title={
+                          soundcloudTracks.length === 0
+                            ? "No tracks with a SoundCloud id"
+                            : undefined
+                        }
+                      >
+                        <ListPlus className="size-3.5" />
+                        SoundCloud playlist ({soundcloudTracks.length})
+                      </Button>
+                    }
+                  />
+                  <ColumnVisibilityMenu
+                    columns={REKORDBOX_COLUMN_DEFS}
+                    isVisible={columnPrefs.isVisible}
+                    setHidden={columnPrefs.setHidden}
+                    onResetVisibility={columnPrefs.resetVisibility}
+                    onResetOrder={columnPrefs.resetOrder}
+                    onResetWidths={columnPrefs.resetWidths}
+                    className="text-muted-foreground h-7 gap-1.5 text-xs"
+                  />
+                </>
               }
             />
 

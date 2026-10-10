@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from backend.infra.audio.track_handler import read_starlib_meta
+
 from .analysis import TrackAnalysis, read_analysis
 
 logger = logging.getLogger(__name__)
@@ -155,9 +157,7 @@ def extract_soundcloud_id(comment: str | None) -> int | None:
     """Extract a SoundCloud track id stored in the track comment.
 
     Accepts a plain numeric comment or an ``sc:<id>`` / ``soundcloud:<id>``
-    prefix. Note: app-managed SoundCloud metadata now lives in the file's
-    ``TXXX:starlib`` tag, which Rekordbox does not import into its database, so
-    it is not available from the comment field read here.
+    prefix.
 
     Args:
         comment: The track comment, or ``None``.
@@ -175,6 +175,26 @@ def extract_soundcloud_id(comment: str | None) -> int | None:
     if text.isdigit():
         return int(text)
     return None
+
+
+def resolve_soundcloud_id(comment: str | None, file: Path | None) -> int | None:
+    """Resolve a track's SoundCloud id from its comment, else its audio file.
+
+    Starlib stores the id in the file's ``TXXX:starlib`` tag, which Rekordbox
+    does not import into its database, so the file itself is the fallback.
+
+    Args:
+        comment: The track comment, or ``None``.
+        file: The resolved audio file path, or ``None`` if unknown.
+
+    Returns:
+        The SoundCloud track id, or ``None`` if neither source holds one.
+    """
+    sc_id = extract_soundcloud_id(comment)
+    if sc_id is None and file is not None:
+        meta = read_starlib_meta(file)
+        sc_id = meta.soundcloud_id if meta else None
+    return sc_id
 
 
 def extract_pwv4(data: bytes) -> bytes | None:
