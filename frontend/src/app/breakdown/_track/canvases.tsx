@@ -173,13 +173,20 @@ function formatHz(hz: number): string {
 export function SpectrumPanel({
   analyser,
   playing,
+  clock,
+  delay,
 }: {
   analyser: () => AnalyserNode | null;
   playing: boolean;
+  /** The audio clock, in seconds. */
+  clock: () => number;
+  /** Seconds to hold frames back so the display matches what you hear. */
+  delay: () => number;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const readoutRef = useRef<HTMLDivElement>(null);
   const bins = useRef<Float32Array<ArrayBuffer> | null>(null);
+  const frames = useRef<SpectrumFrame[]>([]);
   const hoverX = useRef<number | null>(null);
 
   const draw = useCallback(() => {
@@ -252,16 +259,18 @@ export function SpectrumPanel({
     const tick = () => {
       const node = analyser();
       if (node) {
-        if (bins.current?.length !== node.frequencyBinCount)
-          bins.current = new Float32Array(node.frequencyBinCount);
-        node.getFloatFrequencyData(bins.current);
+        const now = clock();
+        const frame = new Float32Array(node.frequencyBinCount);
+        node.getFloatFrequencyData(frame);
+        frames.current.push({ time: now, bins: frame });
+        bins.current = heardFrame(frames.current, now - delay());
       }
       draw();
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [analyser, draw, playing]);
+  }, [analyser, clock, delay, draw, playing]);
 
   return (
     <div className="relative h-full w-full">
@@ -286,6 +295,20 @@ export function SpectrumPanel({
       />
     </div>
   );
+}
+
+type SpectrumFrame = { time: number; bins: Float32Array<ArrayBuffer> };
+
+/**
+ * The newest frame captured by `heardAt`, dropping older ones; frames stay
+ * queued while they're still ahead of what you hear.
+ */
+function heardFrame(
+  frames: SpectrumFrame[],
+  heardAt: number,
+): Float32Array<ArrayBuffer> {
+  while (frames.length > 1 && frames[1].time <= heardAt) frames.shift();
+  return frames[0].bins;
 }
 
 /** Spectrum level in dB at `hz`, from the nearest FFT bin. */

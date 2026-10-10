@@ -504,6 +504,43 @@ test.describe("Track Breakdown", () => {
     await expect(position).not.toContainText("Bar 25.0");
   });
 
+  test("the headphone toggle holds the playhead back by the output delay", async ({
+    page,
+  }) => {
+    await page.addInitScript(() =>
+      Object.defineProperty(AudioContext.prototype, "outputLatency", {
+        get: () => 0.5,
+      }),
+    );
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+
+    const plot = page.getByTestId("track-waveform-bass");
+    const box = (await plot.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    const position = page.getByTestId("track-position");
+    await expect(position).toContainText("Bar 25.0");
+
+    const toggle = page.getByTestId("track-headphone-delay");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await page.keyboard.press("Space");
+    await expect(toggle).toContainText(/\d+ ms/);
+    // Half a second of delay: the playhead waits at the cue for what you hear.
+    await page.waitForTimeout(250);
+    await expect(position).toContainText("Bar 25.0");
+    await expect(position).not.toContainText("Bar 25.0");
+    await page.keyboard.press("Space");
+
+    await page.reload();
+    await expect(page.getByTestId("track-headphone-delay")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
   test("looping the section at the playhead", async ({ page }) => {
     await mockTrackApi(page);
     await page.goto(trackUrl);

@@ -147,6 +147,23 @@ export class StemPlayer {
     return this.playing ? this.positionAt(this.ctx.currentTime) : this.pausedAt;
   }
 
+  /** Seconds between scheduling audio and hearing it, as the output device reports; 0 while idle. */
+  outputDelay(): number {
+    return (this.ctx.outputLatency ?? 0) + (this.ctx.baseLatency ?? 0);
+  }
+
+  /** The position heard now, `delay` seconds behind what is being scheduled. */
+  heardTime(delay: number): number {
+    return this.playing
+      ? this.positionAt(this.ctx.currentTime - delay)
+      : this.pausedAt;
+  }
+
+  /** The audio clock, in seconds. */
+  clock(): number {
+    return this.ctx.currentTime;
+  }
+
   private positionAt(ctxTime: number): number {
     const raw = this.startOffset + Math.max(0, ctxTime - this.startCtxTime);
     const loop = this.loop;

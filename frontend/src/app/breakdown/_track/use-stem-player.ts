@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { claimPlayback, releasePlayback } from "@/lib/exclusive-audio";
+import { getRaw, setRaw } from "@/lib/settings";
 import { StemPlayer, type LoopRegion } from "@/lib/stem-player";
 import {
   DRUM_PART_NAMES,
@@ -78,6 +79,8 @@ export function laneGains(
   return gains;
 }
 
+const HEADPHONE_DELAY_KEY = "breakdown.headphoneDelay";
+
 /** Synced stem + original playback for one analysed track. */
 export function useStemPlayer(digest: string, originalUrl: string) {
   const [ready, setReady] = useState(false);
@@ -89,6 +92,27 @@ export function useStemPlayer(digest: string, originalUrl: string) {
   const [loaded, setLoaded] = useState<ReadonlySet<string>>(new Set());
   const playerRef = useRef<StemPlayer | null>(null);
   const frame = useRef<number | null>(null);
+  const [delayed, setDelayedState] = useState(false);
+  const delayedRef = useRef(delayed);
+
+  useEffect(() => {
+    void getRaw(HEADPHONE_DELAY_KEY, false).then((on) => {
+      delayedRef.current = on;
+      setDelayedState(on);
+    });
+  }, []);
+
+  /** Seconds the playhead and spectrum wait so they match what you hear. */
+  const displayDelay = useCallback(
+    () => (delayedRef.current ? (playerRef.current?.outputDelay() ?? 0) : 0),
+    [],
+  );
+
+  const setDelayed = useCallback((on: boolean) => {
+    delayedRef.current = on;
+    setDelayedState(on);
+    void setRaw(HEADPHONE_DELAY_KEY, on);
+  }, []);
 
   useEffect(() => {
     const player = new StemPlayer(
@@ -132,14 +156,15 @@ export function useStemPlayer(digest: string, originalUrl: string) {
   useEffect(() => {
     if (!playing) return;
     const tick = () => {
-      if (playerRef.current) setPosition(playerRef.current.currentTime());
+      const player = playerRef.current;
+      if (player) setPosition(player.heardTime(displayDelay()));
       frame.current = requestAnimationFrame(tick);
     };
     frame.current = requestAnimationFrame(tick);
     return () => {
       if (frame.current != null) cancelAnimationFrame(frame.current);
     };
-  }, [playing]);
+  }, [displayDelay, playing]);
 
   const pause = useCallback(() => {
     const player = playerRef.current;
@@ -191,6 +216,7 @@ export function useStemPlayer(digest: string, originalUrl: string) {
   );
 
   const analyser = useCallback(() => playerRef.current?.analyser ?? null, []);
+  const clock = useCallback(() => playerRef.current?.clock() ?? 0, []);
 
   const updateLane = useCallback(
     (lane: LaneName, change: Partial<LaneMix>) =>
@@ -213,6 +239,10 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     updateLane,
     waveform,
     analyser,
+    delayed,
+    setDelayed,
+    displayDelay,
+    clock,
   };
 }
 
