@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { claimPlayback, releasePlayback } from "@/lib/exclusive-audio";
-import { StemPlayer, type LoopRegion } from "@/lib/stem-player";
+import { StemPlayer, type Band, type LoopRegion } from "@/lib/stem-player";
 import { STEM_NAMES, stemUrl } from "@/lib/track-breakdown";
 
 export const ORIGINAL = "original";
@@ -152,6 +152,14 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     [loaded],
   );
 
+  const bandWaveform = useCallback(
+    (lane: LaneName, band: Band) =>
+      loaded.has(lane)
+        ? (playerRef.current?.bandWaveform(lane, band) ?? Promise.resolve(null))
+        : Promise.resolve(null),
+    [loaded],
+  );
+
   const analyser = useCallback(() => playerRef.current?.analyser ?? null, []);
 
   const updateLane = useCallback(
@@ -174,6 +182,7 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     setLoop,
     updateLane,
     waveform,
+    bandWaveform,
     analyser,
   };
 }

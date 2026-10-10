@@ -34,10 +34,9 @@ export interface View {
 
 /** Width of the lane name and controls column. */
 export const GUTTER_PX = 176;
-/** Bars visible at or below which the 16th-note groove grid is drawn. */
-export const GROOVE_MAX_SPAN = 16;
+/** Bars visible at or below which waveforms get a 16th-note grid. */
+export const GRID_MAX_SPAN = 16;
 const LEVEL_FLOOR_DB = -50;
-const GROOVE_FLOOR_DB = -40;
 const BRIGHTNESS_MAX_HZ = 8000;
 
 function percent(view: View, bar: number): number {
@@ -410,57 +409,6 @@ export function CurveLane({
           points={curveValues(features, c.id)
             .map((v, i) => `${i + 0.5},${height - v * (height - 4) - 2}`)
             .join(" ")}
-        />
-      ))}
-    </BarSvg>
-  );
-}
-
-/** Coloured like the stem each lane is measured from. */
-export const GROOVE_LANES = [
-  { id: "kick", label: "Kick", color: "var(--chart-1)" },
-  { id: "bass", label: "Bass", color: "var(--chart-2)" },
-  { id: "drum_mids", label: "Drum mids", color: "var(--chart-1)" },
-  { id: "drum_tops", label: "Tops", color: "var(--chart-1)" },
-] as const;
-
-/** Band energy per 16th note: shows where the kick sits and what the bass leaves free. */
-export function GrooveLane({
-  view,
-  slots,
-  color,
-  testId,
-}: {
-  view: View;
-  slots: number[][];
-  color: string;
-  testId?: string;
-}) {
-  const perBar = 16;
-  return (
-    <BarSvg view={view} height={1} testId={testId}>
-      {slots.map((bar, i) =>
-        bar.map((db, slot) => (
-          <rect
-            key={`${i}-${slot}`}
-            x={i + slot / perBar + 0.004}
-            y={0.12}
-            width={1 / perBar - 0.008}
-            height={0.76}
-            fill={color}
-            fillOpacity={0.08 + 0.92 * level(db, GROOVE_FLOOR_DB)}
-          />
-        )),
-      )}
-      {slots.map((_, i) => (
-        <line
-          key={`bar-${i}`}
-          x1={i}
-          x2={i}
-          y1={0}
-          y2={1}
-          stroke="var(--border-strong)"
-          vectorEffect="non-scaling-stroke"
         />
       ))}
     </BarSvg>

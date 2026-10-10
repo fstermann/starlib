@@ -362,14 +362,25 @@ test.describe("Track Breakdown", () => {
     await expect(audible("bass")).toHaveAttribute("data-audible", "true");
   });
 
-  test("zooming in reveals the 16th-note groove grid", async ({ page }) => {
+  test("drum parts expand under the drums lane", async ({ page }) => {
     await mockTrackApi(page);
     await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
 
-    await expect(page.getByTestId("track-groove-hint")).toBeVisible();
-    await page.getByRole("button", { name: "8 bars" }).click();
-    await expect(page.getByTestId("track-groove-kick")).toBeVisible();
-    await expect(page.getByTestId("track-groove-hint")).toHaveCount(0);
+    const toggle = page.getByTestId("track-drum-parts-toggle");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("track-drum-part-kick")).toHaveCount(0);
+
+    await toggle.click();
+    for (const part of ["kick", "mids", "tops"]) {
+      await expect(page.getByTestId(`track-waveform-${part}`)).toBeVisible();
+    }
+    await expect(page.getByTestId("track-drum-part-mids")).toContainText(
+      "Snare, clap, toms",
+    );
+
+    await toggle.click();
+    await expect(page.getByTestId("track-drum-part-kick")).toHaveCount(0);
   });
 
   test("looping the section at the playhead", async ({ page }) => {

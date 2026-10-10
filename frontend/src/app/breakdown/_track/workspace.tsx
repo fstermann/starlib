@@ -1,8 +1,8 @@
 "use client";
 
-import { Pause, Play, Repeat, RotateCcw } from "lucide-react";
+import { ChevronRight, Pause, Play, Repeat, RotateCcw } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
+import type { Band, Waveform } from "@/lib/stem-player";
 import {
   barAt,
   barStartS,
@@ -22,6 +23,7 @@ import {
   STEM_COLORS,
   STEM_NAMES,
   stemLabel,
+  type Grid,
   type Section,
   type TrackBreakdown,
 } from "@/lib/track-breakdown";
@@ -34,9 +36,7 @@ import { GridEditor } from "./grid-editor";
 import {
   CurveLane,
   CURVES,
-  GROOVE_LANES,
-  GROOVE_MAX_SPAN,
-  GrooveLane,
+  GRID_MAX_SPAN,
   GUTTER_PX,
   LaneRow,
   Overview,
@@ -229,7 +229,8 @@ export function TrackWorkspace({
     );
 
   const playheadFrac = (playheadBar - view.start) / view.span;
-  const showGroove = view.span <= GROOVE_MAX_SPAN;
+  const showGrid = view.span <= GRID_MAX_SPAN;
+  const [drumPartsOpen, setDrumPartsOpen] = useState(false);
 
   return (
     <main className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-4">
@@ -393,52 +394,71 @@ export function TrackWorkspace({
           <CurveLane view={view} features={features} visible={curves} />
         </LaneRow>
         {STEM_NAMES.map((lane) => (
-          <LaneRow
-            key={lane}
-            label={stemLabel(lane, features)}
-            controls={<LaneControls lane={lane} player={player} />}
-            height={48}
-            view={view}
-            onSeekBar={seekBar}
-            testId={`track-lane-${lane}`}
-          >
-            <AudibleLane audible={gains[lane] > 0}>
-              <WaveformLane
-                view={view}
-                grid={grid}
-                waveform={player.waveform([lane])}
-                color={STEM_COLORS[lane]}
-                testId={`track-waveform-${lane}`}
-              />
-            </AudibleLane>
-          </LaneRow>
-        ))}
-        {showGroove ? (
-          GROOVE_LANES.filter((g) => features.groove[g.id]).map((g) => (
+          <Fragment key={lane}>
             <LaneRow
-              key={g.id}
-              label={`${g.label} 16ths`}
-              height={28}
+              label={
+                lane === "drums" ? (
+                  <button
+                    type="button"
+                    className="-ml-1 flex items-center gap-0.5 hover:text-[var(--text)]"
+                    onClick={() => setDrumPartsOpen((open) => !open)}
+                    aria-expanded={drumPartsOpen}
+                    data-testid="track-drum-parts-toggle"
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "size-3 shrink-0 transition-transform duration-[var(--dur-2)]",
+                        drumPartsOpen && "rotate-90",
+                      )}
+                    />
+                    {stemLabel(lane, features)}
+                  </button>
+                ) : (
+                  stemLabel(lane, features)
+                )
+              }
+              controls={<LaneControls lane={lane} player={player} />}
+              height={48}
               view={view}
               onSeekBar={seekBar}
+              testId={`track-lane-${lane}`}
             >
-              <GrooveLane
-                view={view}
-                slots={features.groove[g.id]}
-                color={g.color}
-                testId={`track-groove-${g.id}`}
-              />
+              <AudibleLane audible={gains[lane] > 0}>
+                <WaveformLane
+                  view={view}
+                  grid={grid}
+                  waveform={player.waveform([lane])}
+                  color={STEM_COLORS[lane]}
+                  showGrid={showGrid}
+                  testId={`track-waveform-${lane}`}
+                />
+              </AudibleLane>
             </LaneRow>
-          ))
-        ) : (
-          <p
-            className="px-3 py-2 text-xs text-[var(--text-muted)]"
-            data-testid="track-groove-hint"
-          >
-            Zoom to {GROOVE_MAX_SPAN} bars or fewer to see the 16th-note grid
-            for kick, bass and tops.
-          </p>
-        )}
+            {lane === "drums" &&
+              drumPartsOpen &&
+              DRUM_PARTS.map((part) => (
+                <LaneRow
+                  key={part.id}
+                  label={<span className="pl-5 text-xs">{part.label}</span>}
+                  height={36}
+                  view={view}
+                  onSeekBar={seekBar}
+                  testId={`track-drum-part-${part.id}`}
+                >
+                  <AudibleLane audible={gains.drums > 0}>
+                    <DrumPartLane
+                      view={view}
+                      grid={grid}
+                      player={player}
+                      band={part.band}
+                      showGrid={showGrid}
+                      testId={`track-waveform-${part.id}`}
+                    />
+                  </AudibleLane>
+                </LaneRow>
+              ))}
+          </Fragment>
+        ))}
         {playheadFrac >= 0 && playheadFrac <= 1 && (
           <div
             className="pointer-events-none absolute inset-y-0 w-px bg-[var(--text)]"
@@ -465,6 +485,46 @@ export function TrackWorkspace({
         </div>
       </section>
     </main>
+  );
+}
+
+/** Bands of the drums stem, matching the measured kick / mids / tops ranges. */
+const DRUM_PARTS: { id: string; label: string; band: Band }[] = [
+  { id: "kick", label: "Kick", band: { lowpassHz: 120 } },
+  {
+    id: "mids",
+    label: "Snare, clap, toms",
+    band: { highpassHz: 300, lowpassHz: 3000 },
+  },
+  { id: "tops", label: "Hats, cymbals", band: { highpassHz: 3000 } },
+];
+
+/** One band of the drums stem, filtered once when first shown. */
+function DrumPartLane({
+  player,
+  band,
+  ...rest
+}: {
+  player: StemPlayerControls;
+  band: Band;
+  view: View;
+  grid: Grid;
+  showGrid: boolean;
+  testId: string;
+}) {
+  const [waveform, setWaveform] = useState<Waveform | null>(null);
+  const { bandWaveform } = player;
+  useEffect(() => {
+    let live = true;
+    void bandWaveform("drums", band).then((w) => {
+      if (live) setWaveform(w);
+    });
+    return () => {
+      live = false;
+    };
+  }, [bandWaveform, band]);
+  return (
+    <WaveformLane {...rest} waveform={waveform} color={STEM_COLORS.drums} />
   );
 }
 

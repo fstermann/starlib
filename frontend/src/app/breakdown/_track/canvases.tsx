@@ -14,6 +14,8 @@ const MIN_DB = -96;
 const MAX_DB = -6;
 const FREQ_LINES = [50, 100, 200, 500, 1000, 2000, 5000, 10_000];
 const DB_LINES = [-24, -48, -72];
+/** Narrowest spacing at which grid lines are drawn. */
+const MIN_GRID_PX = 6;
 
 /** Resolve a CSS custom property to a colour the canvas understands. */
 function token(name: string): string {
@@ -32,6 +34,28 @@ function fit(canvas: HTMLCanvasElement): { width: number; height: number } {
     canvas.height = Math.round(height * dpr);
   canvas.getContext("2d")!.setTransform(dpr, 0, 0, dpr, 0, 0);
   return { width, height };
+}
+
+function drawSixteenths(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  beatsPerBar: number,
+  width: number,
+  height: number,
+) {
+  const beatPx = width / (view.span * beatsPerBar);
+  // 16ths once they are far enough apart to read, otherwise beats only.
+  const perBeat = beatPx / 4 >= MIN_GRID_PX ? 4 : 1;
+  const perBar = beatsPerBar * perBeat;
+  const first = Math.ceil((view.start - 1) * perBar);
+  const last = Math.floor((view.start - 1 + view.span) * perBar);
+  const sixteenth = token("--border");
+  const beat = token("--border-strong");
+  for (let i = first; i <= last; i++) {
+    const x = Math.round(((i / perBar + 1 - view.start) / view.span) * width);
+    ctx.fillStyle = i % perBeat === 0 ? beat : sixteenth;
+    ctx.fillRect(x, 0, 1, height);
+  }
 }
 
 /** Redraw on resize and theme change. */
@@ -59,12 +83,15 @@ export function WaveformLane({
   grid,
   waveform,
   color,
+  showGrid = false,
   testId = "track-waveform",
 }: {
   view: View;
   grid: Grid;
   waveform: Waveform | null;
   color?: string;
+  /** Draw 16th-note lines, stronger on beats. */
+  showGrid?: boolean;
   testId?: string;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -75,6 +102,7 @@ export function WaveformLane({
     const { width, height } = fit(canvas);
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, width, height);
+    if (showGrid) drawSixteenths(ctx, view, grid.beats_per_bar, width, height);
     const startS = barStartS(grid, view.start);
     const spanS = view.span * grid.bar_s;
     const nBlocks = waveform.blocks.length / 2;
@@ -113,7 +141,7 @@ export function WaveformLane({
       ctx.fillStyle = body;
       ctx.fillRect(x, mid - rms * mid, 1, Math.max(1, 2 * rms * mid));
     }
-  }, [color, grid, view, waveform]);
+  }, [color, grid, showGrid, view, waveform]);
 
   useRedraw(ref, draw);
 

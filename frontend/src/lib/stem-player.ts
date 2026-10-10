@@ -23,6 +23,39 @@ export interface Waveform {
   blockS: number;
 }
 
+/** A frequency band; an omitted edge leaves that side open. */
+export interface Band {
+  highpassHz?: number;
+  lowpassHz?: number;
+}
+
+function blocksOf(
+  channels: { data: Float32Array; weight: number }[],
+  sampleRate: number,
+): Waveform {
+  const length = Math.max(...channels.map((c) => c.data.length));
+  const nBlocks = Math.ceil(length / WAVEFORM_BLOCK);
+  const blocks = new Float32Array(nBlocks * 2);
+  const energy = new Float32Array(nBlocks);
+  for (let b = 0; b < nBlocks; b++) {
+    let min = 0;
+    let max = 0;
+    let sumSq = 0;
+    const end = Math.min(length, (b + 1) * WAVEFORM_BLOCK);
+    for (let i = b * WAVEFORM_BLOCK; i < end; i++) {
+      let sample = 0;
+      for (const c of channels) sample += (c.data[i] ?? 0) * c.weight;
+      if (sample < min) min = sample;
+      if (sample > max) max = sample;
+      sumSq += sample * sample;
+    }
+    blocks[2 * b] = min;
+    blocks[2 * b + 1] = max;
+    energy[b] = sumSq;
+  }
+  return { blocks, energy, blockS: WAVEFORM_BLOCK / sampleRate };
+}
+
 /** Lead time so every source is scheduled before it has to sound. */
 const START_LEAD_S = 0.05;
 const GAIN_SMOOTHING_S = 0.01;
@@ -210,31 +243,50 @@ export class StemPlayer {
         weight: 1 / Math.min(b.numberOfChannels, 2),
       })),
     );
-    const length = Math.max(...channels.map((c) => c.data.length));
-    const nBlocks = Math.ceil(length / WAVEFORM_BLOCK);
-    const blocks = new Float32Array(nBlocks * 2);
-    const energy = new Float32Array(nBlocks);
-    for (let b = 0; b < nBlocks; b++) {
-      let min = 0;
-      let max = 0;
-      let sumSq = 0;
-      const end = Math.min(length, (b + 1) * WAVEFORM_BLOCK);
-      for (let i = b * WAVEFORM_BLOCK; i < end; i++) {
-        let sample = 0;
-        for (const c of channels) sample += (c.data[i] ?? 0) * c.weight;
-        if (sample < min) min = sample;
-        if (sample > max) max = sample;
-        sumSq += sample * sample;
-      }
-      blocks[2 * b] = min;
-      blocks[2 * b + 1] = max;
-      energy[b] = sumSq;
+    const waveform = blocksOf(channels, (buffers[0] as AudioBuffer).sampleRate);
+    this.waveforms.set(key, waveform);
+    return waveform;
+  }
+
+  /**
+   * Waveform of one decoded lane after a band-pass, e.g. the kick out of the
+   * drums. Rendered offline once per band, then cached.
+   */
+  async bandWaveform(name: string, band: Band): Promise<Waveform | null> {
+    const key = `${name}:${band.highpassHz ?? 0}-${band.lowpassHz ?? 0}`;
+    const cached = this.waveforms.get(key);
+    if (cached) return cached;
+    const buffer = this.lanes.get(name)?.buffer;
+    if (!buffer) return null;
+    const offline = new OfflineAudioContext(
+      1,
+      buffer.length,
+      buffer.sampleRate,
+    );
+    const source = offline.createBufferSource();
+    source.buffer = buffer;
+    let node: AudioNode = source;
+    // Two biquads per edge give a 24 dB/octave slope.
+    for (const [type, hz] of [
+      ["highpass", band.highpassHz],
+      ["highpass", band.highpassHz],
+      ["lowpass", band.lowpassHz],
+      ["lowpass", band.lowpassHz],
+    ] as const) {
+      if (hz == null) continue;
+      const filter = offline.createBiquadFilter();
+      filter.type = type;
+      filter.frequency.value = hz;
+      node.connect(filter);
+      node = filter;
     }
-    const waveform = {
-      blocks,
-      energy,
-      blockS: WAVEFORM_BLOCK / (buffers[0] as AudioBuffer).sampleRate,
-    };
+    node.connect(offline.destination);
+    source.start();
+    const rendered = await offline.startRendering();
+    const waveform = blocksOf(
+      [{ data: rendered.getChannelData(0), weight: 1 }],
+      rendered.sampleRate,
+    );
     this.waveforms.set(key, waveform);
     return waveform;
   }
