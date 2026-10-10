@@ -265,6 +265,20 @@ class BreakdownTrackEdit(SQLModel, table=True):
     updated_at: float
 
 
+class BreakdownTrackHistory(SQLModel, table=True):
+    """Tracks opened in Track Breakdown, keyed by decoded-audio hash, for the recent list."""
+
+    __tablename__ = "breakdown_track_history"  # type: ignore[assignment]
+
+    digest: str = Field(primary_key=True)
+    path: str
+    bpm: float
+    root: str | None = None
+    n_bars: int
+    duration_s: float
+    opened_at: float
+
+
 # ---------------------------------------------------------------------------
 # Registry parity — fail loudly at import time if a SIMPLE_TAG_FIELDS entry
 # doesn't have a matching Track column.

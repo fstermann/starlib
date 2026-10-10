@@ -65,6 +65,26 @@ class GridRequest(BaseModel):
     downbeat_s: float = Field(ge=0)
 
 
+class RecentTrack(BaseModel):
+    """A track in the recent list."""
+
+    digest: str
+    path: str
+    bpm: float
+    root: str | None
+    n_bars: int
+    duration_s: float
+    opened_at: float
+    missing: bool
+    """Whether the file is no longer at ``path``."""
+
+
+class RecentTracksResponse(BaseModel):
+    """Most recently opened tracks, newest first."""
+
+    tracks: list[RecentTrack]
+
+
 def _response(result: track_service.TrackBreakdown) -> TrackBreakdownResponse:
     return TrackBreakdownResponse(
         digest=result.digest,
@@ -120,6 +140,23 @@ async def job_events(job_id: str, request: Request) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("", response_model=RecentTracksResponse)
+async def recent_tracks() -> RecentTracksResponse:
+    """List the most recently opened tracks."""
+    return RecentTracksResponse(
+        tracks=[
+            RecentTrack(**entry.__dict__, missing=not Path(entry.path).exists())
+            for entry in track_service.recent_tracks()
+        ]
+    )
+
+
+@router.delete("/{digest}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_track(digest: str) -> None:
+    """Delete a track's stems, features, edits and recent-list entry."""
+    track_service.delete_track(digest)
 
 
 @router.get("/{digest}", response_model=TrackBreakdownResponse)

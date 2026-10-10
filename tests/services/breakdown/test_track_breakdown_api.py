@@ -229,3 +229,28 @@ def test_paths_outside_the_music_folder_are_refused(client: TestClient, tmp_path
 
 def test_unanalysed_track_is_not_found(client: TestClient) -> None:
     assert client.get("/api/breakdown/tracks/unknown").status_code == 404
+
+
+def test_analysed_tracks_are_listed_as_recent(client: TestClient, music: Path) -> None:
+    assert client.get("/api/breakdown/tracks").json() == {"tracks": []}
+    _analyse(client, music)
+
+    [track] = client.get("/api/breakdown/tracks").json()["tracks"]
+    assert track["digest"] == DIGEST
+    assert track["path"] == str(music / "track.aiff")
+    assert (track["bpm"], track["root"], track["n_bars"], track["missing"]) == (128.0, "A", 48, False)
+
+    (music / "track.aiff").unlink()
+    assert client.get("/api/breakdown/tracks").json()["tracks"][0]["missing"] is True
+
+
+def test_delete_removes_stems_edits_and_recent_entry(client: TestClient, music: Path) -> None:
+    _analyse(client, music)
+    client.put(f"/api/breakdown/tracks/{DIGEST}/grid", json={"bpm": 130, "downbeat_s": 0.5})
+
+    assert client.delete(f"/api/breakdown/tracks/{DIGEST}").status_code == 204
+
+    assert client.get("/api/breakdown/tracks").json() == {"tracks": []}
+    assert client.get(f"/api/breakdown/tracks/{DIGEST}").status_code == 404
+    _analyse(client, music)
+    assert client.get(f"/api/breakdown/tracks/{DIGEST}").json()["grid_edited"] is False

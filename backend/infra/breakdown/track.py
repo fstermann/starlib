@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -64,6 +65,11 @@ def track_dir(digest: str) -> Path:
     configured = settings_store.load().app.breakdown_cache_dir
     root = Path(configured).expanduser() if configured else get_backend_settings().cache_dir / "breakdown" / "tracks"
     return root / digest
+
+
+def remove_track_dir(digest: str) -> None:
+    """Delete the cached stems and features for ``digest``, if any."""
+    shutil.rmtree(track_dir(digest), ignore_errors=True)
 
 
 async def measure(

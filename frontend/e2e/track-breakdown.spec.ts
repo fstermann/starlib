@@ -210,6 +210,56 @@ test.describe("Track Breakdown", () => {
     await expect(page.getByTestId("track-bpm")).toHaveText("128 BPM");
   });
 
+  test("recent tracks reopen and delete their breakdown", async ({ page }) => {
+    await mockTrackApi(page);
+    let tracks = [
+      {
+        digest: DIGEST,
+        path: PATH,
+        bpm: BPM,
+        root: "A",
+        n_bars: N_BARS,
+        duration_s: 90,
+        opened_at: 0,
+        missing: false,
+      },
+      {
+        digest: "gone",
+        path: "/music/collection/Moved - Away.aiff",
+        bpm: 140,
+        root: null,
+        n_bars: 64,
+        duration_s: 110,
+        opened_at: 0,
+        missing: true,
+      },
+    ];
+    let deleted: string | null = null;
+    await page.route(/\/api\/breakdown\/tracks$/, (route) =>
+      route.fulfill({ json: { tracks } }),
+    );
+    await page.route("**/api/breakdown/tracks/gone", (route) => {
+      deleted = "gone";
+      tracks = tracks.filter((t) => t.digest !== "gone");
+      return route.fulfill({ status: 204 });
+    });
+    await page.goto("/breakdown?view=track");
+
+    const rows = page.getByTestId("recent-track");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first()).toContainText("128 BPM · A · 48 bars · 1:30");
+    await expect(rows.nth(1)).toContainText("File not found");
+    await expect(rows.nth(1).getByRole("button").first()).toBeDisabled();
+
+    await rows.nth(1).getByTestId("delete-recent-track").click();
+    await page.getByTestId("delete-recent-track-confirm").click();
+    await expect(rows).toHaveCount(1);
+    expect(deleted).toBe("gone");
+
+    await rows.first().getByText("Artist - Tune").click();
+    await expect(page.getByTestId("track-bpm")).toHaveText("128 BPM");
+  });
+
   test("shows tempo, root, sections and stem lanes once analysed", async ({
     page,
   }) => {

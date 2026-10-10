@@ -23,6 +23,8 @@ Cache layout, under the `breakdown_cache_dir` setting or `<cache_dir>/breakdown/
 
 User edits live in the `breakdown_track_edits` table, keyed by the same hash: edited sections (JSON) and an edited bar grid (`bpm`, `downbeat_s`). A grid edit makes the next job re-measure on that grid, reusing the stems.
 
+Every finished job upserts the track into `breakdown_track_history` (path, tempo, root, bars, length, `opened_at`), which `GET /api/breakdown/tracks` lists newest first with a `missing` flag for moved files. `DELETE /api/breakdown/tracks/{digest}` removes the cache folder, the edits and the history row.
+
 ## Demucs install (`infra/breakdown/demucs_env.py`)
 
 `POST /api/breakdown/stem-separation/install` sets up everything under `<cache_dir>/demucs`, skipping finished steps:

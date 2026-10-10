@@ -48,7 +48,7 @@ def _cols(db: Path, table: str) -> set[str]:
 def test_fresh_db_upgrades_to_head(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
     cache.init_db(db)
-    assert _rev(db) == "0020"
+    assert _rev(db) == "0021"
     assert {
         "tracks",
         "peaks",
@@ -136,7 +136,7 @@ def test_adopts_unstamped_analyser_schema_without_losing_jobs(tmp_path: Path) ->
 
     cache.init_db(db)
 
-    assert _rev(db) == "0020"
+    assert _rev(db) == "0021"
     row = _connect(db).execute("SELECT status FROM breakdown_jobs WHERE id = 'preserved-job'").fetchone()
     assert row == ("complete",)
 
@@ -189,7 +189,7 @@ def test_legacy_db_bootstrap_then_head(tmp_path: Path) -> None:
         "duration",
     ):
         assert col in tracks_cols, f"missing column after bootstrap: {col}"
-    assert _rev(db) == "0020"
+    assert _rev(db) == "0021"
 
 
 def test_backup_created_on_bootstrap(tmp_path: Path) -> None:
@@ -313,7 +313,7 @@ def test_migration_0004_downgrade_upgrade_round_trip(tmp_path: Path) -> None:
 
     db = tmp_path / "cache.db"
     cache.init_db(db)
-    assert _rev(db) == "0020"
+    assert _rev(db) == "0021"
 
     # Confirm the column is gone at head.
     head_cols = _cols(db, "soundcloud_track_bpm")

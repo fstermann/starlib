@@ -8,15 +8,10 @@ import { Button } from "@/components/ui/button";
 import { trackBreakdownHref } from "@/lib/track-breakdown";
 
 import { BreakdownTitle } from "../_components/breakdown-title";
-import { TrackPicker } from "./track-picker";
+import { fileStem, TrackPicker } from "./track-picker";
 import { TrackProgress } from "./track-progress";
 import { useTrackJob } from "./use-track-job";
 import { TrackWorkspace } from "./workspace";
-
-function fileStem(path: string): string {
-  const name = path.split("/").pop() ?? path;
-  return name.replace(/\.[^.]+$/, "");
-}
 
 /** `/breakdown?view=track&path=…` — analyse one local track and explore it. */
 export function TrackBreakdownView() {

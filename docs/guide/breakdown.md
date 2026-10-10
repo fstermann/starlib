@@ -9,6 +9,8 @@ Breakdown has two views, switched with the **Set / Track** toggle at the top lef
 
 Open a track with **Open in Breakdown** in the library row's right-click menu, the **Open selected track in Breakdown** palette command, or the search box on the Track view.
 
+**Recent** under the search box lists the tracks you've opened, newest first. A track whose file moved is greyed out. The trash button deletes its stems, measurements and section edits; the audio file stays.
+
 The first analysis separates the track into stems, which takes about half a minute on Apple Silicon. Results are cached by the track's audio, so editing its tags doesn't trigger a new analysis. You can cancel while it runs.
 
 ### What you see

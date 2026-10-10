@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -72,7 +73,45 @@ async def analyse_track(path: Path, on_stage: StageCallback = lambda _stage, _pr
         await track_infra.measure(path, stems, features_path, lambda source: on_stage(source, None), grid)
     result = load_result(digest)
     assert result is not None
+    _record_opened(path, result)
     return result
+
+
+def _record_opened(path: Path, result: TrackBreakdown) -> None:
+    grid = result.features["grid"]
+    track_db.record_opened(
+        track_db.HistoryEntry(
+            digest=result.digest,
+            path=str(path),
+            bpm=grid["bpm"],
+            root=result.features["tonal"]["root"],
+            n_bars=grid["n_bars"],
+            duration_s=result.features["duration_s"],
+            opened_at=time.time(),
+        )
+    )
+
+
+def recent_tracks(limit: int = 25) -> list[track_db.HistoryEntry]:
+    """Return the most recently opened tracks, newest first.
+
+    Args:
+        limit: Maximum number of tracks.
+
+    Returns:
+        The tracks.
+    """
+    return track_db.list_history(limit)
+
+
+def delete_track(digest: str) -> None:
+    """Delete a track's stems, features, edits and recent-list entry.
+
+    Args:
+        digest: Decoded-audio hash.
+    """
+    track_infra.remove_track_dir(digest)
+    track_db.forget(digest)
 
 
 def _cached_features(path: Path, grid: tuple[float, float] | None) -> dict[str, Any] | None:

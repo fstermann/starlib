@@ -1,4 +1,4 @@
-"""Persistence for user edits to a Track Breakdown (sections, bar grid)."""
+"""Persistence for Track Breakdown: user edits (sections, bar grid) and the recent list."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from backend.infra.db.engine import get_engine
-from backend.infra.db.models import BreakdownTrackEdit
+from backend.infra.db.models import BreakdownTrackEdit, BreakdownTrackHistory
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,29 @@ class TrackEdit:
 
     sections: list[dict[str, Any]] | None
     grid: tuple[float, float] | None
+
+
+@dataclass(frozen=True)
+class HistoryEntry:
+    """A track opened in Track Breakdown.
+
+    Attributes:
+        digest: Decoded-audio hash.
+        path: File the track was last opened from.
+        bpm: Tempo of the bar grid.
+        root: Root note from the strongest bass peak, if any.
+        n_bars: Bar count.
+        duration_s: Track length in seconds.
+        opened_at: Unix time it was last opened.
+    """
+
+    digest: str
+    path: str
+    bpm: float
+    root: str | None
+    n_bars: int
+    duration_s: float
+    opened_at: float
 
 
 def get_edit(digest: str) -> TrackEdit:
@@ -76,3 +99,45 @@ def _upsert(digest: str, values: dict[str, Any]) -> None:
     )
     with get_engine().begin() as conn:
         conn.execute(stmt)
+
+
+def record_opened(entry: HistoryEntry) -> None:
+    """Insert or refresh ``entry`` in the recent list.
+
+    Args:
+        entry: The opened track.
+    """
+    row = entry.__dict__
+    stmt = sqlite_insert(BreakdownTrackHistory.__table__).values(row)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[BreakdownTrackHistory.__table__.c.digest],
+        set_={c: stmt.excluded[c] for c in row if c != "digest"},
+    )
+    with get_engine().begin() as conn:
+        conn.execute(stmt)
+
+
+def list_history(limit: int) -> list[HistoryEntry]:
+    """Return up to ``limit`` tracks, most recently opened first.
+
+    Args:
+        limit: Maximum number of entries.
+
+    Returns:
+        The entries.
+    """
+    table = BreakdownTrackHistory.__table__
+    with get_engine().connect() as conn:
+        rows = conn.execute(select(table).order_by(table.c.opened_at.desc()).limit(limit)).all()
+    return [HistoryEntry(**row._mapping) for row in rows]
+
+
+def forget(digest: str) -> None:
+    """Remove the track's history entry and edits.
+
+    Args:
+        digest: Decoded-audio hash.
+    """
+    with get_engine().begin() as conn:
+        conn.execute(delete(BreakdownTrackHistory.__table__).where(BreakdownTrackHistory.__table__.c.digest == digest))
+        conn.execute(delete(BreakdownTrackEdit.__table__).where(BreakdownTrackEdit.__table__.c.digest == digest))

@@ -94,6 +94,30 @@ export function removeStemSetup(): Promise<StemSetup> {
   return fetchApi("/api/breakdown/stem-separation", { method: "DELETE" });
 }
 
+export interface RecentTrack {
+  digest: string;
+  path: string;
+  bpm: number;
+  root: string | null;
+  n_bars: number;
+  duration_s: number;
+  /** Unix seconds. */
+  opened_at: number;
+  /** The file is no longer at `path`. */
+  missing: boolean;
+}
+
+export async function listRecentTracks(): Promise<RecentTrack[]> {
+  const { tracks } = await fetchApi<{ tracks: RecentTrack[] }>(
+    "/api/breakdown/tracks",
+  );
+  return tracks;
+}
+
+export function deleteTrackBreakdown(digest: string): Promise<void> {
+  return fetchApi(`/api/breakdown/tracks/${digest}`, { method: "DELETE" });
+}
+
 export async function startTrackJob(path: string): Promise<string> {
   const { job_id } = await fetchApi<{ job_id: string }>(
     "/api/breakdown/tracks/jobs",
