@@ -3,41 +3,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { claimPlayback, releasePlayback } from "@/lib/exclusive-audio";
-import { StemPlayer, type Band, type LoopRegion } from "@/lib/stem-player";
-import { STEM_NAMES, stemUrl } from "@/lib/track-breakdown";
+import { StemPlayer, type LoopRegion } from "@/lib/stem-player";
+import {
+  DRUM_PART_NAMES,
+  STEM_NAMES,
+  stemUrl,
+  type DrumPartName,
+} from "@/lib/track-breakdown";
 
 export const ORIGINAL = "original";
 
-/**
- * The drums stem played as three bands with their own mute, solo and volume.
- * Crossovers at 150 Hz and 3 kHz, so the parts add back up to the drums.
- */
+/** Drum parts, split from the drums stem by DrumSep; the drums lane is their sum. */
 export const DRUM_PARTS = [
-  {
-    id: "kick",
-    label: "Kick",
-    hint: "Kick, below 150 Hz",
-    band: { lowpassHz: 150 },
-  },
-  {
-    id: "mids",
-    label: "Snare",
-    hint: "Snare, clap, toms: 150 Hz to 3 kHz",
-    band: { highpassHz: 150, lowpassHz: 3000 },
-  },
-  {
-    id: "tops",
-    label: "Hats",
-    hint: "Hats, cymbals: above 3 kHz",
-    band: { highpassHz: 3000 },
-  },
+  { id: "kick", label: "Kick", hint: "Kick (with any toms)" },
+  { id: "snare", label: "Snare", hint: "Snare, claps" },
+  { id: "hats", label: "Hats", hint: "Hats, cymbals" },
 ] as const satisfies readonly {
-  id: string;
+  id: DrumPartName;
   label: string;
   hint: string;
-  band: Band;
 }[];
-export type DrumPart = (typeof DRUM_PARTS)[number]["id"];
+
+/** Lanes with audio of their own; the drums play as their parts. */
+export const PLAYED_STEMS = [
+  ...DRUM_PART_NAMES,
+  ...STEM_NAMES.filter((stem) => stem !== "drums"),
+];
 
 export const LANES = [ORIGINAL, ...STEM_NAMES] as const;
 const MIX_KEYS = [...LANES, ...DRUM_PARTS.map((p) => p.id)] as const;
@@ -104,7 +95,7 @@ export function useStemPlayer(digest: string, originalUrl: string) {
       {
         [ORIGINAL]: originalUrl,
         ...Object.fromEntries(
-          STEM_NAMES.map((stem) => [stem, stemUrl(digest, stem)]),
+          PLAYED_STEMS.map((stem) => [stem, stemUrl(digest, stem)]),
         ),
       },
       () => {
@@ -116,13 +107,11 @@ export function useStemPlayer(digest: string, originalUrl: string) {
         if (playerRef.current === player)
           setLoaded((prev) => new Set(prev).add(name));
       },
-      {
-        drums: DRUM_PARTS.map((part) => ({ name: part.id, band: part.band })),
-      },
+      { drums: [...DRUM_PART_NAMES] },
     );
     playerRef.current = player;
     player
-      .load([...STEM_NAMES])
+      .load(PLAYED_STEMS)
       .then(() => {
         if (playerRef.current === player) setReady(true);
       })
@@ -194,18 +183,10 @@ export function useStemPlayer(digest: string, originalUrl: string) {
 
   /** Waveform of the named lanes summed, or `null` until they are all decoded. */
   const waveform = useCallback(
-    (lanes: readonly LaneName[]) =>
+    (lanes: readonly string[]) =>
       lanes.every((lane) => loaded.has(lane))
         ? (playerRef.current?.waveform([...lanes]) ?? null)
         : null,
-    [loaded],
-  );
-
-  const bandWaveform = useCallback(
-    (lane: LaneName, band: Band) =>
-      loaded.has(lane)
-        ? (playerRef.current?.bandWaveform(lane, band) ?? Promise.resolve(null))
-        : Promise.resolve(null),
     [loaded],
   );
 
@@ -231,7 +212,6 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     setLoop,
     updateLane,
     waveform,
-    bandWaveform,
     analyser,
   };
 }

@@ -35,7 +35,7 @@ function formatElapsed(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-/** Analysis progress: read, separate into stems, then measure each source. */
+/** Analysis progress: read, separate into stems, split the drums, then measure each source. */
 export function TrackProgress({
   title,
   stage,
@@ -59,7 +59,15 @@ export function TrackProgress({
 
   const measuring = SOURCES.indexOf(stage as Source);
   const step =
-    stage === "hash" ? 0 : stage === "stems" ? 1 : measuring >= 0 ? 2 : -1;
+    stage === "hash"
+      ? 0
+      : stage === "stems"
+        ? 1
+        : stage === "drum_parts"
+          ? 2
+          : measuring >= 0
+            ? 3
+            : -1;
 
   return (
     <section
@@ -113,10 +121,21 @@ export function TrackProgress({
             ))}
           </ul>
         </Step>
-        <Step state={stepState(2, step)} label="Measuring bars" last>
+        <Step
+          state={stepState(2, step)}
+          label="Splitting drums"
+          detail={
+            step === 2 && progress != null ? (
+              <span data-testid="track-drums-percent">
+                {Math.round(progress * 100)}%
+              </span>
+            ) : null
+          }
+        />
+        <Step state={stepState(3, step)} label="Measuring bars" last>
           <ul className="flex flex-wrap gap-1.5 pt-2">
             {SOURCES.map((source, i) => {
-              const state = step < 2 ? "pending" : stepState(i, measuring);
+              const state = step < 3 ? "pending" : stepState(i, measuring);
               return (
                 <li
                   key={source}
@@ -150,8 +169,8 @@ export function TrackProgress({
 
       <footer className="flex items-end justify-between gap-4 border-t border-[var(--border)] pt-4">
         <p className="text-xs text-[var(--text-muted)]">
-          The first run separates stems, about half a minute on Apple Silicon.
-          Results are cached.
+          The first run separates stems and drums, about a minute on Apple
+          Silicon. Results are cached.
         </p>
         <Button
           variant="secondary"

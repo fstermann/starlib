@@ -11,7 +11,7 @@ Open a track with **Open in Breakdown** in the library row's right-click menu, t
 
 **Recent** under the search box lists the tracks you've opened, newest first. A track whose file moved is greyed out. The trash button deletes its stems, measurements and section edits; the audio file stays.
 
-The first analysis separates the track into stems, which takes about half a minute on Apple Silicon. Results are cached by the track's audio, so editing its tags doesn't trigger a new analysis. You can cancel while it runs.
+The first analysis separates the track into stems and splits the drums, which takes about a minute on Apple Silicon. Results are cached by the track's audio, so editing its tags doesn't trigger a new analysis. You can cancel while it runs.
 
 ### What you see
 
@@ -22,7 +22,7 @@ The first analysis separates the track into stems, which takes about half a minu
 | Original | The full mix, drawn from the stems summed back together: peaks in the outer shade, loudness (RMS) in the inner one. Sharp down to a single bar. |
 | Loudness, Width, Brightness | Mix level (solid), stereo width as side over mid power (dashed) and spectral centroid (dotted) per bar. Click a name to hide its line. |
 | Drums, Bass, Other, Vocals / FX | Waveform of each stem in its own colour, all on the same scale so a quiet stem looks quiet. A muted lane, or one silenced by another lane's solo, is greyed out. A mostly silent vocals stem is labelled **FX / shots**, since on instrumentals it picks up mid-range hits and effects. |
-| Kick, Snare, Hats | Click the arrow next to **Drums** to split the drum stem by frequency: kick below 150 Hz, snare, claps and toms up to 3 kHz, hats and cymbals above. Each part has its own mute, solo and volume; solo **Kick** to hear the kick alone. Together the parts sound exactly like the drums. Snares and hats overlap a little, since they share frequencies. |
+| Kick, Snare, Hats | Click the arrow next to **Drums** to show the drum stem split into kick, snare and claps, and hats and cymbals. Each part has its own waveform, mute, solo and volume; solo **Kick** to hear the kick alone. Toms play with the kick. The parts come from a second separation model, so expect some bleed between them. |
 
 The header shows tempo, root note (from the strongest bass peak), bar count and where bar 1 starts.
 
@@ -54,8 +54,8 @@ Bar 1 is assumed to start on the first kick, which holds for DJ-oriented tracks.
 
 ## Setup
 
-Stem separation uses [Demucs](https://github.com/facebookresearch/demucs) with the `htdemucs` model. It needs PyTorch, which is too large to bundle, so the app sets it up on first use: click **Set up stem separation** in the Track view or under **Settings > Breakdown**. It downloads about 830 MB once (Python, PyTorch, Demucs and the model) and takes about a minute. No Python or Homebrew install is needed. **Remove** in the same place frees the space again.
+Stem separation uses [Demucs](https://github.com/facebookresearch/demucs) with the `htdemucs` model, and [DrumSep](https://github.com/inagoy/drumsep) to split the drums. It needs PyTorch, which is too large to bundle, so the app sets it up on first use: click **Set up stem separation** in the Track view or under **Settings > Breakdown**. It downloads about 1 GB once (Python, PyTorch, Demucs and both models) and takes about a minute. No Python or Homebrew install is needed. **Remove** in the same place frees the space again.
 
-Stems are FLAC, about 110 MB per six-minute track. **Stems folder** in Settings > Breakdown moves them out of the app cache.
+Stems are FLAC, about 110 MB per six-minute track plus the drum parts. **Stems folder** in Settings > Breakdown moves them out of the app cache.
 
 Track view works on files inside your music root folder. SoundCloud tracks aren't supported.

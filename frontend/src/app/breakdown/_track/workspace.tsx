@@ -13,17 +13,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
-import type { Band, Waveform } from "@/lib/stem-player";
 import {
   barAt,
   barStartS,
+  DRUM_PART_NAMES,
   formatClock,
   resetSections,
   saveSections,
   STEM_COLORS,
   STEM_NAMES,
   stemLabel,
-  type Grid,
   type Section,
   type TrackBreakdown,
 } from "@/lib/track-breakdown";
@@ -49,6 +48,7 @@ import {
   DRUM_PARTS,
   laneGains,
   ORIGINAL,
+  PLAYED_STEMS,
   useStemPlayer,
   type LaneName,
   type StemPlayerControls,
@@ -377,7 +377,7 @@ export function TrackWorkspace({
             <WaveformLane
               view={view}
               grid={grid}
-              waveform={player.waveform(STEM_NAMES)}
+              waveform={player.waveform(PLAYED_STEMS)}
             />
           </AudibleLane>
         </LaneRow>
@@ -428,7 +428,9 @@ export function TrackWorkspace({
                 <WaveformLane
                   view={view}
                   grid={grid}
-                  waveform={player.waveform([lane])}
+                  waveform={player.waveform(
+                    lane === "drums" ? DRUM_PART_NAMES : [lane],
+                  )}
                   color={STEM_COLORS[lane]}
                   showGrid={showGrid}
                   testId={`track-waveform-${lane}`}
@@ -452,11 +454,11 @@ export function TrackWorkspace({
                   testId={`track-drum-part-${part.id}`}
                 >
                   <AudibleLane audible={gains.drums > 0 && gains[part.id] > 0}>
-                    <DrumPartLane
+                    <WaveformLane
                       view={view}
                       grid={grid}
-                      player={player}
-                      band={part.band}
+                      waveform={player.waveform([part.id])}
+                      color={STEM_COLORS.drums}
                       showGrid={showGrid}
                       testId={`track-waveform-${part.id}`}
                     />
@@ -491,35 +493,6 @@ export function TrackWorkspace({
         </div>
       </section>
     </main>
-  );
-}
-
-/** One band of the drums stem, filtered once when first shown. */
-function DrumPartLane({
-  player,
-  band,
-  ...rest
-}: {
-  player: StemPlayerControls;
-  band: Band;
-  view: View;
-  grid: Grid;
-  showGrid: boolean;
-  testId: string;
-}) {
-  const [waveform, setWaveform] = useState<Waveform | null>(null);
-  const { bandWaveform } = player;
-  useEffect(() => {
-    let live = true;
-    void bandWaveform("drums", band).then((w) => {
-      if (live) setWaveform(w);
-    });
-    return () => {
-      live = false;
-    };
-  }, [bandWaveform, band]);
-  return (
-    <WaveformLane {...rest} waveform={waveform} color={STEM_COLORS.drums} />
   );
 }
 

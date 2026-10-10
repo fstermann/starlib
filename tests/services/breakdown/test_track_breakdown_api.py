@@ -81,7 +81,7 @@ def _isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[
     engine = db_engine.init_engine(tmp_path / "db.sqlite")
     run_migrations(engine, tmp_path / "db.sqlite")
     track_service._jobs.clear()
-    calls: dict[str, Any] = {"measure_grids": [], "separate_delay": 0.0}
+    calls: dict[str, Any] = {"measure_grids": [], "separate_delay": 0.0, "drum_splits": 0}
 
     async def fake_hash(_path: Path) -> str:
         return DIGEST
@@ -91,6 +91,14 @@ def _isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[
         await asyncio.sleep(calls["separate_delay"])
         stems_dir.mkdir(parents=True, exist_ok=True)
         paths = {name: stems_dir / f"{name}.flac" for name in stems_infra.STEM_NAMES}
+        for p in paths.values():
+            p.write_bytes(b"fLaC")
+        return paths
+
+    async def fake_separate_drums(_drums: Path, stems_dir: Path, on_progress) -> dict[str, Path]:
+        calls["drum_splits"] += 1
+        on_progress(1.0)
+        paths = {name: stems_dir / f"{name}.flac" for name in stems_infra.DRUM_PART_NAMES}
         for p in paths.values():
             p.write_bytes(b"fLaC")
         return paths
@@ -106,6 +114,7 @@ def _isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[
     monkeypatch.setattr(track_infra, "track_dir", lambda digest: tmp_path / "tracks" / digest)
     monkeypatch.setattr(track_infra, "measure", fake_measure)
     monkeypatch.setattr(stems_infra, "separate", fake_separate)
+    monkeypatch.setattr(stems_infra, "separate_drums", fake_separate_drums)
     yield calls
     engine.dispose()
 
@@ -216,7 +225,22 @@ def test_stems_are_served_once_analysed(client: TestClient, music: Path) -> None
     response = client.get(f"/api/breakdown/tracks/{DIGEST}/stems/drums")
     assert response.status_code == 200
     assert response.headers["content-type"] == "audio/flac"
+    assert client.get(f"/api/breakdown/tracks/{DIGEST}/stems/kick").status_code == 200
     assert client.get(f"/api/breakdown/tracks/{DIGEST}/stems/kazoo").status_code == 404
+
+
+def test_tracks_measured_before_drum_parts_get_them_next_time(
+    client: TestClient, music: Path, tmp_path: Path, _isolated: dict[str, Any]
+) -> None:
+    _analyse(client, music)
+    for part in ("kick", "snare", "hats"):
+        (tmp_path / "tracks" / DIGEST / "stems" / f"{part}.flac").unlink()
+
+    events = _analyse(client, music)
+
+    assert [e["stage"] for e in events if e["type"] == "stage"] == ["hash", "drum_parts", "drum_parts"]
+    assert len(_isolated["measure_grids"]) == 1
+    assert _isolated["drum_splits"] == 2
 
 
 def test_paths_outside_the_music_folder_are_refused(client: TestClient, tmp_path: Path) -> None:

@@ -9,6 +9,7 @@ POST /api/breakdown/tracks/jobs {path}
   services/breakdown/track.py      background job, SSE progress, cancel
     ffmpeg -f hash                 SHA-256 of the decoded audio → cache key
     infra/breakdown/stems.py       demucs htdemucs (managed venv, MPS on Apple Silicon)
+                                   then DrumSep on drums.flac → kick, snare, hats
     infra/breakdown/track.py       analyser-stream breakdown → features.json
     domain/arrangement.py          per-bar levels → labelled sections
 ```
@@ -18,6 +19,7 @@ Cache layout, under the `breakdown_cache_dir` setting or `<cache_dir>/breakdown/
 ```
 <audio sha256>/
   stems/{drums,bass,other,vocals}.flac
+  stems/{kick,snare,hats}.flac
   features.json
 ```
 
@@ -33,8 +35,17 @@ Every finished job upserts the track into `breakdown_track_history` (path, tempo
 2. Python 3.12, uv-managed (`UV_PYTHON_PREFERENCE=only-managed`), so no system Python is needed.
 3. `demucs` and `soundfile` into a venv, with `UV_NO_CACHE` so packages aren't stored twice.
 4. The `htdemucs` weights, prefetched from Hugging Face into `demucs/hf` (`HF_HOME`).
+5. The DrumSep weights (`49469ca8.th`, 167 MB) from a Hugging Face mirror into `demucs/drumsep`, checked against a pinned SHA-256.
 
-A `.ready` marker records completion. Measured on an M4: 39 s, 776 MiB (uv 28, Python 71, packages 646, model 87 MB on disk). `GET` reports `missing`, `installing` (with the step), `ready` (with size) or `error`; `DELETE` removes the folder. `STARLIB_DEMUCS_PYTHON` overrides the managed install for development.
+A `.ready` marker records completion; an install counts as ready only when the DrumSep file is there too, so older installs fetch just that file. Measured on an M4: 39 s, 776 MiB (uv 28, Python 71, packages 646, model 87 MB on disk). `GET` reports `missing`, `installing` (with the step), `ready` (with size) or `error`; `DELETE` removes the folder. `STARLIB_DEMUCS_PYTHON` overrides the managed install for development.
+
+## Drum parts
+
+[DrumSep](https://github.com/inagoy/drumsep) is an HDemucs model trained on drum stems with four sources: `bombo` (kick), `redoblante` (snare), `platillos` (cymbals) and `toms`. It runs through the same demucs install (`demucs --repo demucs/drumsep -n 49469ca8`) on `drums.flac` after separation, about 30 s per track on an M4. A track measured before drum parts existed gets them on its next open.
+
+Electronic kicks land mostly in `toms`: on Nightmare, `toms` correlated 0.77 with an MDX kick stem, `bombo` 0.59. So `kick.flac` is `bombo` + `toms` (ffmpeg `amix`, `normalize=0`), `snare.flac` is `redoblante` and `hats.flac` is `platillos`. The four sources sum back to the drums stem with a −25 dB residual.
+
+Rejected: MDX23C six-stem drum models (158 s per track, 438 MB, no weight licence) and LarsNet (CC BY-NC, trained on acoustic kits).
 
 Homebrew has no `demucs` formula, and pip-installing into Homebrew's Python is blocked (PEP 668), so it can't replace this.
 
@@ -73,4 +84,4 @@ Limits: the thresholds were tuned on three techno tracks, with Entasia – Bumpe
 
 ## Playback
 
-`frontend/src/lib/stem-player.ts` decodes each lane to an `AudioBuffer` and starts every lane on the same `AudioContext` time and offset, which keeps them sample-locked; loops use `AudioBufferSourceNode.loopStart/loopEnd`. The original decodes only once it is unmuted or soloed, since each decoded lane costs about 150 MB for a six-minute track. Waveforms are built from the decoded buffers (min/max and sum of squares per 64-sample block): the summed stems for the Waveform lane, each stem for its own lane, the original once it has decoded, and the drum parts. The drums stem plays through a Linkwitz-Riley crossover (two Butterworth biquads per edge, 24 dB/octave) at 150 Hz and 3 kHz into three part gains, so the parts sum back to the stem and can be muted or soloed; soloing a part keeps the drums lane audible. Their waveforms come from the same filters rendered through an `OfflineAudioContext` the first time they're expanded, and the spectrum panel reads an `AnalyserNode` (8192-point FFT) on the master bus.
+`frontend/src/lib/stem-player.ts` decodes each lane to an `AudioBuffer` and starts every lane on the same `AudioContext` time and offset, which keeps them sample-locked; loops use `AudioBufferSourceNode.loopStart/loopEnd`. The original decodes only once it is unmuted or soloed, since each decoded lane costs about 150 MB for a six-minute track. The drums stem itself isn't played: its lane is the kick, snare and hats lanes summed through a shared drums gain, so the Drums lane's mute, solo and volume apply to all three, and soloing a part keeps the drums lane audible. Waveforms are built from the decoded buffers (min/max and sum of squares per 64-sample block): all played lanes summed for the Original lane, the three parts summed for Drums, and each other lane on its own. The spectrum panel reads an `AnalyserNode` (8192-point FFT) on the master bus.

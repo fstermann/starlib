@@ -19,8 +19,8 @@ const mix = (
     "other",
     "vocals",
     "kick",
-    "mids",
-    "tops",
+    "snare",
+    "hats",
   ];
   return Object.fromEntries(
     names.map((name) => [name, lane(changes[name])]),
@@ -44,8 +44,8 @@ describe("laneGains", () => {
       other: 0,
       vocals: 1,
       kick: 1,
-      mids: 1,
-      tops: 1,
+      snare: 1,
+      hats: 1,
     });
   });
 
@@ -69,8 +69,8 @@ describe("laneGains", () => {
       bass: 0,
       other: 0,
       kick: 1,
-      mids: 0,
-      tops: 0,
+      snare: 0,
+      hats: 0,
     });
   });
 
@@ -78,11 +78,11 @@ describe("laneGains", () => {
     const gains = laneGains(
       mix({ kick: { solo: true }, bass: { solo: true } }),
     );
-    expect(gains).toMatchObject({ drums: 1, bass: 1, kick: 1, tops: 0 });
+    expect(gains).toMatchObject({ drums: 1, bass: 1, kick: 1, hats: 0 });
   });
 
   it("muting a drum part leaves the rest of the drums", () => {
-    const gains = laneGains(mix({ tops: { muted: true } }));
-    expect(gains).toMatchObject({ drums: 1, kick: 1, mids: 1, tops: 0 });
+    const gains = laneGains(mix({ hats: { muted: true } }));
+    expect(gains).toMatchObject({ drums: 1, kick: 1, snare: 1, hats: 0 });
   });
 });

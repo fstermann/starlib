@@ -372,10 +372,10 @@ test.describe("Track Breakdown", () => {
     await expect(page.getByTestId("track-drum-part-kick")).toHaveCount(0);
 
     await toggle.click();
-    for (const part of ["kick", "mids", "tops"]) {
+    for (const part of ["kick", "snare", "hats"]) {
       await expect(page.getByTestId(`track-waveform-${part}`)).toBeVisible();
     }
-    await expect(page.getByTestId("track-drum-part-mids")).toContainText(
+    await expect(page.getByTestId("track-drum-part-snare")).toContainText(
       "Snare",
     );
 
@@ -387,7 +387,7 @@ test.describe("Track Breakdown", () => {
       "data-audible",
       "true",
     );
-    await expect(audible("track-drum-part-tops")).toHaveAttribute(
+    await expect(audible("track-drum-part-hats")).toHaveAttribute(
       "data-audible",
       "false",
     );
@@ -400,8 +400,8 @@ test.describe("Track Breakdown", () => {
       "false",
     );
     await page.getByTestId("track-solo-kick").click();
-    await page.getByTestId("track-mute-tops").click();
-    await expect(audible("track-drum-part-tops")).toHaveAttribute(
+    await page.getByTestId("track-mute-hats").click();
+    await expect(audible("track-drum-part-hats")).toHaveAttribute(
       "data-audible",
       "false",
     );
@@ -439,6 +439,18 @@ test.describe("Track Breakdown", () => {
     await expect(page.getByTestId("track-stems-percent")).toHaveText("50%");
     await page.getByTestId("track-breakdown-cancel").click();
     await expect.poll(() => mocks.cancelled).toBe(1);
+  });
+
+  test("shows drum splitting progress after the stems", async ({ page }) => {
+    await mockTrackApi(page, [
+      { type: "stage", stage: "hash", progress: null },
+      { type: "stage", stage: "stems", progress: 1 },
+      { type: "stage", stage: "drum_parts", progress: 0.25 },
+    ]);
+    await page.goto(trackUrl);
+
+    await expect(page.getByTestId("track-drums-percent")).toHaveText("25%");
+    await expect(page.getByTestId("track-stems-percent")).toHaveCount(0);
   });
 
   test("offers stem separation setup when Demucs is missing", async ({

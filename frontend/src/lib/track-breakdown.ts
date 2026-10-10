@@ -11,6 +11,9 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export const STEM_NAMES = ["drums", "bass", "other", "vocals"] as const;
 export type StemName = (typeof STEM_NAMES)[number];
+/** The drums stem split again; together they make up the drums. */
+export const DRUM_PART_NAMES = ["kick", "snare", "hats"] as const;
+export type DrumPartName = (typeof DRUM_PART_NAMES)[number];
 
 /** One chart colour per stem, shared by its lanes and the analysis progress. */
 export const STEM_COLORS: Record<StemName, string> = {
@@ -85,7 +88,7 @@ export type TrackJobEvent =
 
 export interface StemSetup {
   status: "missing" | "installing" | "ready" | "error";
-  stage: "uv" | "python" | "packages" | "model" | null;
+  stage: "uv" | "python" | "packages" | "model" | "drum_model" | null;
   error: string | null;
   size_bytes: number;
 }
@@ -181,7 +184,7 @@ export function resetGrid(digest: string): Promise<void> {
   });
 }
 
-export function stemUrl(digest: string, stem: StemName): string {
+export function stemUrl(digest: string, stem: StemName | DrumPartName): string {
   return `${API_BASE_URL}/api/breakdown/tracks/${digest}/stems/${stem}`;
 }
 

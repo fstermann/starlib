@@ -56,8 +56,8 @@ async def analyse_track(path: Path, on_stage: StageCallback = lambda _stage, _pr
 
     Args:
         path: Local audio file.
-        on_stage: Called with ``"hash"``, ``"stems"`` (with progress 0 to 1),
-            then each measured source name.
+        on_stage: Called with ``"hash"``, ``"stems"`` and ``"drum_parts"``
+            (with progress 0 to 1), then each measured source name.
 
     Returns:
         The track's features and sections.
@@ -67,14 +67,24 @@ async def analyse_track(path: Path, on_stage: StageCallback = lambda _stage, _pr
     cache = track_infra.track_dir(digest)
     features_path = cache / "features.json"
     grid = track_db.get_edit(digest).grid
+    stems_dir = cache / "stems"
     if _cached_features(features_path, grid) is None:
         on_stage("stems", 0.0)
-        stems = await stems_infra.separate(path, cache / "stems", lambda done: on_stage("stems", done))
+        stems = await stems_infra.separate(path, stems_dir, lambda done: on_stage("stems", done))
+        await _split_drums(stems_dir, on_stage)
         await track_infra.measure(path, stems, features_path, lambda source: on_stage(source, None), grid)
+    else:
+        await _split_drums(stems_dir, on_stage)
     result = load_result(digest)
     assert result is not None
     _record_opened(path, result)
     return result
+
+
+async def _split_drums(stems_dir: Path, on_stage: StageCallback) -> None:
+    if stems_infra.cached_drum_parts(stems_dir) is None:
+        on_stage("drum_parts", 0.0)
+        await stems_infra.separate_drums(stems_dir / "drums.flac", stems_dir, lambda done: on_stage("drum_parts", done))
 
 
 def _record_opened(path: Path, result: TrackBreakdown) -> None:
@@ -204,8 +214,8 @@ def save_grid(digest: str, grid: tuple[float, float] | None) -> None:
 
 
 def stem_path(digest: str, name: str) -> Path | None:
-    """Return the cached stem file, or ``None`` if it doesn't exist."""
-    if name not in stems_infra.STEM_NAMES:
+    """Return the cached stem or drum part file, or ``None`` if it doesn't exist."""
+    if name not in (*stems_infra.STEM_NAMES, *stems_infra.DRUM_PART_NAMES):
         return None
     path = track_infra.track_dir(digest) / "stems" / f"{name}.flac"
     return path if path.exists() else None

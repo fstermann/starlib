@@ -17,6 +17,7 @@ const STAGE_LABELS: Record<NonNullable<SetupState["stage"]>, string> = {
   python: "Getting Python",
   packages: "Downloading PyTorch and Demucs (about 650 MB)",
   model: "Downloading the separation model (about 90 MB)",
+  drum_model: "Downloading the drum model (about 170 MB)",
 };
 
 function megabytes(bytes: number): string {
@@ -82,9 +83,10 @@ export function StemSetup({ onReady }: { onReady?: () => void }) {
       ) : (
         <>
           <p className="text-sm text-[var(--text-muted)]">
-            Splitting tracks into drums, bass, other and vocals uses Demucs.
-            Setting it up downloads about 830 MB once (Python, PyTorch and the
-            model) into the app&apos;s folder; it takes about a minute.
+            Splitting tracks into drums, bass, other and vocals, and the drums
+            into kick, snare and hats, uses Demucs. Setting it up downloads
+            about 1 GB once (Python, PyTorch and two models) into the app&apos;s
+            folder; it takes about a minute.
           </p>
           {setup.status === "error" && (
             <p

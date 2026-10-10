@@ -2,13 +2,15 @@
 
 Everything lives under ``<cache_dir>/demucs``: a ``uv`` binary (a
 system ``uv`` is used when present), a uv-managed Python, a venv with
-PyTorch + Demucs, and the Hugging Face cache holding the model weights. No
-system Python is needed. Removing the folder frees all of it.
+PyTorch + Demucs, the Hugging Face cache holding the model weights, and the
+DrumSep model that splits the drums stem. No system Python is needed.
+Removing the folder frees all of it.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import os
 import platform
@@ -24,6 +26,12 @@ from backend.config import get_backend_settings
 MODEL = "htdemucs"
 PYTHON_VERSION = "3.12"
 PACKAGES = ("demucs", "soundfile")
+# DrumSep (github.com/inagoy/drumsep): a Hybrid Demucs model trained to split
+# drums into kick, snare, cymbals and toms. Pinned by hash, from a mirror of
+# the original Google Drive file.
+DRUM_MODEL = "49469ca8"
+_DRUM_MODEL_URL = f"https://huggingface.co/vincewin/drumsep/resolve/main/{DRUM_MODEL}.th"
+_DRUM_MODEL_SHA256 = "aefaa8543c9b9c75e22f5f32b53ab86dfe416457849af1383ff1aef83401423f"
 _UV_URL = "https://github.com/astral-sh/uv/releases/latest/download/uv-{arch}-apple-darwin.tar.gz"
 _UV_CANDIDATES = ("/opt/homebrew/bin/uv", "/usr/local/bin/uv", str(Path.home() / ".local/bin/uv"))
 
@@ -42,13 +50,18 @@ def python_path() -> Path:
     return root() / "env" / "bin" / "python"
 
 
+def drum_model_dir() -> Path:
+    """Demucs ``--repo`` folder holding the DrumSep model."""
+    return root() / "drumsep"
+
+
 def _ready_marker() -> Path:
     return root() / ".ready"
 
 
 def is_installed() -> bool:
-    """Whether setup finished, including the model download."""
-    return _ready_marker().exists() and python_path().exists()
+    """Whether setup finished, including both model downloads."""
+    return _ready_marker().exists() and python_path().exists() and (drum_model_dir() / f"{DRUM_MODEL}.th").exists()
 
 
 def size_bytes() -> int:
@@ -79,7 +92,8 @@ async def install(on_stage: Callable[[str], None]) -> None:
     A failing step raises :class:`InstallError`.
 
     Args:
-        on_stage: Called with ``uv``, ``python``, ``packages`` and ``model``.
+        on_stage: Called with ``uv``, ``python``, ``packages``, ``model`` and
+            ``drum_model``.
     """
     root().mkdir(parents=True, exist_ok=True)
     on_stage("uv")
@@ -100,7 +114,35 @@ async def install(on_stage: Callable[[str], None]) -> None:
         [str(python_path()), "-c", f"from demucs.pretrained import get_model; get_model({MODEL!r})"],
         environment(),
     )
+    on_stage("drum_model")
+    await _download_drum_model()
     _ready_marker().touch()
+
+
+async def _download_drum_model() -> None:
+    target = drum_model_dir() / f"{DRUM_MODEL}.th"
+    if target.exists():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_suffix(".part")
+    digest = hashlib.sha256()
+    try:
+        async with (
+            httpx.AsyncClient(follow_redirects=True, timeout=120) as client,
+            client.stream("GET", _DRUM_MODEL_URL) as response,
+        ):
+            response.raise_for_status()
+            with partial.open("wb") as out:
+                async for chunk in response.aiter_bytes():
+                    digest.update(chunk)
+                    out.write(chunk)
+    except httpx.HTTPError as exc:
+        partial.unlink(missing_ok=True)
+        raise InstallError(f"Couldn't download the drum model: {exc}") from exc
+    if digest.hexdigest() != _DRUM_MODEL_SHA256:
+        partial.unlink(missing_ok=True)
+        raise InstallError("The downloaded drum model doesn't match its checksum.")
+    partial.rename(target)
 
 
 async def _uv() -> str:

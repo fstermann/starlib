@@ -23,43 +23,6 @@ export interface Waveform {
   blockS: number;
 }
 
-/** A frequency band; an omitted edge leaves that side open. */
-export interface Band {
-  highpassHz?: number;
-  lowpassHz?: number;
-}
-
-/** Butterworth Q, in the dB units Web Audio uses for lowpass and highpass. */
-const BUTTERWORTH_Q_DB = 20 * Math.log10(Math.SQRT1_2);
-
-/**
- * Route `from` through a band-pass made of Linkwitz-Riley edges (two
- * Butterworth biquads each, 24 dB/octave), so adjacent bands split at the
- * same frequency add back up to the input. Returns the last node.
- */
-function connectBand(
-  ctx: BaseAudioContext,
-  from: AudioNode,
-  band: Band,
-): AudioNode {
-  let node = from;
-  for (const [type, hz] of [
-    ["highpass", band.highpassHz],
-    ["highpass", band.highpassHz],
-    ["lowpass", band.lowpassHz],
-    ["lowpass", band.lowpassHz],
-  ] as const) {
-    if (hz == null) continue;
-    const filter = ctx.createBiquadFilter();
-    filter.type = type;
-    filter.frequency.value = hz;
-    filter.Q.value = BUTTERWORTH_Q_DB;
-    node.connect(filter);
-    node = filter;
-  }
-  return node;
-}
-
 function blocksOf(
   channels: { data: Float32Array; weight: number }[],
   sampleRate: number,
@@ -98,8 +61,6 @@ export interface LoopRegion {
 
 interface Lane {
   url: string;
-  /** Where sources connect: straight to `gain`, or through the lane's parts. */
-  input: GainNode;
   gain: GainNode;
   buffer: AudioBuffer | null;
   loading: Promise<void> | null;
@@ -113,7 +74,8 @@ export class StemPlayer {
   readonly analyser: AnalyserNode;
   private readonly waveforms = new Map<string, Waveform>();
   private readonly lanes = new Map<string, Lane>();
-  private readonly partGains = new Map<string, GainNode>();
+  /** Gains with no audio of their own that member lanes play through. */
+  private readonly groupGains = new Map<string, GainNode>();
   private startCtxTime = 0;
   private startOffset = 0;
   private pausedAt = 0;
@@ -126,8 +88,8 @@ export class StemPlayer {
     urls: Record<string, string>,
     private readonly onEnded: () => void = () => {},
     private readonly onLoaded: (name: string) => void = () => {},
-    /** Lanes played as bands with their own gains, e.g. drums as kick, mids, tops. */
-    parts: Record<string, { name: string; band: Band }[]> = {},
+    /** Named gains that lanes play through, e.g. drums over kick, snare and hats. */
+    groups: Record<string, string[]> = {},
   ) {
     this.ctx = getSharedAudioContext();
     this.master = this.ctx.createGain();
@@ -136,23 +98,18 @@ export class StemPlayer {
     this.analyser.fftSize = ANALYSER_FFT_SIZE;
     this.analyser.smoothingTimeConstant = 0.8;
     this.master.connect(this.analyser);
-    for (const [name, url] of Object.entries(urls)) {
+    const outputOf = new Map<string, GainNode>();
+    for (const [group, members] of Object.entries(groups)) {
       const gain = this.ctx.createGain();
       gain.connect(this.master);
-      const input = this.ctx.createGain();
-      if (parts[name]) {
-        for (const part of parts[name]) {
-          const partGain = this.ctx.createGain();
-          connectBand(this.ctx, input, part.band).connect(partGain);
-          partGain.connect(gain);
-          this.partGains.set(part.name, partGain);
-        }
-      } else {
-        input.connect(gain);
-      }
+      this.groupGains.set(group, gain);
+      for (const member of members) outputOf.set(member, gain);
+    }
+    for (const [name, url] of Object.entries(urls)) {
+      const gain = this.ctx.createGain();
+      gain.connect(outputOf.get(name) ?? this.master);
       this.lanes.set(name, {
         url,
-        input,
         gain,
         buffer: null,
         loading: null,
@@ -217,7 +174,7 @@ export class StemPlayer {
       source.loopStart = this.loop.start;
       source.loopEnd = this.loop.end;
     }
-    source.connect(lane.input);
+    source.connect(lane.gain);
     source.onended = () => {
       if (lane.source !== source || !this.playing) return;
       this.playing = false;
@@ -271,9 +228,9 @@ export class StemPlayer {
   setGains(gains: Record<string, number>): void {
     const now = this.ctx.currentTime;
     for (const [name, value] of Object.entries(gains)) {
-      const partGain = this.partGains.get(name);
-      if (partGain) {
-        partGain.gain.setTargetAtTime(value, now, GAIN_SMOOTHING_S);
+      const groupGain = this.groupGains.get(name);
+      if (groupGain) {
+        groupGain.gain.setTargetAtTime(value, now, GAIN_SMOOTHING_S);
         continue;
       }
       const lane = this.lanes.get(name);
@@ -297,35 +254,6 @@ export class StemPlayer {
       })),
     );
     const waveform = blocksOf(channels, (buffers[0] as AudioBuffer).sampleRate);
-    this.waveforms.set(key, waveform);
-    return waveform;
-  }
-
-  /**
-   * Waveform of one decoded lane after a band-pass, e.g. the kick out of the
-   * drums. Rendered offline once per band, then cached.
-   */
-  async bandWaveform(name: string, band: Band): Promise<Waveform | null> {
-    const key = `${name}:${band.highpassHz ?? 0}-${band.lowpassHz ?? 0}`;
-    const cached = this.waveforms.get(key);
-    if (cached) return cached;
-    const buffer = this.lanes.get(name)?.buffer;
-    if (!buffer) return null;
-    const offline = new OfflineAudioContext(
-      1,
-      buffer.length,
-      buffer.sampleRate,
-    );
-    const source = offline.createBufferSource();
-    source.buffer = buffer;
-    const node = connectBand(offline, source, band);
-    node.connect(offline.destination);
-    source.start();
-    const rendered = await offline.startRendering();
-    const waveform = blocksOf(
-      [{ data: rendered.getChannelData(0), weight: 1 }],
-      rendered.sampleRate,
-    );
     this.waveforms.set(key, waveform);
     return waveform;
   }
