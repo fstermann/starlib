@@ -19,9 +19,9 @@ The first analysis separates the track into stems, which takes about half a minu
 |------|-------|
 | Bar | Bar numbers and times. Beat ticks appear when zoomed to 8 bars or fewer. |
 | Sections | Detected sections, coloured by type. Click one to jump to it. |
-| Waveform | The stems summed back into the full mix: peaks in the outer shade, loudness (RMS) in the inner one. Sharp down to a single bar. |
-| Loudness, Width, Brightness | Mix level, stereo width (side over mid power) and spectral centroid per bar. |
-| Original, Drums, Bass, Other, Vocals / FX | Waveform of each stem, all on the same scale so a quiet stem looks quiet. The original's waveform appears once you unmute or solo it. A mostly silent vocals stem is labelled **FX / shots**, since on instrumentals it picks up mid-range hits and effects. |
+| Original | The full mix, drawn from the stems summed back together: peaks in the outer shade, loudness (RMS) in the inner one. Sharp down to a single bar. |
+| Loudness, Width, Brightness | Mix level (solid), stereo width as side over mid power (dashed) and spectral centroid (dotted) per bar. Click a name to hide its line. |
+| Drums, Bass, Other, Vocals / FX | Waveform of each stem in its own colour, all on the same scale so a quiet stem looks quiet. A muted lane, or one silenced by another lane's solo, is greyed out. A mostly silent vocals stem is labelled **FX / shots**, since on instrumentals it picks up mid-range hits and effects. |
 | Kick, Bass, Drum mids, Tops 16ths | Energy per 16th note. Shown when zoomed to 16 bars or fewer: use it to see where the kick sits, what the bass leaves free and how a build-up's roll accelerates. |
 
 The header shows tempo, root note (from the strongest bass peak), bar count and where bar 1 starts.

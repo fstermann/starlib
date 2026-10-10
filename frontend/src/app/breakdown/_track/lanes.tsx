@@ -364,10 +364,16 @@ function RenameInput({
   );
 }
 
+/** Neutral and told apart by dash, since the chart colours belong to the stems. */
 export const CURVES = [
-  { id: "loudness", label: "Loudness", color: "var(--chart-3)" },
-  { id: "width", label: "Width", color: "var(--chart-2)" },
-  { id: "brightness", label: "Brightness", color: "var(--chart-4)" },
+  { id: "loudness", label: "Loudness", color: "var(--text)", dash: "" },
+  { id: "width", label: "Width", color: "var(--text-muted)", dash: "6 4" },
+  {
+    id: "brightness",
+    label: "Brightness",
+    color: "var(--text-muted)",
+    dash: "0.5 3",
+  },
 ] as const;
 export type CurveId = (typeof CURVES)[number]["id"];
 
@@ -398,6 +404,8 @@ export function CurveLane({
           fill="none"
           stroke={c.color}
           strokeWidth={1.5}
+          strokeDasharray={c.dash || undefined}
+          strokeLinecap="round"
           vectorEffect="non-scaling-stroke"
           points={curveValues(features, c.id)
             .map((v, i) => `${i + 0.5},${height - v * (height - 4) - 2}`)
@@ -408,11 +416,12 @@ export function CurveLane({
   );
 }
 
+/** Coloured like the stem each lane is measured from. */
 export const GROOVE_LANES = [
   { id: "kick", label: "Kick", color: "var(--chart-1)" },
   { id: "bass", label: "Bass", color: "var(--chart-2)" },
-  { id: "drum_mids", label: "Drum mids", color: "var(--chart-3)" },
-  { id: "drum_tops", label: "Tops", color: "var(--chart-4)" },
+  { id: "drum_mids", label: "Drum mids", color: "var(--chart-1)" },
+  { id: "drum_tops", label: "Tops", color: "var(--chart-1)" },
 ] as const;
 
 /** Band energy per 16th note: shows where the kick sits and what the bass leaves free. */

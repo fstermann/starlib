@@ -276,13 +276,12 @@ test.describe("Track Breakdown", () => {
       "data-label",
       "breakdown",
     );
-    for (const lane of ["original", "drums", "bass", "other", "vocals"]) {
+    await expect(
+      page.getByTestId("track-lane-original").getByTestId("track-waveform"),
+    ).toBeVisible();
+    for (const lane of ["drums", "bass", "other", "vocals"]) {
       await expect(page.getByTestId(`track-waveform-${lane}`)).toBeVisible();
     }
-    // The original decodes only once it's audible.
-    await expect(page.getByTestId("track-lane-original")).toContainText(
-      "Unmute or solo to load the original",
-    );
     // The vocals stem is silent here, so it is labelled as FX rather than vocals.
     await expect(page.getByTestId("track-lane-vocals")).toContainText(
       "FX / shots",
@@ -354,10 +353,13 @@ test.describe("Track Breakdown", () => {
       "true",
     );
 
-    await page.getByTestId("track-solo-original").click();
-    await expect(page.getByTestId("track-lane-original")).not.toContainText(
-      "Unmute or solo to load the original",
-    );
+    // Muted and solo-silenced lanes are greyed out; the soloed one isn't.
+    const audible = (lane: string) =>
+      page.getByTestId(`track-lane-${lane}`).locator("[data-audible]");
+    await expect(audible("original")).toHaveAttribute("data-audible", "false");
+    await expect(audible("drums")).toHaveAttribute("data-audible", "false");
+    await expect(audible("other")).toHaveAttribute("data-audible", "false");
+    await expect(audible("bass")).toHaveAttribute("data-audible", "true");
   });
 
   test("zooming in reveals the 16th-note groove grid", async ({ page }) => {

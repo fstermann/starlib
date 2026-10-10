@@ -22,6 +22,7 @@ import {
   STEM_NAMES,
   stemLabel,
   type Section,
+  type StemName,
   type TrackBreakdown,
 } from "@/lib/track-breakdown";
 import { sectionIndexAt } from "@/lib/track-breakdown-sections";
@@ -45,6 +46,7 @@ import {
   type View,
 } from "./lanes";
 import {
+  laneGains,
   ORIGINAL,
   useStemPlayer,
   type LaneName,
@@ -58,8 +60,7 @@ const ZOOM_PRESETS = [
   { label: "1 bar", span: 1 },
 ] as const;
 const MIN_SPAN = 1;
-const LANE_COLORS: Record<LaneName, string> = {
-  original: "var(--chart-5)",
+const LANE_COLORS: Record<StemName, string> = {
   drums: "var(--chart-1)",
   bass: "var(--chart-2)",
   other: "var(--chart-3)",
@@ -94,6 +95,7 @@ export function TrackWorkspace({
   const grid = features.grid;
   const nBars = grid.n_bars;
   const player = useStemPlayer(result.digest, api.getAudioUrl(path));
+  const gains = laneGains(player.mix);
   const [baseView, setBaseView] = useState<View>({ start: 1, span: nBars });
   const [sections, setSections] = useState(result.sections);
   const [loopIndex, setLoopIndex] = useState<number | null>(null);
@@ -366,12 +368,22 @@ export function TrackWorkspace({
             onLoop={toggleLoop}
           />
         </LaneRow>
-        <LaneRow label="Waveform" height={96} view={view} onSeekBar={seekBar}>
-          <WaveformLane
-            view={view}
-            grid={grid}
-            waveform={player.waveform(STEM_NAMES)}
-          />
+        <LaneRow
+          label="Original"
+          controls={<LaneControls lane={ORIGINAL} player={player} />}
+          height={96}
+          view={view}
+          onSeekBar={seekBar}
+          testId={`track-lane-${ORIGINAL}`}
+        >
+          {/* The stems sum back to the original, so the original needn't decode to be drawn. */}
+          <AudibleLane audible={gains[ORIGINAL] > 0}>
+            <WaveformLane
+              view={view}
+              grid={grid}
+              waveform={player.waveform(STEM_NAMES)}
+            />
+          </AudibleLane>
         </LaneRow>
         <LaneRow
           label={
@@ -386,28 +398,25 @@ export function TrackWorkspace({
         >
           <CurveLane view={view} features={features} visible={curves} />
         </LaneRow>
-        {([ORIGINAL, ...STEM_NAMES] as LaneName[]).map((lane) => (
+        {STEM_NAMES.map((lane) => (
           <LaneRow
             key={lane}
-            label={lane === ORIGINAL ? "Original" : stemLabel(lane, features)}
+            label={stemLabel(lane, features)}
             controls={<LaneControls lane={lane} player={player} />}
             height={48}
             view={view}
             onSeekBar={seekBar}
             testId={`track-lane-${lane}`}
           >
-            <WaveformLane
-              view={view}
-              grid={grid}
-              waveform={player.waveform([lane])}
-              color={LANE_COLORS[lane]}
-              testId={`track-waveform-${lane}`}
-            />
-            {lane === ORIGINAL && !player.waveform([lane]) && (
-              <span className="pointer-events-none absolute inset-0 flex items-center px-3 text-xs text-[var(--text-subtle)]">
-                Unmute or solo to load the original
-              </span>
-            )}
+            <AudibleLane audible={gains[lane] > 0}>
+              <WaveformLane
+                view={view}
+                grid={grid}
+                waveform={player.waveform([lane])}
+                color={LANE_COLORS[lane]}
+                testId={`track-waveform-${lane}`}
+              />
+            </AudibleLane>
           </LaneRow>
         ))}
         {showGroove ? (
@@ -462,6 +471,27 @@ export function TrackWorkspace({
         </div>
       </section>
     </main>
+  );
+}
+
+/** Greys out a lane that is muted or silenced by another lane's solo. */
+function AudibleLane({
+  audible,
+  children,
+}: {
+  audible: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "h-full transition-[opacity,filter]",
+        !audible && "opacity-40 grayscale",
+      )}
+      data-audible={audible}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -554,10 +584,23 @@ function CurveLegend({
             visible[c.id] ? "text-[var(--text)]" : "text-[var(--text-subtle)]",
           )}
         >
-          <span
-            className="h-0.5 w-3 rounded-full"
-            style={{ background: c.color, opacity: visible[c.id] ? 1 : 0.3 }}
-          />
+          <svg
+            width={14}
+            height={4}
+            aria-hidden="true"
+            style={{ opacity: visible[c.id] ? 1 : 0.3 }}
+          >
+            <line
+              x1={1}
+              x2={13}
+              y1={2}
+              y2={2}
+              stroke={c.color}
+              strokeWidth={1.5}
+              strokeDasharray={c.dash || undefined}
+              strokeLinecap="round"
+            />
+          </svg>
           {c.label}
         </button>
       ))}

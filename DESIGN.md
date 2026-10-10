@@ -187,7 +187,7 @@ same-hue inset border.
 Track Breakdown reuses these tokens for its own labels rather than adding new
 ones: intro → `intro`, groove → `verse`, build → `up`, main → `chorus`,
 breakdown and break → `down`, filtered → `bridge`, outro → `outro`, and tail or
-any user-typed label → `other`. Stem lanes and curves use `--chart-*`.
+any user-typed label → `other`. Stem lanes and their 16th-note lanes use `--chart-*`, one colour per stem; the loudness, width and brightness curves stay neutral (text tokens, told apart by dash) so they never read as a stem.
 
 ---
 
