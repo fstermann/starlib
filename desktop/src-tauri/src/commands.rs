@@ -363,3 +363,9 @@ pub async fn open_soundcloud_login<R: Runtime>(
         completed,
     })
 }
+
+/// Seconds of delay on the default audio output device, or `None` off macOS.
+#[tauri::command]
+pub fn output_latency() -> Option<f64> {
+    crate::output_latency::default_output_latency()
+}

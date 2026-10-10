@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { claimPlayback, releasePlayback } from "@/lib/exclusive-audio";
 import { getRaw, setRaw } from "@/lib/settings";
 import { StemPlayer, type LoopRegion } from "@/lib/stem-player";
+import { isTauri, outputLatency } from "@/lib/tauri";
 import {
   DRUM_PART_NAMES,
   STEM_NAMES,
@@ -102,9 +103,32 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     });
   }, []);
 
+  const deviceLatency = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!delayed || !isTauri()) return;
+    let cancelled = false;
+    const read = () =>
+      outputLatency()
+        .catch(() => null)
+        .then((seconds) => {
+          if (!cancelled) deviceLatency.current = seconds;
+        });
+    void read();
+    // Polled so switching output devices is picked up within a second.
+    const timer = window.setInterval(read, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [delayed]);
+
   /** Seconds the playhead and spectrum wait so they match what you hear. */
   const displayDelay = useCallback(
-    () => (delayedRef.current ? (playerRef.current?.outputDelay() ?? 0) : 0),
+    () =>
+      delayedRef.current
+        ? (playerRef.current?.outputDelay(deviceLatency.current) ?? 0)
+        : 0,
     [],
   );
 

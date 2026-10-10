@@ -36,7 +36,7 @@ All lanes play sample-locked to each other. Each lane has **M** (mute), **S** (s
 
 - Click a lane to set the cue (the marker in the bar ruler), as in Ableton. ++space++ plays from the cue and, pressed again, stops and returns to it. Clicking while playing jumps there.
 - ++shift+space++ pauses and resumes where playback is, without returning to the cue.
-- The headphones button holds the playhead and spectrum back by the delay your output device reports (for AirPods about 160 ms), so they match what you hear over Bluetooth. Starlib remembers the setting.
+- The headphones button holds the playhead and spectrum back by the delay your output device reports (for AirPods about 160 ms), so they match what you hear over Bluetooth. It follows when you switch output devices. Starlib remembers the setting.
 - **Loop section** loops the section under the playhead.
 - **Track / 32 bars / 8 bars / 1 bar** set the zoom. ++cmd++ + scroll zooms around the pointer; a horizontal scroll pans.
 - Click the strip above the lanes to move the visible window.
