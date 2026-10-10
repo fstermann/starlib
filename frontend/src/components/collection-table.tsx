@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Eraser, PencilLine, Workflow } from "lucide-react";
+import { AudioLines, Check, Eraser, PencilLine, Workflow } from "lucide-react";
+import { useRouter } from "next/navigation";
 import {
   parseAsArrayOf,
   parseAsInteger,
@@ -40,6 +41,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ContextMenuItem } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -69,6 +71,7 @@ import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import { searchParams } from "@/lib/search-params";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
 import { parseRemix, removeMix } from "@/lib/string-utils";
+import { trackBreakdownHref } from "@/lib/track-breakdown";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
@@ -411,6 +414,7 @@ function EditRow({
   visibleFields,
 }: EditRowProps) {
   const { enqueue, playNext } = usePlayer();
+  const router = useRouter();
   const playerTrack: PlayerTrack = {
     filePath: item.file_path,
     fileName: item.file_name,
@@ -441,6 +445,16 @@ function EditRow({
     <TrackQueueMenu
       onPlayNext={() => playNext(playerTrack)}
       onAddToQueue={() => enqueue(playerTrack)}
+      extraItems={
+        <ContextMenuItem
+          data-testid="open-in-breakdown"
+          onSelect={() => router.push(trackBreakdownHref(item.file_path))}
+          className="text-xs"
+        >
+          <AudioLines className="size-3.5" />
+          Open in Breakdown
+        </ContextMenuItem>
+      }
     >
       <div
         role="row"

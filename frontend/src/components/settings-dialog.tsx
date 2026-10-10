@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AudioWaveform,
   Bot,
   CheckCircle2,
   Clapperboard,
@@ -21,6 +22,7 @@ import {
 import { useTheme } from "next-themes";
 import React, { useEffect, useState } from "react";
 
+import { BreakdownSettings } from "@/components/breakdown-settings";
 import { FolderConfigManager } from "@/components/rulesets/folder-config-manager";
 import { RulesetManager } from "@/components/rulesets/ruleset-manager";
 import { Spinner } from "@/components/spinner";
@@ -69,6 +71,7 @@ type SectionId =
   | "library"
   | "folders"
   | "rulesets"
+  | "breakdown"
   | "ai"
   | "updates";
 
@@ -99,6 +102,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "folders", label: "Folders", icon: FolderOpen, indent: true },
       { id: "rulesets", label: "Rulesets", icon: Workflow, indent: true },
+      { id: "breakdown", label: "Breakdown", icon: AudioWaveform },
     ],
   },
   {
@@ -1210,6 +1214,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 )}
               </div>
             )}
+
+            {section === "breakdown" && <BreakdownSettings />}
 
             {section === "updates" && loaded && (
               <div className="flex flex-col gap-6">

@@ -1,0 +1,64 @@
+# Breakdown
+
+Breakdown has two views, switched with the **Set / Track** toggle at the top left.
+
+- **Set** finds the tracks in a SoundCloud DJ set: BPM per window, sections, Shazam matches and a tracklist.
+- **Track** takes one track from your collection apart so you can study its arrangement.
+
+## Track view
+
+Open a track with **Open in Breakdown** in the library row's right-click menu, the **Open selected track in Breakdown** palette command, or the search box on the Track view.
+
+The first analysis separates the track into stems, which takes about half a minute on Apple Silicon. Results are cached by the track's audio, so editing its tags doesn't trigger a new analysis. You can cancel while it runs.
+
+### What you see
+
+| Lane | Shows |
+|------|-------|
+| Bar | Bar numbers and times. Beat ticks appear when zoomed to 8 bars or fewer. |
+| Sections | Detected sections, coloured by type. Click one to jump to it. |
+| Loudness, Width, Brightness | Mix level, stereo width (side over mid power) and spectral centroid per bar. |
+| Bands (mix) | Energy in six bands from 20 Hz to 20 kHz. Each band is scaled to its own peak, so filter sweeps show as a band fading out and back. |
+| Original, Drums, Bass, Other, Vocals / FX | Level per bar of the original and each stem. A mostly silent vocals stem is labelled **FX / shots**, since on instrumentals it picks up mid-range hits and effects. |
+| Kick, Bass, Drum mids, Tops 16ths | Energy per 16th note. Shown when zoomed to 16 bars or fewer: use it to see where the kick sits, what the bass leaves free and how a build-up's roll accelerates. |
+
+The header shows tempo, root note (from the strongest bass peak), bar count and where bar 1 starts.
+
+Stems are machine-separated and approximate. Expect some bleed between lanes.
+
+### Playing stems
+
+All lanes play sample-locked to each other. Each lane has **M** (mute), **S** (solo) and a volume slider. The original starts muted; solo it to compare against the stems.
+
+- ++space++ plays and pauses.
+- **Loop section** loops the section under the playhead.
+- **Track / 32 bars / 8 bars / 1 bar** set the zoom. ++cmd++ + scroll zooms around the pointer; a horizontal scroll pans.
+- Click the strip above the lanes to move the visible window.
+
+### Editing sections
+
+Labels are a first guess. Edits are saved per track.
+
+- Drag the edge between two sections to move the boundary.
+- Double-click a section to rename it.
+- Right-click a section to split it at the clicked bar, merge it with the next one, or loop it.
+- The reset button next to **Sections** returns to the detected sections.
+
+### Correcting the bar grid
+
+Bar 1 is assumed to start on the first kick, which holds for DJ-oriented tracks. If it doesn't, click **Bar 1** in the header, correct the tempo or nudge the downbeat, then **Re-measure**. Stems are reused, so this takes a few seconds.
+
+## Setup
+
+Stem separation uses [Demucs](https://github.com/facebookresearch/demucs) with the `htdemucs` model. It needs PyTorch, which is too large to bundle (about 720 MB installed), so you install it once:
+
+```bash
+uv venv ~/.starlib-demucs
+uv pip install --python ~/.starlib-demucs demucs soundfile
+```
+
+Then set **Settings > Breakdown > Demucs Python** to `~/.starlib-demucs/bin/python`. The first analysis downloads the 80 MB model.
+
+Stems are FLAC, about 110 MB per six-minute track. **Stems folder** in the same settings section moves them out of the app cache.
+
+Track view works on files inside your music root folder. SoundCloud tracks aren't supported.

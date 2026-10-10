@@ -34,7 +34,8 @@ class StemsUnavailableError(RuntimeError):
 
 def demucs_python() -> str | None:
     """Return the configured Demucs interpreter, if any."""
-    return settings_store.load().app.demucs_python or os.environ.get("STARLIB_DEMUCS_PYTHON") or None
+    python = settings_store.load().app.demucs_python or os.environ.get("STARLIB_DEMUCS_PYTHON")
+    return str(Path(python).expanduser()) if python else None
 
 
 def _device() -> str:

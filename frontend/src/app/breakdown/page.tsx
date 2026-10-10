@@ -30,6 +30,7 @@ import {
   type TrackTimelineEntry,
 } from "@/lib/breakdown";
 
+import { BreakdownTitle } from "./_components/breakdown-title";
 import { BreakdownCommands } from "./_components/commands";
 import { BreakdownControls } from "./_components/controls";
 import { BreakdownDetailPane } from "./_components/detail-pane";
@@ -39,6 +40,7 @@ import { BreakdownStartScreen } from "./_components/start-screen";
 import { BreakdownTimeline } from "./_components/timeline";
 import { TracklistPanel } from "./_components/tracklist-panel";
 import { useBreakdownJob } from "./_hooks/use-breakdown-job";
+import { TrackBreakdownView } from "./_track/track-view";
 
 function BreakdownPageInner() {
   const router = useRouter();
@@ -49,7 +51,7 @@ function BreakdownPageInner() {
   const jobId = search.get("job");
   const initialUrl = search.get("url") ?? "";
 
-  useTopBar({ title: "Set Breakdown" });
+  useTopBar({ title: <BreakdownTitle view="set" /> });
 
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] =
@@ -554,10 +556,15 @@ function BreakdownPageInner() {
   );
 }
 
+function BreakdownViewSwitch() {
+  const view = useSearchParams().get("view");
+  return view === "track" ? <TrackBreakdownView /> : <BreakdownPageInner />;
+}
+
 export default function BreakdownPage() {
   return (
     <Suspense fallback={null}>
-      <BreakdownPageInner />
+      <BreakdownViewSwitch />
     </Suspense>
   );
 }

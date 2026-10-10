@@ -32,6 +32,8 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "nav:/library",
   "nav:/weekly",
   "nav:/breakdown",
+  "nav:/breakdown?view=set",
+  "nav:/breakdown?view=track",
   "nav:/library?source=filesystem",
   "nav:/library?source=soundcloud&tab=me",
   "nav:/library?source=soundcloud&tab=discover",
@@ -42,6 +44,9 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "breakdown.reanalyse-selection",
   "breakdown.export-tracklist",
   "breakdown.link-soundcloud",
+  "breakdown.open-track",
+  "breakdown.track.loop-section",
+  "breakdown.track.reset-sections",
 ]);
 
 /** Allowed ID prefixes for dynamic providers (folder shortcuts, search hits). */

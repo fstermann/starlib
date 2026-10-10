@@ -27,10 +27,13 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 
 | ID | Label | When | Source |
 |----|-------|------|--------|
-| `breakdown.paste-url` | Analyse SoundCloud URL from clipboard | on `/breakdown` | `app/breakdown/_components/commands.tsx` |
-| `breakdown.reanalyse-selection` | Re-analyse selected region | on `/breakdown`, region selected on the timeline | `app/breakdown/_components/commands.tsx` |
-| `breakdown.export-tracklist` | Export detected tracklist | on `/breakdown`, a job is loaded | `app/breakdown/_components/commands.tsx` |
-| `breakdown.link-soundcloud` | Find SoundCloud links for tracks | on `/breakdown`, a job is loaded | `app/breakdown/_components/commands.tsx` |
+| `breakdown.paste-url` | Analyse SoundCloud URL from clipboard | on `/breakdown?view=set` | `app/breakdown/_components/commands.tsx` |
+| `breakdown.reanalyse-selection` | Re-analyse selected region | on `/breakdown?view=set`, region selected on the timeline | `app/breakdown/_components/commands.tsx` |
+| `breakdown.export-tracklist` | Export detected tracklist | on `/breakdown?view=set`, a job is loaded | `app/breakdown/_components/commands.tsx` |
+| `breakdown.link-soundcloud` | Find SoundCloud links for tracks | on `/breakdown?view=set`, a job is loaded | `app/breakdown/_components/commands.tsx` |
+| `breakdown.open-track` | Open selected track in Breakdown | on `/library?source=filesystem`, a track is selected | `app/library/filesystem-view.tsx` |
+| `breakdown.track.loop-section` | Loop section at playhead / Stop looping section | on `/breakdown?view=track`, a track is analysed | `app/breakdown/_track/commands.tsx` |
+| `breakdown.track.reset-sections` | Reset sections to detected | on `/breakdown?view=track`, sections were edited | `app/breakdown/_track/commands.tsx` |
 
 ### Go to
 
@@ -40,7 +43,9 @@ Pulled from `src/lib/nav-config.ts` (`NAV_LINKS` + `QUICK_JUMPS`). Add an entry 
 |----|-------|
 | `nav:/library` | Go to Library |
 | `nav:/weekly` | Go to Weekly Favorites |
-| `nav:/breakdown` | Go to Set Breakdown |
+| `nav:/breakdown` | Go to Breakdown |
+| `nav:/breakdown?view=set` | Go to Breakdown: Set |
+| `nav:/breakdown?view=track` | Go to Breakdown: Track |
 | `nav:/library?source=filesystem` | Go to Library: Filesystem |
 | `nav:/library?source=soundcloud&tab=me` | Go to Library: SoundCloud — My Library |
 | `nav:/library?source=soundcloud&tab=discover` | Go to Library: SoundCloud — Discover |

@@ -1,0 +1,416 @@
+import type { Page, Route } from "@playwright/test";
+
+import { expect, test } from "./fixtures";
+
+/**
+ * Track Breakdown: the Set/Track toggle, picking a track, job progress,
+ * the analysed timeline, section edits, stem mute/solo, zoom and the
+ * library entry point. The backend is mocked; stems are a silent WAV.
+ */
+
+const PATH = "/music/collection/Artist - Tune.aiff";
+const DIGEST = "d1g35t";
+const N_BARS = 48;
+const BPM = 128;
+
+const SECTIONS = [
+  { start_bar: 1, end_bar: 16, label: "intro" },
+  { start_bar: 17, end_bar: 32, label: "groove" },
+  { start_bar: 33, end_bar: 48, label: "breakdown" },
+];
+
+function source(level: number) {
+  return {
+    db: Array.from({ length: N_BARS }, () => level),
+    bands_db: Array.from({ length: N_BARS }, () => [
+      level,
+      level,
+      level,
+      level,
+      level,
+      -18,
+    ]),
+    centroid_hz: Array.from({ length: N_BARS }, () => 4000),
+    width: Array.from({ length: N_BARS }, (_, i) => (i >= 32 ? 0.6 : 0.02)),
+    onset: Array.from({ length: N_BARS }, () => 0.1),
+  };
+}
+
+const grooveLane = () =>
+  Array.from({ length: N_BARS }, () =>
+    Array.from({ length: 16 }, (_, slot) => (slot % 4 === 0 ? 0 : -40)),
+  );
+
+function breakdown(sections = SECTIONS, edited = false) {
+  return {
+    digest: DIGEST,
+    features: {
+      pipeline_version: 1,
+      sample_rate: 44100,
+      duration_s: (N_BARS * 240) / BPM,
+      grid: {
+        bpm: BPM,
+        bpm_rough: BPM,
+        concentration: 0.1,
+        downbeat_s: 0.25,
+        bar_s: 240 / BPM,
+        n_bars: N_BARS,
+        beats_per_bar: 4,
+      },
+      bands_hz: [
+        [20, 60],
+        [60, 150],
+        [150, 500],
+        [500, 2000],
+        [2000, 6000],
+        [6000, 20000],
+      ],
+      sources: {
+        mix: source(-1),
+        drums: source(-6),
+        bass: source(-8),
+        other: source(-14),
+        vocals: source(-70),
+      },
+      groove: {
+        kick: grooveLane(),
+        bass: grooveLane(),
+        drum_mids: grooveLane(),
+        drum_tops: grooveLane(),
+      },
+      tonal: {
+        root: "A",
+        bass_peaks: [{ hz: 55, note: "A1", db: 0 }],
+        chroma: Array.from({ length: N_BARS }, () => Array(12).fill(0)),
+      },
+    },
+    sections,
+    detected_sections: SECTIONS,
+    sections_edited: edited,
+    grid_edited: false,
+  };
+}
+
+/** One second of 16-bit mono silence as a WAV file. */
+function silentWav(): Buffer {
+  const rate = 8000;
+  const samples = rate;
+  const buf = Buffer.alloc(44 + samples * 2);
+  buf.write("RIFF", 0);
+  buf.writeUInt32LE(36 + samples * 2, 4);
+  buf.write("WAVEfmt ", 8);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20);
+  buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * 2, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write("data", 36);
+  buf.writeUInt32LE(samples * 2, 40);
+  return buf;
+}
+
+const sse = (events: object[]) =>
+  events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+
+interface Mocks {
+  savedSections: unknown[];
+  cancelled: number;
+}
+
+async function mockTrackApi(
+  page: Page,
+  events: object[] = [
+    { type: "stage", stage: "hash", progress: null },
+    { type: "complete", digest: DIGEST },
+  ],
+): Promise<Mocks> {
+  const mocks: Mocks = { savedSections: [], cancelled: 0 };
+  await page.route("**/api/breakdown/tracks/jobs", (route) =>
+    route.fulfill({ json: { job_id: "job-1" } }),
+  );
+  await page.route("**/api/breakdown/tracks/jobs/job-1/events", (route) =>
+    route.fulfill({ contentType: "text/event-stream", body: sse(events) }),
+  );
+  await page.route("**/api/breakdown/tracks/jobs/job-1/cancel", (route) => {
+    mocks.cancelled += 1;
+    return route.fulfill({ json: { cancelled: true } });
+  });
+  await page.route(`**/api/breakdown/tracks/${DIGEST}/stems/*`, (route) =>
+    route.fulfill({ contentType: "audio/wav", body: silentWav() }),
+  );
+  await page.route(/\/api\/metadata\/files\/.*\/audio$/, (route) =>
+    route.fulfill({ contentType: "audio/wav", body: silentWav() }),
+  );
+  await page.route(
+    `**/api/breakdown/tracks/${DIGEST}/sections`,
+    (route: Route) => {
+      if (route.request().method() === "DELETE") {
+        return route.fulfill({ json: breakdown() });
+      }
+      const body = route.request().postDataJSON() as {
+        sections: typeof SECTIONS;
+      };
+      mocks.savedSections.push(body.sections);
+      return route.fulfill({ json: breakdown(body.sections, true) });
+    },
+  );
+  await page.route(`**/api/breakdown/tracks/${DIGEST}`, (route) =>
+    route.fulfill({ json: breakdown() }),
+  );
+  return mocks;
+}
+
+const trackUrl = `/breakdown?view=track&path=${encodeURIComponent(PATH)}`;
+
+test.describe("Track Breakdown", () => {
+  test("the view toggle switches between Set and Track", async ({ page }) => {
+    await page.goto("/breakdown");
+    await expect(page.getByTestId("breakdown-start-screen")).toBeVisible();
+
+    await page.getByRole("tab", { name: "Track" }).click();
+    await expect(page).toHaveURL(/\/breakdown\?view=track$/);
+    await expect(page.getByTestId("track-picker-input")).toBeVisible();
+
+    await page.getByRole("tab", { name: "Set" }).click();
+    await expect(page).toHaveURL(/\/breakdown\?view=set$/);
+    await expect(page.getByTestId("breakdown-start-screen")).toBeVisible();
+  });
+
+  test("picking a track from the collection opens its breakdown", async ({
+    page,
+  }) => {
+    await mockTrackApi(page);
+    await page.route("**/api/metadata/folders/collection/browse*", (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            {
+              file_path: PATH,
+              file_name: "Artist - Tune.aiff",
+              title: "Tune",
+              artist: "Artist",
+            },
+          ],
+          total: 1,
+          page: 1,
+          size: 12,
+          pages: 1,
+        },
+      }),
+    );
+    await page.goto("/breakdown?view=track");
+    await page.getByTestId("track-picker-input").fill("tune");
+    await page.getByTestId("track-picker-result").click();
+
+    await expect(page).toHaveURL(
+      new RegExp(`path=${encodeURIComponent(PATH).replace(/[.]/g, "\\.")}`),
+    );
+    await expect(page.getByTestId("track-bpm")).toHaveText("128 BPM");
+  });
+
+  test("shows tempo, root, sections and stem lanes once analysed", async ({
+    page,
+  }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+
+    await expect(page.getByTestId("track-breakdown-title")).toHaveText(
+      "Artist - Tune",
+    );
+    await expect(page.getByTestId("track-bpm")).toHaveText("128 BPM");
+    await expect(page.getByTestId("track-root")).toHaveText("A");
+    await expect(page.getByTestId("track-section")).toHaveCount(3);
+    await expect(page.getByTestId("track-section").nth(2)).toHaveAttribute(
+      "data-label",
+      "breakdown",
+    );
+    for (const lane of ["original", "drums", "bass", "other", "vocals"]) {
+      await expect(page.getByTestId(`track-lane-${lane}`)).toBeVisible();
+    }
+    // The vocals stem is silent here, so it is labelled as FX rather than vocals.
+    await expect(page.getByTestId("track-lane-vocals")).toContainText(
+      "FX / shots",
+    );
+    await expect(page.getByText("Loading stems…")).toHaveCount(0);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+  });
+
+  test("merging sections saves the edit and offers a reset", async ({
+    page,
+  }) => {
+    const mocks = await mockTrackApi(page);
+    await page.goto(trackUrl);
+
+    await page.getByTestId("track-section").first().click({ button: "right" });
+    await page.getByTestId("track-section-merge").click();
+
+    await expect(page.getByTestId("track-section")).toHaveCount(2);
+    expect(mocks.savedSections).toEqual([
+      [
+        { start_bar: 1, end_bar: 32, label: "intro" },
+        { start_bar: 33, end_bar: 48, label: "breakdown" },
+      ],
+    ]);
+
+    await page.getByTestId("track-sections-reset").click();
+    await expect(page.getByTestId("track-section")).toHaveCount(3);
+  });
+
+  test("renaming a section saves the new label", async ({ page }) => {
+    const mocks = await mockTrackApi(page);
+    await page.goto(trackUrl);
+
+    await page.getByTestId("track-section").nth(1).dblclick();
+    await page.getByTestId("track-section-rename").fill("drop");
+    await page.getByTestId("track-section-rename").press("Enter");
+
+    await expect(page.getByTestId("track-section").nth(1)).toHaveAttribute(
+      "data-label",
+      "drop",
+    );
+    expect(mocks.savedSections.at(-1)).toEqual([
+      SECTIONS[0],
+      { start_bar: 17, end_bar: 32, label: "drop" },
+      SECTIONS[2],
+    ]);
+  });
+
+  test("mute and solo toggle per lane; the original starts muted", async ({
+    page,
+  }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+
+    await expect(page.getByTestId("track-mute-original")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await page.getByTestId("track-solo-bass").click();
+    await expect(page.getByTestId("track-solo-bass")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await page.getByTestId("track-mute-drums").click();
+    await expect(page.getByTestId("track-mute-drums")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("zooming in reveals the 16th-note groove grid", async ({ page }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+
+    await expect(page.getByTestId("track-groove-hint")).toBeVisible();
+    await page.getByRole("button", { name: "8 bars" }).click();
+    await expect(page.getByTestId("track-groove-kick")).toBeVisible();
+    await expect(page.getByTestId("track-groove-hint")).toHaveCount(0);
+  });
+
+  test("looping the section at the playhead", async ({ page }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+
+    await page.getByTestId("track-loop").click();
+    await expect(page.getByTestId("track-loop")).toHaveText(/Looping intro/);
+    await expect(page.getByTestId("track-loop")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("shows stem separation progress and cancels the job", async ({
+    page,
+  }) => {
+    const mocks = await mockTrackApi(page, [
+      { type: "stage", stage: "hash", progress: null },
+      { type: "stage", stage: "stems", progress: 0.5 },
+    ]);
+    await page.goto(trackUrl);
+
+    await expect(page.getByTestId("track-breakdown-progress")).toBeVisible();
+    await expect(page.getByTestId("track-stems-percent")).toHaveText("50%");
+    await page.getByTestId("track-breakdown-cancel").click();
+    await expect.poll(() => mocks.cancelled).toBe(1);
+  });
+
+  test("reports a failed analysis", async ({ page }) => {
+    await mockTrackApi(page, [
+      {
+        type: "error",
+        message:
+          "Stem separation needs Demucs: set its Python in Settings > Breakdown",
+      },
+    ]);
+    await page.goto(trackUrl);
+
+    await expect(page.getByTestId("track-breakdown-failed")).toContainText(
+      "Settings > Breakdown",
+    );
+  });
+
+  test("library rows open in Breakdown from the context menu", async ({
+    page,
+  }) => {
+    const row = {
+      file_path: PATH,
+      file_name: "Artist - Tune.aiff",
+      file_format: ".aiff",
+      has_artwork: false,
+      title: "Tune",
+      artist: "Artist",
+    };
+    const browse = (route: Route) =>
+      route.fulfill({
+        json: { items: [row], total: 1, page: 1, size: 50, pages: 1 },
+      });
+    await page.route("**/api/metadata/folders/*/browse*", browse);
+    await page.route(/\/api\/metadata\/folders\/browse-path\?/, browse);
+    await mockTrackApi(page);
+
+    await page.goto("/library");
+    await page.locator("[data-index]").first().click({ button: "right" });
+    await page.getByTestId("open-in-breakdown").click();
+
+    await expect(page).toHaveURL(/\/breakdown\?view=track&path=/);
+    await expect(page.getByTestId("track-bpm")).toHaveText("128 BPM");
+  });
+});
+
+test.describe("Breakdown settings", () => {
+  test("saves the Demucs interpreter and stems folder", async ({ page }) => {
+    let saved: Record<string, unknown> | null = null;
+    await page.route(/\/api\/settings$/, (route) => {
+      if (route.request().method() === "PUT") {
+        saved = route.request().postDataJSON();
+        return route.fulfill({ json: saved });
+      }
+      return route.fulfill({
+        json: {
+          preferred_output_format: "aiff",
+          root_music_folder: "/music",
+          demucs_python: "",
+          breakdown_cache_dir: "",
+        },
+      });
+    });
+    await page.goto("/library");
+    await page
+      .getByRole("button", { name: /settings/i })
+      .first()
+      .click();
+    await page.getByRole("button", { name: "Breakdown" }).click();
+
+    await page.getByLabel("Demucs Python").fill("~/.starlib-demucs/bin/python");
+    await page.getByRole("button", { name: "Save" }).click();
+
+    await expect
+      .poll(() => saved)
+      .toEqual({
+        demucs_python: "~/.starlib-demucs/bin/python",
+        breakdown_cache_dir: "",
+      });
+  });
+});

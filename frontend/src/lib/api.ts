@@ -223,6 +223,10 @@ export interface RulesetUpdate {
 
 export interface AppSettings {
   preferred_output_format: "aiff" | "mp3";
+  /** Python interpreter with demucs installed; empty when not set up. */
+  demucs_python: string;
+  /** Where Track Breakdown stems and features go; empty means the app cache. */
+  breakdown_cache_dir: string;
 }
 
 // ==================== AI Types ====================

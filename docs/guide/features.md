@@ -254,6 +254,10 @@ The [command palette reference](command-palette.md) lists every command and when
 
 Tracks from any source play in a shared player rail with waveforms, cue points, looping, a reorderable queue, BPM pitching, and auto-mix. See the [Player guide](player.md).
 
+## :material-waveform: Breakdown
+
+Take a DJ set apart into its tracklist, or one track into sections and stems you can solo, loop and zoom down to single 16th notes. See the [Breakdown guide](breakdown.md).
+
 ## :material-calendar-week: Weekly Favorites
 
 Discover new tracks from artists you follow, grouped by week.
