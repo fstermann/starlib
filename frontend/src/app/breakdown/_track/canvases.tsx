@@ -4,7 +4,7 @@ import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef } from "react";
 
 import { WAVEFORM_BLOCK, type Waveform } from "@/lib/stem-player";
-import { barStartS, type Grid } from "@/lib/track-breakdown";
+import { barStartS, noteAt, type Grid } from "@/lib/track-breakdown";
 
 import type { View } from "./lanes";
 
@@ -154,6 +154,10 @@ function hzToX(hz: number, width: number): number {
   return (Math.log10(hz / MIN_HZ) / Math.log10(MAX_HZ / MIN_HZ)) * width;
 }
 
+function xToHz(x: number, width: number): number {
+  return MIN_HZ * (MAX_HZ / MIN_HZ) ** (x / width);
+}
+
 function dbToY(db: number, height: number): number {
   return ((MAX_DB - db) / (MAX_DB - MIN_DB)) * height;
 }
@@ -174,7 +178,9 @@ export function SpectrumPanel({
   playing: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const readoutRef = useRef<HTMLDivElement>(null);
   const bins = useRef<Float32Array<ArrayBuffer> | null>(null);
+  const hoverX = useRef<number | null>(null);
 
   const draw = useCallback(() => {
     const canvas = ref.current;
@@ -204,6 +210,18 @@ export function SpectrumPanel({
       ctx.stroke();
       ctx.fillText(`${db} dB`, 4, y - 3);
     }
+
+    const hover = hoverX.current;
+    const level =
+      hover === null || !node || !bins.current
+        ? null
+        : levelAt(
+            bins.current,
+            node.context.sampleRate / node.fftSize,
+            xToHz(hover, width),
+          );
+    if (hover !== null) drawHover(ctx, hover, width, height, level);
+    updateReadout(readoutRef.current, hover, width, level);
 
     if (!node || !bins.current) return;
     const hzPerBin = node.context.sampleRate / node.fftSize;
@@ -249,10 +267,85 @@ export function SpectrumPanel({
   }, [analyser, draw, playing]);
 
   return (
-    <canvas
-      ref={ref}
-      className="block h-full w-full"
-      data-testid="track-spectrum"
-    />
+    <div className="relative h-full w-full">
+      <canvas
+        ref={ref}
+        className="block h-full w-full cursor-crosshair"
+        data-testid="track-spectrum"
+        onPointerMove={(e) => {
+          hoverX.current =
+            e.clientX - e.currentTarget.getBoundingClientRect().left;
+          draw();
+        }}
+        onPointerLeave={() => {
+          hoverX.current = null;
+          draw();
+        }}
+      />
+      <div
+        ref={readoutRef}
+        className="pointer-events-none absolute top-2 hidden rounded-sm border border-[var(--border-strong)] bg-[var(--surface-1)] px-1.5 py-0.5 text-right font-mono text-xs leading-4 text-[var(--text)] tabular-nums"
+        data-testid="track-spectrum-readout"
+      />
+    </div>
   );
+}
+
+/** Spectrum level in dB at `hz`, from the nearest FFT bin. */
+function levelAt(bins: Float32Array, hzPerBin: number, hz: number): number {
+  const i = Math.min(bins.length - 1, Math.max(1, Math.round(hz / hzPerBin)));
+  return bins[i];
+}
+
+function drawHover(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  width: number,
+  height: number,
+  level: number | null,
+) {
+  ctx.strokeStyle = token("--text-muted");
+  ctx.globalAlpha = 0.6;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(Math.round(x) + 0.5, 0);
+  ctx.lineTo(Math.round(x) + 0.5, height);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  if (level === null || !Number.isFinite(level) || level < MIN_DB) return;
+  ctx.fillStyle = token("--brand");
+  ctx.beginPath();
+  ctx.arc(x, dbToY(Math.min(level, MAX_DB), height), 3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Writes Hz, note and level next to the pointer, flipping left near the right edge. */
+function updateReadout(
+  el: HTMLDivElement | null,
+  x: number | null,
+  width: number,
+  level: number | null,
+) {
+  if (!el) return;
+  if (x === null) {
+    el.style.display = "none";
+    return;
+  }
+  const hz = xToHz(x, width);
+  const lines = [
+    `${hz < 1000 ? hz.toFixed(1) : (hz / 1000).toFixed(2) + "k"} Hz`,
+    noteAt(hz),
+  ];
+  if (level !== null && Number.isFinite(level) && level >= MIN_DB)
+    lines.push(`${level.toFixed(1)} dB`);
+  el.textContent = "";
+  for (const line of lines) {
+    const row = document.createElement("div");
+    row.textContent = line;
+    el.appendChild(row);
+  }
+  el.style.display = "block";
+  const flip = x > width - 96;
+  el.style.left = flip ? "" : `${x + 8}px`;
+  el.style.right = flip ? `${width - x + 8}px` : "";
 }

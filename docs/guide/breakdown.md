@@ -28,7 +28,7 @@ The header shows tempo, root note (from the strongest bass peak), bar count and 
 
 Stems are machine-separated and approximate. Expect some bleed between lanes.
 
-Below the lanes, **Spectrum** shows a live frequency analysis of what you hear, like an EQ plugin's analyser. It follows mute and solo, so soloing the bass shows the bass spectrum.
+Below the lanes, **Spectrum** shows a live frequency analysis of what you hear, like an EQ plugin's analyser. It follows mute and solo, so soloing the bass shows the bass spectrum. Hover it to read the frequency, nearest note (A4 = 440 Hz, so middle C is C4) and level under the pointer.
 
 ### Playing stems
 

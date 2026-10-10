@@ -449,6 +449,27 @@ test.describe("Track Breakdown", () => {
     expect(Math.abs(pinnedTop - lanesTop)).toBeLessThan(2);
   });
 
+  test("hovering the spectrum reads out frequency and note", async ({
+    page,
+  }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+
+    const spectrum = page.getByTestId("track-spectrum");
+    const readout = page.getByTestId("track-spectrum-readout");
+    await expect(readout).toBeHidden();
+
+    // The axis is log-scaled from 20 Hz to 20 kHz, so the middle is 632 Hz (D#5).
+    const box = (await spectrum.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(readout).toBeVisible();
+    await expect(readout).toContainText("Hz");
+    await expect(readout).toContainText("D#5");
+
+    await page.mouse.move(box.x + box.width / 2, box.y - 40);
+    await expect(readout).toBeHidden();
+  });
+
   test("looping the section at the playhead", async ({ page }) => {
     await mockTrackApi(page);
     await page.goto(trackUrl);

@@ -202,6 +202,27 @@ export function barAt(grid: Grid, seconds: number): number {
   return (seconds - grid.downbeat_s) / grid.bar_s + 1;
 }
 
+const NOTE_NAMES = [
+  "C",
+  "C#",
+  "D",
+  "D#",
+  "E",
+  "F",
+  "F#",
+  "G",
+  "G#",
+  "A",
+  "A#",
+  "B",
+];
+
+/** Nearest note to `hz`, named like the measured bass peaks (A4 = 440 Hz). */
+export function noteAt(hz: number): string {
+  const midi = Math.round(12 * Math.log2(hz / 440) + 69);
+  return `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
+}
+
 export function formatClock(seconds: number): string {
   const s = Math.max(0, seconds);
   const minutes = Math.floor(s / 60);
