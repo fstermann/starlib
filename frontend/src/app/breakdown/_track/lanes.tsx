@@ -33,7 +33,7 @@ export interface View {
 }
 
 /** Width of the lane name and controls column. */
-export const GUTTER_PX = 200;
+export const GUTTER_PX = 216;
 /** Bars visible at or below which waveforms get a 16th-note grid. */
 export const GRID_MAX_SPAN = 16;
 const LEVEL_FLOOR_DB = -50;

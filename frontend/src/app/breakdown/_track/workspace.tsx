@@ -2,7 +2,6 @@
 
 import {
   AudioWaveform,
-  ChartSpline,
   ChevronRight,
   Drum,
   Guitar,
@@ -404,7 +403,20 @@ export function TrackWorkspace({
             </LaneRow>
           </div>
           <LaneRow
-            label={<LaneLabel icon={AudioWaveform}>Original</LaneLabel>}
+            label={
+              <ExpandToggle
+                open={curvesOpen}
+                onToggle={() => setCurvesOpen((open) => !open)}
+                testId="track-curves-toggle"
+              >
+                <LaneLabel
+                  icon={AudioWaveform}
+                  title="Show loudness, width and brightness"
+                >
+                  Original
+                </LaneLabel>
+              </ExpandToggle>
+            }
             controls={<LaneControls lane={ORIGINAL} player={player} />}
             height={96}
             view={view}
@@ -420,35 +432,26 @@ export function TrackWorkspace({
               />
             </AudibleLane>
           </LaneRow>
-          <LaneRow
-            label={
-              <span className="flex flex-col gap-1">
-                <ExpandToggle
-                  open={curvesOpen}
-                  onToggle={() => setCurvesOpen((open) => !open)}
-                  testId="track-curves-toggle"
-                >
-                  <LaneLabel icon={ChartSpline}>Curves</LaneLabel>
-                </ExpandToggle>
-                {curvesOpen && (
+          {curvesOpen && (
+            <LaneRow
+              label={
+                <span className="pl-[22px]">
                   <CurveLegend
                     visible={curves}
                     onToggle={(id) =>
                       setCurves((c) => ({ ...c, [id]: !c[id] }))
                     }
                   />
-                )}
-              </span>
-            }
-            height={curvesOpen ? 80 : 32}
-            view={view}
-            onSeekBar={seekBar}
-            testId="track-lane-curves"
-          >
-            {curvesOpen && (
+                </span>
+              }
+              height={72}
+              view={view}
+              onSeekBar={seekBar}
+              testId="track-lane-curves"
+            >
               <CurveLane view={view} features={features} visible={curves} />
-            )}
-          </LaneRow>
+            </LaneRow>
+          )}
           {STEM_NAMES.map((lane) => (
             <Fragment key={lane}>
               <LaneRow
@@ -534,9 +537,6 @@ export function TrackWorkspace({
       >
         <header className="flex items-baseline gap-2 border-b border-[var(--border)] px-3 py-1.5">
           <span className="text-sm text-[var(--text-muted)]">Spectrum</span>
-          <span className="text-xs text-[var(--text-subtle)]">
-            what you hear: solo a stem to see its spectrum
-          </span>
         </header>
         <div className="min-h-0 flex-1 p-2">
           <SpectrumPanel analyser={player.analyser} playing={player.playing} />

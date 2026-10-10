@@ -415,13 +415,13 @@ test.describe("Track Breakdown", () => {
     await expect(page.getByTestId("track-drum-part-kick")).toHaveCount(0);
   });
 
-  test("the curves lane starts collapsed and expands", async ({ page }) => {
+  test("curves expand under the original lane", async ({ page }) => {
     await mockTrackApi(page);
     await page.goto(trackUrl);
 
     const toggle = page.getByTestId("track-curves-toggle");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await expect(page.getByRole("button", { name: "Loudness" })).toHaveCount(0);
+    await expect(page.getByTestId("track-lane-curves")).toHaveCount(0);
 
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
