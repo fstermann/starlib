@@ -524,7 +524,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <Label className="text-sm">SoundCloud key notation</Label>
                   <p className="text-muted-foreground text-xs">
                     How keys listed by SoundCloud are shown in the library and
-                    the analyser.
+                    Set Breakdown.
                   </p>
                   <ToggleGroup
                     type="single"

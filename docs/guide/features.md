@@ -229,7 +229,7 @@ Under **Settings > Library**, choose the default format used by convert rules se
 
 #### Key notation
 
-Under **Settings > Library**, **SoundCloud key notation** picks how keys listed by SoundCloud appear in the Key column and the analyser tracklist: Camelot (`8A`, the default) or standard (`Am`).
+Under **Settings > Library**, **SoundCloud key notation** picks how keys listed by SoundCloud appear in the Key column and the Set Breakdown tracklist: Camelot (`8A`, the default) or standard (`Am`).
 
 #### AI
 

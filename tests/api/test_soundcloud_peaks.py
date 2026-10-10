@@ -18,9 +18,9 @@ from fastapi.testclient import TestClient
 
 from backend.api.soundcloud import tracks as soundcloud_api
 from backend.infra import cache as db_cache
-from backend.infra.analyser import cache as audio_cache
-from backend.infra.analyser import peaks as peaks_infra
-from backend.services.analyser import original_bpm
+from backend.infra.breakdown import cache as audio_cache
+from backend.infra.breakdown import peaks as peaks_infra
+from backend.services.breakdown import original_bpm
 
 
 @pytest.fixture(autouse=True)

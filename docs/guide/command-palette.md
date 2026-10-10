@@ -23,14 +23,14 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 | `mix.toggle` | Enable/Disable auto-mix (crossfade into the next track) | a track is loaded in the player | `components/mix-controls.tsx` |
 | `library.fetch-from-downloads` | Fetch audio files from Downloads | a library folder is selected | `components/fetch-from-downloads-button.tsx` |
 
-### Analyser
+### Breakdown
 
 | ID | Label | When | Source |
 |----|-------|------|--------|
-| `analyser.paste-url` | Analyse SoundCloud URL from clipboard | on `/analyser` | `app/analyser/_components/commands.tsx` |
-| `analyser.reanalyse-selection` | Re-analyse selected region | on `/analyser`, region selected on the timeline | `app/analyser/_components/commands.tsx` |
-| `analyser.export-tracklist` | Export detected tracklist | on `/analyser`, a job is loaded | `app/analyser/_components/commands.tsx` |
-| `analyser.link-soundcloud` | Find SoundCloud links for tracks | on `/analyser`, a job is loaded | `app/analyser/_components/commands.tsx` |
+| `breakdown.paste-url` | Analyse SoundCloud URL from clipboard | on `/breakdown` | `app/breakdown/_components/commands.tsx` |
+| `breakdown.reanalyse-selection` | Re-analyse selected region | on `/breakdown`, region selected on the timeline | `app/breakdown/_components/commands.tsx` |
+| `breakdown.export-tracklist` | Export detected tracklist | on `/breakdown`, a job is loaded | `app/breakdown/_components/commands.tsx` |
+| `breakdown.link-soundcloud` | Find SoundCloud links for tracks | on `/breakdown`, a job is loaded | `app/breakdown/_components/commands.tsx` |
 
 ### Go to
 
@@ -40,7 +40,7 @@ Pulled from `src/lib/nav-config.ts` (`NAV_LINKS` + `QUICK_JUMPS`). Add an entry 
 |----|-------|
 | `nav:/library` | Go to Library |
 | `nav:/weekly` | Go to Weekly Favorites |
-| `nav:/analyser` | Go to Set Analyser |
+| `nav:/breakdown` | Go to Set Breakdown |
 | `nav:/library?source=filesystem` | Go to Library: Filesystem |
 | `nav:/library?source=soundcloud&tab=me` | Go to Library: SoundCloud — My Library |
 | `nav:/library?source=soundcloud&tab=discover` | Go to Library: SoundCloud — Discover |
