@@ -237,12 +237,9 @@ export function SpectrumPanel({
     }
     ctx.lineTo(width, height);
     ctx.closePath();
-    const line = token("--chart-1");
-    ctx.fillStyle = line;
-    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = token("--brand-soft");
     ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = line;
+    ctx.strokeStyle = token("--brand");
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }, [analyser]);

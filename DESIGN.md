@@ -9,7 +9,7 @@ Advanced or non-trivial styling work should also follow the procedural guidance 
 ## 1. Principles
 
 1. **Tool, not brochure.** Starlib is a workspace for people with large libraries. Density and legibility beat marketing polish. Interior screens pack information; marketing surfaces are the exception.
-2. **Accent earns its moments.** Exactly one accent hue exists. It appears on active navigation, primary action, focus ring, progress, and brand marks — nowhere else. Surfaces, borders, and text stay neutral.
+2. **Accent earns its moments.** Exactly one accent hue exists. It appears on active navigation, primary action, focus ring, progress, live level meters (the Breakdown spectrum), and brand marks — nowhere else. Surfaces, borders, and text stay neutral.
 3. **Typography before chrome.** Hierarchy is carried by size, weight, and tracking. Decorative borders, shadows, and fills are a last resort.
 4. **One formula, two themes.** Light and dark are generated from the same three tokens (`base`, `accent`, `contrast`). No hand-tuned per-theme overrides unless a token formula can't reach the needed value.
 5. **Motion confirms, never entertains.** Transitions exist to make state changes legible. Durations stay under 240ms for interface motion; anything longer needs a reason.
