@@ -515,7 +515,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Exclusive-playback handshake: when the global player starts it
-  // pauses the analyser set / Shazam preview, and they pause it back.
+  // pauses the breakdown set / Shazam preview, and they pause it back.
   useEffect(() => {
     if (isPlaying) claimPlayback("global-player", () => setIsPlaying(false));
     else releasePlayback("global-player");

@@ -24,6 +24,12 @@ The rail renders the track's waveform with playback position, cue marker, and lo
 
 Rekordbox tracks render their analysed, colour-coded waveform; local files use cached peaks; SoundCloud tracks stream over HLS.
 
+## Headphone sync
+
+Bluetooth headphones play audio up to a few hundred milliseconds after Starlib sends it, so playheads run ahead of what you hear. The :material-headphones: button in the top right, or **Turn on headphone sync** in the [command palette](command-palette.md), holds playheads back by the delay your output device reports: about 160 ms for AirPods, under 30 ms for built-in speakers. It follows when you switch output devices, and Starlib remembers the setting.
+
+It shifts only what's drawn: the rail and zoomed waveform for local files, the waveforms in library rows, and the Track Breakdown playhead and spectrum. Cues, loops and auto-mix keep using the real audio position. SoundCloud streams and Set breakdown previews are left as they are.
+
 ## Queue
 
 The :material-playlist-music: **queue panel** opens from the rail and lists what's coming up.

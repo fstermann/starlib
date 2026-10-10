@@ -15,6 +15,7 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 |----|-------|------|--------|
 | `settings:open` | Open Settings | always | `components/sidebar.tsx` |
 | `theme:toggle` | Switch to Light/Dark Theme | always | `components/sidebar.tsx` |
+| `headphone-sync:toggle` | Turn on/off headphone sync | always | `components/layout/headphone-sync-toggle.tsx` |
 | `auth:connect` | Connect SoundCloud | no SoundCloud user connected | `components/sidebar.tsx` |
 | `auth:disconnect` | Disconnect SoundCloud (`<username>`) | SoundCloud user connected | `components/sidebar.tsx` |
 | `sc:create-playlist-from-selection` | Create playlist from N selected tracks | on `/library?source=soundcloud`, 1 ≤ selection ≤ 500 | `app/library/soundcloud-view.tsx` |
@@ -23,14 +24,17 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 | `mix.toggle` | Enable/Disable auto-mix (crossfade into the next track) | a track is loaded in the player | `components/mix-controls.tsx` |
 | `library.fetch-from-downloads` | Fetch audio files from Downloads | a library folder is selected | `components/fetch-from-downloads-button.tsx` |
 
-### Analyser
+### Breakdown
 
 | ID | Label | When | Source |
 |----|-------|------|--------|
-| `analyser.paste-url` | Analyse SoundCloud URL from clipboard | on `/analyser` | `app/analyser/_components/commands.tsx` |
-| `analyser.reanalyse-selection` | Re-analyse selected region | on `/analyser`, region selected on the timeline | `app/analyser/_components/commands.tsx` |
-| `analyser.export-tracklist` | Export detected tracklist | on `/analyser`, a job is loaded | `app/analyser/_components/commands.tsx` |
-| `analyser.link-soundcloud` | Find SoundCloud links for tracks | on `/analyser`, a job is loaded | `app/analyser/_components/commands.tsx` |
+| `breakdown.paste-url` | Analyse SoundCloud URL from clipboard | on `/breakdown?view=set` | `app/breakdown/_components/commands.tsx` |
+| `breakdown.reanalyse-selection` | Re-analyse selected region | on `/breakdown?view=set`, region selected on the timeline | `app/breakdown/_components/commands.tsx` |
+| `breakdown.export-tracklist` | Export detected tracklist | on `/breakdown?view=set`, a job is loaded | `app/breakdown/_components/commands.tsx` |
+| `breakdown.link-soundcloud` | Find SoundCloud links for tracks | on `/breakdown?view=set`, a job is loaded | `app/breakdown/_components/commands.tsx` |
+| `breakdown.open-track` | Open selected track in Breakdown | on `/library?source=filesystem`, a track is selected | `app/library/filesystem-view.tsx` |
+| `breakdown.track.loop-section` | Start looping / Stop looping (loops the section at the playhead when no bars are selected) | on `/breakdown?view=track`, a track is analysed | `app/breakdown/_track/commands.tsx` |
+| `breakdown.track.reset-sections` | Reset sections to detected | on `/breakdown?view=track`, sections were edited | `app/breakdown/_track/commands.tsx` |
 
 ### Go to
 
@@ -40,7 +44,9 @@ Pulled from `src/lib/nav-config.ts` (`NAV_LINKS` + `QUICK_JUMPS`). Add an entry 
 |----|-------|
 | `nav:/library` | Go to Library |
 | `nav:/weekly` | Go to Weekly Favorites |
-| `nav:/analyser` | Go to Set Analyser |
+| `nav:/breakdown` | Go to Breakdown |
+| `nav:/breakdown?view=set` | Go to Breakdown: Set |
+| `nav:/breakdown?view=track` | Go to Breakdown: Track |
 | `nav:/library?source=filesystem` | Go to Library: Filesystem |
 | `nav:/library?source=soundcloud&tab=me` | Go to Library: SoundCloud — My Library |
 | `nav:/library?source=soundcloud&tab=discover` | Go to Library: SoundCloud — Discover |

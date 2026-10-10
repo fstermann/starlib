@@ -70,8 +70,8 @@ class Peaks(SQLModel, table=True):
     mtime: float
 
 
-class AnalyserJob(SQLModel, table=True):
-    """One analyser run over a SoundCloud set.
+class BreakdownJob(SQLModel, table=True):
+    """One breakdown run over a SoundCloud set.
 
     Status transitions: ``pending`` → ``running`` → ``complete`` / ``error``.
     `options_json` is the JSON-serialized analysis configuration (BPM range,
@@ -79,7 +79,7 @@ class AnalyserJob(SQLModel, table=True):
     so the user can see what parameters produced a saved result.
     """
 
-    __tablename__ = "analyser_jobs"  # type: ignore[assignment]
+    __tablename__ = "breakdown_jobs"  # type: ignore[assignment]
 
     id: str = Field(primary_key=True)
     soundcloud_id: int | None = Field(default=None, index=True)
@@ -94,10 +94,10 @@ class AnalyserJob(SQLModel, table=True):
     updated_at: float
 
 
-class AnalyserWindowBpm(SQLModel, table=True):
+class BreakdownWindowBpm(SQLModel, table=True):
     """Per-window BPM result emitted during stage 1 of analysis."""
 
-    __tablename__ = "analyser_window_bpm"  # type: ignore[assignment]
+    __tablename__ = "breakdown_window_bpm"  # type: ignore[assignment]
 
     job_id: str = Field(primary_key=True, index=True)
     start_s: float = Field(primary_key=True)
@@ -106,10 +106,10 @@ class AnalyserWindowBpm(SQLModel, table=True):
     confidence: str  # "high" | "medium" | "low"
 
 
-class AnalyserSection(SQLModel, table=True):
-    """A detected section boundary span within an analyser job."""
+class BreakdownSection(SQLModel, table=True):
+    """A detected section boundary span within an breakdown job."""
 
-    __tablename__ = "analyser_sections"  # type: ignore[assignment]
+    __tablename__ = "breakdown_sections"  # type: ignore[assignment]
 
     job_id: str = Field(primary_key=True)
     section_index: int = Field(primary_key=True)
@@ -118,7 +118,7 @@ class AnalyserSection(SQLModel, table=True):
     confidence: float
 
 
-class AnalyserShazamScan(SQLModel, table=True):
+class BreakdownShazamScan(SQLModel, table=True):
     """Cached Shazam matches at a fixed scan grid, decoupled from sections.
 
     The Shazam stage walks the mix at ``scan_cadence_s`` intervals and
@@ -127,7 +127,7 @@ class AnalyserShazamScan(SQLModel, table=True):
     runs of consecutive scans with the same ``shazam_id``.
     """
 
-    __tablename__ = "analyser_shazam_scans"  # type: ignore[assignment]
+    __tablename__ = "breakdown_shazam_scans"  # type: ignore[assignment]
 
     job_id: str = Field(primary_key=True, index=True)
     scan_s: float = Field(primary_key=True)
@@ -149,12 +149,12 @@ class AnalyserShazamScan(SQLModel, table=True):
     tier: str = Field(default="sweep")
 
 
-class AnalyserTrack(SQLModel, table=True):
+class BreakdownTrack(SQLModel, table=True):
     """The user-facing tracklist for a job — a single mutable table.
 
-    Replaces the previous ``analyser_track_overrides`` overlay model.
+    Replaces the previous ``breakdown_track_overrides`` overlay model.
     Rows are either ``origin='shazam'`` (materialised from the immutable
-    ``analyser_shazam_scans`` cache after a scan) or ``origin='manual'``
+    ``breakdown_shazam_scans`` cache after a scan) or ``origin='manual'``
     (created by the user). Once a row exists it's just a row — drag,
     rename, confirm and delete operate on it directly.
 
@@ -166,10 +166,10 @@ class AnalyserTrack(SQLModel, table=True):
       so re-running Shazam doesn't resurrect deleted entries.
     """
 
-    __tablename__ = "analyser_tracks"  # type: ignore[assignment]
+    __tablename__ = "breakdown_tracks"  # type: ignore[assignment]
     __table_args__ = (
         Index(
-            "ix_analyser_tracks_job_shazam",
+            "ix_breakdown_tracks_job_shazam",
             "job_id",
             "shazam_id",
             unique=True,
@@ -247,6 +247,40 @@ class SoundcloudBpmOverride(SQLModel, table=True):
     track_id: int = Field(primary_key=True)
     bpm: float
     updated_at: float  # unix epoch seconds
+
+
+class BreakdownTrackEdit(SQLModel, table=True):
+    """User edits to one track's breakdown, keyed by its decoded-audio hash.
+
+    ``sections_json`` replaces the detected sections when set; ``bpm`` and
+    ``downbeat_s`` replace the estimated bar grid when set.
+    """
+
+    __tablename__ = "breakdown_track_edits"  # type: ignore[assignment]
+
+    digest: str = Field(primary_key=True)
+    sections_json: str | None = None
+    bpm: float | None = None
+    downbeat_s: float | None = None
+    updated_at: float
+
+
+class BreakdownTrackHistory(SQLModel, table=True):
+    """Tracks opened in Track Breakdown, keyed by decoded-audio hash, for the recent list."""
+
+    __tablename__ = "breakdown_track_history"  # type: ignore[assignment]
+
+    digest: str = Field(primary_key=True)
+    path: str
+    bpm: float
+    root: str | None = None
+    n_bars: int
+    duration_s: float
+    opened_at: float
+    soundcloud_id: int | None = None
+    title: str | None = None
+    artist: str | None = None
+    artwork_url: str | None = None
 
 
 # ---------------------------------------------------------------------------

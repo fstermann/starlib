@@ -9,6 +9,7 @@ import { CommandPaletteTrigger } from "@/components/command-palette";
 import { isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
+import { HeadphoneSyncToggle } from "./headphone-sync-toggle";
 import { NavArrows } from "./nav-arrows";
 import { useReloadTrigger, useTopBarContent } from "./top-bar-context";
 
@@ -94,6 +95,7 @@ export function TopBar() {
       </div>
       <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
         {actions}
+        <HeadphoneSyncToggle />
         <button
           type="button"
           onClick={handleReload}

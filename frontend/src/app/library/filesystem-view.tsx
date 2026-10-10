@@ -2,12 +2,14 @@
 
 import {
   ArrowUp,
+  AudioLines,
   Eraser,
   Image as ImageIcon,
   PencilLine,
   Wand2,
   XCircle,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import {
   parseAsArrayOf,
   parseAsInteger,
@@ -22,6 +24,7 @@ import {
   FILESYSTEM_COLUMN_DEFS,
 } from "@/components/collection-table";
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
+import { useCommand } from "@/components/command-palette/use-command";
 import { FetchFromDownloadsButton } from "@/components/fetch-from-downloads-button";
 import { FilesystemBatchAnalyzeButton } from "@/components/filesystem-batch-analyze-button";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
@@ -50,6 +53,7 @@ import { useFilterState } from "@/lib/filters/use-filter-state";
 import { usePlayer } from "@/lib/player-context";
 import { onRulesetsChanged } from "@/lib/rulesets-events";
 import { searchParams } from "@/lib/search-params";
+import { trackBreakdownHref } from "@/lib/track-breakdown";
 import { useResizable } from "@/lib/use-resizable";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +62,7 @@ import { LibraryTitle } from "./library-title";
 import { TrackEditor, type AutoActions } from "./track-editor";
 
 export function FilesystemView() {
+  const router = useRouter();
   // Selected tree node (absolute folder path). Empty string = not yet loaded.
   const [selectedNodeId, setSelectedNodeId] = useQueryState(
     "nodeId",
@@ -505,6 +510,20 @@ export function FilesystemView() {
     );
     return shortcut?.name ?? "prepare";
   })();
+
+  useCommand({
+    id: "breakdown.open-track",
+    label: "Open selected track in Breakdown",
+    description: "Analyse the selected track's sections and stems.",
+    icon: AudioLines,
+    keywords: ["breakdown", "stems", "sections", "arrangement", "analyse"],
+    group: "Breakdown",
+    when: selectedFile !== null,
+    run: ({ close }) => {
+      if (selectedFile) router.push(trackBreakdownHref(selectedFile.file_path));
+      close();
+    },
+  });
 
   useTopBar({
     title: <LibraryTitle />,

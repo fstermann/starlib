@@ -23,6 +23,15 @@ test.describe("Navigation", () => {
     await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/(\?.*)?$/);
   });
 
+  test("hovering headphone sync explains it", async ({ page }) => {
+    await page.goto("/library");
+    await page.getByTestId("headphone-sync").hover();
+    const tooltip = page.getByTestId("headphone-sync-tooltip");
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText("Headphone sync off");
+    await expect(tooltip).toContainText("Bluetooth");
+  });
+
   test.describe("back/forward arrows", () => {
     test("arrows are disabled with no history in that direction", async ({
       page,

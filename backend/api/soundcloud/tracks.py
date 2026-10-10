@@ -28,7 +28,7 @@ from backend.schemas.soundcloud import (
     TrackBpmResponse,
     TrackPeaksResponse,
 )
-from backend.services.analyser.original_bpm import original_bpm
+from backend.services.breakdown.original_bpm import original_bpm
 
 __all__ = ["OAuthManager", "get_settings", "router"]
 
@@ -356,7 +356,7 @@ async def get_track_stream(track_id: int, force_refresh: bool = False) -> Stream
 
 async def _resolve_track_audio_path(track_id: int):
     """Return the cached audio path for a track, fetching it if not yet cached."""
-    from backend.infra.analyser import cache as audio_cache
+    from backend.infra.breakdown import cache as audio_cache
 
     path = audio_cache.cached_set_path(track_id)
     if path is None:
@@ -370,7 +370,7 @@ async def _resolve_track_audio_path(track_id: int):
 async def get_track_peaks(track_id: int) -> TrackPeaksResponse:
     """Return high-resolution waveform peaks for a SoundCloud track.
 
-    Downloads the track's audio (reusing the analyser set cache) and decodes
+    Downloads the track's audio (reusing the breakdown set cache) and decodes
     it to a normalized amplitude envelope — far finer than SoundCloud's
     ``waveform_url``, which is too coarse for kick-level alignment. Results
     are cached on disk keyed by track id. A user BPM correction, if one
@@ -386,7 +386,7 @@ async def get_track_peaks(track_id: int) -> TrackPeaksResponse:
     TrackPeaksResponse
         Normalized peaks in ``[0, 1]`` and the audio duration in seconds.
     """
-    from backend.infra.analyser import peaks as peaks_infra
+    from backend.infra.breakdown import peaks as peaks_infra
 
     path = await _resolve_track_audio_path(track_id)
 
@@ -432,7 +432,7 @@ async def set_track_bpm(track_id: int, body: TrackBpmRequest) -> TrackBpmRespons
 async def clear_track_bpm(track_id: int) -> TrackBpmResponse:
     """Remove the user BPM correction, reverting to the detected tempo."""
     from backend.infra import cache as db_cache
-    from backend.infra.analyser import peaks as peaks_infra
+    from backend.infra.breakdown import peaks as peaks_infra
 
     db_cache.delete_sc_bpm_override(track_id)
     # The detected tempo is already in the peaks cache; read it directly rather
@@ -462,7 +462,7 @@ async def reanalyse_track_bpm(track_id: int, strong: bool = False) -> TrackBpmRe
     which fixes dotted/triplet sub-rate locks.
     """
     from backend.infra import cache as db_cache
-    from backend.infra.analyser import peaks as peaks_infra
+    from backend.infra.breakdown import peaks as peaks_infra
 
     db_cache.delete_sc_bpm_override(track_id)
     path = await _resolve_track_audio_path(track_id)

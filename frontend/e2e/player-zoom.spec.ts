@@ -256,6 +256,43 @@ test.describe("Player zoom — Rekordbox track", () => {
     await expect(page.getByTestId("player-loop-region")).toBeVisible();
   });
 
+  test("headphone sync holds the overview playhead back by the output delay", async ({
+    page,
+  }) => {
+    // A 2 s device delay on a ~3 s track: with sync on, the drawn playhead
+    // stays at the start for the first second of playback.
+    await page.addInitScript(() =>
+      Object.defineProperty(AudioContext.prototype, "outputLatency", {
+        get: () => 2,
+      }),
+    );
+    await page.goto("/library?source=rekordbox");
+    const sync = page.getByTestId("headphone-sync");
+    await sync.click();
+    await expect(sync).toHaveAttribute("aria-pressed", "true");
+
+    await page.getByText("Sunday Mix").click();
+    await page
+      .getByTestId("rekordbox-tracks")
+      .getByRole("button", { name: "Play Foo" })
+      .click();
+    const playhead = page
+      .getByTestId("waveform-player")
+      .getByTestId("player-overview-playhead");
+    await expect(playhead).toBeVisible();
+    const left = async () =>
+      parseFloat(
+        (await playhead.evaluate((el) => (el as HTMLElement).style.left)) ||
+          "0",
+      );
+
+    await page.waitForTimeout(1000);
+    expect(await left()).toBe(0);
+
+    await sync.click();
+    await expect.poll(left).toBeGreaterThan(10);
+  });
+
   test("overview shows a play-position indicator", async ({ page }) => {
     await playFoo(page);
     const player = page.getByTestId("waveform-player");

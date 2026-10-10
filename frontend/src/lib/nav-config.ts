@@ -38,10 +38,10 @@ export const NAV_LINKS: NavLink[] = [
     keywords: ["releases", "followed", "artists"],
   },
   {
-    href: "/analyser",
-    label: "Set Analyser",
+    href: "/breakdown",
+    label: "Breakdown",
     icon: AudioWaveform,
-    keywords: ["bpm", "shazam", "sections", "mix", "tracklist"],
+    keywords: ["bpm", "shazam", "sections", "stems", "arrangement"],
   },
 ];
 
@@ -84,9 +84,15 @@ export const QUICK_JUMPS: NavLink[] = [
     keywords: ["releases", "new"],
   },
   {
-    href: "/analyser",
-    label: "Set Analyser",
+    href: "/breakdown?view=set",
+    label: "Breakdown: Set",
     icon: AudioWaveform,
     keywords: ["bpm", "shazam", "sections", "mix", "tracklist"],
+  },
+  {
+    href: "/breakdown?view=track",
+    label: "Breakdown: Track",
+    icon: AudioWaveform,
+    keywords: ["stems", "arrangement", "sections", "drop", "build"],
   },
 ];

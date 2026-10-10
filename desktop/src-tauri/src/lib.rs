@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub mod bpm;
 pub mod commands;
+pub mod output_latency;
 
 /// Returns the app config directory used by both the Rust and Python layers.
 /// Matches `platformdirs.user_config_path("com.starlib.Starlib")`.
@@ -198,6 +199,7 @@ pub fn run() {
             commands::analyze_local_bpm,
             commands::analyze_sc_bpm,
             commands::open_soundcloud_login,
+            commands::output_latency,
         ])
         .plugin(
             tauri_plugin_log::Builder::new()

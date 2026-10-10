@@ -2,7 +2,7 @@
  * Single-slot playback arbiter — only one audio surface plays at a time.
  *
  * Starlib has three independent audio sources that used to talk over
- * each other: the analyser's set audio (WaveSurfer), Shazam preview
+ * each other: the breakdown's set audio (WaveSurfer), Shazam preview
  * clips (a shared `<audio>`), and the global SoundCloud player. Each
  * source claims the slot when it starts playing; claiming pauses
  * whichever source held it before. Sources release the slot when they

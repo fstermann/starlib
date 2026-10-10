@@ -229,7 +229,7 @@ Under **Settings > Library**, choose the default format used by convert rules se
 
 #### Key notation
 
-Under **Settings > Library**, **SoundCloud key notation** picks how keys listed by SoundCloud appear in the Key column and the analyser tracklist: Camelot (`8A`, the default) or standard (`Am`).
+Under **Settings > Library**, **SoundCloud key notation** picks how keys listed by SoundCloud appear in the Key column and the Set Breakdown tracklist: Camelot (`8A`, the default) or standard (`Am`).
 
 #### AI
 
@@ -253,6 +253,10 @@ The [command palette reference](command-palette.md) lists every command and when
 ## :material-play-circle: Player
 
 Tracks from any source play in a shared player rail with waveforms, cue points, looping, a reorderable queue, BPM pitching, and auto-mix. See the [Player guide](player.md).
+
+## :material-waveform: Breakdown
+
+Take a DJ set apart into its tracklist, or one track into sections and stems you can solo, loop and zoom down to single 16th notes. See the [Breakdown guide](breakdown.md).
 
 ## :material-calendar-week: Weekly Favorites
 

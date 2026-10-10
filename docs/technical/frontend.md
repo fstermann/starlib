@@ -108,3 +108,15 @@ For lists of items (nav routes, remote search results), register a `CommandProvi
 - **`mode: "async"`** — debounced; receives `(query, signal)`, honor the `AbortSignal` for cancellation. Use `minQueryLength` to avoid hitting APIs on empty input.
 
 The `NavProvider` reads from `src/lib/nav-config.ts`, so adding a sidebar route auto-adds a "Go to" command.
+
+## Headphone sync
+
+`src/lib/headphone-sync.ts` holds one app-wide setting (stored under `audio.headphoneSync`) and the output delay. `headphoneDelay(ctx)` returns the seconds that visuals driven by `ctx`'s clock should trail it, or 0 when sync is off. The top-bar toggle (`components/layout/headphone-sync-toggle.tsx`) and the `headphone-sync:toggle` command switch it.
+
+Only drawing shifts; anything that schedules audio (mix points, cues, loops, seeks) keeps the real position, or a crossfade would land late by the delay.
+
+- **Main player** (`waveform-player.tsx`): `heardTime(deck)` subtracts the delay times the deck's playback rate, since a pitched deck covers more track time per second. It feeds the overview playhead, the zoom strip, the reported progress (library row waveforms), and the crossfade overview. WaveSurfer's private `updateProgress` is wrapped on the instance to draw the shifted time while its events keep the real one. `currentTime` state stays real for cue preview and loop snapping.
+- **Track Breakdown**: see [Track Breakdown playback](breakdown.md#playback).
+- **Not shifted**: `<audio>` element decks (SoundCloud streams, Set breakdown previews). WebKit's media pipeline may already compensate for output latency; a measurement in a WKWebView was inconclusive, so they're left alone rather than risk lagging twice.
+
+In the app the delay comes from Core Audio through the `output_latency` Tauri command (`desktop/src-tauri/src/output_latency.rs`): the default output device's latency, safety offset, IO buffer and stream latency, polled every second while sync is on. WebKit's `AudioContext.outputLatency` can't be used: it rises when output moves to a Bluetooth device but never falls back, even in a new context (measured in a WKWebView: 16 ms on the MacBook speakers, 112 ms on a Bluetooth speaker, still 112 ms after switching back; Core Audio reports 28 ms and 123 ms). In a browser it falls back to `outputLatency`. Either way `baseLatency` is added, and Bluetooth codec buffering may not be fully counted.

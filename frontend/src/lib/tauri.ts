@@ -54,3 +54,12 @@ export async function analyzeScBpm(
     strong,
   });
 }
+
+/**
+ * Seconds of delay on the default audio output device, read from Core Audio.
+ * `null` off macOS. WebKit's `outputLatency` doesn't fall back after leaving a
+ * Bluetooth device, so this is the reliable source in the app.
+ */
+export async function outputLatency(): Promise<number | null> {
+  return invoke<number | null>("output_latency");
+}

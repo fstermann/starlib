@@ -38,6 +38,7 @@ import { PlayerRekordboxWaveform } from "@/components/player-rekordbox-waveform"
 import { QueuePanel } from "@/components/queue-panel";
 import { loadWaveform, pwv4ToPeaks } from "@/components/rekordbox-waveform";
 import { api } from "@/lib/api";
+import { headphoneDelay, useHeadphoneSync } from "@/lib/headphone-sync";
 import { onHlsFatalExpiry } from "@/lib/hls-expiry";
 import {
   getSharedAudioContext,
@@ -237,6 +238,21 @@ function toDeckInfo(
   };
 }
 
+/**
+ * Track seconds a player's drawn playhead trails its audio under headphone
+ * sync: the output delay times the playback rate. HTML `<audio>` players are
+ * left alone.
+ */
+function headphoneLag(player: unknown): number {
+  if (!(player instanceof LoopingWebAudioPlayer) || player.paused) return 0;
+  return headphoneDelay(getSharedAudioContext()) * player.playbackRate;
+}
+
+/** Where a player or mix deck is heard, for drawing; timing logic keeps `currentTime`. */
+function heardTime(deck: { currentTime: number; media?: unknown }): number {
+  return Math.max(0, deck.currentTime - headphoneLag(deck.media ?? deck));
+}
+
 export function WaveformPlayer() {
   const {
     currentTrack,
@@ -259,6 +275,8 @@ export function WaveformPlayer() {
     mixConfig,
     reportCrossfadeMidpoint,
   } = usePlayer();
+  // Re-render when headphone sync toggles so drawn playheads follow at once.
+  useHeadphoneSync();
   const containerRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurferType | null>(null);
@@ -1091,6 +1109,19 @@ export function WaveformPlayer() {
 
       wsRef.current = ws;
 
+      // Draw WaveSurfer's progress where the audio is heard. `updateProgress` is
+      // private (pinned to wavesurfer.js@^7.12); its events keep the real time.
+      const progressInternals = ws as unknown as {
+        updateProgress?: (time?: number) => number;
+      };
+      const drawProgress = progressInternals.updateProgress?.bind(ws);
+      if (drawProgress) {
+        progressInternals.updateProgress = (time = ws!.getCurrentTime()) => {
+          drawProgress(Math.max(0, time - headphoneLag(media)));
+          return time;
+        };
+      }
+
       // Apply any loop that was toggled on before this player was wired up.
       if (isLocal) webAudioRef.current?.setLoop(loopRef.current);
 
@@ -1120,7 +1151,7 @@ export function WaveformPlayer() {
           t = lp.start;
         }
         setCurrentTime(t);
-        reportProgress(t / knownDuration);
+        reportProgress(Math.max(0, t - headphoneLag(media)) / knownDuration);
 
         // Auto-mix: fire the crossfade once we reach the planned mix-out point.
         if (
@@ -1151,7 +1182,7 @@ export function WaveformPlayer() {
       ws.on("seeking", () => {
         const t = ws!.getCurrentTime();
         setCurrentTime(t);
-        reportProgress(t / knownDuration);
+        reportProgress(Math.max(0, t - headphoneLag(media)) / knownDuration);
       });
 
       ws.on("error", (err) => {
@@ -1201,7 +1232,7 @@ export function WaveformPlayer() {
         // The adopted deck keeps playing through the rebuild — hold its live
         // position so progress subscribers (zoom strip, overview) don't flash
         // back to zero before the incoming init reports.
-        reportProgress(adoptedDeck.currentTime / adoptedDeck.duration);
+        reportProgress(heardTime(adoptedDeck) / adoptedDeck.duration);
         reportDuration(adoptedDeck.duration);
       } else {
         reportProgress(0);
@@ -1324,8 +1355,8 @@ export function WaveformPlayer() {
     // Seed the overview playheads from the decks' actual cue positions (deck B
     // may have been cued mid-window by the elapsed join).
     setOverviewProg({
-      old: deckA.currentTime / (deckA.duration || 1),
-      new: deckB.duration > 0 ? deckB.currentTime / deckB.duration : 0,
+      old: heardTime(deckA) / (deckA.duration || 1),
+      new: deckB.duration > 0 ? heardTime(deckB) / deckB.duration : 0,
     });
   }, [peekNext, reportCrossfadeMidpoint]);
 
@@ -1355,11 +1386,11 @@ export function WaveformPlayer() {
     const sample = () => {
       const oldMedia = webAudioRef.current ?? audioRef.current;
       const oldD = oldMedia?.duration ?? 0;
-      const oldT = oldMedia?.currentTime ?? 0;
+      const oldT = oldMedia ? heardTime(oldMedia) : 0;
       const b = transitionDeckBRef.current;
       setOverviewProg({
         old: oldD > 0 ? Math.min(1, oldT / oldD) : 0,
-        new: b && b.duration > 0 ? Math.min(1, b.currentTime / b.duration) : 0,
+        new: b && b.duration > 0 ? Math.min(1, heardTime(b) / b.duration) : 0,
       });
     };
     sample();
@@ -1635,7 +1666,13 @@ export function WaveformPlayer() {
     .sort((a, b) => (a.cue.index ?? 0) - (b.cue.index ?? 0));
   const memCueItems = cueItems.filter((x) => !x.display.isHot);
 
-  const loadingProgress = duration > 0 ? currentTime / duration : 0;
+  // Drawn playheads trail the audio under headphone sync; `currentTime` stays
+  // the real position for cues and loops.
+  const shownTime = Math.max(
+    0,
+    currentTime - headphoneLag(webAudioRef.current),
+  );
+  const loadingProgress = duration > 0 ? shownTime / duration : 0;
 
   // SoundCloud tracks don't carry cues/beatgrid, and loop/cue transport isn't
   // meaningful for HLS decks — hide the whole utility bar in SC view.
@@ -1651,13 +1688,15 @@ export function WaveformPlayer() {
   // During the fade the queue hasn't advanced yet, so the incoming track is the
   // next queue entry.
   const nextTrack = isTransitioning ? peekNext() : null;
-  const deckAProgress = duration > 0 ? currentTime / duration : 0;
+  const deckAProgress = duration > 0 ? shownTime / duration : 0;
   const deckBDuration = transitionDeckBRef.current?.duration ?? 0;
   const deckBProgress =
     deckBDuration > 0
       ? Math.min(
           1,
-          (transitionDeckBRef.current?.currentTime ?? 0) / deckBDuration,
+          (transitionDeckBRef.current
+            ? heardTime(transitionDeckBRef.current)
+            : 0) / deckBDuration,
         )
       : 0;
   const nextTitleText = nextTrack
@@ -1699,7 +1738,7 @@ export function WaveformPlayer() {
         : null))
     : null;
   const railBpm = railSwapped ? incomingBpm : currentBpm;
-  const railElapsed = railSwapped ? deckBProgress * deckBDuration : currentTime;
+  const railElapsed = railSwapped ? deckBProgress * deckBDuration : shownTime;
   const railDuration = railSwapped ? deckBDuration : duration;
 
   // Colour the bottom waveform with Rekordbox's own analysis when the user
@@ -2007,7 +2046,7 @@ export function WaveformPlayer() {
     detailShown && duration > 0
       ? (() => {
           const half = barSpanSeconds(zoomBars, currentBpm) / 2 / duration;
-          const center = currentTime / duration;
+          const center = shownTime / duration;
           return {
             left: Math.max(0, center - half),
             width: Math.min(1, center + half) - Math.max(0, center - half),
@@ -2719,7 +2758,7 @@ export function WaveformPlayer() {
                       <div
                         data-testid="player-overview-playhead"
                         className="bg-primary absolute inset-y-0 w-0.5 -translate-x-1/2 rounded-full"
-                        style={{ left: `${(currentTime / duration) * 100}%` }}
+                        style={{ left: `${(shownTime / duration) * 100}%` }}
                       />
                       {/* Loop region (drawn under the cue markers). */}
                       {loopActive && loopEndSec != null && duration > 0 && (

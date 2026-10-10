@@ -15,7 +15,7 @@ import pytest
 
 from backend.infra import cache
 from backend.infra.db import engine as db_engine
-from backend.infra.db.models import AnalyserTrack
+from backend.infra.db.models import BreakdownTrack
 
 
 @pytest.fixture(autouse=True)
@@ -48,28 +48,29 @@ def _cols(db: Path, table: str) -> set[str]:
 def test_fresh_db_upgrades_to_head(tmp_path: Path) -> None:
     db = tmp_path / "cache.db"
     cache.init_db(db)
-    assert _rev(db) == "0018"
+    assert _rev(db) == "0022"
     assert {
         "tracks",
         "peaks",
         "alembic_version",
-        "analyser_jobs",
-        "analyser_window_bpm",
-        "analyser_sections",
-        "analyser_shazam_scans",
-        "analyser_tracks",
+        "breakdown_jobs",
+        "breakdown_window_bpm",
+        "breakdown_sections",
+        "breakdown_shazam_scans",
+        "breakdown_tracks",
         "soundcloud_bpm_override",
+        "breakdown_track_edits",
     } <= _tables(db)
     # 0006 dropped the old per-section cache table.
-    assert "analyser_track_ids" not in _tables(db)
+    assert "breakdown_track_ids" not in _tables(db)
     # 0007 added preview_url + artwork_url to the shazam-scan grid.
-    assert {"preview_url", "artwork_url"} <= _cols(db, "analyser_shazam_scans")
+    assert {"preview_url", "artwork_url"} <= _cols(db, "breakdown_shazam_scans")
     # 0011 added the tier column (sweep/refine/pinpoint).
-    assert "tier" in _cols(db, "analyser_shazam_scans")
+    assert "tier" in _cols(db, "breakdown_shazam_scans")
     # 0010 collapsed the override-overlay model into a single mutable
     # tracklist table; 0008 + 0009 (the override table + its duration_s
     # column) got dropped along the way.
-    assert "analyser_track_overrides" not in _tables(db)
+    assert "breakdown_track_overrides" not in _tables(db)
     assert {
         "id",
         "job_id",
@@ -88,14 +89,14 @@ def test_fresh_db_upgrades_to_head(tmp_path: Path) -> None:
         "user_edited",
         "created_at",
         "updated_at",
-    } <= _cols(db, "analyser_tracks")
+    } <= _cols(db, "breakdown_tracks")
     # 0012 added set_bpm + pitch_offset (set→original BPM display).
-    assert {"set_bpm", "pitch_offset"} <= _cols(db, "analyser_tracks")
+    assert {"set_bpm", "pitch_offset"} <= _cols(db, "breakdown_tracks")
 
 
-def test_analyser_partial_unique_index_is_in_model_metadata() -> None:
+def test_breakdown_partial_unique_index_is_in_model_metadata() -> None:
     """Keep Alembic autogeneration aligned with the partial index in 0010."""
-    index = next(index for index in AnalyserTrack.__table__.indexes if index.name == "ix_analyser_tracks_job_shazam")
+    index = next(index for index in BreakdownTrack.__table__.indexes if index.name == "ix_breakdown_tracks_job_shazam")
 
     assert index.unique
     assert [column.name for column in index.columns] == ["job_id", "shazam_id"]
@@ -118,6 +119,10 @@ def test_adopts_unstamped_analyser_schema_without_losing_jobs(tmp_path: Path) ->
 
     db = tmp_path / "cache.db"
     cache.init_db(db)
+    cfg = Config()
+    cfg.set_main_option("script_location", "backend/infra/db/alembic")
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
+    command.downgrade(cfg, "0018")
     conn = _connect(db)
     conn.execute(
         """INSERT INTO analyser_jobs
@@ -127,15 +132,12 @@ def test_adopts_unstamped_analyser_schema_without_losing_jobs(tmp_path: Path) ->
     conn.commit()
     conn.close()
 
-    cfg = Config()
-    cfg.set_main_option("script_location", "backend/infra/db/alembic")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
     command.stamp(cfg, "0004")
 
     cache.init_db(db)
 
-    assert _rev(db) == "0018"
-    row = _connect(db).execute("SELECT status FROM analyser_jobs WHERE id = 'preserved-job'").fetchone()
+    assert _rev(db) == "0022"
+    row = _connect(db).execute("SELECT status FROM breakdown_jobs WHERE id = 'preserved-job'").fetchone()
     assert row == ("complete",)
 
 
@@ -187,7 +189,7 @@ def test_legacy_db_bootstrap_then_head(tmp_path: Path) -> None:
         "duration",
     ):
         assert col in tracks_cols, f"missing column after bootstrap: {col}"
-    assert _rev(db) == "0018"
+    assert _rev(db) == "0022"
 
 
 def test_backup_created_on_bootstrap(tmp_path: Path) -> None:
@@ -311,7 +313,7 @@ def test_migration_0004_downgrade_upgrade_round_trip(tmp_path: Path) -> None:
 
     db = tmp_path / "cache.db"
     cache.init_db(db)
-    assert _rev(db) == "0018"
+    assert _rev(db) == "0022"
 
     # Confirm the column is gone at head.
     head_cols = _cols(db, "soundcloud_track_bpm")

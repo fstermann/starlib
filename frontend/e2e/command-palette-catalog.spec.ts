@@ -21,6 +21,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   // Actions
   "settings:open",
   "theme:toggle",
+  "headphone-sync:toggle",
   "auth:connect",
   "auth:disconnect",
   "sc:create-playlist-from-selection",
@@ -31,17 +32,22 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   // Nav / Go to
   "nav:/library",
   "nav:/weekly",
-  "nav:/analyser",
+  "nav:/breakdown",
+  "nav:/breakdown?view=set",
+  "nav:/breakdown?view=track",
   "nav:/library?source=filesystem",
   "nav:/library?source=soundcloud&tab=me",
   "nav:/library?source=soundcloud&tab=discover",
   "nav:/library?source=soundcloud&tab=search",
   "nav:/library?source=rekordbox",
-  // Analyser feature commands
-  "analyser.paste-url",
-  "analyser.reanalyse-selection",
-  "analyser.export-tracklist",
-  "analyser.link-soundcloud",
+  // Breakdown feature commands
+  "breakdown.paste-url",
+  "breakdown.reanalyse-selection",
+  "breakdown.export-tracklist",
+  "breakdown.link-soundcloud",
+  "breakdown.open-track",
+  "breakdown.track.loop-section",
+  "breakdown.track.reset-sections",
 ]);
 
 /** Allowed ID prefixes for dynamic providers (folder shortcuts, search hits). */

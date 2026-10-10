@@ -223,6 +223,8 @@ export interface RulesetUpdate {
 
 export interface AppSettings {
   preferred_output_format: "aiff" | "mp3";
+  /** Where Track Breakdown stems and features go; empty means the app cache. */
+  breakdown_cache_dir: string;
 }
 
 // ==================== AI Types ====================
