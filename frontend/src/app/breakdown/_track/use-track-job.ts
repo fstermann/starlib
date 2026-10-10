@@ -19,7 +19,7 @@ export type TrackJobState =
       stage: string | null;
       progress: number | null;
     }
-  | { status: "error"; message: string }
+  | { status: "error"; message: string; needsStemSetup?: boolean }
   | { status: "cancelled" }
   | { status: "ready"; result: TrackBreakdown };
 
@@ -79,7 +79,11 @@ export function useTrackJob(path: string | null) {
           update({ status: "error", message: String(err) });
         }
       } else if (event.type === "error") {
-        update({ status: "error", message: event.message });
+        update({
+          status: "error",
+          message: event.message,
+          needsStemSetup: event.code === "stems_unavailable",
+        });
       } else {
         update({ status: "cancelled" });
       }

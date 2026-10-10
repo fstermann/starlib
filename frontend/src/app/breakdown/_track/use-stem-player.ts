@@ -138,6 +138,14 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     setPosition(player.currentTime());
   }, []);
 
+  const waveform = useCallback(
+    () =>
+      ready ? (playerRef.current?.waveform([...STEM_NAMES]) ?? null) : null,
+    [ready],
+  );
+
+  const analyser = useCallback(() => playerRef.current?.analyser ?? null, []);
+
   const updateLane = useCallback(
     (lane: LaneName, change: Partial<LaneMix>) =>
       setMix((prev) => ({ ...prev, [lane]: { ...prev[lane], ...change } })),
@@ -157,6 +165,8 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     seek,
     setLoop,
     updateLane,
+    waveform,
+    analyser,
   };
 }
 

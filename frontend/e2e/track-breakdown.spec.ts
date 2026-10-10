@@ -235,6 +235,8 @@ test.describe("Track Breakdown", () => {
     );
     await expect(page.getByText("Loading stems…")).toHaveCount(0);
     await expect(page.getByTestId("track-play")).toBeEnabled();
+    await expect(page.getByTestId("track-waveform")).toBeVisible();
+    await expect(page.getByTestId("track-spectrum")).toBeVisible();
   });
 
   test("merging sections saves the edit and offers a reset", async ({
@@ -336,18 +338,51 @@ test.describe("Track Breakdown", () => {
     await expect.poll(() => mocks.cancelled).toBe(1);
   });
 
-  test("reports a failed analysis", async ({ page }) => {
+  test("offers stem separation setup when Demucs is missing", async ({
+    page,
+  }) => {
+    let setupStatus = "missing";
+    let installs = 0;
+    let polls = 0;
     await mockTrackApi(page, [
       {
         type: "error",
-        message:
-          "Stem separation needs Demucs: set its Python in Settings > Breakdown",
+        code: "stems_unavailable",
+        message: "Stem separation isn't set up yet.",
       },
     ]);
+    await page.route("**/api/breakdown/stem-separation/install", (route) => {
+      installs += 1;
+      setupStatus = "installing";
+      return route.fulfill({
+        json: { status: "installing", stage: "uv", error: null, size_bytes: 0 },
+      });
+    });
+    await page.route("**/api/breakdown/stem-separation", (route) => {
+      if (setupStatus === "installing" && ++polls >= 2) setupStatus = "ready";
+      return route.fulfill({
+        json: {
+          status: setupStatus,
+          stage: setupStatus === "installing" ? "packages" : null,
+          error: null,
+          size_bytes: setupStatus === "ready" ? 832 * 2 ** 20 : 0,
+        },
+      });
+    });
     await page.goto(trackUrl);
 
     await expect(page.getByTestId("track-breakdown-failed")).toContainText(
-      "Settings > Breakdown",
+      "isn't set up",
+    );
+    await page.getByTestId("stem-setup-install").click();
+    await expect(page.getByTestId("stem-setup-stage")).toBeVisible();
+    expect(installs).toBe(1);
+    // Once ready the job re-runs; the mocked stream errors again, so the
+    // view shows the setup panel in its ready state.
+    await expect(page.getByTestId("stem-setup")).toHaveAttribute(
+      "data-status",
+      "ready",
+      { timeout: 10_000 },
     );
   });
 
@@ -380,8 +415,11 @@ test.describe("Track Breakdown", () => {
 });
 
 test.describe("Breakdown settings", () => {
-  test("saves the Demucs interpreter and stems folder", async ({ page }) => {
+  test("sets up stem separation and saves the stems folder", async ({
+    page,
+  }) => {
     let saved: Record<string, unknown> | null = null;
+    let installed = false;
     await page.route(/\/api\/settings$/, (route) => {
       if (route.request().method() === "PUT") {
         saved = route.request().postDataJSON();
@@ -391,26 +429,48 @@ test.describe("Breakdown settings", () => {
         json: {
           preferred_output_format: "aiff",
           root_music_folder: "/music",
-          demucs_python: "",
           breakdown_cache_dir: "",
         },
       });
     });
+    await page.route("**/api/breakdown/stem-separation/install", (route) => {
+      installed = true;
+      return route.fulfill({
+        json: {
+          status: "ready",
+          stage: null,
+          error: null,
+          size_bytes: 832 * 2 ** 20,
+        },
+      });
+    });
+    await page.route("**/api/breakdown/stem-separation", (route) =>
+      route.fulfill({
+        json: installed
+          ? {
+              status: "ready",
+              stage: null,
+              error: null,
+              size_bytes: 832 * 2 ** 20,
+            }
+          : { status: "missing", stage: null, error: null, size_bytes: 0 },
+      }),
+    );
     await page.goto("/library");
-    await page
-      .getByRole("button", { name: /settings/i })
-      .first()
-      .click();
+    await page.getByRole("button", { name: "Settings" }).first().click();
     await page.getByRole("button", { name: "Breakdown" }).click();
 
-    await page.getByLabel("Demucs Python").fill("~/.starlib-demucs/bin/python");
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByTestId("stem-setup-install").click();
+    await expect(page.getByTestId("stem-setup")).toContainText(
+      "ready · 832 MB",
+    );
 
+    await page.getByLabel("Stems folder").fill("/Volumes/Data/stems");
+    await page.getByRole("button", { name: "Save" }).click();
     await expect
       .poll(() => saved)
       .toEqual({
-        demucs_python: "~/.starlib-demucs/bin/python",
-        breakdown_cache_dir: "",
+        breakdown_cache_dir: "/Volumes/Data/stems",
       });
   });
 });

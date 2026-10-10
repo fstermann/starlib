@@ -253,7 +253,8 @@ async def subscribe(job_id: str) -> AsyncIterator[dict[str, Any]]:
 
     Yields:
         dict[str, Any]: Events with a ``type`` of ``stage``, ``complete``,
-        ``error`` or ``cancelled``.
+        ``error`` (with ``code: stems_unavailable`` when Demucs isn't set up)
+        or ``cancelled``.
 
     Raises:
         JobNotFoundError: No job has that id.
@@ -289,7 +290,9 @@ async def _run(job: _Job) -> None:
     try:
         result = await analyse_track(job.path, on_stage)
         _emit(job, {"type": "complete", "digest": result.digest})
-    except (stems_infra.StemsUnavailableError, track_infra.MeasureError) as exc:
+    except stems_infra.StemsUnavailableError as exc:
+        _emit(job, {"type": "error", "code": "stems_unavailable", "message": str(exc)})
+    except track_infra.MeasureError as exc:
         _emit(job, {"type": "error", "message": str(exc)})
     except Exception:
         logger.exception("track breakdown failed for %s", job.path)

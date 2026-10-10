@@ -27,6 +27,7 @@ import {
 import { sectionIndexAt } from "@/lib/track-breakdown-sections";
 import { cn } from "@/lib/utils";
 
+import { SpectrumPanel, WaveformLane } from "./canvases";
 import { TrackCommands } from "./commands";
 import { GridEditor } from "./grid-editor";
 import {
@@ -367,6 +368,9 @@ export function TrackWorkspace({
             onLoop={toggleLoop}
           />
         </LaneRow>
+        <LaneRow label="Waveform" height={96} view={view} onSeekBar={seekBar}>
+          <WaveformLane view={view} grid={grid} waveform={player.waveform()} />
+        </LaneRow>
         <LaneRow
           label={
             <CurveLegend
@@ -393,7 +397,7 @@ export function TrackWorkspace({
             key={lane}
             label={lane === ORIGINAL ? "Original" : stemLabel(lane, features)}
             controls={<LaneControls lane={lane} player={player} />}
-            height={48}
+            height={40}
             view={view}
             onSeekBar={seekBar}
             testId={`track-lane-${lane}`}
@@ -443,6 +447,21 @@ export function TrackWorkspace({
           />
         )}
       </div>
+
+      <section
+        className="flex min-h-40 flex-1 flex-col rounded-md border border-[var(--border)] bg-[var(--surface-2)]"
+        aria-label="Spectrum"
+      >
+        <header className="flex items-baseline gap-2 border-b border-[var(--border)] px-3 py-1.5">
+          <span className="text-sm text-[var(--text-muted)]">Spectrum</span>
+          <span className="text-xs text-[var(--text-subtle)]">
+            what you hear: solo a stem to see its spectrum
+          </span>
+        </header>
+        <div className="min-h-0 flex-1 p-2">
+          <SpectrumPanel analyser={player.analyser} playing={player.playing} />
+        </div>
+      </section>
     </main>
   );
 }

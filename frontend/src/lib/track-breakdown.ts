@@ -72,8 +72,27 @@ export interface TrackBreakdown {
 export type TrackJobEvent =
   | { type: "stage"; stage: string; progress: number | null }
   | { type: "complete"; digest: string }
-  | { type: "error"; message: string }
+  | { type: "error"; message: string; code?: "stems_unavailable" }
   | { type: "cancelled" };
+
+export interface StemSetup {
+  status: "missing" | "installing" | "ready" | "error";
+  stage: "uv" | "python" | "packages" | "model" | null;
+  error: string | null;
+  size_bytes: number;
+}
+
+export function getStemSetup(): Promise<StemSetup> {
+  return fetchApi("/api/breakdown/stem-separation");
+}
+
+export function installStemSetup(): Promise<StemSetup> {
+  return fetchApi("/api/breakdown/stem-separation/install", { method: "POST" });
+}
+
+export function removeStemSetup(): Promise<StemSetup> {
+  return fetchApi("/api/breakdown/stem-separation", { method: "DELETE" });
+}
 
 export async function startTrackJob(path: string): Promise<string> {
   const { job_id } = await fetchApi<{ job_id: string }>(

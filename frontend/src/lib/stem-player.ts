@@ -10,6 +10,19 @@
 
 import { getSharedAudioContext } from "./looping-web-audio-player";
 
+/** Samples per min/max block of the waveform overview. */
+export const WAVEFORM_BLOCK = 64;
+const ANALYSER_FFT_SIZE = 8192;
+
+/** Min/max and energy of the summed stems per block of {@link WAVEFORM_BLOCK} samples. */
+export interface Waveform {
+  /** Interleaved `[min, max]` per block. */
+  blocks: Float32Array;
+  /** Sum of squared samples per block, for RMS over any range of blocks. */
+  energy: Float32Array;
+  blockS: number;
+}
+
 /** Lead time so every source is scheduled before it has to sound. */
 const START_LEAD_S = 0.05;
 const GAIN_SMOOTHING_S = 0.01;
@@ -30,6 +43,9 @@ interface Lane {
 export class StemPlayer {
   private readonly ctx: AudioContext;
   private readonly master: GainNode;
+  /** Spectrum of everything audible, after mute/solo/volume. */
+  readonly analyser: AnalyserNode;
+  private waveformCache: Waveform | null = null;
   private readonly lanes = new Map<string, Lane>();
   private startCtxTime = 0;
   private startOffset = 0;
@@ -46,6 +62,10 @@ export class StemPlayer {
     this.ctx = getSharedAudioContext();
     this.master = this.ctx.createGain();
     this.master.connect(this.ctx.destination);
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = ANALYSER_FFT_SIZE;
+    this.analyser.smoothingTimeConstant = 0.8;
+    this.master.connect(this.analyser);
     for (const [name, url] of Object.entries(urls)) {
       const gain = this.ctx.createGain();
       gain.connect(this.master);
@@ -175,6 +195,45 @@ export class StemPlayer {
     }
   }
 
+  /** Waveform of the named lanes summed, built once all of them are decoded. */
+  waveform(names: string[]): Waveform | null {
+    if (this.waveformCache) return this.waveformCache;
+    const buffers = names.map((n) => this.lanes.get(n)?.buffer);
+    if (buffers.some((b) => !b)) return null;
+    const channels = (buffers as AudioBuffer[]).flatMap((b) =>
+      Array.from({ length: Math.min(b.numberOfChannels, 2) }, (_, c) => ({
+        data: b.getChannelData(c),
+        weight: 1 / Math.min(b.numberOfChannels, 2),
+      })),
+    );
+    const length = Math.max(...channels.map((c) => c.data.length));
+    const nBlocks = Math.ceil(length / WAVEFORM_BLOCK);
+    const blocks = new Float32Array(nBlocks * 2);
+    const energy = new Float32Array(nBlocks);
+    for (let b = 0; b < nBlocks; b++) {
+      let min = 0;
+      let max = 0;
+      let sumSq = 0;
+      const end = Math.min(length, (b + 1) * WAVEFORM_BLOCK);
+      for (let i = b * WAVEFORM_BLOCK; i < end; i++) {
+        let sample = 0;
+        for (const c of channels) sample += (c.data[i] ?? 0) * c.weight;
+        if (sample < min) min = sample;
+        if (sample > max) max = sample;
+        sumSq += sample * sample;
+      }
+      blocks[2 * b] = min;
+      blocks[2 * b + 1] = max;
+      energy[b] = sumSq;
+    }
+    this.waveformCache = {
+      blocks,
+      energy,
+      blockS: WAVEFORM_BLOCK / (buffers[0] as AudioBuffer).sampleRate,
+    };
+    return this.waveformCache;
+  }
+
   isLoaded(name: string): boolean {
     return this.lanes.get(name)?.buffer != null;
   }
@@ -184,5 +243,6 @@ export class StemPlayer {
     this.pause();
     for (const lane of this.lanes.values()) lane.gain.disconnect();
     this.master.disconnect();
+    this.analyser.disconnect();
   }
 }

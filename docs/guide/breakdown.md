@@ -17,6 +17,7 @@ The first analysis separates the track into stems, which takes about half a minu
 |------|-------|
 | Bar | Bar numbers and times. Beat ticks appear when zoomed to 8 bars or fewer. |
 | Sections | Detected sections, coloured by type. Click one to jump to it. |
+| Waveform | The stems summed back into the full mix: peaks in the outer shade, loudness (RMS) in the inner one. Sharp down to a single bar. |
 | Loudness, Width, Brightness | Mix level, stereo width (side over mid power) and spectral centroid per bar. |
 | Bands (mix) | Energy in six bands from 20 Hz to 20 kHz. Each band is scaled to its own peak, so filter sweeps show as a band fading out and back. |
 | Original, Drums, Bass, Other, Vocals / FX | Level per bar of the original and each stem. A mostly silent vocals stem is labelled **FX / shots**, since on instrumentals it picks up mid-range hits and effects. |
@@ -25,6 +26,8 @@ The first analysis separates the track into stems, which takes about half a minu
 The header shows tempo, root note (from the strongest bass peak), bar count and where bar 1 starts.
 
 Stems are machine-separated and approximate. Expect some bleed between lanes.
+
+Below the lanes, **Spectrum** shows a live frequency analysis of what you hear, like an EQ plugin's analyser. It follows mute and solo, so soloing the bass shows the bass spectrum.
 
 ### Playing stems
 
@@ -50,15 +53,8 @@ Bar 1 is assumed to start on the first kick, which holds for DJ-oriented tracks.
 
 ## Setup
 
-Stem separation uses [Demucs](https://github.com/facebookresearch/demucs) with the `htdemucs` model. It needs PyTorch, which is too large to bundle (about 720 MB installed), so you install it once:
+Stem separation uses [Demucs](https://github.com/facebookresearch/demucs) with the `htdemucs` model. It needs PyTorch, which is too large to bundle, so the app sets it up on first use: click **Set up stem separation** in the Track view or under **Settings > Breakdown**. It downloads about 830 MB once (Python, PyTorch, Demucs and the model) and takes about a minute. No Python or Homebrew install is needed. **Remove** in the same place frees the space again.
 
-```bash
-uv venv ~/.starlib-demucs
-uv pip install --python ~/.starlib-demucs demucs soundfile
-```
-
-Then set **Settings > Breakdown > Demucs Python** to `~/.starlib-demucs/bin/python`. The first analysis downloads the 80 MB model.
-
-Stems are FLAC, about 110 MB per six-minute track. **Stems folder** in the same settings section moves them out of the app cache.
+Stems are FLAC, about 110 MB per six-minute track. **Stems folder** in Settings > Breakdown moves them out of the app cache.
 
 Track view works on files inside your music root folder. SoundCloud tracks aren't supported.

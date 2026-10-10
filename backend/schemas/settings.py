@@ -17,8 +17,6 @@ class AppSettings(BaseModel):
 
     preferred_output_format: str = "aiff"
     root_music_folder: str = ""
-    demucs_python: str = ""
-    """Python interpreter with demucs installed, used for Track Breakdown stems."""
     breakdown_cache_dir: str = ""
     """Where Track Breakdown stems and features go; empty means the app cache."""
 

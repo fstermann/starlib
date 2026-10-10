@@ -1,8 +1,8 @@
 """Stem separation with Demucs, run as a subprocess in its own Python env.
 
 Demucs needs PyTorch, which is too heavy to bundle with the backend, so it
-lives in a separate environment. Its interpreter comes from the
-``demucs_python`` setting, or ``STARLIB_DEMUCS_PYTHON`` when that is unset.
+lives in a separate environment: the app-managed install from
+:mod:`demucs_env`, or the interpreter in ``STARLIB_DEMUCS_PYTHON``.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from backend.infra import settings_store
+from backend.infra.breakdown import demucs_env
 
 MODEL = "htdemucs"
 STEM_NAMES = ("drums", "bass", "other", "vocals")
@@ -33,9 +33,10 @@ class StemsUnavailableError(RuntimeError):
 
 
 def demucs_python() -> str | None:
-    """Return the configured Demucs interpreter, if any."""
-    python = settings_store.load().app.demucs_python or os.environ.get("STARLIB_DEMUCS_PYTHON")
-    return str(Path(python).expanduser()) if python else None
+    """Return the Demucs interpreter, if one is set up."""
+    if override := os.environ.get("STARLIB_DEMUCS_PYTHON"):
+        return str(Path(override).expanduser())
+    return str(demucs_env.python_path()) if demucs_env.is_installed() else None
 
 
 def _device() -> str:
@@ -78,7 +79,7 @@ async def separate(
         return cached
     python = demucs_python()
     if python is None:
-        raise StemsUnavailableError("Stem separation needs Demucs: set its Python in Settings > Breakdown")
+        raise StemsUnavailableError("Stem separation isn't set up yet.")
     stems_dir.mkdir(parents=True, exist_ok=True)
     async with _separation_lock:
         with tempfile.TemporaryDirectory(dir=stems_dir.parent) as tmp:
@@ -95,7 +96,7 @@ async def separate(
 async def _run(argv: list[str], on_progress: Callable[[float], None]) -> str:
     """Run demucs, reporting its progress; kill it if the task is cancelled."""
     proc = await asyncio.create_subprocess_exec(
-        *argv, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+        *argv, env=demucs_env.environment(), stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
     )
     assert proc.stderr is not None
     output = bytearray()

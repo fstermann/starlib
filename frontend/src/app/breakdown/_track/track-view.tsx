@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { useTopBar } from "@/components/layout/top-bar-context";
+import { StemSetup } from "@/components/stem-setup";
 import { Button } from "@/components/ui/button";
 import { trackBreakdownHref } from "@/lib/track-breakdown";
 
@@ -75,9 +76,13 @@ export function TrackBreakdownView() {
               ? "Analysis cancelled."
               : state.message}
           </p>
-          <Button variant="ghost" size="sm" onClick={rerun}>
-            Try again
-          </Button>
+          {state.status === "error" && state.needsStemSetup ? (
+            <StemSetup onReady={rerun} />
+          ) : (
+            <Button variant="ghost" size="sm" onClick={rerun}>
+              Try again
+            </Button>
+          )}
         </div>
       )}
     </main>

@@ -8,7 +8,7 @@ Track Breakdown measures one local track and interprets the measurements as sect
 POST /api/breakdown/tracks/jobs {path}
   services/breakdown/track.py      background job, SSE progress, cancel
     ffmpeg -f hash                 SHA-256 of the decoded audio → cache key
-    infra/breakdown/stems.py       demucs htdemucs (own venv, MPS on Apple Silicon)
+    infra/breakdown/stems.py       demucs htdemucs (managed venv, MPS on Apple Silicon)
     infra/breakdown/track.py       analyser-stream breakdown → features.json
     domain/arrangement.py          per-bar levels → labelled sections
 ```
@@ -22,6 +22,19 @@ Cache layout, under the `breakdown_cache_dir` setting or `<cache_dir>/breakdown/
 ```
 
 User edits live in the `breakdown_track_edits` table, keyed by the same hash: edited sections (JSON) and an edited bar grid (`bpm`, `downbeat_s`). A grid edit makes the next job re-measure on that grid, reusing the stems.
+
+## Demucs install (`infra/breakdown/demucs_env.py`)
+
+`POST /api/breakdown/stem-separation/install` sets up everything under `<cache_dir>/demucs`, skipping finished steps:
+
+1. `uv`: a system install (PATH, Homebrew, `~/.local/bin`) or the standalone build from GitHub releases.
+2. Python 3.12, uv-managed (`UV_PYTHON_PREFERENCE=only-managed`), so no system Python is needed.
+3. `demucs` and `soundfile` into a venv, with `UV_NO_CACHE` so packages aren't stored twice.
+4. The `htdemucs` weights, prefetched from Hugging Face into `demucs/hf` (`HF_HOME`).
+
+A `.ready` marker records completion. Measured on an M4: 39 s, 776 MiB (uv 28, Python 71, packages 646, model 87 MB on disk). `GET` reports `missing`, `installing` (with the step), `ready` (with size) or `error`; `DELETE` removes the folder. `STARLIB_DEMUCS_PYTHON` overrides the managed install for development.
+
+Homebrew has no `demucs` formula, and pip-installing into Homebrew's Python is blocked (PEP 668), so it can't replace this.
 
 ## Measurement (`starlib_audio::breakdown`)
 
@@ -56,4 +69,4 @@ Limits: boundaries only fall on 16-bar lines, and the thresholds were tuned on o
 
 ## Playback
 
-`frontend/src/lib/stem-player.ts` decodes each lane to an `AudioBuffer` and starts every lane on the same `AudioContext` time and offset, which keeps them sample-locked; loops use `AudioBufferSourceNode.loopStart/loopEnd`. The original decodes only once it is unmuted or soloed, since each decoded lane costs about 150 MB for a six-minute track.
+`frontend/src/lib/stem-player.ts` decodes each lane to an `AudioBuffer` and starts every lane on the same `AudioContext` time and offset, which keeps them sample-locked; loops use `AudioBufferSourceNode.loopStart/loopEnd`. The original decodes only once it is unmuted or soloed, since each decoded lane costs about 150 MB for a six-minute track. The waveform lane is built from the decoded stems (min/max and sum of squares per 64-sample block), and the spectrum panel reads an `AnalyserNode` (8192-point FFT) on the master bus.
