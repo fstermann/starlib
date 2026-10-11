@@ -1155,7 +1155,7 @@ async def _shazam_at(
             duration_s=duration_s,
             pitch_semitones=pitch_semitones,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning(
             "breakdown: slice generation failed for job %s scan %.1f pitch %.2f: %s",
             state.job_id,
@@ -1179,7 +1179,7 @@ async def _shazam_at(
             scan_s,
         )
         return miss
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning(
             "breakdown: shazam call failed for job %s scan %.1f: %s",
             state.job_id,
@@ -1355,9 +1355,7 @@ def _best_per_scan_point(scans: list[db.ShazamScanRow]) -> list[db.ShazamScanRow
             continue
         existing_real = existing.title is not None
         row_real = row.title is not None
-        if row_real and not existing_real:
-            by_point[row.scan_s] = row
-        elif row_real and existing_real and row.confidence > existing.confidence:
+        if (row_real and not existing_real) or (row_real and existing_real and row.confidence > existing.confidence):
             by_point[row.scan_s] = row
     return [by_point[k] for k in sorted(by_point.keys())]
 

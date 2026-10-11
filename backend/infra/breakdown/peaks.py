@@ -77,7 +77,7 @@ def _decode_pcm_f32(path: Path, start_s: float | None = None, duration_s: float 
         "quiet",
         "pipe:1",
     ]
-    proc = subprocess.run(cmd, capture_output=True, timeout=_DECODE_TIMEOUT_S)
+    proc = subprocess.run(cmd, capture_output=True, timeout=_DECODE_TIMEOUT_S, check=False)
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg decode failed ({proc.returncode}) for {path}")
     return proc.stdout

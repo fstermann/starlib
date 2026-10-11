@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from mutagen.aiff import AIFF
@@ -55,7 +55,7 @@ class FolderHandler(BaseModel):
 
     @staticmethod
     def last_modified(path: Path) -> datetime:
-        return datetime.fromtimestamp(path.lstat().st_atime)
+        return datetime.fromtimestamp(path.lstat().st_atime, tz=UTC)
 
 
 def load_tracks(folder: Path, file_types: list[str] | None = None):

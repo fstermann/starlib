@@ -124,7 +124,7 @@ class _MusicFolderHandler(FileSystemEventHandler):
                 user_comment=track_info.user_comment,
             )
             logger.info("Indexed: %s", path.name)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to index %s: %s", path, e)
 
 

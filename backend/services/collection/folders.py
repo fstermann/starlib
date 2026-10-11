@@ -41,13 +41,9 @@ def validate_folder(folder: Path) -> tuple[bool, str | None]:
         Returns (True, None) if valid
         Returns (False, error_message) if invalid
     """
-    try:
-        folder = folder.expanduser()
-        if not folder.exists():
-            return False, "Folder does not exist"
-        if not folder.is_dir():
-            return False, "Path is not a directory"
-        return True, None
-    except Exception as e:
-        raise e
-        return False, str(e)
+    folder = folder.expanduser()
+    if not folder.exists():
+        return False, "Folder does not exist"
+    if not folder.is_dir():
+        return False, "Path is not a directory"
+    return True, None

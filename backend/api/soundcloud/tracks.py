@@ -269,7 +269,7 @@ async def _resolve_signed_cdn_url(stream_url: str, *, token: str, track_id: int)
     """
     try:
         redirect_resp = await _http_get(stream_url, token=token, follow_redirects=False)
-    except Exception:  # pragma: no cover - best-effort redirect follow
+    except Exception:  # pragma: no cover - best-effort redirect follow  # noqa: BLE001
         logger.debug("Could not pre-resolve signed CDN URL; returning api.soundcloud.com URL")
         return stream_url, None
 

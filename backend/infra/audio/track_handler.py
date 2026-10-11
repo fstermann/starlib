@@ -63,7 +63,7 @@ def _run_ffmpeg(command: list[Any]) -> None:
     RuntimeError
         If ffmpeg exits with a non-zero status.
     """
-    result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
         raise RuntimeError(f"ffmpeg failed (exit {result.returncode}): {stderr[-2000:] or '(no stderr)'}")
@@ -103,7 +103,6 @@ class TrackHandler(BaseModel):
 
     def delete(self):
         self.file.unlink()
-        return
 
     @property
     def mp3_file(self):
@@ -166,7 +165,7 @@ class TrackHandler(BaseModel):
             if legacy:
                 try:
                     parsed = StarlibMeta.from_str(legacy)
-                except Exception:
+                except Exception:  # noqa: BLE001 - unparseable legacy meta falls back to empty
                     parsed = StarlibMeta()
                 if not parsed.is_empty:
                     out["starlib_meta"] = parsed

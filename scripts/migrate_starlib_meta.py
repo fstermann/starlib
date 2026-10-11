@@ -44,7 +44,7 @@ def migrate_folder(folder: Path, *, dry_run: bool = False) -> dict[str, int]:
             if recovered:
                 counts["recovered_user_comment"] += 1
             counts["migrated"] += 1
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             counts["failed"] += 1
             print(f"FAILED {h.file}: {e}", file=sys.stderr)
     return counts
