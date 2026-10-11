@@ -27,7 +27,15 @@ export interface RekordboxTrack {
   release_date: string | null;
   has_artwork: boolean;
   has_waveform: boolean;
+  /** This row's playlist slot; set only for editable (regular, local) playlists. */
+  entry_id: string | null;
 }
+
+type TracksResult = { tracks: RekordboxTrack[] };
+
+/** Sentinel `?playlist=` value for the whole collection. Rekordbox playlist
+ *  ids are numeric, so it can't collide. */
+export const COLLECTION_ID = "collection";
 
 export interface RekordboxStatus {
   available: boolean;
@@ -54,6 +62,8 @@ interface AsyncState<T> {
   loaded: boolean;
   error: string | null;
   refetch: () => void;
+  /** Replace the data in place, e.g. with the result of an edit. */
+  setData: (data: T) => void;
 }
 
 function useRekordboxFetch<T>(
@@ -106,13 +116,13 @@ function useRekordboxFetch<T>(
   }, [path, pollMs]);
 
   const refetch = () => setTick((t) => t + 1);
-  return { data, loading, loaded, error, refetch };
+  return { data, loading, loaded, error, refetch, setData };
 }
 
 export function useRekordboxDevices(pollMs?: number): AsyncState<{
   devices: RekordboxUsbDevice[];
 }> {
-  return useRekordboxFetch(
+  return useRekordboxFetch<{ devices: RekordboxUsbDevice[] }>(
     "/api/rekordbox/usb/devices",
     { devices: [] },
     pollMs,
@@ -134,7 +144,7 @@ export function useRekordboxPlaylists(
 ): AsyncState<{
   playlists: RekordboxPlaylist[];
 }> {
-  return useRekordboxFetch(
+  return useRekordboxFetch<{ playlists: RekordboxPlaylist[] }>(
     enabled ? withDevice("/api/rekordbox/playlists", device) : null,
     { playlists: [] },
   );
@@ -143,11 +153,95 @@ export function useRekordboxPlaylists(
 export function useRekordboxPlaylistTracks(
   playlistId: string | null,
   device: string | null = null,
-): AsyncState<{ tracks: RekordboxTrack[] }> {
-  return useRekordboxFetch(
+): AsyncState<TracksResult> {
+  return useRekordboxFetch<TracksResult>(
     playlistId
       ? withDevice(`/api/rekordbox/playlists/${playlistId}/tracks`, device)
       : null,
     { tracks: [] },
   );
+}
+
+/** Every track in the selected source's collection. */
+export function useRekordboxCollection(
+  enabled: boolean,
+  device: string | null = null,
+): AsyncState<TracksResult> {
+  return useRekordboxFetch<TracksResult>(
+    enabled ? withDevice("/api/rekordbox/tracks", device) : null,
+    { tracks: [] },
+  );
+}
+
+/** Whether the Rekordbox app is running (which blocks local edits), polled so
+ *  closing Rekordbox clears the notice. */
+export function useRekordboxRunning(
+  enabled: boolean,
+  pollMs: number,
+): AsyncState<{ running: boolean }> {
+  return useRekordboxFetch<{ running: boolean }>(
+    enabled ? "/api/rekordbox/running" : null,
+    { running: false },
+    pollMs,
+  );
+}
+
+export function createRekordboxPlaylist(
+  name: string,
+  parentId: string | null,
+  isFolder: boolean,
+): Promise<RekordboxPlaylist> {
+  return fetchApi("/api/rekordbox/playlists", {
+    method: "POST",
+    body: JSON.stringify({ name, parent_id: parentId, is_folder: isFolder }),
+  });
+}
+
+export function renameRekordboxPlaylist(
+  playlistId: string,
+  name: string,
+): Promise<RekordboxPlaylist> {
+  return fetchApi(`/api/rekordbox/playlists/${playlistId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
+/** Deletes a playlist, or a folder with everything inside it. */
+export function deleteRekordboxPlaylist(playlistId: string): Promise<void> {
+  return fetchApi(`/api/rekordbox/playlists/${playlistId}`, {
+    method: "DELETE",
+  });
+}
+
+/** Playlist edits apply to the local install only. Each returns the playlist's
+ *  tracks after the edit. A 409 means Rekordbox is running. */
+export function addRekordboxPlaylistTracks(
+  playlistId: string,
+  trackIds: string[],
+): Promise<TracksResult> {
+  return fetchApi(`/api/rekordbox/playlists/${playlistId}/tracks`, {
+    method: "POST",
+    body: JSON.stringify({ track_ids: trackIds }),
+  });
+}
+
+export function removeRekordboxPlaylistEntries(
+  playlistId: string,
+  entryIds: string[],
+): Promise<TracksResult> {
+  return fetchApi(`/api/rekordbox/playlists/${playlistId}/tracks/remove`, {
+    method: "POST",
+    body: JSON.stringify({ entry_ids: entryIds }),
+  });
+}
+
+export function reorderRekordboxPlaylist(
+  playlistId: string,
+  entryIds: string[],
+): Promise<TracksResult> {
+  return fetchApi(`/api/rekordbox/playlists/${playlistId}/order`, {
+    method: "PUT",
+    body: JSON.stringify({ entry_ids: entryIds }),
+  });
 }

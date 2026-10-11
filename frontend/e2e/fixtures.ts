@@ -215,6 +215,13 @@ async function mockBackendApi(page: Page) {
       }),
     }),
   );
+  await page.route("**/api/rekordbox/running", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ running: false }),
+    }),
+  );
 }
 
 export const test = base.extend<{ mockApi: void }>({

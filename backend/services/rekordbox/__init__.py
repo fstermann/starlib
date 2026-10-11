@@ -9,18 +9,22 @@ matter of adding a source class and teaching :func:`get_source` to return it.
 from __future__ import annotations
 
 from .base import (
+    PlaylistEditError,
+    RekordboxBusy,
     RekordboxPlaylist,
     RekordboxSource,
     RekordboxTrack,
     RekordboxUnavailable,
 )
 from .devices import EjectError, UsbDevice, discover_usb_devices, eject_device
-from .local import LocalMasterDbSource
+from .local import LocalMasterDbSource, rekordbox_running
 from .usb import UsbExportSource
 
 __all__ = [
     "EjectError",
     "LocalMasterDbSource",
+    "PlaylistEditError",
+    "RekordboxBusy",
     "RekordboxPlaylist",
     "RekordboxSource",
     "RekordboxTrack",
@@ -30,7 +34,9 @@ __all__ = [
     "discover_usb_devices",
     "eject_device",
     "forget_usb_source",
+    "get_local_source",
     "get_source",
+    "rekordbox_running",
 ]
 
 _local_source: LocalMasterDbSource | None = None
@@ -50,11 +56,8 @@ def get_source(device: str | None = None) -> RekordboxSource:
     Raises:
         RekordboxUnavailable: If ``device`` is not a currently-mounted export.
     """
-    global _local_source
     if not device:
-        if _local_source is None:
-            _local_source = LocalMasterDbSource()
-        return _local_source
+        return get_local_source()
 
     if device not in {d.id for d in discover_usb_devices()}:
         raise RekordboxUnavailable(f"Rekordbox USB device not found: {device}")
@@ -63,6 +66,14 @@ def get_source(device: str | None = None) -> RekordboxSource:
         source = UsbExportSource(device)
         _usb_sources[device] = source
     return source
+
+
+def get_local_source() -> LocalMasterDbSource:
+    """Return the cached source for the local ``master.db`` install."""
+    global _local_source
+    if _local_source is None:
+        _local_source = LocalMasterDbSource()
+    return _local_source
 
 
 def forget_usb_source(device: str) -> None:

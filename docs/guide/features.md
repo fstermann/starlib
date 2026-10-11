@@ -143,14 +143,29 @@ The **Mixes** section always shows on *My Library* for the desktop app, but it o
 
 ### :material-usb-flash-drive: Rekordbox source
 
-Browse your Rekordbox collection without opening Rekordbox. This source is **read-only** — Starlib never writes to the Rekordbox database.
+Browse your Rekordbox collection without opening Rekordbox. Playlists of the local install can be created, renamed, deleted, and edited (see below); USB/SD exports are read-only.
 
 Pick what to browse with the device selector at the top:
 
 - **Local** — the Rekordbox 6 install on this machine
 - **A mounted USB/SD export** — any Rekordbox-exported stick Starlib finds. Mounted devices are detected automatically; eject one safely with the :material-eject: button.
 
-The tree on the left mirrors your Rekordbox playlist folders. Playlists keep their Rekordbox order — including smart playlists and hand-curated sets — so the table is filterable but deliberately not sortable.
+The tree on the left mirrors your Rekordbox playlist folders, with **Collection** at the top listing every track. Playlists keep their Rekordbox order — including smart playlists and hand-curated sets — so the table is filterable but deliberately not sortable.
+
+#### Editing playlists
+
+On the local install, regular playlists can be changed from Starlib:
+
+- **Reorder** — drag a row up or down. Clear any filters first; order can only change on the full playlist.
+- **Add** — drag rows onto a playlist in the tree, or right-click → **Add to playlist**. Works from the Collection and any playlist, including smart ones.
+- **Remove** — right-click → **Remove from playlist**. Click **Undo** on the confirmation to put the tracks back where they were.
+- **Create** — right-click a node in the tree → **New playlist** or **New folder**. On a folder it's created inside; on a playlist, next to it; on Collection, at the top level.
+- **Rename** — right-click a playlist or folder → **Rename**.
+- **Delete** — right-click a playlist or folder → **Delete**. Deleting a folder deletes everything inside it. Tracks stay in your collection.
+
+Right-click and drag act on the checkbox selection when the row is part of it. Smart playlists are defined by their rules, so tracks can't be added to, removed from, or reordered in them.
+
+Rekordbox must be closed to save changes. While it's running, a notice above the table says so, and any change fails with "Close Rekordbox to save playlist changes." without touching the library. Rekordbox picks up the changes the next time it opens.
 
 Tracks carry their Rekordbox analysis, which means:
 

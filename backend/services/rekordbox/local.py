@@ -5,17 +5,25 @@ encrypted; :class:`pyrekordbox.Rekordbox6Database` resolves the key from a local
 Rekordbox installation. If no installation is present (or the library is
 missing) the source raises :class:`RekordboxUnavailable` so the API layer can
 return a clean 503.
+
+Playlists can also be created, renamed, and deleted, and regular playlists
+edited (add, remove, reorder). Writes only happen while Rekordbox is closed; otherwise
+:class:`RekordboxBusy` is raised.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from .analysis import Cue, TrackAnalysis, cues_from_db_rows
 from .base import (
+    PlaylistEditError,
+    RekordboxBusy,
     RekordboxPlaylist,
     RekordboxSource,
     RekordboxTrack,
@@ -27,12 +35,23 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 
+_FOLDER = 1
+_SMART = 4
+
+
+def rekordbox_running() -> bool:
+    """Return ``True`` while the Rekordbox app is running on this machine."""
+    from pyrekordbox.utils import get_rekordbox_pid
+
+    return bool(get_rekordbox_pid())
+
 
 class LocalMasterDbSource(RekordboxSource):
     """Read the Rekordbox library from the local ``master.db`` install."""
 
     def __init__(self) -> None:
         self._db_lock = threading.Lock()
+        self._write_lock = threading.Lock()
         self._db: Any | None = None
         self._failed_reason: str | None = None
 
@@ -71,38 +90,37 @@ class LocalMasterDbSource(RekordboxSource):
         a counting query instead.
         """
         db = self._open_db()
-        out: list[RekordboxPlaylist] = []
-        for pl in db.get_playlist():
-            parent = getattr(pl, "ParentID", None)
-            parent_id = str(parent) if parent and str(parent) != "root" else None
-            attribute = int(getattr(pl, "Attribute", 0) or 0)
-            is_folder = attribute == 1
-            is_smart = attribute == 4 or bool(getattr(pl, "is_smart_playlist", False))
-
-            if is_folder:
-                track_count = 0
-            elif is_smart:
-                try:
-                    track_count = db.get_playlist_contents(pl).count()
-                except Exception:  # pragma: no cover - defensive against schema drift
-                    logger.exception("Could not count smart playlist %s", pl.ID)
-                    track_count = 0
-            else:
-                track_count = len(getattr(pl, "Songs", None) or [])
-
-            out.append(
-                RekordboxPlaylist(
-                    id=str(pl.ID),
-                    name=str(pl.Name),
-                    parent_id=parent_id,
-                    is_folder=is_folder,
-                    is_smart=is_smart,
-                    track_count=track_count,
-                )
-            )
+        out = [self._row_to_playlist(db, pl) for pl in db.get_playlist()]
         return out
 
-    def _row_to_track(self, row: Any) -> RekordboxTrack:
+    def _row_to_playlist(self, db: Any, pl: Any) -> RekordboxPlaylist:
+        parent = getattr(pl, "ParentID", None)
+        parent_id = str(parent) if parent and str(parent) != "root" else None
+        attribute = int(getattr(pl, "Attribute", 0) or 0)
+        is_folder = attribute == _FOLDER
+        is_smart = attribute == _SMART or bool(getattr(pl, "is_smart_playlist", False))
+
+        if is_folder:
+            track_count = 0
+        elif is_smart:
+            try:
+                track_count = db.get_playlist_contents(pl).count()
+            except Exception:  # pragma: no cover - defensive against schema drift
+                logger.exception("Could not count smart playlist %s", pl.ID)
+                track_count = 0
+        else:
+            track_count = len(getattr(pl, "Songs", None) or [])
+
+        return RekordboxPlaylist(
+            id=str(pl.ID),
+            name=str(pl.Name),
+            parent_id=parent_id,
+            is_folder=is_folder,
+            is_smart=is_smart,
+            track_count=track_count,
+        )
+
+    def _row_to_track(self, row: Any, entry_id: str | None = None) -> RekordboxTrack:
         artist = getattr(row, "Artist", None)
         album = getattr(row, "Album", None)
         genre = getattr(row, "Genre", None)
@@ -134,6 +152,7 @@ class LocalMasterDbSource(RekordboxSource):
             release_date=str(release_raw) if release_raw else None,
             has_artwork=bool(image_path),
             has_waveform=bool(analysis_path),
+            entry_id=entry_id,
         )
 
     def list_playlist_tracks(self, playlist_id: str) -> list[RekordboxTrack]:
@@ -153,7 +172,185 @@ class LocalMasterDbSource(RekordboxSource):
             rows = db.get_playlist_contents(pl).all()
             return [self._row_to_track(r) for r in rows]
         songs = sorted(getattr(pl, "Songs", []) or [], key=lambda s: getattr(s, "TrackNo", 0))
-        return [self._row_to_track(s.Content) for s in songs if getattr(s, "Content", None)]
+        return [self._row_to_track(s.Content, str(s.ID)) for s in songs if getattr(s, "Content", None)]
+
+    @contextmanager
+    def _writing(self) -> Iterator[Any]:
+        """Yield the database for a write, committing on success.
+
+        Yields:
+            Any: The open database.
+
+        Raises:
+            RekordboxBusy: If Rekordbox is running.
+            Exception: Whatever the write raised, after rolling it back.
+        """
+        db = self._open_db()
+        with self._write_lock:
+            if rekordbox_running():
+                raise RekordboxBusy("Close Rekordbox to save playlist changes.")
+            # Expire cached rows so the write builds on what Rekordbox last saved.
+            db.rollback()
+            try:
+                yield db
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+
+    @contextmanager
+    def _editing_playlist(self, playlist_id: str) -> Iterator[tuple[Any, Any]]:
+        """Yield ``(db, playlist)`` for an edit of a regular playlist.
+
+        Args:
+            playlist_id: The playlist to edit.
+
+        Yields:
+            tuple[Any, Any]: The open database and the playlist row.
+
+        Raises:
+            PlaylistEditError: If the playlist is missing, a folder, or smart.
+        """
+        with self._writing() as db:
+            pl = db.get_playlist(ID=playlist_id)
+            if pl is None:
+                raise PlaylistEditError(f"Playlist not found: {playlist_id}")
+            if int(getattr(pl, "Attribute", 0) or 0) != 0:
+                raise PlaylistEditError("Only regular playlists can be edited.")
+            yield db, pl
+
+    def create_playlist(self, name: str, parent_id: str | None, *, folder: bool) -> RekordboxPlaylist:
+        """Create an empty regular playlist or folder at the end of its parent.
+
+        Args:
+            name: The new playlist's name.
+            parent_id: The folder to create it in, or ``None`` for the top level.
+            folder: Create a folder instead of a playlist.
+
+        Returns:
+            The created playlist.
+
+        Raises:
+            PlaylistEditError: If the name is blank or the parent is not a folder.
+        """
+        name = name.strip()
+        if not name:
+            raise PlaylistEditError("Playlist name can't be empty.")
+        with self._writing() as db:
+            parent = None
+            if parent_id is not None:
+                parent = db.get_playlist(ID=parent_id)
+                if parent is None or int(getattr(parent, "Attribute", 0) or 0) != _FOLDER:
+                    raise PlaylistEditError("Playlists can only be created inside a folder.")
+            create = db.create_playlist_folder if folder else db.create_playlist
+            pl = create(name, parent=parent)
+        return self._row_to_playlist(db, pl)
+
+    def rename_playlist(self, playlist_id: str, name: str) -> RekordboxPlaylist:
+        """Rename a playlist, smart playlist, or folder.
+
+        Args:
+            playlist_id: The playlist to rename.
+            name: The new name.
+
+        Returns:
+            The renamed playlist.
+
+        Raises:
+            PlaylistEditError: If the name is blank or the playlist doesn't exist.
+        """
+        name = name.strip()
+        if not name:
+            raise PlaylistEditError("Playlist name can't be empty.")
+        with self._writing() as db:
+            pl = db.get_playlist(ID=playlist_id)
+            if pl is None:
+                raise PlaylistEditError(f"Playlist not found: {playlist_id}")
+            db.rename_playlist(pl, name)
+        return self._row_to_playlist(db, pl)
+
+    def delete_playlist(self, playlist_id: str) -> None:
+        """Delete a playlist, smart playlist, or folder with everything inside it.
+
+        The tracks stay in the collection.
+
+        Args:
+            playlist_id: The playlist to delete.
+
+        Raises:
+            PlaylistEditError: If the playlist doesn't exist.
+        """
+        with self._writing() as db:
+            pl = db.get_playlist(ID=playlist_id)
+            if pl is None:
+                raise PlaylistEditError(f"Playlist not found: {playlist_id}")
+            db.delete_playlist(pl)
+
+    def add_tracks_to_playlist(self, playlist_id: str, track_ids: list[str]) -> list[RekordboxTrack]:
+        """Append tracks to a regular playlist, in the given order.
+
+        Args:
+            playlist_id: The target playlist.
+            track_ids: Collection track ids to append.
+
+        Returns:
+            The playlist's tracks after the edit.
+
+        Raises:
+            PlaylistEditError: If a track id is unknown; nothing is added.
+        """
+        with self._editing_playlist(playlist_id) as (db, pl):
+            for track_id in track_ids:
+                if db.get_content(ID=track_id) is None:
+                    raise PlaylistEditError(f"Track not found: {track_id}")
+            for track_id in track_ids:
+                db.add_to_playlist(pl, track_id)
+        return self.list_playlist_tracks(playlist_id)
+
+    def remove_playlist_entries(self, playlist_id: str, entry_ids: list[str]) -> list[RekordboxTrack]:
+        """Remove entries (see :attr:`RekordboxTrack.entry_id`) from a regular playlist.
+
+        Args:
+            playlist_id: The playlist to edit.
+            entry_ids: The entries to remove.
+
+        Returns:
+            The playlist's tracks after the edit.
+
+        Raises:
+            PlaylistEditError: If an entry is not in the playlist; nothing is removed.
+        """
+        with self._editing_playlist(playlist_id) as (db, pl):
+            songs = {str(s.ID): s for s in pl.Songs}
+            missing = [e for e in entry_ids if e not in songs]
+            if missing:
+                raise PlaylistEditError(f"Entries not in playlist: {', '.join(missing)}")
+            for entry_id in entry_ids:
+                db.remove_from_playlist(pl, songs[entry_id])
+        return self.list_playlist_tracks(playlist_id)
+
+    def reorder_playlist(self, playlist_id: str, entry_ids: list[str]) -> list[RekordboxTrack]:
+        """Put a regular playlist's entries into the given order.
+
+        Args:
+            playlist_id: The playlist to edit.
+            entry_ids: Every entry of the playlist exactly once, in the new order.
+
+        Returns:
+            The playlist's tracks after the edit.
+
+        Raises:
+            PlaylistEditError: If ``entry_ids`` is not a permutation of the entries.
+        """
+        with self._editing_playlist(playlist_id) as (db, pl):
+            songs = {str(s.ID): s for s in pl.Songs}
+            if sorted(entry_ids) != sorted(songs):
+                raise PlaylistEditError("The new order must list every playlist entry exactly once.")
+            for track_no, entry_id in enumerate(entry_ids, start=1):
+                song = songs[entry_id]
+                if song.TrackNo != track_no:
+                    db.move_song_in_playlist(pl, song, track_no)
+        return self.list_playlist_tracks(playlist_id)
 
     def _share_dir(self) -> Path:
         """Return the Rekordbox ``share`` directory.
