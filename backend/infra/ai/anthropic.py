@@ -137,6 +137,6 @@ async def validate_api_key() -> bool:
         return True
     except (MissingApiKeyError, AnthropicAuthenticationError):
         return False
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning("Unexpected error validating Anthropic key: %s", exc)
         return False

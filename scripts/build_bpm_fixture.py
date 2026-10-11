@@ -146,7 +146,7 @@ def cmd_fetch(genres: list[tuple[str, int]], force: bool) -> None:
 
 _NEXT_DATA_RE = re.compile(
     r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
-    re.S,
+    re.DOTALL,
 )
 
 

@@ -69,7 +69,7 @@ def _build_row(root_folder: Path, file: Path, mtime: float, size: int) -> dict |
             release_year=track_info.release_year,
             user_comment=track_info.user_comment,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Skipping unreadable file %s: %s", file, e)
         return None
 
@@ -134,7 +134,7 @@ def _load_folder_to_db(folder: Path, root_folder: Path) -> None:
             len(audio_files),
             written,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Failed to index folder %s: %s", folder, e)
     finally:
         with _state_lock:

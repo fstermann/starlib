@@ -27,7 +27,7 @@ def backup_master_db(db_path: Path, backup_dir: Path, keep: int = BACKUPS_TO_KEE
     Returns:
         Path: The new backup's folder.
     """
-    dest = backup_dir / datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
+    dest = backup_dir / datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S-%f")
     dest.mkdir(parents=True)
     shutil.copy2(db_path, dest / db_path.name)
     wal = db_path.with_name(f"{db_path.name}-wal")

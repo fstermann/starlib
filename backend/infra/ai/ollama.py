@@ -115,7 +115,7 @@ async def ensure_running() -> bool:
     # Spawn a new process (unless we already have one that hasn't exited).
     if _process is None or _process.poll() is not None:
         logger.info("Starting Ollama subprocess: %s serve", ollama_bin)
-        _process = subprocess.Popen(
+        _process = subprocess.Popen(  # noqa: ASYNC220 - Popen returns immediately; the server runs detached
             [ollama_bin, "serve"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

@@ -48,8 +48,7 @@ def _folder_tree_dict(root_str: str, track_folders: Iterable[str]) -> dict:
         if not fp.startswith(root_str):
             return
         rel = fp[len(root_str) :]
-        if rel.startswith("/"):
-            rel = rel[1:]
+        rel = rel.removeprefix("/")
         parts = rel.split("/") if rel else []
         node = tree
         for part in parts:
