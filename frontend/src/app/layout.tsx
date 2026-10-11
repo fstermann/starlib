@@ -17,6 +17,7 @@ import { LayoutShell } from "@/components/layout-shell";
 import { TopBar } from "@/components/layout/top-bar";
 import { TopBarProvider } from "@/components/layout/top-bar-context";
 import { LogInit } from "@/components/log-init";
+import { MatchingTracksProvider } from "@/components/matching-tracks/matching-tracks-provider";
 import { SetupGate } from "@/components/setup-gate";
 import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@/components/ui/sonner";
@@ -66,14 +67,16 @@ export default function RootLayout({
                 <PlayerProvider>
                   <TopBarProvider>
                     <CommandPaletteProvider>
-                      <Sidebar />
-                      <TopBar />
-                      <LayoutShell>
-                        <UpdateBanner />
-                        <SetupGate>{children}</SetupGate>
-                      </LayoutShell>
-                      <WaveformPlayer />
-                      <CommandPalette />
+                      <MatchingTracksProvider>
+                        <Sidebar />
+                        <TopBar />
+                        <LayoutShell>
+                          <UpdateBanner />
+                          <SetupGate>{children}</SetupGate>
+                        </LayoutShell>
+                        <WaveformPlayer />
+                        <CommandPalette />
+                      </MatchingTracksProvider>
                     </CommandPaletteProvider>
                   </TopBarProvider>
                 </PlayerProvider>

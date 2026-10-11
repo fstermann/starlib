@@ -23,6 +23,7 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 | `pitcher.toggle` | Enable/Disable target-BPM pitching | a track is loaded in the player | `components/bpm-pitcher.tsx` |
 | `mix.toggle` | Enable/Disable auto-mix (crossfade into the next track) | a track is loaded in the player | `components/mix-controls.tsx` |
 | `library.fetch-from-downloads` | Fetch audio files from Downloads | a library folder is selected | `components/fetch-from-downloads-button.tsx` |
+| `rekordbox.matching-tracks` | Show matching tracks for `<title>` | a local-file track is loaded in the player | `components/matching-tracks/matching-tracks-provider.tsx` |
 
 ### Breakdown
 

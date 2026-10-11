@@ -158,7 +158,7 @@ The tree on the left mirrors your Rekordbox playlist folders, with **Collection*
 
 On the local install, regular playlists can be changed from Starlib:
 
-- **Reorder** — drag a row up or down. Clear any filters first; order can only change on the full playlist.
+- **Reorder** — drag a row up or down. A line shows where it lands. Drag a selected row to move the whole selection, in its order. Clear any filters and sorting first; order can only change on the full playlist.
 - **Add** — drag rows onto a playlist in the tree, or right-click → **Add to playlist**. Works from the Collection and any playlist, including smart ones.
 - **Remove** — right-click → **Remove from playlist**. Click **Undo** on the confirmation to put the tracks back where they were.
 - **Create** — right-click a node in the tree → **New playlist** or **New folder**. On a folder it's created inside; on a playlist, next to it; on Collection, at the top level.
@@ -178,6 +178,34 @@ Tracks carry their Rekordbox analysis, which means:
 Filter by search, genre, key, and BPM range. With BPM pitching enabled, the key column shows the pitched key in green. Hover it to see the original key and the pitch change in percent and semitones.
 
 The **SoundCloud** column shows the track's SoundCloud id. Starlib reads it from the Rekordbox comment (`sc:<id>`, `soundcloud:<id>`, or a bare number), else from the audio file's Starlib tag. Click **SoundCloud playlist** in the toolbar to create a SoundCloud playlist from the selected tracks, or from the whole filtered playlist when nothing is selected. Tracks without a SoundCloud id are skipped.
+
+#### Matching tracks
+
+Find tracks that mix well with another one. Right-click a row → **Show matching tracks**, click the :material-vector-intersection: button in the player, or run **Show matching tracks** from the command palette for the playing track. A panel slides in from the right. It doesn't block the table, so you can reorder the playlist while it's open.
+
+Filters:
+
+- **Key** — toggle which Camelot moves count as a match:
+
+    | Rule | From 8A | Move |
+    |------|---------|------|
+    | Same | 8A | Same key |
+    | ±1 | 7A, 9A | A fifth down or up |
+    | A↔B | 8B | Relative major/minor |
+    | Diagonal | 9B (A → B +1), 7A from 8B (B → A −1) | Mood shift |
+    | ±2 | 6A, 10A | A whole tone, energy boost |
+    | ±7 | 1A, 3A | A semitone, energy boost |
+    | Parallel | 11B (A → B +3), 5A from 8B (B → A −3) | Same root, minor ↔ major |
+
+- **Search in** — the whole collection, the open playlist, or any other playlist.
+- **Genre** — off by default, so every genre counts. Pick genres to narrow the results.
+- **BPM** — a range over each track's original BPM. Starts at ±5 around the master BPM when pitching is on, else around the track's BPM.
+
+Keys are compared as they sound once both tracks play at the same tempo, since pitching without key lock shifts the key. A 1A track at 122.7 BPM sounds as 8A next to an 8A track at 130. The master BPM shifts both tracks equally, so it changes the keys you hear (shown in the list) but not whether they match. Tick **Key lock** if you mix with Master Tempo on.
+
+A match whose pitch lands more than a quarter semitone off a whole step gets a :material-alert: warning: the keys line up on paper but sound detuned.
+
+When searching beyond the open playlist, tracks already in it sit at the top above a divider, so you can see which ones to move next to each other. Drag a result into the open playlist to put it where you drop it; a line shows where it lands. If the track is already in the playlist, it moves there instead of being added twice. While the table is sorted or filtered, dropped tracks go to the end. You can also drag a result onto another playlist in the tree, or right-click it → **Add to** *playlist name*.
 
 ### Settings
 
