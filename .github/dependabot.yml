@@ -49,9 +49,10 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
 
-  # Cargo - Rust/Tauri
+  # Cargo - workspace root, so manifest bumps also update the root Cargo.lock
+  # and every member (desktop/src-tauri, starlib_audio) is covered.
   - package-ecosystem: "cargo"
-    directory: "/desktop/src-tauri"
+    directory: "/"
     schedule:
       interval: "weekly"
     cooldown:
