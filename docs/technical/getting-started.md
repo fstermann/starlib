@@ -77,7 +77,7 @@ Common dev tasks live in the repo-root `Makefile`. Run `make help` to list them.
 
 | Target | Description |
 |--------|-------------|
-| `make dev` | Run backend and frontend together (Ctrl-C stops both) |
+| `make dev` | Run the Tauri desktop app with hot-reload |
 | `make backend` | Run the FastAPI backend on `:8000` |
 | `make frontend` | Run the Next.js frontend on `:3000` |
 | `make docs` | Serve the Zensical docs on `:8200` |
