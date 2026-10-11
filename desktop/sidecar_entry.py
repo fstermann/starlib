@@ -5,6 +5,7 @@ This module is used as the Analysis entry point in sidecar.spec.
 It forces reload=False before importing uvicorn and starts the server.
 """
 
+import contextlib
 import os
 import sys
 import threading
@@ -19,10 +20,8 @@ import uvicorn
 
 def _watch_stdin():
     """Exit when stdin is closed (parent process died)."""
-    try:
+    with contextlib.suppress(Exception):
         sys.stdin.read()
-    except Exception:
-        pass
     os._exit(0)
 
 

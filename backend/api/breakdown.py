@@ -210,7 +210,7 @@ async def _fetch_track_meta(soundcloud_id: int, title: str | None, artist: str |
 
     try:
         track = await fetch_public_track(soundcloud_id)
-    except Exception as exc:  # Metadata is best-effort; keep job creation alive.
+    except Exception as exc:  # Metadata is best-effort; keep job creation alive.  # noqa: BLE001
         logger.warning("breakdown: track metadata fetch failed for %s: %s", soundcloud_id, exc)
         return title, artist
     if not isinstance(track, dict):

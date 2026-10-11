@@ -76,6 +76,7 @@ def eject_device(mount_path: str) -> None:
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise EjectError(str(exc)) from exc

@@ -17,6 +17,7 @@ resolve against the mount point.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 from pathlib import Path
@@ -105,10 +106,8 @@ class UsbExportSource(RekordboxSource):
         """Close the cached DB connection (e.g. before the device is ejected)."""
         with self._lock:
             if self._conn is not None:
-                try:
+                with contextlib.suppress(Exception):
                     self._conn.close()
-                except Exception:  # pragma: no cover - best-effort cleanup
-                    pass
                 self._conn = None
 
     def _resolve(self, rel: str) -> Path:

@@ -444,7 +444,7 @@ def get_waveform_peaks(file_path: Path, cache_dir: Path, num_peaks: int = 200) -
         "quiet",
         "pipe:1",
     ]
-    proc = subprocess.run(cmd, capture_output=True, timeout=120)
+    proc = subprocess.run(cmd, capture_output=True, timeout=120, check=False)
     if proc.returncode != 0:
         return [0.0] * num_peaks
 

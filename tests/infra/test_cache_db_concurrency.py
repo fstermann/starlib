@@ -63,7 +63,7 @@ def test_concurrent_writes_and_reads(tmp_path: Path) -> None:
             for i in range(writes):
                 _fake_upsert(folder, i)
             stop.set()
-        except BaseException as e:  # capture anything
+        except BaseException as e:  # capture anything  # noqa: BLE001
             errors.append(e)
             stop.set()
 
@@ -72,7 +72,7 @@ def test_concurrent_writes_and_reads(tmp_path: Path) -> None:
             while not stop.is_set():
                 cache.get_tracks(folder)
                 cache.get_stats(folder)
-        except BaseException as e:
+        except BaseException as e:  # noqa: BLE001
             errors.append(e)
 
     readers = [threading.Thread(target=reader) for _ in range(8)]

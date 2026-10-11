@@ -36,7 +36,7 @@ def _from_created_at(sc: SCTrackPayload) -> date | None:
     # SC formats vary: ISO-8601, "YYYY/MM/DD HH:MM:SS +0000", etc.
     raw = sc.created_at.replace("/", "-").replace(" +0000", "Z").replace(" ", "T")
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+        return datetime.fromisoformat(raw).date()
     except ValueError:
         return None
 
