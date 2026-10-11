@@ -75,6 +75,9 @@ class BackendSettings(BaseSettings):
     # Cache Settings
     cache_dir: Path = _APP_CONFIG_DIR / ".cache"
 
+    # Copies of the Rekordbox master.db, taken before Starlib first edits it.
+    rekordbox_backup_dir: Path = _APP_CONFIG_DIR / "rekordbox-backups"
+
     model_config = {
         "extra": "ignore",
         "env_prefix": "BACKEND_",

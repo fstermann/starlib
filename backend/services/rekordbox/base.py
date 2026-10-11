@@ -41,6 +41,10 @@ class RekordboxBusy(RuntimeError):
     """
 
 
+class BackupFailed(RuntimeError):
+    """Raised when ``master.db`` can't be backed up, so an edit is refused."""
+
+
 class PlaylistEditError(ValueError):
     """Raised when a playlist edit request cannot be applied as given."""
 

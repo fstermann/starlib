@@ -169,6 +169,23 @@ Right-click and drag act on the checkbox selection when the row is part of it. S
 
 Rekordbox must be closed to save changes. While it's running, a notice above the table says so, and any change fails with "Close Rekordbox to save playlist changes." without touching the library. Rekordbox picks up the changes the next time it opens.
 
+##### Backups
+
+Before its first change to your library each time it starts, Starlib copies Rekordbox's `master.db` into a timestamped folder. If the copy fails, the change is refused and nothing is touched. The last 5 backups are kept, in:
+
+- macOS: `~/Library/Application Support/com.starlib.Starlib/rekordbox-backups/`
+- Windows: `%LOCALAPPDATA%\com.starlib.Starlib\com.starlib.Starlib\rekordbox-backups\`
+- Linux: `~/.config/com.starlib.Starlib/rekordbox-backups/`
+
+To restore one:
+
+1. Quit Rekordbox and Starlib.
+2. Open Rekordbox's library folder (`~/Library/Pioneer/rekordbox/` on macOS, `%APPDATA%\Pioneer\rekordbox\` on Windows). Move `master.db`, `master.db-wal`, and `master.db-shm` into another folder. Don't leave the `-wal` file behind: Rekordbox would apply it on top of the restored library.
+3. Copy `master.db` from the backup folder into Rekordbox's library folder, plus `master.db-wal` if the backup has one.
+4. Open Rekordbox.
+
+Restoring undoes every change made after the backup, including ones made in Rekordbox.
+
 Tracks carry their Rekordbox analysis, which means:
 
 - **Colour-coded waveforms** in the player, the same ones you see on a CDJ
