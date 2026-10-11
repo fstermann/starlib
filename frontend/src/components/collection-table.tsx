@@ -16,6 +16,7 @@ import {
   formatFileSize,
   serializeComment,
 } from "@/app/library/utils";
+import { ResizableHeaderCell } from "@/components/columns/sortable-columns";
 import { CoverPlayButton } from "@/components/cover-play-button";
 import { SoundCloudLogo } from "@/components/icons/soundcloud-logo";
 import { LogoSpinner } from "@/components/logo-spinner";
@@ -26,6 +27,7 @@ import { TrackQueueMenu } from "@/components/track-queue-menu";
 import {
   TrackTable,
   TrailingSortButton,
+  useLeadColumnWidth,
   type TrackTableColumn,
   type TrackTableHandle,
 } from "@/components/track-table/track-table";
@@ -72,10 +74,14 @@ import { searchParams } from "@/lib/search-params";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
 import { parseRemix, removeMix } from "@/lib/string-utils";
 import { trackBreakdownHref } from "@/lib/track-breakdown";
+import { useCompactRows } from "@/lib/use-compact-rows";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
 const EDIT_ROW_HEIGHT = 40;
+const COMPACT_ROW_HEIGHT = 32;
+const WAVEFORM_COLUMN_ID = "waveform";
+const WAVEFORM_DEFAULT_WIDTH = 80;
 
 type SortBy = NonNullable<BrowseParams["sort_by"]>;
 type SortOrder = "asc" | "desc";
@@ -395,6 +401,8 @@ interface EditRowProps {
   folderPath?: string;
   /** Column defs filtered to only visible ones, in render order, with resolved widths. */
   visibleFields: ResolvedField[];
+  waveformWidth: number;
+  compact: boolean;
 }
 
 function EditRow({
@@ -412,6 +420,8 @@ function EditRow({
   isScLinked,
   folderPath,
   visibleFields,
+  waveformWidth,
+  compact,
 }: EditRowProps) {
   const { enqueue, playNext } = usePlayer();
   const router = useRouter();
@@ -460,7 +470,8 @@ function EditRow({
         role="row"
         aria-current={isPlaying ? "true" : undefined}
         className={cn(
-          "group/row border-border relative flex h-10 cursor-pointer items-center gap-1.5 border-b pr-0 pl-3 transition-colors",
+          "group/row border-border relative flex cursor-pointer items-center gap-1.5 border-b pr-0 pl-3 transition-colors",
+          compact ? "h-8" : "h-10",
           isPlaying && "bg-[var(--brand-soft)]",
           !isPlaying && (isCurrent || isSelected) && "bg-[var(--surface-3)]",
           !isPlaying &&
@@ -510,11 +521,15 @@ function EditRow({
           isCurrent={isPlaying}
           onStartPlay={onStartPlay}
           label={item.title ?? item.file_name}
-          className={`ring-1 ${pendingArtworkB64 ? "ring-primary/40" : "ring-transparent"}`}
+          className={cn(
+            "ring-1",
+            pendingArtworkB64 ? "ring-primary/40" : "ring-transparent",
+            compact && "size-6",
+          )}
         />
 
         {/* Mini waveform (top-half) */}
-        <div className="h-6 w-20 shrink-0">
+        <div className="h-6 shrink-0" style={{ width: waveformWidth }}>
           <MiniWaveform
             track={{
               filePath: item.file_path,
@@ -683,6 +698,14 @@ export function CollectionTable({
   onColumnWidthChange,
   onColumnWidthReset,
 }: CollectionTableProps) {
+  const compact = useCompactRows();
+  const waveformColumn = useLeadColumnWidth(
+    WAVEFORM_COLUMN_ID,
+    WAVEFORM_DEFAULT_WIDTH,
+    columnWidths,
+    onColumnWidthChange,
+    onColumnWidthReset,
+  );
   // The folder column only makes sense when browsing by absolute folder path —
   // overlay the caller's visibility predicate so TrackTable hides it otherwise.
   const isVisibleForTable = useCallback(
@@ -1627,7 +1650,7 @@ export function CollectionTable({
         items={items}
         columns={TRACK_TABLE_COLUMNS}
         totalCount={total > 0 ? total : items.length}
-        estimateRowSize={EDIT_ROW_HEIGHT}
+        estimateRowSize={compact ? COMPACT_ROW_HEIGHT : EDIT_ROW_HEIGHT}
         getItemKey={(index, item) => item?.file_path ?? `__idx_${index}`}
         sortBy={sortBy}
         sortOrder={sortOrder}
@@ -1663,8 +1686,8 @@ export function CollectionTable({
                 className="cursor-pointer"
               />
             </div>
-            <div className="w-7 shrink-0" />
-            <div className="w-20 shrink-0" />
+            <div className={cn("shrink-0", compact ? "w-6" : "w-7")} />
+            <ResizableHeaderCell {...waveformColumn} />
           </>
         )}
         renderHeaderTrail={({ sortBy: sb, sortOrder: so }) => (
@@ -1738,6 +1761,8 @@ export function CollectionTable({
               }
               folderPath={folderPath}
               visibleFields={visibleFieldsForRow}
+              waveformWidth={waveformColumn.width}
+              compact={compact}
             />
           );
         }}

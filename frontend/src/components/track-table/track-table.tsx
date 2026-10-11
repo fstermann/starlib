@@ -152,6 +152,40 @@ export function TrailingSortButton({
 }
 
 /**
+ * Width of a fixed lead column (e.g. the row waveform), persisted with the
+ * column widths under `id`. Overlays a live width while the handle is dragged.
+ */
+export function useLeadColumnWidth(
+  id: string,
+  defaultWidth: number,
+  widths: Record<string, number> | undefined,
+  onWidthChange: ((id: string, width: number) => void) | undefined,
+  onWidthReset: ((id: string) => void) | undefined,
+) {
+  const [liveWidth, setLiveWidth] = React.useState<number | null>(null);
+  const onResize = React.useCallback(
+    (w: number, phase: "drag" | "commit") => {
+      if (phase === "drag") {
+        setLiveWidth(w);
+        return;
+      }
+      onWidthChange?.(id, w);
+      setLiveWidth(null);
+    },
+    [id, onWidthChange],
+  );
+  const onResetWidth = React.useCallback(
+    () => onWidthReset?.(id),
+    [id, onWidthReset],
+  );
+  return {
+    width: liveWidth ?? widths?.[id] ?? defaultWidth,
+    onResize,
+    onResetWidth,
+  };
+}
+
+/**
  * Shared table chrome for track-like lists. Owns:
  *  - Horizontal-scroll container with sticky sortable/resizable/reorderable header
  *  - Virtualized row body

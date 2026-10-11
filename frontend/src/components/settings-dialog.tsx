@@ -61,6 +61,7 @@ import {
 } from "@/lib/settings";
 import { isTauri } from "@/lib/tauri";
 import { checkForUpdate, type UpdateResult } from "@/lib/updater";
+import { saveCompactRows } from "@/lib/use-compact-rows";
 import { saveKeyNotation } from "@/lib/use-key-notation";
 import { saveWaveformStyle } from "@/lib/use-waveform-style";
 import { cn } from "@/lib/utils";
@@ -128,6 +129,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [waveformStyle, setWaveformStyleState] =
     useState<WaveformStyle>("starlib");
   const [keyNotation, setKeyNotationState] = useState<KeyNotation>("camelot");
+  const [compactRows, setCompactRowsState] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [checking, setChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateResult | null>(null);
@@ -185,6 +187,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       api.getAppSettings(),
       getSetting("waveformStyle"),
       getSetting("keyNotation"),
+      getSetting("compactRows"),
       api.getRootMusicFolder(),
       api.getAiSettings(),
       api.getAiStatus(),
@@ -196,6 +199,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         appSettings,
         waveform,
         notation,
+        compact,
         rootPath,
         settings,
         status,
@@ -208,6 +212,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         );
         setWaveformStyleState(waveform);
         setKeyNotationState(notation);
+        setCompactRowsState(compact);
         setRootFolder(rootPath);
         setRootFolderDraft(rootPath);
         setAiSettings(settings);
@@ -256,6 +261,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   async function handleKeyNotationChange(notation: KeyNotation) {
     setKeyNotationState(notation);
     await saveKeyNotation(notation);
+  }
+
+  async function handleCompactRowsChange(compact: boolean) {
+    setCompactRowsState(compact);
+    await saveCompactRows(compact);
   }
 
   async function handleSaveRootFolder() {
@@ -546,6 +556,29 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     <ToggleGroupItem value="standard">
                       Standard (Am)
                     </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label className="text-sm">Row density</Label>
+                  <p className="text-muted-foreground text-xs">
+                    Row height in the Filesystem, SoundCloud and Rekordbox track
+                    lists.
+                  </p>
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    value={compactRows ? "compact" : "comfortable"}
+                    onValueChange={(val) => {
+                      if (val) handleCompactRowsChange(val === "compact");
+                    }}
+                    className="w-fit"
+                    data-testid="settings-row-density"
+                  >
+                    <ToggleGroupItem value="comfortable">
+                      Comfortable
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="compact">Compact</ToggleGroupItem>
                   </ToggleGroup>
                 </div>
               </div>

@@ -48,7 +48,7 @@ export function CoverPlayButton({
     <img
       src={artworkUrl}
       alt=""
-      className="size-7 object-cover"
+      className="size-full object-cover"
       loading="lazy"
     />
   ) : (

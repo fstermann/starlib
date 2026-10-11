@@ -258,4 +258,84 @@ test.describe("Library: Rekordbox source", () => {
     expect(urns).toEqual(["soundcloud:tracks:12345"]);
     await expect(page.getByText('Playlist "Sunday Mix" created')).toBeVisible();
   });
+
+  test("sorts columns for display only", async ({ page }) => {
+    const writes: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("/api/rekordbox/") && req.method() !== "GET")
+        writes.push(`${req.method()} ${req.url()}`);
+    });
+    await page.goto("/library?source=rekordbox&playlist=pl-1");
+    const tracks = page.getByTestId("rekordbox-tracks");
+    const firstTitle = tracks.locator('[data-index="0"]');
+    await expect(firstTitle).toContainText("Foo");
+
+    const titleHeader = tracks.locator("button", { hasText: /^Title$/ });
+    await titleHeader.click();
+    await expect(firstTitle).toContainText("Baz");
+    await titleHeader.click();
+    await expect(firstTitle).toContainText("Foo");
+    // Third click restores the playlist order.
+    await titleHeader.click();
+    await expect(firstTitle).toContainText("Foo");
+
+    // Key sorts by Camelot wheel position: 10A after 8A, so desc puts Baz first.
+    const keyHeader = tracks.locator("button", { hasText: /^Key$/ });
+    await keyHeader.click();
+    await keyHeader.click();
+    await expect(firstTitle).toContainText("Baz");
+
+    await page.reload();
+    await expect(firstTitle).toContainText("Foo");
+    expect(writes).toEqual([]);
+  });
+
+  test("hovering a pitched key shows the original key and pitch change", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("starlib.pitcher.enabled", "1");
+      window.localStorage.setItem("starlib.pitcher.targetBpm", "132");
+    });
+    await page.goto("/library?source=rekordbox&playlist=pl-1");
+    const tracks = page.getByTestId("rekordbox-tracks");
+
+    // Foo: 124.5 → 132 BPM is +6.0%, about one semitone, so 8A becomes 3A.
+    // Baz: 130 → 132 stays under half a semitone and keeps its key.
+    const pitched = tracks.getByTestId("rekordbox-pitched-key");
+    await expect(pitched).toHaveCount(1);
+    await expect(pitched).toHaveText("3A");
+
+    await pitched.hover();
+    await expect(page.getByRole("tooltip")).toHaveText(
+      "Original key 8A · +6.0% (+1.0 st)",
+    );
+  });
+
+  test("the row waveform resizes from its header", async ({ page }) => {
+    await page.goto("/library?source=rekordbox&playlist=pl-1");
+    const tracks = page.getByTestId("rekordbox-tracks");
+    const waveform = tracks.locator('[data-index="0"] canvas');
+    await expect(waveform).toBeVisible();
+    const before = (await waveform.boundingBox())!.width;
+
+    const handle = tracks
+      .getByTestId("waveform-header")
+      .locator('[title^="Drag to resize"]');
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+
+    await expect
+      .poll(async () => (await waveform.boundingBox())!.width)
+      .toBeGreaterThan(before + 40);
+
+    // The width persists with the column widths.
+    await page.reload();
+    await expect
+      .poll(async () => (await waveform.boundingBox())?.width ?? 0)
+      .toBeGreaterThan(before + 40);
+  });
 });

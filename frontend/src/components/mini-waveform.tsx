@@ -189,6 +189,18 @@ export function MiniWaveform({
     });
   }, [isActive, peaksLoaded, subscribeProgress, draw]);
 
+  // The canvas backing store is sized at draw time, so redraw when the column
+  // is resized.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const observer = new ResizeObserver(() =>
+      draw(currentProgressRef.current, hoverXRef.current),
+    );
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [peaksLoaded, draw]);
+
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();

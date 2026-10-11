@@ -125,6 +125,36 @@ export function SortableHeaderCell({
   );
 }
 
+/**
+ * Fixed header cell (not reorderable) with a resize handle on its right edge,
+ * for lead columns such as the row waveform.
+ */
+export function ResizableHeaderCell({
+  width,
+  onResize,
+  onResetWidth,
+}: {
+  width: number;
+  onResize: (width: number, phase: "drag" | "commit") => void;
+  onResetWidth?: () => void;
+}) {
+  const cellRef = React.useRef<HTMLDivElement | null>(null);
+  return (
+    <div
+      ref={cellRef}
+      data-testid="waveform-header"
+      className="relative h-full shrink-0"
+      style={{ width }}
+    >
+      <ResizeHandle
+        cellRef={cellRef}
+        onResize={onResize}
+        onResetWidth={onResetWidth}
+      />
+    </div>
+  );
+}
+
 function ResizeHandle({
   cellRef,
   onResize,

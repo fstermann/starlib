@@ -18,6 +18,8 @@ The source switcher is a segmented pill in the top bar. The active source shows 
 
 Every source shares the same table, filters, and [player](player.md) — you can queue a local file after a SoundCloud track after a Rekordbox track.
 
+Drag the right edge of a column header to resize it; the row waveform resizes the same way. Double-click the edge to reset.
+
 ### :material-folder-open: Filesystem source
 
 Edit ID3/AIFF tags on your local audio files and enrich them with data from SoundCloud.
@@ -150,7 +152,7 @@ Pick what to browse with the device selector at the top:
 - **Local** — the Rekordbox 6 install on this machine
 - **A mounted USB/SD export** — any Rekordbox-exported stick Starlib finds. Mounted devices are detected automatically; eject one safely with the :material-eject: button.
 
-The tree on the left mirrors your Rekordbox playlist folders, with **Collection** at the top listing every track. Playlists keep their Rekordbox order — including smart playlists and hand-curated sets — so the table is filterable but deliberately not sortable.
+The tree on the left mirrors your Rekordbox playlist folders, with **Collection** at the top listing every track. Click a column header to sort by it; a third click restores the playlist order. Sorting only changes what you see. The playlist keeps its Rekordbox order, and dragging rows to reorder is off while a sort is active.
 
 #### Editing playlists
 
@@ -173,7 +175,7 @@ Tracks carry their Rekordbox analysis, which means:
 - **Beatgrids**, which unlock the beatgrid [auto-mix](player.md#auto-mix) modes
 - Artwork, BPM, and key straight from the Rekordbox database
 
-Filter by search, genre, key, and BPM range. With BPM pitching enabled, the key column shows the pitched key next to the original.
+Filter by search, genre, key, and BPM range. With BPM pitching enabled, the key column shows the pitched key in green. Hover it to see the original key and the pitch change in percent and semitones.
 
 The **SoundCloud** column shows the track's SoundCloud id. Starlib reads it from the Rekordbox comment (`sc:<id>`, `soundcloud:<id>`, or a bare number), else from the audio file's Starlib tag. Click **SoundCloud playlist** in the toolbar to create a SoundCloud playlist from the selected tracks, or from the whole filtered playlist when nothing is selected. Tracks without a SoundCloud id are skipped.
 
@@ -247,6 +249,10 @@ Under **Settings > Library**, choose the default format used by convert rules se
 #### Key notation
 
 Under **Settings > Library**, **SoundCloud key notation** picks how keys listed by SoundCloud appear in the Key column and the Set Breakdown tracklist: Camelot (`8A`, the default) or standard (`Am`).
+
+#### Row density
+
+Under **Settings > Library**, **Row density** sets the row height of the Filesystem, SoundCloud, and Rekordbox tables: Comfortable (40px, the default) or Compact (32px).
 
 #### AI
 
