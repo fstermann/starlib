@@ -15,6 +15,8 @@ import {
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
 } from "@/lib/soundcloud-cache";
+import { useChanged } from "@/lib/use-changed";
+import { useLatestRef } from "@/lib/use-latest-ref";
 
 /** Where a preview's audio comes from. ``url`` is a ready-to-play clip
  *  (Shazam's 30 s m4a); ``soundcloud`` resolves an HLS stream on demand. */
@@ -101,14 +103,21 @@ export function PreviewPopover({
   // Read the live source from a ref so the WaveSurfer effect can depend
   // on a stable primitive key (not the freshly-built object each render)
   // and not re-create the instance on every parent re-render.
-  const sourceRef = useRef(source);
-  sourceRef.current = source;
+  const sourceRef = useLatestRef(source);
   const sourceKey =
     source == null
       ? null
       : source.kind === "url"
         ? source.url
         : `sc:${source.trackId}`;
+
+  if (useChanged([open, sourceKey]) && open && source != null) {
+    setReady(false);
+    setError(null);
+    setPlaying(false);
+    setProgressS(0);
+    setDurationS(source.kind === "soundcloud" ? (source.durationS ?? 0) : 0);
+  }
 
   useEffect(() => {
     // NB: don't gate on ``containerRef.current`` — the popover content is
@@ -121,11 +130,6 @@ export function PreviewPopover({
     if (src == null) return;
     let cancelled = false;
     let teardown: (() => void) | null = null;
-    setReady(false);
-    setError(null);
-    setPlaying(false);
-    setProgressS(0);
-    setDurationS(src.kind === "soundcloud" ? (src.durationS ?? 0) : 0);
 
     void (async () => {
       try {
@@ -280,7 +284,7 @@ export function PreviewPopover({
       teardown?.();
       wsRef.current = null;
     };
-  }, [open, sourceKey]);
+  }, [open, sourceKey, sourceRef]);
 
   const toggle = () => {
     const audio = audioRef.current;

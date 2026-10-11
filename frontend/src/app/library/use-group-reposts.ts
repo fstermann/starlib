@@ -50,18 +50,18 @@ export function useGroupReposts(
         .join(",")}`
     : "";
 
+  const [fetchedKey, setFetchedKey] = useState<string | null>(null);
+  if (memberKey !== fetchedKey) {
+    setFetchedKey(memberKey);
+    setTracks([]);
+    setLoading((group?.members ?? []).length > 0);
+    setError(null);
+  }
+
   useEffect(() => {
     const members = group?.members ?? [];
-    if (!group || members.length === 0) {
-      setTracks([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
+    if (!group || members.length === 0) return;
     let cancelled = false;
-    setTracks([]);
-    setLoading(true);
-    setError(null);
 
     const perMember = members.map((m) => ({
       source: {

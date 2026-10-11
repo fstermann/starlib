@@ -60,19 +60,23 @@ export function useSoundcloudTrackSearch(
     }
   }, []);
 
+  const [prevQuery, setPrevQuery] = useState<string | null>(null);
+  if (query !== prevQuery) {
+    setPrevQuery(query);
+    if (!query.trim()) {
+      setTracks([]);
+      setError(null);
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     lastQueryRef.current = query;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const trimmed = query.trim();
-    if (!trimmed) {
-      setTracks([]);
-      setError(null);
-      setLoading(false);
-      return () => controller.abort();
-    }
+    if (!query.trim()) return () => controller.abort();
 
     const timeout = setTimeout(
       () => run(query, controller.signal),

@@ -6,6 +6,7 @@ import { fetchFilesystemSchema } from "@/lib/filters/filesystem-adapter";
 import type { FilterSchemaResponse, FilterState } from "@/lib/filters/schema";
 import { buildSoundcloudSchema } from "@/lib/filters/soundcloud-adapter";
 import type { SCTrack } from "@/lib/soundcloud";
+import { useLatestRef } from "@/lib/use-latest-ref";
 
 export type FilterSchemaSource =
   | {
@@ -62,8 +63,7 @@ export function useFilterSchema(
 
   // Capture current fetch inputs in a ref so the debounce closure reads the
   // freshest values without invalidating the effect on every render.
-  const fsInputsRef = React.useRef(input);
-  fsInputsRef.current = input;
+  const fsInputsRef = useLatestRef(input);
 
   React.useEffect(() => {
     if (input.source !== "filesystem") return;

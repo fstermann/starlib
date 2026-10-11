@@ -7,7 +7,7 @@ import {
   RotateCcw,
   Save,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import type { WeekGroup } from "@/app/weekly/use-weekly-groups";
@@ -22,6 +22,7 @@ import {
   type SCPlaylist,
   type SCTrack,
 } from "@/lib/soundcloud";
+import { useChanged } from "@/lib/use-changed";
 import { cn } from "@/lib/utils";
 
 interface WeeklyGroupCardProps {
@@ -137,9 +138,7 @@ export function WeeklyGroupCard({
     () => baseDisplayTracks.map((t) => t.urn ?? "").join("|"),
     [baseDisplayTracks],
   );
-  useEffect(() => {
-    setOrderedUrns(null);
-  }, [baseKey]);
+  if (useChanged([baseKey])) setOrderedUrns(null);
 
   const newTrackUrns = useMemo(
     () =>

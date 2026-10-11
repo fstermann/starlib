@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api, type FetchCandidate } from "@/lib/api";
+import { useChanged } from "@/lib/use-changed";
 import { cn } from "@/lib/utils";
 
 interface FetchFromDownloadsButtonProps {
@@ -54,11 +55,14 @@ export function FetchFromDownloadsButton({
   })();
 
   // Fetch the preview whenever the dialog is open and we have a valid window.
+  const wantsPreview = open && !!folderPath && resolvedDays !== null;
+  if (useChanged([open, folderPath, resolvedDays]) && wantsPreview) {
+    setPreviewLoading(true);
+    setPreviewError(null);
+  }
   useEffect(() => {
     if (!open || !folderPath || resolvedDays === null) return;
     const ctrl = new AbortController();
-    setPreviewLoading(true);
-    setPreviewError(null);
     api
       .fetchFromDownloadsPreview(folderPath, resolvedDays, ctrl.signal)
       .then((res) => {

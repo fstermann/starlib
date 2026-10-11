@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { Slider } from "@/components/ui/slider";
+import { useChanged } from "@/lib/use-changed";
 import { cn } from "@/lib/utils";
 
 export interface RangeSliderFieldProps {
@@ -32,10 +33,7 @@ export function RangeSliderField({
   const resolved: [number, number] = [value[0] ?? min, value[1] ?? max];
   const [live, setLive] = React.useState<[number, number]>(resolved);
 
-  React.useEffect(() => {
-    setLive(resolved);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value[0], value[1], min, max]);
+  if (useChanged([value[0], value[1], min, max])) setLive(resolved);
 
   return (
     <div className={cn("flex w-full items-center gap-2", className)}>

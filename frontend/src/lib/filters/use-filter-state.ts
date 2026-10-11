@@ -35,10 +35,11 @@ export function useFilterState(schema: FilterSchemaResponse): {
   set: (id: string, value: FilterValue) => void;
   clearAll: () => void;
 } {
+  const signature = schema.attributes.map((a) => `${a.id}:${a.kind}`).join("|");
   const parsers = React.useMemo(
     () => buildParsers(schema),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- signature-keyed memo
-    [schema.attributes.map((a) => `${a.id}:${a.kind}`).join("|")],
+    [signature],
   );
 
   const [query, setQuery] = useQueryStates(parsers);

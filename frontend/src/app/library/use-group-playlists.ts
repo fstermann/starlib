@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 
-import { type ProfileGroup, type SourceProfile } from "@/lib/profile-groups";
+import {
+  type ProfileGroup,
+  type ProfileGroupMember,
+  type SourceProfile,
+} from "@/lib/profile-groups";
 import { getUserPlaylists, type SCPlaylist } from "@/lib/soundcloud";
 
 export interface MemberPlaylists {
@@ -32,6 +36,14 @@ async function fetchAllUserPlaylists(
   } while (nextHref && !isCancelled());
 }
 
+function memberSource(m: ProfileGroupMember): SourceProfile {
+  return {
+    user_urn: m.user_urn,
+    username: m.username,
+    avatar_url: m.avatar_url ?? null,
+  };
+}
+
 /** Per-member playlists for a ProfileGroup, paginated and streamed.
  *
  * Mirrors `useGroupLikes` / `useGroupReposts` but for playlist metadata.
@@ -52,26 +64,25 @@ export function useGroupPlaylists(
         .join(",")}`
     : "";
 
+  const [fetchedKey, setFetchedKey] = useState<string | null>(null);
+  if (memberKey !== fetchedKey) {
+    const members = group?.members ?? [];
+    setFetchedKey(memberKey);
+    setByMember(
+      members.map((m) => ({ source: memberSource(m), playlists: [] })),
+    );
+    setLoading(members.length > 0);
+    setError(null);
+  }
+
   useEffect(() => {
     const members = group?.members ?? [];
-    if (!group || members.length === 0) {
-      setByMember([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
+    if (!group || members.length === 0) return;
     let cancelled = false;
     const buf: MemberPlaylists[] = members.map((m) => ({
-      source: {
-        user_urn: m.user_urn,
-        username: m.username,
-        avatar_url: m.avatar_url ?? null,
-      },
+      source: memberSource(m),
       playlists: [],
     }));
-    setByMember(buf.map((m) => ({ ...m, playlists: [] })));
-    setLoading(true);
-    setError(null);
 
     Promise.all(
       members.map((m, idx) =>

@@ -265,6 +265,7 @@ export function TrackTable<T>({
 
   const effectiveCount = totalCount ?? items.length;
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns unmemoizable functions by design
   const virtualizer = useVirtualizer({
     count: effectiveCount,
     getScrollElement: () => scrollParentRef.current,

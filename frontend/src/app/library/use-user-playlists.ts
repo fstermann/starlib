@@ -27,6 +27,11 @@ function cacheKey(userUrn: string | "me" | null) {
   return userUrn ?? "";
 }
 
+function freshCached(userUrn: string | "me") {
+  const cached = cache.get(cacheKey(userUrn));
+  return cached && Date.now() - cached.fetchedAt < CACHE_TTL ? cached : null;
+}
+
 /** Invalidate the cached playlists for `userUrn` and refresh every mounted
  *  useUserPlaylists (e.g. after creating a playlist — a refetch picks it up). */
 export function reloadUserPlaylists(userUrn: string | "me" | null) {
@@ -74,28 +79,28 @@ export function useUserPlaylists(
     };
   }, []);
 
-  useEffect(() => {
+  // A reload deletes the cache entry (see reloadUserPlaylists) and bumps
+  // reloadKey, so a surviving fresh entry means nothing changed for this
+  // user — reuse it rather than refetch.
+  const fetchKey = `${userUrn ?? ""}|${reloadKey}`;
+  const [seededKey, setSeededKey] = useState<string | null>(null);
+  if (fetchKey !== seededKey) {
+    setSeededKey(fetchKey);
     if (!userUrn) {
       setPlaylists([]);
-      return;
-    }
-
-    // A reload deletes the cache entry (see reloadUserPlaylists) and bumps
-    // reloadKey to re-run this effect, so a surviving fresh entry means nothing
-    // changed for this user — reuse it rather than refetch.
-    const key = cacheKey(userUrn);
-    const cached = cache.get(key);
-    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
-      setPlaylists(cached.playlists);
-      setLoading(false);
+    } else {
+      const cached = freshCached(userUrn);
+      setPlaylists(cached?.playlists ?? []);
+      setLoading(!cached);
       setError(null);
-      return;
     }
+  }
 
+  useEffect(() => {
+    if (!userUrn || freshCached(userUrn)) return;
+
+    const key = cacheKey(userUrn);
     let cancelled = false;
-    setPlaylists([]);
-    setLoading(true);
-    setError(null);
 
     async function load() {
       try {

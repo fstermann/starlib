@@ -622,23 +622,23 @@ export function SoundcloudView() {
     () => playlistTracks.tracks.filter(filterPredicate).length,
     [playlistTracks.tracks, filterPredicate],
   );
+  const selectedPlaylistUrn = selectedPlaylist?.urn;
   const perPlaylistCount = useMemo(() => {
     const m = new Map<string, number>();
-    if (selectedPlaylist?.urn) {
-      m.set(selectedPlaylist.urn, selectedPlaylistCount);
-    }
+    if (selectedPlaylistUrn) m.set(selectedPlaylistUrn, selectedPlaylistCount);
     return m;
-  }, [selectedPlaylist?.urn, selectedPlaylistCount]);
+  }, [selectedPlaylistUrn, selectedPlaylistCount]);
 
   const selectedMixCount = useMemo(
     () => mixTracks.tracks.filter(filterPredicate).length,
     [mixTracks.tracks, filterPredicate],
   );
+  const selectedMixUrn = selectedMix?.urn;
   const perMixCount = useMemo(() => {
     const m = new Map<string, number>();
-    if (selectedMix?.urn) m.set(selectedMix.urn, selectedMixCount);
+    if (selectedMixUrn) m.set(selectedMixUrn, selectedMixCount);
     return m;
-  }, [selectedMix?.urn, selectedMixCount]);
+  }, [selectedMixUrn, selectedMixCount]);
 
   useTopBar({
     title: (

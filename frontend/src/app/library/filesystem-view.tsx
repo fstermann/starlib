@@ -54,6 +54,7 @@ import { usePlayer } from "@/lib/player-context";
 import { onRulesetsChanged } from "@/lib/rulesets-events";
 import { searchParams } from "@/lib/search-params";
 import { trackBreakdownHref } from "@/lib/track-breakdown";
+import { useChanged } from "@/lib/use-changed";
 import { useResizable } from "@/lib/use-resizable";
 import { cn } from "@/lib/utils";
 
@@ -135,8 +136,13 @@ export function FilesystemView() {
     };
   }, []);
 
+  // Track selection
+  const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
+
+  // Editor panel visibility
+  const [editorOpen, setEditorOpen] = useState(false);
+
   // Resolve active ruleset for the selected node, walking ancestors for recursive bindings
-  const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
   const currentRulesetId = (() => {
     if (!selectedNodeId) return null;
     const own = folderRulesets[selectedNodeId];
@@ -152,14 +158,9 @@ export function FilesystemView() {
 
   const effectiveRulesetId = currentRulesetId;
 
-  useEffect(() => {
-    if (effectiveRulesetId) {
-      const found = allRulesets.find((r) => r.id === effectiveRulesetId);
-      setActiveRuleset(found ?? null);
-    } else {
-      setActiveRuleset(null);
-    }
-  }, [effectiveRulesetId, allRulesets]);
+  const activeRuleset = effectiveRulesetId
+    ? (allRulesets.find((r) => r.id === effectiveRulesetId) ?? null)
+    : null;
 
   // Handle tree node selection
   const handleTreeSelect = useCallback((nodeId: string) => {
@@ -265,16 +266,10 @@ export function FilesystemView() {
     [saveShortcuts],
   );
 
-  // Track selection
-  const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
-
   // Shared pending field edits per file
   const [pendingFieldEdits, setPendingFieldEdits] = useState<
     Map<string, Record<string, string>>
   >(new Map());
-
-  // Editor panel visibility
-  const [editorOpen, setEditorOpen] = useState(false);
 
   // Table refresh signal
   const [refreshToken, setRefreshToken] = useState(0);
@@ -406,9 +401,11 @@ export function FilesystemView() {
   const player = usePlayer();
 
   // Reset editor state when selected node changes
-  useEffect(() => {
+  if (useChanged([selectedNodeId])) {
     setSelectedFile(null);
     setEditorOpen(false);
+  }
+  useEffect(() => {
     player.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNodeId]);

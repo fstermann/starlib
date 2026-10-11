@@ -90,45 +90,37 @@ export function useFollowingsTracks(enabled = true): UseFollowingsTracksResult {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const fetchAll = useCallback(
-    async (signal: AbortSignal, bypassCache = false) => {
-      if (!bypassCache) {
-        const cached = getCached();
-        if (cached) {
-          setTracks(cached);
-          setLoading(false);
-          setError(null);
-          return;
-        }
-      }
+  // Seed from the cache (or reset for a fresh fetch) when the hook turns on,
+  // so the effect below only has to start the network work.
+  const [seeded, setSeeded] = useState(false);
+  if (enabled && !seeded) {
+    setSeeded(true);
+    const cached = getCached();
+    setTracks(cached ?? []);
+    setLoading(!cached);
+    setError(null);
+  }
 
-      setLoading(true);
-      setError(null);
-      setTracks([]);
-
-      try {
-        const result = await fetchRecentPages(signal, (partial) => {
-          if (!signal.aborted) setTracks(partial);
-        });
-        if (!signal.aborted) {
-          followingsCache = { tracks: result, fetchedAt: Date.now() };
-          setTracks(result);
-        }
-      } catch (err) {
-        if (!signal.aborted) {
-          setError(
-            err instanceof Error ? err.message : "Failed to load tracks",
-          );
-        }
-      } finally {
+  const fetchAll = useCallback((signal: AbortSignal) => {
+    fetchRecentPages(signal, (partial) => {
+      if (!signal.aborted) setTracks(partial);
+    })
+      .then((result) => {
+        if (signal.aborted) return;
+        followingsCache = { tracks: result, fetchedAt: Date.now() };
+        setTracks(result);
+      })
+      .catch((err) => {
+        if (signal.aborted) return;
+        setError(err instanceof Error ? err.message : "Failed to load tracks");
+      })
+      .finally(() => {
         if (!signal.aborted) setLoading(false);
-      }
-    },
-    [],
-  );
+      });
+  }, []);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || getCached()) return;
     const controller = new AbortController();
     abortRef.current = controller;
     fetchAll(controller.signal);
@@ -138,9 +130,12 @@ export function useFollowingsTracks(enabled = true): UseFollowingsTracksResult {
   const reload = useCallback(() => {
     abortRef.current?.abort();
     followingsCache = null;
+    setLoading(true);
+    setError(null);
+    setTracks([]);
     const controller = new AbortController();
     abortRef.current = controller;
-    fetchAll(controller.signal, true);
+    fetchAll(controller.signal);
   }, [fetchAll]);
 
   return { tracks, loading, loaded: tracks.length, error, reload };

@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import {
@@ -23,6 +24,7 @@ import {
 } from "@/lib/mix/config";
 import { useIsScUnplayable } from "@/lib/sc-unplayable";
 import { getRaw, setRaw } from "@/lib/settings";
+import { useChanged } from "@/lib/use-changed";
 
 export interface PlayerTrack {
   filePath: string;
@@ -159,6 +161,32 @@ const PITCH_TARGET_KEY = "starlib.pitcher.targetBpm";
 const PITCH_ENABLED_KEY = "starlib.pitcher.enabled";
 const DEFAULT_TARGET_BPM = 124;
 
+// Pitcher prefs live in localStorage; components read them as an external
+// store so the server render gets the defaults and the client hydrates to the
+// saved values without a mount effect.
+const pitchPrefsListeners = new Set<() => void>();
+
+function subscribePitchPrefs(onChange: () => void) {
+  pitchPrefsListeners.add(onChange);
+  return () => {
+    pitchPrefsListeners.delete(onChange);
+  };
+}
+
+function writePitchPref(key: string, value: string) {
+  window.localStorage.setItem(key, value);
+  pitchPrefsListeners.forEach((fn) => fn());
+}
+
+function readTargetBpm() {
+  const parsed = Number(window.localStorage.getItem(PITCH_TARGET_KEY));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TARGET_BPM;
+}
+
+function readPitchEnabled() {
+  return window.localStorage.getItem(PITCH_ENABLED_KEY) === "1";
+}
+
 const PlayerContext = createContext<PlayerContextValue | null>(null);
 
 function sameTrack(a: PlayerTrack | null, b: PlayerTrack | null) {
@@ -172,8 +200,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentBpm, setCurrentBpmState] = useState<number | null>(null);
-  const [targetBpm, setTargetBpmState] = useState<number>(DEFAULT_TARGET_BPM);
-  const [pitchEnabled, setPitchEnabledState] = useState<boolean>(false);
+  const targetBpm = useSyncExternalStore(
+    subscribePitchPrefs,
+    readTargetBpm,
+    () => DEFAULT_TARGET_BPM,
+  );
+  const pitchEnabled = useSyncExternalStore(
+    subscribePitchPrefs,
+    readPitchEnabled,
+    () => false,
+  );
   const [mixConfig, setMixConfigState] =
     useState<MixConfig>(DEFAULT_MIX_CONFIG);
   // True while a crossfade is past its midpoint: the next queue entry is the
@@ -194,33 +230,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setRaw(MIX_CONFIG_KEY, next).catch(() => {});
   }, []);
 
-  // Hydrate pitcher prefs from localStorage. Done in an effect to keep SSR
-  // safe — the initial server render gets the defaults and the client
-  // upgrades on mount.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const rawTarget = window.localStorage.getItem(PITCH_TARGET_KEY);
-    if (rawTarget) {
-      const parsed = Number(rawTarget);
-      if (Number.isFinite(parsed) && parsed > 0) setTargetBpmState(parsed);
-    }
-    const rawEnabled = window.localStorage.getItem(PITCH_ENABLED_KEY);
-    if (rawEnabled === "1") setPitchEnabledState(true);
-  }, []);
-
   const setTargetBpm = useCallback((bpm: number) => {
     if (!Number.isFinite(bpm) || bpm <= 0) return;
-    setTargetBpmState(bpm);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(PITCH_TARGET_KEY, String(bpm));
-    }
+    writePitchPref(PITCH_TARGET_KEY, String(bpm));
   }, []);
 
   const setPitchEnabled = useCallback((enabled: boolean) => {
-    setPitchEnabledState(enabled);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(PITCH_ENABLED_KEY, enabled ? "1" : "0");
-    }
+    writePitchPref(PITCH_ENABLED_KEY, enabled ? "1" : "0");
   }, []);
 
   const setCurrentBpm = useCallback((bpm: number | null) => {
@@ -256,12 +272,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   // supplied a `bpm` hint on the PlayerTrack, use it; otherwise reset to
   // unknown so the pitcher shows "Detect" / triggers auto-detect.
   const trackKey = currentTrack?.filePath ?? null;
-  useEffect(() => {
-    setCurrentBpmState(currentTrack?.bpm ?? null);
-    // Only react to track identity, not full object; bpm hint is read from
-    // the latest currentTrack at the moment the track changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackKey]);
+  if (useChanged([trackKey])) setCurrentBpmState(currentTrack?.bpm ?? null);
 
   // Stable numeric SC track id for the currently loaded track, or null when
   // it isn't a SoundCloud track. Reused by the BPM-sync and unplayable-skip

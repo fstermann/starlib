@@ -25,6 +25,7 @@ import { api } from "@/lib/api";
 import { analyzeSc, TrackUnanalysableError } from "@/lib/sc-bpm";
 import { markScUnplayable, useIsScUnplayable } from "@/lib/sc-unplayable";
 import { isTauri } from "@/lib/tauri";
+import { useChanged } from "@/lib/use-changed";
 
 interface Props {
   trackId: number;
@@ -88,11 +89,9 @@ export function SoundcloudBpmCell({ trackId, metadataBpm }: Props) {
 
   // Seed the draft from the currently shown BPM each time the popover opens
   // so the user's starting point is what they see in the cell.
-  useEffect(() => {
-    if (popoverOpen) {
-      setDraft(displayBpm != null ? String(displayBpm) : "");
-    }
-  }, [popoverOpen, displayBpm]);
+  if (useChanged([popoverOpen, displayBpm]) && popoverOpen) {
+    setDraft(displayBpm != null ? String(displayBpm) : "");
+  }
 
   async function persistBpm(bpm: number) {
     await api.saveSoundcloudBpm(trackId, bpm);

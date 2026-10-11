@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { LogoSpinner } from "@/components/logo-spinner";
@@ -84,6 +84,7 @@ import {
   titelize,
 } from "@/lib/string-utils";
 import { analyzeLocalBpm, isTauri } from "@/lib/tauri";
+import { useChanged } from "@/lib/use-changed";
 import { cn } from "@/lib/utils";
 
 import { useSourceSearch } from "./use-source-search";
@@ -203,11 +204,11 @@ export function TrackEditor({
 
   // Active ruleset (shown in Apply Rules popover) — only set when the folder has one assigned
   const [activeRuleset, setActiveRuleset] = useState<Ruleset | null>(null);
+  if (useChanged([folderRulesetId]) && !folderRulesetId) {
+    setActiveRuleset(null);
+  }
   useEffect(() => {
-    if (!folderRulesetId) {
-      setActiveRuleset(null);
-      return;
-    }
+    if (!folderRulesetId) return;
     let cancelled = false;
     function load() {
       api
@@ -309,40 +310,49 @@ export function TrackEditor({
   // Field values are never written without the user clicking a suggestion
   // (see ``useTrackSuggestions`` and ``SuggestionButton`` below) — copying
   // verbatim is still available via the per-field "copy from SC" buttons.
-  useLayoutEffect(() => {
+  if (useChanged([selectedScTrack, activeSource])) {
     setScQueryPending(false);
-    if (!selectedScTrack) return;
-    const meta = activeSource.extractMetadata(selectedScTrack);
-    setCommentData((prev) => {
-      // If prev already points at this exact SC track, preserve it so any
-      // permalink formatting saved on the file is kept verbatim. Otherwise
-      // adopt the newly selected track — `prev || meta` would otherwise pin
-      // the link to the first match and silently ignore later selections.
-      if (prev.soundcloud_id && prev.soundcloud_id === meta.source_id) {
-        return prev;
-      }
-      return {
-        soundcloud_id: meta.source_id,
-        soundcloud_permalink: meta.source_permalink,
-      };
-    });
-    setScLinkEnabled(true);
-  }, [selectedScTrack, activeSource, setScQueryPending]);
+    if (selectedScTrack) {
+      const meta = activeSource.extractMetadata(selectedScTrack);
+      setCommentData((prev) => {
+        // If prev already points at this exact SC track, preserve it so any
+        // permalink formatting saved on the file is kept verbatim. Otherwise
+        // adopt the newly selected track — `prev || meta` would otherwise pin
+        // the link to the first match and silently ignore later selections.
+        if (prev.soundcloud_id && prev.soundcloud_id === meta.source_id) {
+          return prev;
+        }
+        return {
+          soundcloud_id: meta.source_id,
+          soundcloud_permalink: meta.source_permalink,
+        };
+      });
+      setScLinkEnabled(true);
+    }
+  }
 
   // Show source artwork in preview when no existing artwork
+  const sourceArtworkUrl =
+    selectedScTrack &&
+    autoActions.autoCopyArtwork &&
+    trackInfo &&
+    !trackInfo.has_artwork
+      ? activeSource.extractMetadata(selectedScTrack).artwork_url
+      : null;
+  if (
+    useChanged([
+      selectedScTrack,
+      autoActions.autoCopyArtwork,
+      trackInfo,
+      activeSource,
+    ]) &&
+    sourceArtworkUrl
+  ) {
+    setArtworkUrl(sourceArtworkUrl);
+  }
   useEffect(() => {
-    if (
-      !selectedScTrack ||
-      !autoActions.autoCopyArtwork ||
-      !trackInfo ||
-      trackInfo.has_artwork
-    )
-      return;
-
-    const hqUrl = activeSource.extractMetadata(selectedScTrack).artwork_url;
+    const hqUrl = sourceArtworkUrl;
     if (!hqUrl) return;
-
-    setArtworkUrl(hqUrl);
     api
       .proxyImage(hqUrl)
       .then((blob) => {
@@ -356,12 +366,19 @@ export function TrackEditor({
       .catch(() => {
         /* non-fatal */
       });
-  }, [selectedScTrack, autoActions.autoCopyArtwork, trackInfo, activeSource]);
+  }, [
+    sourceArtworkUrl,
+    selectedScTrack,
+    autoActions.autoCopyArtwork,
+    trackInfo,
+    activeSource,
+  ]);
 
-  // Update form when track info loads
-  useEffect(() => {
-    if (!trackInfo) return;
-
+  // Update form when track info loads. Only keyed on trackInfo: this
+  // initializes the form from trackInfo + a snapshot of pendingFieldEdits.
+  // Re-running on every pending edit would overwrite the user's in-progress
+  // input.
+  if (useChanged([trackInfo]) && trackInfo) {
     const parsed = parseFilename(trackInfo.file_name);
     const joinList = (v: string | string[] | null | undefined): string =>
       Array.isArray(v) ? v.join(", ") : (v ?? "");
@@ -442,11 +459,7 @@ export function TrackEditor({
       setScQuery(cleaned);
       setScQueryPending(true);
     }
-    // Intentionally only runs when trackInfo changes — this initializes the
-    // form from trackInfo + a snapshot of pendingFieldEdits. Re-running on
-    // every pending edit would overwrite the user's in-progress input.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackInfo]);
+  }
 
   const reloadTrackInfo = async (file: FileInfo) => {
     setLoading(true);
@@ -750,8 +763,10 @@ export function TrackEditor({
 
   // React to external edits to the same file (e.g. user changed a cell in
   // the batch table while the editor was open).
-  useEffect(() => {
-    if (!trackInfo) return;
+  if (
+    useChanged([pendingFieldEdits, trackInfo, originalFormData]) &&
+    trackInfo
+  ) {
     const external = pendingFieldEdits.get(trackInfo.file_path) ?? {};
     setFormData((prev) => {
       const merged: typeof emptyFormData = { ...originalFormData };
@@ -771,7 +786,7 @@ export function TrackEditor({
       );
       return changed ? merged : prev;
     });
-  }, [pendingFieldEdits, trackInfo, originalFormData]);
+  }
 
   const handleSave = async () => {
     if (!trackInfo) return;

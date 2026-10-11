@@ -51,18 +51,23 @@ export function BreakdownStartScreen({
 
   const isUrl = /^https?:\/\//i.test(url.trim());
 
+  const isSearch = !isUrl && url.trim().length >= 2;
+  const [prevUrl, setPrevUrl] = useState<string | null>(null);
+  if (url !== prevUrl) {
+    setPrevUrl(url);
+    setSearching(isSearch);
+    if (!isSearch) {
+      setResults([]);
+      setSearchError(null);
+    }
+  }
+
   // Non-URL input doubles as a set search: debounce, then query
   // SoundCloud with a minimum-duration filter so only sets show up.
   useEffect(() => {
     const q = url.trim();
-    if (isUrl || q.length < 2) {
-      setResults([]);
-      setSearching(false);
-      setSearchError(null);
-      return;
-    }
+    if (isUrl || q.length < 2) return;
     let cancelled = false;
-    setSearching(true);
     const t = setTimeout(() => {
       searchSets(q, MIN_SET_DURATION_MS)
         .then((hits) => {

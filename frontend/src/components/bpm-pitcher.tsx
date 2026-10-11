@@ -27,6 +27,7 @@ import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import { analyzeSc, TrackUnanalysableError } from "@/lib/sc-bpm";
 import { markScUnplayable } from "@/lib/sc-unplayable";
 import { analyzeLocalBpm, isTauri } from "@/lib/tauri";
+import { useChanged } from "@/lib/use-changed";
 import { cn } from "@/lib/utils";
 
 const PITCH_RATE_MIN = 0.5;
@@ -170,9 +171,7 @@ export function BpmPitcher({
 
   // Keep the input synced when targetBpm changes externally (load from
   // localStorage, or another control writes it).
-  useEffect(() => {
-    setTargetInput(String(targetBpm));
-  }, [targetBpm]);
+  if (useChanged([targetBpm])) setTargetInput(String(targetBpm));
 
   // Auto-detect when pitch is enabled but the current track has no BPM yet.
   // Tauri-only — analysis APIs require the Rust bridge.
