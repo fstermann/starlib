@@ -29,6 +29,13 @@ adding a strategy, not touching playback or UI.
 - `deckBStartOffsetSec` — where deck B starts playing (seconds into the new
   track); its mix-in point. `0` for `crossfade`, a downbeat for `beatgrid`.
 
+A one-off **picked mix-out point** (`deckAMixOutOverrideSec` on the
+`TransitionContext`) replaces the end-of-track anchor. The player sets it when
+the user clicks a phrase-band section ahead of the playhead (state lives only in
+the player and resets on track change). `crossfade` starts the fade there
+(clamped so the fade fits); the beatgrid modes take the downbeat at or after it
+(50 ms snap tolerance) and walk `matchBars` downbeats **forward**.
+
 If a track lacks a beatgrid, the `beatgrid` (and `beatgrid-eq`) mode falls back
 to `crossfade`.
 

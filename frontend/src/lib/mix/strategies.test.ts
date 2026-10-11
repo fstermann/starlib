@@ -429,3 +429,69 @@ describe("plans without an EQ swap", () => {
     expect(beat.eqSwap).toBeNull();
   });
 });
+
+describe("planTransition — picked mix-out point", () => {
+  it("crossfade starts the fade at the picked point", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "crossfade", crossfadeSeconds: 8 },
+        deck(120, 300),
+        deck(120, 300),
+        {
+          deckAMixOutOverrideSec: 100,
+        },
+      ),
+    );
+    expect(plan.deckAMixOutSec).toBe(100);
+    expect(plan.fadeSeconds).toBe(8);
+  });
+
+  it("crossfade clamps a point too close to the end so the fade fits", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "crossfade", crossfadeSeconds: 8 },
+        deck(120, 300),
+        deck(120, 300),
+        {
+          deckAMixOutOverrideSec: 298,
+        },
+      ),
+    );
+    expect(plan.deckAMixOutSec).toBe(292);
+    expect(plan.fadeSeconds).toBe(8);
+  });
+
+  it("beatgrid snaps to the next downbeat and runs matchBars forward", () => {
+    // 120 BPM → 2 s per bar; downbeats at 0, 2, 4, …
+    const plan = planTransition(
+      ctx({ mode: "beatgrid", matchBars: 8 }, deck(120, 300), deck(120, 300), {
+        deckAMixOutOverrideSec: 99.5,
+        targetBpm: 120,
+      }),
+    );
+    expect(plan.mode).toBe("beatgrid");
+    expect(plan.deckAMixOutSec).toBeCloseTo(100);
+    expect(plan.fadeSeconds).toBeCloseTo(16);
+  });
+
+  it("beatgrid tolerates a section start a few ms past its downbeat", () => {
+    const plan = planTransition(
+      ctx({ mode: "beatgrid", matchBars: 8 }, deck(120, 300), deck(120, 300), {
+        deckAMixOutOverrideSec: 100.004,
+        targetBpm: 120,
+      }),
+    );
+    expect(plan.deckAMixOutSec).toBeCloseTo(100);
+  });
+
+  it("loop-eq loops from the picked point", () => {
+    const plan = planTransition(
+      ctx({ mode: "loop-eq", matchBars: 8 }, deck(120, 300), deck(120, 300), {
+        deckAMixOutOverrideSec: 100,
+        targetBpm: 120,
+      }),
+    );
+    expect(plan.deckAMixOutSec).toBeCloseTo(100);
+    expect(plan.loopEq!.loopRegion.start).toBeCloseTo(100);
+  });
+});

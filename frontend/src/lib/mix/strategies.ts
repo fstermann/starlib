@@ -48,6 +48,12 @@ export interface TransitionContext {
    */
   beatSync: boolean;
   config: MixConfig;
+  /**
+   * User-picked mix-out point on deck A (seconds), replacing the end-of-track
+   * anchor. Beatgrid modes snap it to the next downbeat and run the window
+   * forward from there.
+   */
+  deckAMixOutOverrideSec?: number | null;
 }
 
 export interface TransitionPlan {
@@ -164,13 +170,18 @@ function planCrossfade(
     CROSSFADE_SECONDS_MAX,
     Math.max(CROSSFADE_SECONDS_MIN, ctx.config.crossfadeSeconds),
   );
+  const override = ctx.deckAMixOutOverrideSec;
   // Fade must fit inside deck A; never start before 0.
-  const fadeSeconds = Math.min(fade, ctx.deckA.durationSec);
+  const mixOutSec =
+    override != null
+      ? Math.max(0, Math.min(override, ctx.deckA.durationSec - fade))
+      : Math.max(0, ctx.deckA.durationSec - fade);
+  const fadeSeconds = Math.min(fade, ctx.deckA.durationSec - mixOutSec);
   return {
     mode: "crossfade",
     fellBack,
     fadeSeconds,
-    deckAMixOutSec: Math.max(0, ctx.deckA.durationSec - fadeSeconds),
+    deckAMixOutSec: mixOutSec,
     deckBStartOffsetSec: 0,
     deckBInitialRate: ctx.deckBDesiredRate,
     rateRamp: null,
@@ -195,6 +206,7 @@ function planCrossfade(
 function deckAMixOutWindow(
   ctx: TransitionContext,
 ): { mixOutSec: number; fadeOnASec: number; bars: number } | null {
+  if (ctx.deckAMixOutOverrideSec != null) return deckAOverrideWindow(ctx);
   const { beats, sections } = ctx.deckA.analysis!;
   let endRef = ctx.deckA.durationSec;
   if (ctx.config.sectionAware && sections.length > 0) {
@@ -213,6 +225,32 @@ function deckAMixOutWindow(
   return {
     mixOutSec: downbeats[startIdx].timeSec,
     fadeOnASec,
+    bars: endIdx - startIdx,
+  };
+}
+
+/** Snap tolerance: section bounds and grid ticks are separately ms-rounded. */
+const OVERRIDE_SNAP_SEC = 0.05;
+
+/**
+ * Deck A's window from a user-picked mix-out point: the downbeat at or after
+ * it, then `matchBars` downbeats forward (fewer if the grid ends first).
+ */
+function deckAOverrideWindow(
+  ctx: TransitionContext,
+): { mixOutSec: number; fadeOnASec: number; bars: number } | null {
+  const target = ctx.deckAMixOutOverrideSec! - OVERRIDE_SNAP_SEC;
+  const downbeats = ctx.deckA.analysis!.beats.filter((b) => b.beat === 1);
+  const startIdx = downbeats.findIndex((b) => b.timeSec >= target);
+  if (startIdx < 0) return null;
+  const endIdx = Math.min(
+    downbeats.length - 1,
+    startIdx + ctx.config.matchBars,
+  );
+  if (endIdx <= startIdx) return null;
+  return {
+    mixOutSec: downbeats[startIdx].timeSec,
+    fadeOnASec: downbeats[endIdx].timeSec - downbeats[startIdx].timeSec,
     bars: endIdx - startIdx,
   };
 }

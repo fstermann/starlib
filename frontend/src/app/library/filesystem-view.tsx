@@ -440,6 +440,7 @@ export function FilesystemView() {
         ? it.artist.join(", ")
         : (it.artist ?? undefined),
       bpm: it.bpm ?? null,
+      durationSec: it.duration ?? undefined,
     }));
     player.playQueue(queue, idx);
     setPlayFilePath("");

@@ -32,5 +32,6 @@ export function scTrackToPlayerTrack(
       ? api.proxyImageUrl(track.artwork_url)
       : undefined,
     bpm: bpmCache?.get(id) ?? track.bpm ?? null,
+    durationSec: track.duration != null ? track.duration / 1000 : undefined,
   };
 }
