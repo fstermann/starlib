@@ -33,6 +33,18 @@ class RekordboxUnavailable(RuntimeError):
     """
 
 
+class RekordboxBusy(RuntimeError):
+    """Raised when a playlist edit is attempted while Rekordbox is running.
+
+    Rekordbox holds its own copy of the library and would overwrite or never
+    see changes written underneath it.
+    """
+
+
+class PlaylistEditError(ValueError):
+    """Raised when a playlist edit request cannot be applied as given."""
+
+
 @dataclass(frozen=True)
 class RekordboxPlaylist:
     id: str
@@ -60,6 +72,9 @@ class RekordboxTrack:
     release_date: str | None
     has_artwork: bool
     has_waveform: bool
+    # Identifies this row's playlist slot (a track can appear more than once);
+    # set only for regular local playlists, the ones that can be edited.
+    entry_id: str | None = None
 
 
 class RekordboxSource(ABC):

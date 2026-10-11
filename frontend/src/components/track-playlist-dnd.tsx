@@ -29,7 +29,7 @@ export interface TrackDragData {
 
 /** Pins the overlay's top-left just below-right of the pointer. Without it the
  *  chip is placed relative to the full-width row and lands off-screen. */
-const followCursor: Modifier = ({
+export const followCursor: Modifier = ({
   activatorEvent,
   draggingNodeRect,
   transform,
@@ -83,24 +83,29 @@ export function TrackPlaylistDndProvider({
     >
       {children}
       <DragOverlay dropAnimation={null} modifiers={[followCursor]}>
-        {active ? <TrackDragChip tracks={active.tracks} /> : null}
+        {active ? (
+          <TrackDragChip
+            label={
+              active.tracks.length > 1
+                ? `${active.tracks.length} tracks`
+                : (active.tracks[0]?.title ?? "Track")
+            }
+          />
+        ) : null}
       </DragOverlay>
     </DndContext>
   );
 }
 
-function TrackDragChip({ tracks }: { tracks: SCTrack[] }) {
+/** Pointer-following chip shown while dragging track rows. */
+export function TrackDragChip({ label }: { label: string }) {
   return (
     <div
       data-testid="track-drag-overlay"
       className="border-border inline-flex max-w-64 items-center gap-2 rounded-md border bg-[var(--surface-4)] px-2.5 py-1.5 text-xs text-[var(--text)] shadow-[var(--shadow-2)]"
     >
       <ListMusic className="size-3.5 shrink-0 text-[var(--brand)]" />
-      <span className="truncate">
-        {tracks.length > 1
-          ? `${tracks.length} tracks`
-          : (tracks[0]?.title ?? "Track")}
-      </span>
+      <span className="truncate">{label}</span>
     </div>
   );
 }

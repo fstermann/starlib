@@ -1,19 +1,21 @@
 """Rekordbox library endpoints.
 
-Surfaces Rekordbox as a read-only browse source, either the local Rekordbox 6
-master.db or a mounted USB/SD export (selected via the ``device`` query param).
-Reads are lazy: opening a source only happens on first request, and a 503 is
-returned if the selected source can't be read.
+Surfaces Rekordbox as a browse source, either the local Rekordbox 6 master.db
+or a mounted USB/SD export (selected via the ``device`` query param). Reads are
+lazy: opening a source only happens on first request, and a 503 is returned if
+the selected source can't be read. Playlists of the local install can be
+created, renamed, deleted, and edited; USB exports stay read-only.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.api.metadata.audio import stream_local_file
 from backend.services import rekordbox as rb_service
@@ -29,6 +31,10 @@ DeviceParam = Query(default=None, description="USB device id; omit for the local
 class RekordboxStatus(BaseModel):
     available: bool
     reason: str | None = None
+
+
+class RunningResponse(BaseModel):
+    running: bool
 
 
 class UsbDevice(BaseModel):
@@ -70,6 +76,7 @@ class RekordboxTrack(BaseModel):
     release_date: str | None = None
     has_artwork: bool = False
     has_waveform: bool = False
+    entry_id: str | None = None
 
 
 class PlaylistsResponse(BaseModel):
@@ -78,6 +85,24 @@ class PlaylistsResponse(BaseModel):
 
 class TracksResponse(BaseModel):
     tracks: list[RekordboxTrack]
+
+
+class CreatePlaylistRequest(BaseModel):
+    name: str = Field(min_length=1)
+    parent_id: str | None = None
+    is_folder: bool = False
+
+
+class RenamePlaylistRequest(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class AddTracksRequest(BaseModel):
+    track_ids: list[str] = Field(min_length=1)
+
+
+class PlaylistEntriesRequest(BaseModel):
+    entry_ids: list[str]
 
 
 def _unavailable(reason: str) -> HTTPException:
@@ -115,6 +140,12 @@ def get_status(device: str | None = DeviceParam) -> RekordboxStatus:
     except rb_service.RekordboxUnavailable as exc:
         return RekordboxStatus(available=False, reason=str(exc))
     return RekordboxStatus(available=True)
+
+
+@router.get("/running", response_model=RunningResponse)
+def get_running() -> RunningResponse:
+    """Report whether the Rekordbox app is running, which blocks local edits."""
+    return RunningResponse(running=rb_service.rekordbox_running())
 
 
 @router.get("/playlists", response_model=PlaylistsResponse)
@@ -277,3 +308,60 @@ def get_tracks(
     except rb_service.RekordboxUnavailable as exc:
         raise _unavailable(str(exc)) from exc
     return TracksResponse(tracks=[RekordboxTrack(**asdict(t)) for t in items])
+
+
+def _write_local[T](write: Callable[[rb_service.LocalMasterDbSource], T]) -> T:
+    """Run a write against the local install, mapping service errors to HTTP statuses."""
+    try:
+        return write(rb_service.get_local_source())
+    except rb_service.RekordboxUnavailable as exc:
+        raise _unavailable(str(exc)) from exc
+    except rb_service.RekordboxBusy as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except rb_service.PlaylistEditError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+def _edit_local_playlist(
+    edit: Callable[[rb_service.LocalMasterDbSource], list[rb_service.RekordboxTrack]],
+) -> TracksResponse:
+    items = _write_local(edit)
+    return TracksResponse(tracks=[RekordboxTrack(**asdict(t)) for t in items])
+
+
+@router.post("/playlists", response_model=RekordboxPlaylist, status_code=status.HTTP_201_CREATED)
+def create_playlist(body: CreatePlaylistRequest) -> RekordboxPlaylist:
+    """Create an empty playlist or folder in the local install."""
+    created = _write_local(lambda src: src.create_playlist(body.name, body.parent_id, folder=body.is_folder))
+    return RekordboxPlaylist(**asdict(created))
+
+
+@router.patch("/playlists/{playlist_id}", response_model=RekordboxPlaylist)
+def rename_playlist(playlist_id: str, body: RenamePlaylistRequest) -> RekordboxPlaylist:
+    """Rename a playlist or folder in the local install."""
+    renamed = _write_local(lambda src: src.rename_playlist(playlist_id, body.name))
+    return RekordboxPlaylist(**asdict(renamed))
+
+
+@router.delete("/playlists/{playlist_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_playlist(playlist_id: str) -> None:
+    """Delete a playlist or folder (with its contents) from the local install."""
+    _write_local(lambda src: src.delete_playlist(playlist_id))
+
+
+@router.post("/playlists/{playlist_id}/tracks", response_model=TracksResponse)
+def add_playlist_tracks(playlist_id: str, body: AddTracksRequest) -> TracksResponse:
+    """Append tracks to a regular playlist of the local install."""
+    return _edit_local_playlist(lambda src: src.add_tracks_to_playlist(playlist_id, body.track_ids))
+
+
+@router.post("/playlists/{playlist_id}/tracks/remove", response_model=TracksResponse)
+def remove_playlist_tracks(playlist_id: str, body: PlaylistEntriesRequest) -> TracksResponse:
+    """Remove entries from a regular playlist of the local install."""
+    return _edit_local_playlist(lambda src: src.remove_playlist_entries(playlist_id, body.entry_ids))
+
+
+@router.put("/playlists/{playlist_id}/order", response_model=TracksResponse)
+def reorder_playlist_tracks(playlist_id: str, body: PlaylistEntriesRequest) -> TracksResponse:
+    """Set the entry order of a regular playlist of the local install."""
+    return _edit_local_playlist(lambda src: src.reorder_playlist(playlist_id, body.entry_ids))

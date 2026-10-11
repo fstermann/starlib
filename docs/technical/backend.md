@@ -56,7 +56,7 @@ backend/
 │   ├── deps.py           # Dependency injection
 │   ├── folder_config.py  # Folder display + per-folder ruleset config
 │   ├── profile_groups.py # Profile groups
-│   ├── rekordbox.py      # Rekordbox browse source (local DB or USB export)
+│   ├── rekordbox.py      # Rekordbox source (local DB or USB export), local playlist edits
 │   ├── rulesets.py       # Finalization rulesets
 │   ├── setup.py          # First-launch setup/config
 │   ├── suggestions.py    # Ranked metadata suggestions

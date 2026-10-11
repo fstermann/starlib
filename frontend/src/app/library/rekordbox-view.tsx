@@ -1,10 +1,19 @@
 "use client";
 
 import {
+  arrayMove,
+  SortableContext,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
   Folder,
   HardDrive,
+  Library,
+  ListMusic,
   ListPlus,
   Sparkles,
+  Trash2,
+  TriangleAlert,
   Unplug,
   Usb,
 } from "lucide-react";
@@ -34,6 +43,12 @@ import type { TreeNodeShape } from "@/components/tree/types";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  ContextMenuItem,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+} from "@/components/ui/context-menu";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -55,9 +70,22 @@ import { cn } from "@/lib/utils";
 
 import { LibraryTitle } from "./library-title";
 import {
+  DraggableRekordboxRow,
+  RekordboxPlaylistDndProvider,
+  RekordboxPlaylistDropTarget,
+  SortableRekordboxRow,
+} from "./rekordbox-playlist-dnd";
+import { RekordboxPlaylistMenu } from "./rekordbox-playlist-menu";
+import {
+  addRekordboxPlaylistTracks,
+  COLLECTION_ID,
+  removeRekordboxPlaylistEntries,
+  reorderRekordboxPlaylist,
+  useRekordboxCollection,
   useRekordboxDevices,
   useRekordboxPlaylists,
   useRekordboxPlaylistTracks,
+  useRekordboxRunning,
   useRekordboxStatus,
   type RekordboxPlaylist,
   type RekordboxTrack,
@@ -78,7 +106,10 @@ interface RbTreeNode extends TreeNodeShape<RbTreeNode> {
 
 const ROOT_NODE_ID = "__rb_root__";
 
-function buildTree(playlists: RekordboxPlaylist[]): RbTreeNode {
+function buildTree(
+  playlists: RekordboxPlaylist[],
+  withCollection: boolean,
+): RbTreeNode {
   const byId = new Map<string, RbTreeNode>();
   for (const pl of playlists) {
     byId.set(pl.id, { id: pl.id, name: pl.name, children: [], pl });
@@ -104,6 +135,14 @@ function buildTree(playlists: RekordboxPlaylist[]): RbTreeNode {
     for (const n of nodes) sortRec(n.children);
   };
   sortRec(root.children);
+  if (withCollection) {
+    root.children.unshift({
+      id: COLLECTION_ID,
+      name: "Collection",
+      children: [],
+      pl: null,
+    });
+  }
   return root;
 }
 
@@ -237,6 +276,8 @@ export function RekordboxView() {
     defaultValue: "",
   });
   const deviceId = device || null;
+  const isLocal = !device;
+  const isCollection = selectedId === COLLECTION_ID;
   const [ejecting, setEjecting] = useState(false);
 
   // Poll the device list so an unplug/eject is noticed without a manual reload.
@@ -250,8 +291,18 @@ export function RekordboxView() {
     loading,
     error,
     refetch: refetchPlaylists,
+    setData: setPlaylistsData,
   } = useRekordboxPlaylists(enabled, deviceId);
-  const tracksResp = useRekordboxPlaylistTracks(selectedId || null, deviceId);
+  const playlistTracks = useRekordboxPlaylistTracks(
+    selectedId && !isCollection ? selectedId : null,
+    deviceId,
+  );
+  const collectionTracks = useRekordboxCollection(
+    enabled && isCollection,
+    deviceId,
+  );
+  const tracksResp = isCollection ? collectionTracks : playlistTracks;
+  const running = useRekordboxRunning(isLocal && enabled, 5000).data.running;
 
   const changeDevice = useCallback(
     (value: string) => {
@@ -341,7 +392,14 @@ export function RekordboxView() {
   const player = usePlayer();
   const { pitchEnabled, targetBpm } = player;
 
-  const tree = useMemo(() => buildTree(data.playlists), [data.playlists]);
+  const tree = useMemo(
+    () =>
+      buildTree(
+        data.playlists,
+        !error && (data.playlists.length > 0 || !loading),
+      ),
+    [data.playlists, error, loading],
+  );
   const selectedPl = useMemo(
     () => data.playlists.find((p) => p.id === selectedId) ?? null,
     [data.playlists, selectedId],
@@ -445,6 +503,158 @@ export function RekordboxView() {
     [filteredTracks, player, device],
   );
 
+  // Only regular playlists of the local install can be edited; USB exports
+  // are read-only, smart playlists are defined by their rules.
+  const isEditable = (pl: RekordboxPlaylist | null): pl is RekordboxPlaylist =>
+    isLocal && !!pl && !pl.is_folder && !pl.is_smart;
+  const editable = isEditable(selectedPl);
+  const allTracks = tracksResp.data.tracks;
+  // Positions are only meaningful on the unfiltered list.
+  const reorderable =
+    editable &&
+    filteredTracks.length === allTracks.length &&
+    allTracks.every((t) => t.entry_id);
+  const addTargets = data.playlists
+    .filter((pl) => isEditable(pl) && pl.id !== selectedId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  /** The tracks a row action applies to: the selection when the row is part
+   *  of it, otherwise just the row. */
+  const rowTargets = (t: RekordboxTrack) =>
+    selectedIds.has(t.id)
+      ? filteredTracks.filter((x) => selectedIds.has(x.id))
+      : [t];
+
+  const editFailed = (e: unknown) =>
+    toast.error("Couldn't save playlist", {
+      description: e instanceof Error ? e.message : undefined,
+    });
+
+  async function handleAddToPlaylist(
+    playlist: RekordboxPlaylist,
+    tracks: RekordboxTrack[],
+  ) {
+    const trackIds = [...new Set(tracks.map((t) => t.id))];
+    try {
+      await addRekordboxPlaylistTracks(playlist.id, trackIds);
+    } catch (e) {
+      editFailed(e);
+      return;
+    }
+    refetchPlaylists();
+    toast.success(
+      `Added ${trackIds.length === 1 ? "1 track" : `${trackIds.length} tracks`} to ${playlist.name}`,
+    );
+  }
+
+  async function handleRemove(tracks: RekordboxTrack[]) {
+    const playlistId = selectedId;
+    const before = tracksResp.data.tracks;
+    const entryIds = tracks
+      .map((t) => t.entry_id)
+      .filter((id): id is string => !!id);
+    try {
+      tracksResp.setData(
+        await removeRekordboxPlaylistEntries(playlistId, entryIds),
+      );
+    } catch (e) {
+      editFailed(e);
+      return;
+    }
+    setSelection({ ids: new Set(), anchor: null });
+    refetchPlaylists();
+    toast.success(
+      `Removed ${entryIds.length === 1 ? "1 track" : `${entryIds.length} tracks`}`,
+      {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            void handleUndoRemove(playlistId, before, new Set(entryIds)),
+        },
+      },
+    );
+  }
+
+  /** Re-adds removed entries (they come back with new entry ids, appended),
+   *  then restores the order from before the removal. */
+  async function handleUndoRemove(
+    playlistId: string,
+    before: RekordboxTrack[],
+    removedIds: Set<string>,
+  ) {
+    const restored = before.filter(
+      (t) => t.entry_id && removedIds.has(t.entry_id),
+    );
+    try {
+      const { tracks } = await addRekordboxPlaylistTracks(
+        playlistId,
+        restored.map((t) => t.id),
+      );
+      const newIds = tracks.slice(-restored.length).map((t) => t.entry_id);
+      const replacement = new Map(
+        restored.map((t, i) => [t.entry_id, newIds[i]]),
+      );
+      await reorderRekordboxPlaylist(
+        playlistId,
+        before.map(
+          (t) => (replacement.get(t.entry_id) ?? t.entry_id) as string,
+        ),
+      );
+    } catch (e) {
+      editFailed(e);
+    }
+    tracksResp.refetch();
+    refetchPlaylists();
+  }
+
+  function handlePlaylistCreated(playlist: RekordboxPlaylist) {
+    setPlaylistsData({ playlists: [...data.playlists, playlist] });
+    refetchPlaylists();
+    if (!playlist.is_folder) setSelectedId(playlist.id);
+  }
+
+  function handlePlaylistRenamed(playlist: RekordboxPlaylist) {
+    setPlaylistsData({
+      playlists: data.playlists.map((p) =>
+        p.id === playlist.id ? { ...p, name: playlist.name } : p,
+      ),
+    });
+    refetchPlaylists();
+  }
+
+  function handlePlaylistDeleted(playlistId: string) {
+    // Leave the open playlist if it was deleted, or inside a deleted folder.
+    const byId = new Map(data.playlists.map((p) => [p.id, p]));
+    for (let p = byId.get(selectedId); p; p = byId.get(p.parent_id ?? "")) {
+      if (p.id === playlistId) {
+        setSelectedId("");
+        break;
+      }
+    }
+    refetchPlaylists();
+  }
+
+  async function handleReorder(activeId: string, overId: string) {
+    const previous = tracksResp.data;
+    const ids = previous.tracks.map((t) => t.entry_id);
+    const from = ids.indexOf(activeId);
+    const to = ids.indexOf(overId);
+    if (from < 0 || to < 0) return;
+    const next = arrayMove(previous.tracks, from, to);
+    tracksResp.setData({ tracks: next });
+    try {
+      tracksResp.setData(
+        await reorderRekordboxPlaylist(
+          selectedId,
+          next.map((t) => t.entry_id as string),
+        ),
+      );
+    } catch (e) {
+      tracksResp.setData(previous);
+      editFailed(e);
+    }
+  }
+
   // Cell contents only — wrapping div owns width + truncation so a resize
   // immediately reflows the text. Inner styling stays minimal (color/weight).
   const renderCell = useCallback(
@@ -510,6 +720,8 @@ export function RekordboxView() {
     [pitchEnabled, targetBpm],
   );
 
+  const viewName = isCollection ? "Collection" : selectedPl?.name;
+
   if (status.loading) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
@@ -539,268 +751,401 @@ export function RekordboxView() {
 
   function handleSelectNode(nodeId: string) {
     if (nodeId === ROOT_NODE_ID) return;
+    if (nodeId === COLLECTION_ID) {
+      setSelectedId(nodeId);
+      return;
+    }
     const pl = data.playlists.find((p) => p.id === nodeId);
     if (!pl || pl.is_folder) return;
     setSelectedId(nodeId);
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <TreeView<RbTreeNode>
-        tree={tree}
-        selectedId={selectedId || ""}
-        onSelect={handleSelectNode}
-        hideRoot
-        storageKey="rekordbox-tree"
-        width={{ storageKey: "rekordbox-tree-width" }}
-        renderIcon={(node) => {
-          if (node.pl?.is_folder)
-            return <Folder className="size-3.5 shrink-0" />;
-          if (node.pl?.is_smart)
-            return <Sparkles className="text-primary size-3.5 shrink-0" />;
-          return <RekordboxLogo className="size-3.5 shrink-0" />;
-        }}
-        renderBadge={(node) =>
-          node.pl && !node.pl.is_folder ? (
-            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-              {node.pl.track_count}
-            </span>
-          ) : null
-        }
-        emptyState={
-          loading ? (
-            <div className="flex h-32 items-center justify-center">
-              <LogoSpinner className="size-6" />
+    <RekordboxPlaylistDndProvider
+      onAdd={handleAddToPlaylist}
+      onReorder={handleReorder}
+    >
+      <div className="flex min-h-0 flex-1">
+        <TreeView<RbTreeNode>
+          tree={tree}
+          selectedId={selectedId || ""}
+          onSelect={handleSelectNode}
+          hideRoot
+          storageKey="rekordbox-tree"
+          width={{ storageKey: "rekordbox-tree-width" }}
+          renderIcon={(node) => {
+            if (node.id === COLLECTION_ID)
+              return <Library className="size-3.5 shrink-0" />;
+            if (node.pl?.is_folder)
+              return <Folder className="size-3.5 shrink-0" />;
+            if (node.pl?.is_smart)
+              return <Sparkles className="text-primary size-3.5 shrink-0" />;
+            return <RekordboxLogo className="size-3.5 shrink-0" />;
+          }}
+          wrapNode={(node, row) => {
+            if (!isLocal) return row;
+            const withMenu = (
+              <RekordboxPlaylistMenu
+                playlist={node.pl}
+                onCreated={handlePlaylistCreated}
+                onRenamed={handlePlaylistRenamed}
+                onDeleted={handlePlaylistDeleted}
+              >
+                {row}
+              </RekordboxPlaylistMenu>
+            );
+            return isEditable(node.pl) && node.pl.id !== selectedId ? (
+              <RekordboxPlaylistDropTarget playlist={node.pl}>
+                {withMenu}
+              </RekordboxPlaylistDropTarget>
+            ) : (
+              withMenu
+            );
+          }}
+          renderBadge={(node) =>
+            node.pl && !node.pl.is_folder ? (
+              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                {node.pl.track_count}
+              </span>
+            ) : null
+          }
+          emptyState={
+            loading ? (
+              <div className="flex h-32 items-center justify-center">
+                <LogoSpinner className="size-6" />
+              </div>
+            ) : error ? (
+              <p className="text-destructive p-3 text-xs">{error}</p>
+            ) : (
+              <p className="text-muted-foreground p-3 text-xs">No playlists</p>
+            )
+          }
+        />
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          {running && (
+            <div
+              data-testid="rekordbox-running-notice"
+              className="border-border flex items-center gap-2 border-b bg-[var(--surface-2)] px-3 py-1.5 text-xs text-[var(--text-muted)]"
+            >
+              <TriangleAlert className="size-3.5 shrink-0 text-[var(--warning)]" />
+              Rekordbox is open. Close it to save playlist changes.
             </div>
-          ) : error ? (
-            <p className="text-destructive p-3 text-xs">{error}</p>
-          ) : (
-            <p className="text-muted-foreground p-3 text-xs">No playlists</p>
-          )
-        }
-      />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        {!selectedId || !selectedPl ? (
-          <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
-            Pick a playlist to view its tracks
-          </div>
-        ) : tracksResp.loading && tracksResp.data.tracks.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3">
-            <LogoSpinner className="size-10" />
-            {selectedPl.is_smart && (
-              <p className="text-muted-foreground text-xs">
-                Evaluating smart playlist…
-              </p>
-            )}
-          </div>
-        ) : tracksResp.error ? (
-          <p className="text-destructive p-4 text-sm">{tracksResp.error}</p>
-        ) : tracksResp.data.tracks.length === 0 ? (
-          <p className="text-muted-foreground p-4 text-sm">
-            This playlist is empty
-          </p>
-        ) : (
-          <div
-            className="flex min-h-0 flex-1 flex-col"
-            data-testid="rekordbox-tracks"
-          >
-            <FiltersToolbar
-              schema={schema}
-              state={filterState}
-              onChange={setFilter}
-              onClearAll={clearAll}
-              filtered={filteredTracks.length}
-              total={tracksResp.data.tracks.length}
-              actions={
-                <>
-                  <CreatePlaylistDialog
-                    tracks={soundcloudTracks}
-                    defaultTitle={selectedPl.name}
-                    trigger={
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-muted-foreground h-7 gap-1.5 text-xs"
-                        disabled={soundcloudTracks.length === 0}
-                        title={
-                          soundcloudTracks.length === 0
-                            ? "No tracks with a SoundCloud id"
-                            : undefined
-                        }
-                      >
-                        <ListPlus className="size-3.5" />
-                        SoundCloud playlist ({soundcloudTracks.length})
-                      </Button>
-                    }
-                  />
-                  <ColumnVisibilityMenu
-                    columns={REKORDBOX_COLUMN_DEFS}
-                    isVisible={columnPrefs.isVisible}
-                    setHidden={columnPrefs.setHidden}
-                    onResetVisibility={columnPrefs.resetVisibility}
-                    onResetOrder={columnPrefs.resetOrder}
-                    onResetWidths={columnPrefs.resetWidths}
-                    className="text-muted-foreground h-7 gap-1.5 text-xs"
-                  />
-                </>
-              }
-            />
-
-            <TrackTable<RekordboxTrack>
-              items={filteredTracks}
-              columns={REKORDBOX_COLUMNS}
-              estimateRowSize={40}
-              // Rekordbox playlists can intentionally contain the same track
-              // at multiple positions, so include the index in the key to keep
-              // it unique. Index alone is stable here because filters preserve
-              // order and switching playlists remounts the table.
-              getItemKey={(index, item) => `${index}-${item?.id ?? ""}`}
-              sortBy={null}
-              sortOrder="asc"
-              columnOrder={columnPrefs.prefs.order}
-              onColumnOrderChange={columnPrefs.setOrder}
-              columnWidths={columnPrefs.prefs.widths}
-              onColumnWidthChange={columnPrefs.setWidth}
-              onColumnWidthReset={columnPrefs.resetWidth}
-              isColumnVisible={columnPrefs.isVisible}
-              renderHeaderLead={() => (
-                <>
-                  <div className="flex w-6 shrink-0 items-center justify-center">
-                    <Checkbox
-                      checked={
-                        filteredTracks.length > 0 &&
-                        filteredTracks.every((t) => selectedIds.has(t.id))
-                          ? true
-                          : filteredTracks.some((t) => selectedIds.has(t.id))
-                            ? "indeterminate"
-                            : false
-                      }
-                      onCheckedChange={(checked) =>
-                        setSelection({
-                          ids: checked
-                            ? new Set(filteredTracks.map((t) => t.id))
-                            : new Set(),
-                          anchor: null,
-                        })
-                      }
-                      aria-label="Select all"
-                      className="size-3.5 cursor-pointer"
-                    />
-                  </div>
-                  <div className="size-7 shrink-0" aria-hidden />
-                  <div className="h-8 w-24 shrink-0" aria-hidden />
-                </>
+          )}
+          {!viewName ? (
+            <div className="text-muted-foreground flex flex-1 items-center justify-center text-sm">
+              Pick a playlist to view its tracks
+            </div>
+          ) : tracksResp.loading && tracksResp.data.tracks.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3">
+              <LogoSpinner className="size-10" />
+              {(isCollection || selectedPl?.is_smart) && (
+                <p className="text-muted-foreground text-xs">
+                  {isCollection
+                    ? "Loading collection…"
+                    : "Evaluating smart playlist…"}
+                </p>
               )}
-              renderRow={({ item, index, visibleColumns }) => {
-                if (!item) return null;
-                const t = item;
-                const playable = !!t.file_path;
-                const isCurrent =
-                  player.activeTrack?.filePath === t.file_path && playable;
-                const isSelected = selectedIds.has(t.id);
-                return (
-                  // Clicking anywhere on the row starts playback; the cover's
-                  // play button is the keyboard/AT-accessible control, so the
-                  // row stays a plain div (no nested-button ARIA).
-                  <TrackQueueMenu
-                    disabled={!playable}
-                    onPlayNext={() => {
-                      const pt = toPlayerTrack(t, device);
-                      if (pt) player.playNext(pt);
-                    }}
-                    onAddToQueue={() => {
-                      const pt = toPlayerTrack(t, device);
-                      if (pt) player.enqueue(pt);
-                    }}
-                  >
-                    <div
-                      onClick={() => playable && handleStartPlay(index)}
-                      title={
-                        playable
-                          ? undefined
-                          : "Missing local file — not playable from Rekordbox"
+            </div>
+          ) : tracksResp.error ? (
+            <p className="text-destructive p-4 text-sm">{tracksResp.error}</p>
+          ) : tracksResp.data.tracks.length === 0 ? (
+            <p className="text-muted-foreground p-4 text-sm">
+              {isCollection
+                ? "Your collection is empty"
+                : "This playlist is empty"}
+            </p>
+          ) : (
+            <div
+              className="flex min-h-0 flex-1 flex-col"
+              data-testid="rekordbox-tracks"
+            >
+              <FiltersToolbar
+                schema={schema}
+                state={filterState}
+                onChange={setFilter}
+                onClearAll={clearAll}
+                filtered={filteredTracks.length}
+                total={tracksResp.data.tracks.length}
+                actions={
+                  <>
+                    <CreatePlaylistDialog
+                      tracks={soundcloudTracks}
+                      defaultTitle={viewName}
+                      trigger={
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted-foreground h-7 gap-1.5 text-xs"
+                          disabled={soundcloudTracks.length === 0}
+                          title={
+                            soundcloudTracks.length === 0
+                              ? "No tracks with a SoundCloud id"
+                              : undefined
+                          }
+                        >
+                          <ListPlus className="size-3.5" />
+                          SoundCloud playlist ({soundcloudTracks.length})
+                        </Button>
                       }
-                      className={cn(
-                        "group border-border flex h-10 items-center gap-1.5 border-b pr-0 pl-3 text-xs transition-colors select-none",
-                        playable
-                          ? "cursor-pointer hover:bg-[var(--surface-3)]"
-                          : "text-muted-foreground/60 cursor-default",
-                        isCurrent && "bg-[var(--brand-soft)]",
-                        isSelected && !isCurrent && "bg-[var(--surface-3)]",
-                      )}
-                    >
-                      <div
-                        className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleSelect(index, e.shiftKey);
-                        }}
-                      >
+                    />
+                    <ColumnVisibilityMenu
+                      columns={REKORDBOX_COLUMN_DEFS}
+                      isVisible={columnPrefs.isVisible}
+                      setHidden={columnPrefs.setHidden}
+                      onResetVisibility={columnPrefs.resetVisibility}
+                      onResetOrder={columnPrefs.resetOrder}
+                      onResetWidths={columnPrefs.resetWidths}
+                      className="text-muted-foreground h-7 gap-1.5 text-xs"
+                    />
+                  </>
+                }
+              />
+
+              <SortableContext
+                items={
+                  reorderable ? allTracks.map((t) => t.entry_id as string) : []
+                }
+                strategy={verticalListSortingStrategy}
+              >
+                <TrackTable<RekordboxTrack>
+                  items={filteredTracks}
+                  columns={REKORDBOX_COLUMNS}
+                  estimateRowSize={40}
+                  // Rekordbox playlists can intentionally contain the same track
+                  // at multiple positions, so include the index in the key to keep
+                  // it unique. Index alone is stable here because filters preserve
+                  // order and switching playlists remounts the table.
+                  getItemKey={(index, item) => `${index}-${item?.id ?? ""}`}
+                  sortBy={null}
+                  sortOrder="asc"
+                  columnOrder={columnPrefs.prefs.order}
+                  onColumnOrderChange={columnPrefs.setOrder}
+                  columnWidths={columnPrefs.prefs.widths}
+                  onColumnWidthChange={columnPrefs.setWidth}
+                  onColumnWidthReset={columnPrefs.resetWidth}
+                  isColumnVisible={columnPrefs.isVisible}
+                  renderHeaderLead={() => (
+                    <>
+                      <div className="flex w-6 shrink-0 items-center justify-center">
                         <Checkbox
-                          checked={isSelected}
-                          tabIndex={-1}
-                          className="pointer-events-none size-3.5"
+                          checked={
+                            filteredTracks.length > 0 &&
+                            filteredTracks.every((t) => selectedIds.has(t.id))
+                              ? true
+                              : filteredTracks.some((t) =>
+                                    selectedIds.has(t.id),
+                                  )
+                                ? "indeterminate"
+                                : false
+                          }
+                          onCheckedChange={(checked) =>
+                            setSelection({
+                              ids: checked
+                                ? new Set(filteredTracks.map((t) => t.id))
+                                : new Set(),
+                              anchor: null,
+                            })
+                          }
+                          aria-label="Select all"
+                          className="size-3.5 cursor-pointer"
                         />
                       </div>
-                      <CoverPlayButton
-                        artworkUrl={
-                          t.has_artwork
-                            ? api.getRekordboxArtworkUrl(
-                                t.id,
-                                true,
-                                deviceId ?? undefined,
-                              )
-                            : null
+                      <div className="size-7 shrink-0" aria-hidden />
+                      <div className="h-8 w-24 shrink-0" aria-hidden />
+                    </>
+                  )}
+                  renderRow={({ item, index, visibleColumns }) => {
+                    if (!item) return null;
+                    const t = item;
+                    const playable = !!t.file_path;
+                    const isCurrent =
+                      player.activeTrack?.filePath === t.file_path && playable;
+                    const isSelected = selectedIds.has(t.id);
+                    const targets = rowTargets(t);
+                    const count = targets.length;
+                    const renderRowBody = (
+                      dragListeners?: React.DOMAttributes<HTMLDivElement>,
+                      isDragging = false,
+                    ) => (
+                      // Clicking anywhere on the row starts playback; the cover's
+                      // play button is the keyboard/AT-accessible control, so the
+                      // row stays a plain div (no nested-button ARIA).
+                      <TrackQueueMenu
+                        disabled={!playable}
+                        onPlayNext={() => {
+                          const pt = toPlayerTrack(t, device);
+                          if (pt) player.playNext(pt);
+                        }}
+                        onAddToQueue={() => {
+                          const pt = toPlayerTrack(t, device);
+                          if (pt) player.enqueue(pt);
+                        }}
+                        extraItems={
+                          isLocal ? (
+                            <>
+                              <ContextMenuSub>
+                                <ContextMenuSubTrigger
+                                  data-testid="rekordbox-add-to-playlist"
+                                  className="gap-2 text-xs"
+                                >
+                                  <ListMusic className="size-3.5" />
+                                  {count > 1
+                                    ? `Add to playlist (${count})`
+                                    : "Add to playlist"}
+                                </ContextMenuSubTrigger>
+                                <ContextMenuSubContent className="max-h-72 w-56 overflow-y-auto">
+                                  {addTargets.length === 0 ? (
+                                    <ContextMenuItem
+                                      disabled
+                                      className="text-xs"
+                                    >
+                                      No other playlists
+                                    </ContextMenuItem>
+                                  ) : (
+                                    addTargets.map((pl) => (
+                                      <ContextMenuItem
+                                        key={pl.id}
+                                        className="text-xs"
+                                        onSelect={() =>
+                                          handleAddToPlaylist(pl, targets)
+                                        }
+                                      >
+                                        {pl.name}
+                                      </ContextMenuItem>
+                                    ))
+                                  )}
+                                </ContextMenuSubContent>
+                              </ContextMenuSub>
+                              {editable && (
+                                <ContextMenuItem
+                                  data-testid="rekordbox-remove-from-playlist"
+                                  className="text-xs"
+                                  onSelect={() => handleRemove(targets)}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  {count > 1
+                                    ? `Remove from playlist (${count})`
+                                    : "Remove from playlist"}
+                                </ContextMenuItem>
+                              )}
+                            </>
+                          ) : undefined
                         }
-                        isCurrent={isCurrent}
-                        onStartPlay={
-                          playable ? () => handleStartPlay(index) : undefined
-                        }
-                        label={t.title}
-                      />
-                      <div className="flex h-10 w-24 shrink-0 items-center">
-                        {t.has_waveform ? (
-                          <RekordboxWaveform
-                            trackId={t.id}
-                            device={deviceId ?? undefined}
-                            track={playable ? toPlayerTrack(t, device) : null}
+                      >
+                        <div
+                          {...dragListeners}
+                          onClick={() => playable && handleStartPlay(index)}
+                          title={
+                            playable
+                              ? undefined
+                              : "Missing local file — not playable from Rekordbox"
+                          }
+                          className={cn(
+                            "group border-border flex h-10 items-center gap-1.5 border-b pr-0 pl-3 text-xs transition-colors select-none",
+                            playable
+                              ? "cursor-pointer hover:bg-[var(--surface-3)]"
+                              : "text-muted-foreground/60 cursor-default",
+                            isCurrent && "bg-[var(--brand-soft)]",
+                            isSelected && !isCurrent && "bg-[var(--surface-3)]",
+                            isDragging && "opacity-40",
+                          )}
+                        >
+                          <div
+                            className="flex w-6 shrink-0 cursor-pointer items-center justify-center self-stretch"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSelect(index, e.shiftKey);
+                            }}
+                          >
+                            <Checkbox
+                              checked={isSelected}
+                              tabIndex={-1}
+                              className="pointer-events-none size-3.5"
+                            />
+                          </div>
+                          <CoverPlayButton
+                            artworkUrl={
+                              t.has_artwork
+                                ? api.getRekordboxArtworkUrl(
+                                    t.id,
+                                    true,
+                                    deviceId ?? undefined,
+                                  )
+                                : null
+                            }
+                            isCurrent={isCurrent}
                             onStartPlay={
                               playable
-                                ? (startRatio) =>
-                                    handleStartPlay(index, startRatio)
+                                ? () => handleStartPlay(index)
                                 : undefined
                             }
-                            width={96}
-                            height={20}
+                            label={t.title}
                           />
-                        ) : null}
-                      </div>
-                      {visibleColumns.map((col) => (
-                        <div
-                          key={col.id}
-                          // truncate lives on the same element as the explicit
-                          // width so resizes reflow the ellipsis immediately —
-                          // an inner span with `truncate` doesn't always pick
-                          // up the new available width on a numeric style
-                          // change.
-                          className={cn(
-                            "min-w-0 shrink-0 truncate",
-                            col.className,
-                          )}
-                          style={{ width: col.width }}
-                        >
-                          {renderCell(col, t, isCurrent)}
+                          <div className="flex h-10 w-24 shrink-0 items-center">
+                            {t.has_waveform ? (
+                              <RekordboxWaveform
+                                trackId={t.id}
+                                device={deviceId ?? undefined}
+                                track={
+                                  playable ? toPlayerTrack(t, device) : null
+                                }
+                                onStartPlay={
+                                  playable
+                                    ? (startRatio) =>
+                                        handleStartPlay(index, startRatio)
+                                    : undefined
+                                }
+                                width={96}
+                                height={20}
+                              />
+                            ) : null}
+                          </div>
+                          {visibleColumns.map((col) => (
+                            <div
+                              key={col.id}
+                              // truncate lives on the same element as the explicit
+                              // width so resizes reflow the ellipsis immediately —
+                              // an inner span with `truncate` doesn't always pick
+                              // up the new available width on a numeric style
+                              // change.
+                              className={cn(
+                                "min-w-0 shrink-0 truncate",
+                                col.className,
+                              )}
+                              style={{ width: col.width }}
+                            >
+                              {renderCell(col, t, isCurrent)}
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  </TrackQueueMenu>
-                );
-              }}
-            />
-          </div>
-        )}
+                      </TrackQueueMenu>
+                    );
+                    if (!isLocal) return renderRowBody();
+                    const dragData = { tracks: targets };
+                    return reorderable && t.entry_id ? (
+                      <SortableRekordboxRow id={t.entry_id} data={dragData}>
+                        {({ listeners, isDragging }) =>
+                          renderRowBody(listeners, isDragging)
+                        }
+                      </SortableRekordboxRow>
+                    ) : (
+                      <DraggableRekordboxRow
+                        id={`rekordbox-row:${index}`}
+                        data={dragData}
+                      >
+                        {({ listeners, isDragging }) =>
+                          renderRowBody(listeners, isDragging)
+                        }
+                      </DraggableRekordboxRow>
+                    );
+                  }}
+                />
+              </SortableContext>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </RekordboxPlaylistDndProvider>
   );
 }
