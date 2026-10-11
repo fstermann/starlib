@@ -341,6 +341,9 @@ export function WaveformPlayer() {
   // null falls back to the beat-length calc. Cleared by the beat controls.
   const [loopEndOverride, setLoopEndOverride] = useState<number | null>(null);
   const loopRef = useRef<{ start: number; end: number } | null>(null);
+  // One-off mix-out point picked from the phrase band (seconds into the current
+  // track); null keeps the strategy's end-of-track anchor.
+  const [mixOutPickSec, setMixOutPickSec] = useState<number | null>(null);
 
   // --- auto-mix refs (read inside the init effect's long-lived closures) ---
   const mixConfigRef = useRef(mixConfig);
@@ -478,6 +481,7 @@ export function WaveformPlayer() {
     setCueSec(null);
     setLoopActive(false);
     setLoopEndOverride(null);
+    setMixOutPickSec(null);
   }
 
   // Snap a time to the nearest beat when a beatgrid is available.
@@ -1593,6 +1597,7 @@ export function WaveformPlayer() {
       // target BPM; without it, it ramps the tempo across the fade.
       beatSync: pitchEnabled,
       config: mixConfig,
+      deckAMixOutOverrideSec: mixOutPickSec,
     });
     mixPlanRef.current = plan;
     setMixPlan(plan);
@@ -1615,6 +1620,7 @@ export function WaveformPlayer() {
     nextAnalysis,
     deckBReadyTick,
     nextBpmTick,
+    mixOutPickSec,
   ]);
 
   useEffect(() => {
@@ -1745,6 +1751,8 @@ export function WaveformPlayer() {
   const bandNext = isTransitioning ? mixPastMid : transitionCompleted;
   const bandSections = bandNext ? nextAnalysis?.sections : analysis?.sections;
   const bandDuration = bandNext ? deckBDuration : duration;
+  const canPickMixOut =
+    mixConfig.enabled && hasNext && !isTransitioning && !bandNext;
 
   // Past the fade midpoint the rail shows the incoming track's info (synced
   // with the waveform swipe).
@@ -2953,11 +2961,37 @@ export function WaveformPlayer() {
                       {bandSections.map((s, i) => {
                         const color =
                           SECTION_COLOR_VAR[s.kind] ?? SECTION_COLOR_VAR.other;
+                        const startSec = s.startMs / 1000;
+                        // Picking a section behind the playhead would fire the
+                        // fade instantly and skip straight past it.
+                        const pickable =
+                          canPickMixOut && startSec > currentTime;
+                        const picked =
+                          canPickMixOut && mixOutPickSec === startSec;
                         return (
                           <div
                             key={i}
                             data-testid="player-section"
-                            className="absolute inset-y-0 flex items-center overflow-hidden rounded-[1px] px-1"
+                            data-mix-out-picked={picked || undefined}
+                            title={
+                              picked
+                                ? "Clear transition start"
+                                : pickable
+                                  ? "Start transition here"
+                                  : undefined
+                            }
+                            onClick={
+                              pickable || picked
+                                ? () =>
+                                    setMixOutPickSec(picked ? null : startSec)
+                                : undefined
+                            }
+                            className={cn(
+                              "absolute inset-y-0 flex items-center overflow-hidden rounded-[1px] px-1",
+                              (pickable || picked) && "cursor-pointer",
+                              picked &&
+                                "outline-brand z-10 outline-2 outline-offset-1",
+                            )}
                             style={{
                               left: `${(s.startMs / 1000 / bandDuration) * 100}%`,
                               width: `${((s.endMs - s.startMs) / 1000 / bandDuration) * 100}%`,

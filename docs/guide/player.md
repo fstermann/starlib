@@ -61,6 +61,10 @@ The :material-blender-outline: **mix control** blends the current track into the
 
 **Section-aware** anchoring (on by default) snaps the mix to musical section boundaries — the outgoing track's last section end and the incoming track's end-of-intro — instead of a fixed offset from the end of the file, so stray trailing bars don't smear the transition.
 
+Tracks shorter than 5 seconds count as playlist separators and are left out of the queue, so auto-mix and Next go straight from one real track to the next. Playing a separator directly still works.
+
+To try a transition from a specific point, click a section in the phrase band under the waveform while auto-mix is armed. The mix then starts there instead of near the end (beat-aligned modes snap to the next downbeat). Click it again to clear. The pick is not saved and resets when the track changes.
+
 SoundCloud streams can't be EQ'd and never carry a beatgrid, so they fall back to a plain crossfade.
 
 Toggle auto-mix from anywhere with the **Enable/Disable auto-mix** command in the [command palette](command-palette.md).

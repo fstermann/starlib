@@ -716,6 +716,80 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     );
   });
 
+  test("skips short separator tracks between two tracks", async ({ page }) => {
+    const sep = {
+      ...rekTrack("t-sep", "-----", "/music/sep.flac"),
+      duration_seconds: 2,
+    };
+    await page.route(
+      "**/api/rekordbox/playlists/pl-1/tracks",
+      jsonRoute({ tracks: [TRACK_A, sep, TRACK_B] }),
+    );
+
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    // The fade goes straight from Foo into Baz; the separator never queues.
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    await expect(player.getByTestId("player-next-chip")).toContainText("Baz");
+  });
+
+  test("starts the transition at a section picked in the phrase band", async ({
+    page,
+  }) => {
+    // 40s track: the default 6s fade would mix out at 34s. Picking "Build"
+    // (8s) must start the fade there instead.
+    await page.route("**/api/rekordbox/tracks/*/analysis*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...ANALYSIS,
+          sections: [
+            { kind: "intro", label: "Intro", startMs: 0, endMs: 8000 },
+            { kind: "up", label: "Build", startMs: 8000, endMs: 34000 },
+            { kind: "outro", label: "Outro", startMs: 34000, endMs: 40000 },
+          ],
+        }),
+      }),
+    );
+    await page.route("**/api/metadata/files/*/audio", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "audio/wav",
+        body: makeSilentWav(40),
+      }),
+    );
+
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    const build = player
+      .getByTestId("player-section")
+      .filter({ hasText: "Build" });
+    await expect(build).toHaveAttribute("title", "Start transition here");
+    await build.click();
+    await expect(build).toHaveAttribute("data-mix-out-picked", "true");
+
+    // Clicking again clears the pick; pick it once more for the run.
+    await build.click();
+    await expect(build).not.toHaveAttribute("data-mix-out-picked", "true");
+    await build.click();
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 12000,
+    });
+    await expect(player.getByTestId("player-next-chip")).toContainText("Baz");
+  });
+
   /**
    * Route setup + mode selection for the loop-eq specs. Dense grid so the
    * bar-aligned strategy engages; the section ends early (10s) so the mix-out

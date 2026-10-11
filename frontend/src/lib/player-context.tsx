@@ -61,6 +61,15 @@ export interface PlayerTrack {
   rekordboxDevice?: string;
   /** Musical key (e.g. "8A", "Fm"), when known. Shown next to the BPM. */
   musicalKey?: string;
+  /** Track length in seconds, when the source knows it up front. */
+  durationSec?: number;
+}
+
+/** Tracks shorter than this are playlist separators, never queued as upcoming. */
+const SEPARATOR_MAX_SEC = 5;
+
+export function isSeparatorTrack(track: PlayerTrack): boolean {
+  return track.durationSec != null && track.durationSec < SEPARATOR_MAX_SEC;
 }
 
 interface PlayerContextValue {
@@ -336,7 +345,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       // A fresh queue from a play action returns to auto mode: the visible-list
       // views may reconcile its tail again.
       userManagedRef.current = false;
-      setQueueState(tracks, index);
+      // Drop separators so auto-advance and auto-mix go straight from track
+      // to track. The clicked track stays even if it is one.
+      const target = tracks[index];
+      const kept = tracks.filter((t) => t === target || !isSeparatorTrack(t));
+      setQueueState(kept, kept.indexOf(target));
       setIsPlaying(true);
     },
     [setQueueState],
@@ -347,9 +360,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   // `${queueIndex}:${filePath}`). The preserved head is sliced from the live
   // queue, so `currentTrack`'s object identity is unchanged too.
   const setUpcoming = useCallback(
-    (upcoming: PlayerTrack[]) => {
+    (allUpcoming: PlayerTrack[]) => {
       const idx = queueIndexRef.current;
       if (idx < 0) return;
+      const upcoming = allUpcoming.filter((t) => !isSeparatorTrack(t));
       const currentTail = queueRef.current.slice(idx + 1);
       const unchanged =
         currentTail.length === upcoming.length &&

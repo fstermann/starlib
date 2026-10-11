@@ -56,6 +56,7 @@ export function rekordboxPlayerTrack(
     rekordboxId: t.has_waveform ? t.id : undefined,
     rekordboxDevice: usb ? device : undefined,
     musicalKey: t.key ?? undefined,
+    durationSec: t.duration_seconds ?? undefined,
     // USB tracks live on the device, not under the local root — stream them
     // through the device-scoped audio endpoint instead of the local file path.
     streamUrl: usb ? api.getRekordboxUsbAudioUrl(t.id, device) : undefined,

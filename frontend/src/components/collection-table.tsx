@@ -1020,6 +1020,7 @@ export function CollectionTable({
         ? it.artist.join(", ")
         : (it.artist ?? undefined),
       bpm: it.bpm ?? null,
+      durationSec: it.duration ?? undefined,
     }));
     playQueue(queue, index);
   }
