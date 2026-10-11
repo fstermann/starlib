@@ -23,12 +23,14 @@ export interface Settings {
   autoUpdate: boolean;
   waveformStyle: WaveformStyle;
   keyNotation: KeyNotation;
+  compactRows: boolean;
 }
 
 const DEFAULTS: Settings = {
   autoUpdate: true,
   waveformStyle: "starlib",
   keyNotation: "camelot",
+  compactRows: false,
 };
 
 const STORAGE_KEY = "starlib_ui";

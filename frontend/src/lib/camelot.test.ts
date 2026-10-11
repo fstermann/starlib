@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  camelotKeyRank,
   keyFromSoundcloud,
   keyNameFromCamelot,
   soundcloudKeyRank,
@@ -61,5 +62,18 @@ describe("soundcloudKeyRank", () => {
     expect(
       [...sigs].sort((a, b) => soundcloudKeyRank(a) - soundcloudKeyRank(b)),
     ).toEqual(["Ab:min", "B:maj", "A:min", "C:maj", "junk"]);
+  });
+});
+
+describe("camelotKeyRank", () => {
+  it("orders by wheel position, minor before major", () => {
+    const keys = ["12A", "1B", "8A", "1A"];
+    expect(
+      [...keys].sort((a, b) => camelotKeyRank(a)! - camelotKeyRank(b)!),
+    ).toEqual(["1A", "1B", "8A", "12A"]);
+  });
+
+  it("returns null for non-Camelot keys", () => {
+    expect(camelotKeyRank("Am")).toBeNull();
   });
 });

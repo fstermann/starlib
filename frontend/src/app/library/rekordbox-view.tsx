@@ -21,7 +21,9 @@ import { useQueryState } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { computePlaybackRate } from "@/components/bpm-pitcher";
 import { ColumnVisibilityMenu } from "@/components/columns/column-visibility-menu";
+import { ResizableHeaderCell } from "@/components/columns/sortable-columns";
 import { CoverPlayButton } from "@/components/cover-play-button";
 import { CreatePlaylistDialog } from "@/components/create-playlist-dialog";
 import { FiltersToolbar } from "@/components/filters/filters-toolbar";
@@ -35,6 +37,7 @@ import { RekordboxWaveform } from "@/components/rekordbox-waveform";
 import { TrackQueueMenu } from "@/components/track-queue-menu";
 import {
   TrackTable,
+  useLeadColumnWidth,
   type ResolvedColumn,
   type TrackTableColumn,
 } from "@/components/track-table/track-table";
@@ -55,8 +58,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
-import { semitonesFromBpmRatio, transposeCamelot } from "@/lib/camelot";
+import { camelotKeyRank, transposeCamelot } from "@/lib/camelot";
 import type { ColumnDef } from "@/lib/columns/types";
 import { useColumnPrefs } from "@/lib/columns/use-column-prefs";
 import {
@@ -66,7 +74,12 @@ import {
 import { useFilterState } from "@/lib/filters/use-filter-state";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import type { SCTrack } from "@/lib/soundcloud";
+import { useCompactRows } from "@/lib/use-compact-rows";
 import { cn } from "@/lib/utils";
+import {
+  keySemitonesForRate,
+  semitonesFloatForRate,
+} from "@/lib/waveform-detail";
 
 import { LibraryTitle } from "./library-title";
 import {
@@ -170,8 +183,9 @@ function formatDate(value: string | null): string {
 
 /**
  * Key column cell. When the pitcher is active and the track's BPM is known,
- * shows the transposed Camelot key in brand-green next to (or in place of)
- * the original. Falls back to the raw key for non-Camelot strings.
+ * shows the transposed Camelot key in brand-green; hovering it shows the
+ * original key and the pitch change. Falls back to the raw key for non-Camelot
+ * strings.
  */
 function KeyCell({
   keyValue,
@@ -185,20 +199,32 @@ function KeyCell({
   targetBpm: number;
 }) {
   if (!keyValue) return <span className="text-muted-foreground">—</span>;
-  const shouldShift = pitchEnabled && bpm != null && bpm > 0 && targetBpm > 0;
-  const semitones = shouldShift ? semitonesFromBpmRatio(targetBpm / bpm) : 0;
+  const rate = computePlaybackRate(pitchEnabled, bpm, targetBpm);
+  const semitones = keySemitonesForRate(rate);
   const shifted =
     semitones !== 0 ? transposeCamelot(keyValue, semitones) : null;
 
   if (!shifted)
     return <span className="text-muted-foreground">{keyValue}</span>;
+  const sign = (n: number) => (n > 0 ? "+" : "");
+  const pitchPercent = (rate - 1) * 100;
+  const semitonesFloat = semitonesFloatForRate(rate);
   return (
-    <span
-      className="font-medium text-[var(--brand)]"
-      title={`Pitched: ${keyValue} → ${shifted} (${semitones > 0 ? "+" : ""}${semitones} st)`}
-    >
-      {shifted}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          data-testid="rekordbox-pitched-key"
+          className="font-medium text-[var(--brand)]"
+        >
+          {shifted}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="tabular-nums">
+        Original key {keyValue} · {sign(pitchPercent)}
+        {pitchPercent.toFixed(1)}% ({sign(semitonesFloat)}
+        {semitonesFloat.toFixed(1)} st)
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -226,40 +252,97 @@ function toPlayerTrack(t: RekordboxTrack, device: string): PlayerTrack | null {
   };
 }
 
-// Columns shared by the TrackTable header + body. Intentionally unsortable —
-// Rekordbox playlist order is meaningful (especially for smart playlists +
-// hand-curated sets), so we leave the order untouched and only allow filters.
+// Columns shared by the TrackTable header + body. Every column sorts by its
+// own id. Sorting only reorders the display; the playlist order is untouched.
 const REKORDBOX_COLUMNS: TrackTableColumn[] = [
-  { id: "title", header: "Title", required: true, defaultWidth: 256 },
-  { id: "artist", header: "Artist", defaultWidth: 192 },
-  { id: "genre", header: "Genre", defaultWidth: 112 },
+  {
+    id: "title",
+    header: "Title",
+    sortKey: "title",
+    required: true,
+    defaultWidth: 256,
+  },
+  { id: "artist", header: "Artist", sortKey: "artist", defaultWidth: 192 },
+  { id: "genre", header: "Genre", sortKey: "genre", defaultWidth: 112 },
   {
     id: "bpm",
     header: "BPM",
+    sortKey: "bpm",
     defaultWidth: 56,
     className: "text-right tabular-nums",
   },
-  { id: "key", header: "Key", defaultWidth: 56 },
+  { id: "key", header: "Key", sortKey: "key", defaultWidth: 56 },
   {
     id: "duration",
     header: "Length",
+    sortKey: "duration",
     defaultWidth: 72,
     className: "text-right tabular-nums",
   },
   {
     id: "date_added",
     header: "Added",
+    sortKey: "date_added",
     defaultWidth: 96,
     className: "tabular-nums",
   },
   {
     id: "release_date",
     header: "Released",
+    sortKey: "release_date",
     defaultWidth: 96,
     className: "tabular-nums",
   },
-  { id: "soundcloud_id", header: "SoundCloud", defaultWidth: 96 },
+  {
+    id: "soundcloud_id",
+    header: "SoundCloud",
+    sortKey: "soundcloud_id",
+    defaultWidth: 96,
+  },
 ];
+
+type SortValue = string | number | null;
+
+/** Sort value per column. A Camelot key sorts by wheel position; any other
+ *  key notation sorts as text after the Camelot keys. */
+const SORT_ACCESSORS: Record<string, (t: RekordboxTrack) => SortValue> = {
+  title: (t) => t.title || null,
+  artist: (t) => t.artist,
+  genre: (t) => t.genre,
+  bpm: (t) => t.bpm,
+  key: (t) => (t.key ? (camelotKeyRank(t.key) ?? t.key) : null),
+  duration: (t) => t.duration_seconds,
+  date_added: (t) => t.date_added || null,
+  release_date: (t) => t.release_date || null,
+  soundcloud_id: (t) => t.soundcloud_id,
+};
+
+/** Compares sort values: numbers before text, missing values last. */
+function compareSortValues(a: string | number, b: string | number): number {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  if (typeof a === "number") return -1;
+  if (typeof b === "number") return 1;
+  return a.localeCompare(b);
+}
+
+function sortTracks(
+  tracks: RekordboxTrack[],
+  sortBy: string,
+  order: "asc" | "desc",
+): RekordboxTrack[] {
+  const accessor = SORT_ACCESSORS[sortBy];
+  if (!accessor) return tracks;
+  const dir = order === "asc" ? 1 : -1;
+  return [...tracks].sort((x, y) => {
+    const a = accessor(x);
+    const b = accessor(y);
+    if (a == null || b == null) return a == null ? (b == null ? 0 : 1) : -1;
+    return dir * compareSortValues(a, b);
+  });
+}
+
+const WAVEFORM_COLUMN_ID = "waveform";
+const WAVEFORM_DEFAULT_WIDTH = 96;
 
 const REKORDBOX_COLUMN_DEFS: ColumnDef[] = REKORDBOX_COLUMNS.map((c) => ({
   id: c.id,
@@ -422,10 +505,39 @@ export function RekordboxView() {
     [tracksResp.data.tracks, filterState],
   );
 
+  // Display-only sort; not persisted, and never written to the playlist.
+  const [sortBy, setSortBy] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const displayTracks = useMemo(
+    () =>
+      sortBy ? sortTracks(filteredTracks, sortBy, sortOrder) : filteredTracks,
+    [filteredTracks, sortBy, sortOrder],
+  );
+
+  function handleSort(key: string) {
+    if (key !== sortBy) {
+      setSortBy(key);
+      setSortOrder("asc");
+    } else if (sortOrder === "asc") {
+      setSortOrder("desc");
+    } else {
+      setSortBy(null);
+      setSortOrder("asc");
+    }
+  }
+
   const columnPrefs = useColumnPrefs(
     "library.rekordbox",
     REKORDBOX_COLUMN_DEFS,
   );
+  const waveformColumn = useLeadColumnWidth(
+    WAVEFORM_COLUMN_ID,
+    WAVEFORM_DEFAULT_WIDTH,
+    columnPrefs.prefs.widths,
+    columnPrefs.setWidth,
+    columnPrefs.resetWidth,
+  );
+  const compact = useCompactRows();
 
   // Row selection, scoping the SoundCloud playlist export. Keyed by track id;
   // duplicate playlist entries of the same track select together.
@@ -471,11 +583,11 @@ export function RekordboxView() {
           const [a, b] =
             prev.anchor < index ? [prev.anchor, index] : [index, prev.anchor];
           for (let i = a; i <= b; i++) {
-            const id = filteredTracks[i]?.id;
+            const id = displayTracks[i]?.id;
             if (id) ids.add(id);
           }
         } else {
-          const id = filteredTracks[index]?.id;
+          const id = displayTracks[index]?.id;
           if (id) {
             if (ids.has(id)) ids.delete(id);
             else ids.add(id);
@@ -484,23 +596,22 @@ export function RekordboxView() {
         return { ids, anchor: index };
       });
     },
-    [filteredTracks],
+    [displayTracks],
   );
 
   const handleStartPlay = useCallback(
     (index: number, startRatio?: number) => {
-      const queue = filteredTracks
+      const queue = displayTracks
         .map((t) => toPlayerTrack(t, device))
         .filter((t): t is PlayerTrack => t !== null);
       if (queue.length === 0) return;
       // Map the table index back to the queue (skips entries without a file).
       const playableIdx =
-        filteredTracks.slice(0, index + 1).filter((t) => t.file_path).length -
-        1;
+        displayTracks.slice(0, index + 1).filter((t) => t.file_path).length - 1;
       if (playableIdx < 0) return;
       player.playQueue(queue, playableIdx, startRatio);
     },
-    [filteredTracks, player, device],
+    [displayTracks, player, device],
   );
 
   // Only regular playlists of the local install can be edited; USB exports
@@ -509,9 +620,10 @@ export function RekordboxView() {
     isLocal && !!pl && !pl.is_folder && !pl.is_smart;
   const editable = isEditable(selectedPl);
   const allTracks = tracksResp.data.tracks;
-  // Positions are only meaningful on the unfiltered list.
+  // Positions are only meaningful on the unfiltered, unsorted list.
   const reorderable =
     editable &&
+    !sortBy &&
     filteredTracks.length === allTracks.length &&
     allTracks.every((t) => t.entry_id);
   const addTargets = data.playlists
@@ -909,16 +1021,17 @@ export function RekordboxView() {
                 strategy={verticalListSortingStrategy}
               >
                 <TrackTable<RekordboxTrack>
-                  items={filteredTracks}
+                  items={displayTracks}
                   columns={REKORDBOX_COLUMNS}
-                  estimateRowSize={40}
+                  estimateRowSize={compact ? 32 : 40}
                   // Rekordbox playlists can intentionally contain the same track
                   // at multiple positions, so include the index in the key to keep
                   // it unique. Index alone is stable here because filters preserve
                   // order and switching playlists remounts the table.
                   getItemKey={(index, item) => `${index}-${item?.id ?? ""}`}
-                  sortBy={null}
-                  sortOrder="asc"
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
                   columnOrder={columnPrefs.prefs.order}
                   onColumnOrderChange={columnPrefs.setOrder}
                   columnWidths={columnPrefs.prefs.widths}
@@ -951,8 +1064,11 @@ export function RekordboxView() {
                           className="size-3.5 cursor-pointer"
                         />
                       </div>
-                      <div className="size-7 shrink-0" aria-hidden />
-                      <div className="h-8 w-24 shrink-0" aria-hidden />
+                      <div
+                        className={cn("shrink-0", compact ? "w-6" : "w-7")}
+                        aria-hidden
+                      />
+                      <ResizableHeaderCell {...waveformColumn} />
                     </>
                   )}
                   renderRow={({ item, index, visibleColumns }) => {
@@ -1042,7 +1158,8 @@ export function RekordboxView() {
                               : "Missing local file — not playable from Rekordbox"
                           }
                           className={cn(
-                            "group border-border flex h-10 items-center gap-1.5 border-b pr-0 pl-3 text-xs transition-colors select-none",
+                            "group border-border flex items-center gap-1.5 border-b pr-0 pl-3 text-xs transition-colors select-none",
+                            compact ? "h-8" : "h-10",
                             playable
                               ? "cursor-pointer hover:bg-[var(--surface-3)]"
                               : "text-muted-foreground/60 cursor-default",
@@ -1081,8 +1198,12 @@ export function RekordboxView() {
                                 : undefined
                             }
                             label={t.title}
+                            className={compact ? "size-6" : undefined}
                           />
-                          <div className="flex h-10 w-24 shrink-0 items-center">
+                          <div
+                            className="flex h-full shrink-0 items-center"
+                            style={{ width: waveformColumn.width }}
+                          >
                             {t.has_waveform ? (
                               <RekordboxWaveform
                                 trackId={t.id}
@@ -1096,7 +1217,7 @@ export function RekordboxView() {
                                         handleStartPlay(index, startRatio)
                                     : undefined
                                 }
-                                width={96}
+                                width={waveformColumn.width}
                                 height={20}
                               />
                             ) : null}

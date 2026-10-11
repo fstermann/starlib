@@ -107,6 +107,14 @@ export function keyNameFromCamelot(camelot: string): string | null {
   return minor ? `${NOTE_NAMES[pc]}m` : NOTE_NAMES[pc];
 }
 
+/** Position on the Camelot wheel (1A, 1B, 2A, …) for sorting a Camelot
+ *  key; `null` when it isn't one. */
+export function camelotKeyRank(key: string): number | null {
+  const m = key.trim().match(CAMELOT_RE);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 2 + (m[2].toUpperCase() === "A" ? 0 : 1);
+}
+
 /** Position on the Camelot wheel (1A, 1B, 2A, …) for sorting; unparseable
  *  signatures sort last. Finite so rank differences never go NaN. */
 export function soundcloudKeyRank(
