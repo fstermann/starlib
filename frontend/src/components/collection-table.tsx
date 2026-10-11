@@ -74,6 +74,7 @@ import { searchParams } from "@/lib/search-params";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
 import { parseRemix, removeMix } from "@/lib/string-utils";
 import { trackBreakdownHref } from "@/lib/track-breakdown";
+import { useChanged } from "@/lib/use-changed";
 import { useCompactRows } from "@/lib/use-compact-rows";
 import { cn } from "@/lib/utils";
 
@@ -927,14 +928,16 @@ export function CollectionTable({
 
   // Reload on mode / folderPath / filter / sort change
   const filtersKey = `${mode}|${folderPath ?? ""}|${search}|${genres.join(",")}|${keys.join(",")}|${bpmMin}|${bpmMax}|${fileFormats.join(",")}|${sizeMin}|${sizeMax}|${scLinked ?? ""}|${sortBy}|${sortOrder}`;
+  if (useChanged([filtersKey, loadPage])) {
+    setReloading(true);
+    setPage(1);
+  }
   useEffect(() => {
     // Cancel any in-flight request from the previous mode/filters
     abortRef.current?.abort(
       new DOMException("Request cancelled", "AbortError"),
     );
     abortRef.current = null;
-    setReloading(true);
-    setPage(1);
     // Reset guard so a mode switch always triggers a fresh load
     loadingRef.current = false;
     loadPage(1, true);

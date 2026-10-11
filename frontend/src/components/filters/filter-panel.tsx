@@ -46,9 +46,7 @@ export function FilterPanel({
   // Mount content once, keep mounted. First open pays the render cost; later
   // opens are pure CSS transition.
   const [hasOpened, setHasOpened] = React.useState(open);
-  React.useEffect(() => {
-    if (open && !hasOpened) setHasOpened(true);
-  }, [open, hasOpened]);
+  if (open && !hasOpened) setHasOpened(true);
 
   // Measure the content so we can animate `height` to an exact px value,
   // matching the track-editor resize pattern (single-property, known target).

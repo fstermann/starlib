@@ -66,6 +66,8 @@ import {
   updateCachedSoundcloudBpm,
   type DecodedPeaks,
 } from "@/lib/soundcloud-cache";
+import { useChanged } from "@/lib/use-changed";
+import { useLatestRef } from "@/lib/use-latest-ref";
 import { cn } from "@/lib/utils";
 
 import {
@@ -370,8 +372,7 @@ export function AlignmentDialog({
   const scPxPerSec = pxPerSec * speedRatio;
   // Read by the original deck's mount so a BPM correction doesn't re-run it
   // (and re-buffer the stream).
-  const scDecodedRef = useRef(scDecoded);
-  scDecodedRef.current = scDecoded;
+  const scDecodedRef = useLatestRef(scDecoded);
 
   // The saved start is where the original's t=0 lands in the mix. At the
   // playhead mix=``mixCenterS`` aligns with original=``origCenterS``, and
@@ -381,32 +382,30 @@ export function AlignmentDialog({
   const offsetS = newStartS - track.start_s;
 
   // Reset both positions whenever the dialog opens against a new track.
-  useEffect(() => {
-    if (open) {
-      setMixCenterS(track.start_s);
-      setOrigCenterS(0);
-      setSaveError(null);
-      setMixInEdit(null);
-      setMixOutEdit(null);
-    }
-  }, [open, track.id, track.start_s]);
+  if (useChanged([open, track.id, track.start_s]) && open) {
+    setMixCenterS(track.start_s);
+    setOrigCenterS(0);
+    setSaveError(null);
+    setMixInEdit(null);
+    setMixOutEdit(null);
+  }
 
   // Resolve the SoundCloud original + its stream URL when the dialog
   // opens. Shazam rows have no soundcloud_id, so fall back to a
   // title+artist search (same as the tracklist's "find on SoundCloud")
   // rather than giving up with "no match".
-  useEffect(() => {
+  if (useChanged([open, soundcloudId, trackTitle, jobId, trackId])) {
+    setStreamError(null);
+    setScResolving(open);
     if (!open) {
       setScId(null);
       setScMeta(null);
       setStreamUrl(null);
-      setStreamError(null);
-      setScResolving(false);
-      return;
     }
+  }
+  useEffect(() => {
+    if (!open) return;
     let cancelled = false;
-    setStreamError(null);
-    setScResolving(true);
     void (async () => {
       let id: number | null = soundcloudId;
       let hit: SCTrack | null = null;
@@ -459,9 +458,11 @@ export function AlignmentDialog({
   // Fetch the server-decoded peaks + detected tempo once the original id is
   // known, before the SC strip builds — so the speed ratio (which drives the
   // strip's horizontal scale) is settled by render time.
-  useEffect(() => {
+  if (useChanged([open, scId])) {
     setScDecoded(null);
     setScDecodedResolved(false);
+  }
+  useEffect(() => {
     if (!open || scId == null) return;
     let cancelled = false;
     void getCachedSoundcloudDecodedPeaks(scId)
@@ -480,26 +481,42 @@ export function AlignmentDialog({
   // aligned, and dropped if they moved a strip while it ran. Centring the
   // original's 0:00 on the suggestion keeps the saved start exact whatever
   // speed ratio the dialog settles on.
-  const positionsRef = useRef({ mix: mixCenterS, orig: origCenterS });
-  positionsRef.current = { mix: mixCenterS, orig: origCenterS };
+  const positionsRef = useLatestRef({ mix: mixCenterS, orig: origCenterS });
   // A BPM change reruns it: the tempo sets the playback rates it searches,
   // and the new result moves the strips even if the user had moved them.
   const alignBpm = scDecodedResolved ? (scDecoded?.bpm ?? null) : undefined;
-  const lastAlignBpmRef = useRef<number | null | undefined>(undefined);
-  useEffect(() => {
-    setAutoAlign(null);
+  const [alignRun, setAlignRun] = useState<{
+    lastBpm: number | null | undefined;
+    bpmChanged: boolean;
+    run: boolean;
+  }>({ lastBpm: undefined, bpmChanged: false, run: false });
+  if (
+    useChanged([
+      open,
+      scId,
+      alignBpm,
+      jobId,
+      track.id,
+      track.start_s,
+      track.aligned,
+    ])
+  ) {
     if (!open || scId == null || alignBpm === undefined) {
       // A new track or reopen starts fresh, not as a BPM change.
-      lastAlignBpmRef.current = undefined;
-      return;
+      setAlignRun({ lastBpm: undefined, bpmChanged: false, run: false });
+      setAutoAlign(null);
+    } else {
+      const bpmChanged =
+        alignRun.lastBpm !== undefined && alignRun.lastBpm !== alignBpm;
+      const run = !track.aligned || bpmChanged;
+      setAlignRun({ lastBpm: alignBpm, bpmChanged, run });
+      setAutoAlign(run ? "running" : null);
     }
-    const bpmChanged =
-      lastAlignBpmRef.current !== undefined &&
-      lastAlignBpmRef.current !== alignBpm;
-    lastAlignBpmRef.current = alignBpm;
-    if (track.aligned && !bpmChanged) return;
+  }
+  useEffect(() => {
+    if (!alignRun.run || scId == null) return;
+    const { bpmChanged } = alignRun;
     let cancelled = false;
-    setAutoAlign("running");
     void autoAlignTrack(jobId, track.id, scId)
       .catch((): AutoAlignResult => ({ found: false }))
       .then((r) => {
@@ -515,14 +532,16 @@ export function AlignmentDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, scId, alignBpm, jobId, track.id, track.start_s, track.aligned]);
+  }, [alignRun, jobId, track.id, track.start_s, scId, positionsRef]);
 
   // Mix deck: a plain media element on the cached set (Range-served), and
   // peaks for just the region around the track, so nothing decodes the
   // whole multi-hour set in the browser.
-  useEffect(() => {
+  if (useChanged([open, jobId, track.start_s, track.duration_s])) {
     setSetReady(false);
     setMixPeaks(null);
+  }
+  useEffect(() => {
     if (!open) return;
     const audio = new Audio(jobAudioUrl(jobId));
     audio.preload = "auto";
@@ -552,9 +571,11 @@ export function AlignmentDialog({
 
   // Original deck: stream the SoundCloud upload (HLS) and paint from the
   // server-decoded peaks, falling back to SoundCloud's coarse waveform.
-  useEffect(() => {
+  if (useChanged([open, streamUrl, scDecodedResolved, scMeta])) {
     setScReady(false);
     setOrigPeaks(null);
+  }
+  useEffect(() => {
     if (!open || !streamUrl || !scDecodedResolved) return;
     let cancelled = false;
     const audio = new Audio();
@@ -602,7 +623,7 @@ export function AlignmentDialog({
     };
     // ``scDecoded`` is read through a ref: a BPM correction mutates it, and
     // re-running here would re-buffer the stream.
-  }, [open, streamUrl, scDecodedResolved, scMeta]);
+  }, [open, streamUrl, scDecodedResolved, scMeta, scDecodedRef]);
 
   // Pitch-match: the SC track plays back faster or slower so the
   // listener hears it at the same tempo as the mix.
@@ -733,11 +754,11 @@ export function AlignmentDialog({
   );
 
   // Stop both players when the dialog closes.
+  if (useChanged([open]) && !open) setTransport(false);
   useEffect(() => {
     if (open) return;
     setAudioRef.current?.pause();
     scAudioRef.current?.pause();
-    setTransport(false);
   }, [open]);
 
   // Apply the headphone cue by (un)muting each deck via its volume — WebKit

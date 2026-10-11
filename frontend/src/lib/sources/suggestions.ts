@@ -15,7 +15,7 @@
  *    every top-ranked suggestion in one go.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { components } from "@/generated/backend";
 import { fetchApi } from "@/lib/api";
@@ -104,15 +104,15 @@ export function useTrackSuggestions({
   // Stable JSON of `current` so an unchanged object doesn't re-fetch.
   const currentKey = useMemo(() => JSON.stringify(current), [current]);
 
-  // Always read the latest `current` and `onAccept` inside callbacks.
-  const onAcceptRef = useRef(onAccept);
-  onAcceptRef.current = onAccept;
+  const active = enabled && !!filePath;
+  const [wasActive, setWasActive] = useState(active);
+  if (active !== wasActive) {
+    setWasActive(active);
+    if (!active) setSuggestions({});
+  }
 
   useEffect(() => {
-    if (!enabled || !filePath) {
-      setSuggestions({});
-      return;
-    }
+    if (!enabled || !filePath) return;
 
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -158,7 +158,7 @@ export function useTrackSuggestions({
   }, [enabled, filePath, scTrack, currentKey, debounceMs]);
 
   const accept = (field: SuggestionField, suggestion: FieldSuggestion) => {
-    onAcceptRef.current(field, suggestion.value);
+    onAccept(field, suggestion.value);
     // Optimistic prune: drop the field locally so the button vanishes
     // immediately. The next fetch will reconcile.
     setSuggestions((prev) => {
@@ -172,7 +172,7 @@ export function useTrackSuggestions({
     for (const [field, candidates] of Object.entries(suggestions)) {
       const top = candidates[0];
       if (!top) continue;
-      onAcceptRef.current(field as SuggestionField, top.value);
+      onAccept(field as SuggestionField, top.value);
     }
     setSuggestions({});
   };

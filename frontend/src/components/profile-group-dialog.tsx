@@ -1,7 +1,7 @@
 "use client";
 
 import { Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import {
   type ProfileGroupMember,
 } from "@/lib/profile-groups";
 import type { SCUser } from "@/lib/soundcloud";
+import { useChanged } from "@/lib/use-changed";
 
 export const MAX_MEMBERS = 10;
 
@@ -61,13 +62,11 @@ export function ProfileGroupDialog({
   const [error, setError] = useState<string | null>(null);
 
   // Reset form whenever the dialog re-opens with a different group.
-  useEffect(() => {
-    if (open) {
-      setName(group.name);
-      setMembers(group.members);
-      setError(null);
-    }
-  }, [open, group.id, group.name, group.members]);
+  if (useChanged([open, group.id, group.name, group.members]) && open) {
+    setName(group.name);
+    setMembers(group.members);
+    setError(null);
+  }
 
   const isNew = !group.id;
   const canAddMore = members.length < MAX_MEMBERS;

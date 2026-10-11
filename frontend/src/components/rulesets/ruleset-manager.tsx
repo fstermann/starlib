@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Spinner } from "@/components/spinner";
@@ -20,23 +20,15 @@ export function RulesetManager() {
   const [saving, setSaving] = useState(false);
   const [pendingEdit, setPendingEdit] = useState<Ruleset | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const data = await api.getRulesets();
-      setRulesets(data.rulesets);
-      if (!selectedId) setSelectedId(data.active_ruleset_id);
-    } catch {
-      toast.error("Failed to load rulesets");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedId]);
-
-  // Load once on mount. `load` depends on `selectedId`; re-running on every
-  // selection change would re-fetch on click.
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    api
+      .getRulesets()
+      .then((data) => {
+        setRulesets(data.rulesets);
+        setSelectedId((id) => id || data.active_ruleset_id);
+      })
+      .catch(() => toast.error("Failed to load rulesets"))
+      .finally(() => setLoading(false));
   }, []);
 
   const selectedRuleset = rulesets.find((r) => r.id === selectedId) ?? null;

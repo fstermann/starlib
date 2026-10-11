@@ -149,16 +149,18 @@ function CountDisplay({
   // between the real count and 0. Only accept a new non-zero value, or zero
   // when it comes from "no matches" (i.e. filtered stays 0 across renders).
   const [stableFiltered, setStableFiltered] = React.useState(filtered);
-  React.useEffect(() => {
-    if (filtered === undefined) return;
-    if (filtered === 0 && stableFiltered !== undefined && stableFiltered > 0) {
-      // Probably a transient reload blip. Delay the drop briefly; if zero
-      // sticks, the next effect run will commit it.
-      const t = setTimeout(() => setStableFiltered(0), 300);
-      return () => clearTimeout(t);
-    }
+  // Probably a transient reload blip. Delay the drop briefly; if zero
+  // sticks, the timer commits it.
+  const isBlip =
+    filtered === 0 && stableFiltered !== undefined && stableFiltered > 0;
+  if (filtered !== undefined && !isBlip && filtered !== stableFiltered) {
     setStableFiltered(filtered);
-  }, [filtered, stableFiltered]);
+  }
+  React.useEffect(() => {
+    if (!isBlip) return;
+    const t = setTimeout(() => setStableFiltered(0), 300);
+    return () => clearTimeout(t);
+  }, [isBlip]);
 
   const primary = stableFiltered ?? total;
   if (primary === undefined) return null;

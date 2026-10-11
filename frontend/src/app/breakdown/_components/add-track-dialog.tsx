@@ -132,38 +132,44 @@ export function AddTrackDialog({
   // Bumped each time the dialog opens to throw away any stale debounce
   // result that comes back after the user has typed something new.
   const queryTokenRef = useRef(0);
-  // The playhead moves ~60x/sec during playback. Read it from a ref so
-  // the reset-on-open effect can snapshot it without re-running (and
-  // wiping the search box) on every frame while the set plays.
-  const defaultStartRef = useRef(defaultStartS);
-  defaultStartRef.current = defaultStartS;
+  // Reset when the dialog opens, snapshotting the playhead (which moves
+  // ~60x/sec during playback) only at that moment.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setStart(formatTimecode(defaultStartS));
+      setQuery("");
+      setResults([]);
+      setPicked(null);
+      setPreviewId(null);
+      setTitle("");
+      setArtist("");
+      setTitleUnknown(false);
+      setArtistUnknown(false);
+      setUnreleased(false);
+      setSubmitError(null);
+      setSearchError(null);
+    }
+  }
 
-  useEffect(() => {
-    if (!open) return;
-    setStart(formatTimecode(defaultStartRef.current));
-    setQuery("");
-    setResults([]);
-    setPicked(null);
-    setPreviewId(null);
-    setTitle("");
-    setArtist("");
-    setTitleUnknown(false);
-    setArtistUnknown(false);
-    setUnreleased(false);
-    setSubmitError(null);
-    setSearchError(null);
-  }, [open]);
+  const trimmedQuery = query.trim();
+  const isSearchable =
+    /^https?:\/\//i.test(trimmedQuery) || trimmedQuery.length >= 2;
+  const searchKey = open ? query : null;
+  const [prevSearchKey, setPrevSearchKey] = useState(searchKey);
+  if (searchKey !== prevSearchKey) {
+    setPrevSearchKey(searchKey);
+    if (open && !isSearchable) setResults([]);
+    if (open && isSearchable) setSearching(true);
+  }
 
   useEffect(() => {
     if (!open) return;
     const q = query.trim();
     const isUrl = /^https?:\/\//i.test(q);
-    if (!isUrl && q.length < 2) {
-      setResults([]);
-      return;
-    }
+    if (!isUrl && q.length < 2) return;
     const token = ++queryTokenRef.current;
-    setSearching(true);
     const t = setTimeout(() => {
       // A pasted URL resolves to a single track (mirrors the track
       // editor); anything else is a text search.

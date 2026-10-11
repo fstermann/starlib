@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+
+import { useLatestRef } from "@/lib/use-latest-ref";
 
 import { useCommandPalette } from "./provider";
 import type { CommandItem } from "./types";
@@ -20,8 +22,7 @@ export interface UseCommandOptions extends Omit<CommandItem, "id"> {
  */
 export function useCommand(opts: UseCommandOptions) {
   const { registerCommand } = useCommandPalette();
-  const ref = useRef(opts);
-  ref.current = opts;
+  const ref = useLatestRef(opts);
 
   const { id, when = true } = opts;
 
@@ -52,5 +53,5 @@ export function useCommand(opts: UseCommandOptions) {
       },
       run: (ctx) => ref.current.run(ctx),
     });
-  }, [id, when, registerCommand]);
+  }, [id, when, registerCommand, ref]);
 }

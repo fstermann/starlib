@@ -24,16 +24,18 @@ function extractId(urn: string | undefined): number | null {
 export function useWeeklyPlaylists(): UseWeeklyPlaylistsResult {
   const [playlists, setPlaylists] = useState<SCPlaylist[]>([]);
   const [seenTrackIds, setSeenTrackIds] = useState<Set<number>>(new Set());
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const reload = () => setReloadKey((k) => k + 1);
+  const reload = () => {
+    setLoading(true);
+    setError(null);
+    setReloadKey((k) => k + 1);
+  };
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
     async function load() {
       try {

@@ -20,7 +20,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
 
 import { BreakdownSettings } from "@/components/breakdown-settings";
 import { FolderConfigManager } from "@/components/rulesets/folder-config-manager";
@@ -89,6 +89,8 @@ interface NavGroup {
   items: NavItem[];
 }
 
+const emptySubscribe = () => () => {};
+
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "General",
@@ -136,7 +138,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [installing, setInstalling] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
   const [version, setVersion] = useState<string | null>(null);
   const [rootFolder, setRootFolder] = useState("");
   const [rootFolderDraft, setRootFolderDraft] = useState("");
@@ -166,18 +172,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [allRulesets, setAllRulesets] = useState<Ruleset[]>([]);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isTauri()) {
-      setVersion(process.env.NEXT_PUBLIC_APP_VERSION ?? null);
-      return;
-    }
-    import("@tauri-apps/api/app")
-      .then(({ getVersion }) => getVersion())
-      .then(setVersion)
-      .catch(() => setVersion(process.env.NEXT_PUBLIC_APP_VERSION ?? null));
+    const fallback = process.env.NEXT_PUBLIC_APP_VERSION ?? null;
+    const appVersion = isTauri()
+      ? import("@tauri-apps/api/app").then(({ getVersion }) => getVersion())
+      : Promise.resolve(fallback);
+    appVersion.then(setVersion).catch(() => setVersion(fallback));
   }, []);
 
   useEffect(() => {

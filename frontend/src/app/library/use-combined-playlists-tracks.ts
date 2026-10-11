@@ -27,19 +27,21 @@ export function useCombinedPlaylistsTracks(
   // Stable key so the effect reruns only when the set of urns actually changes.
   const key = urns ? urns.join("|") : null;
 
+  const [fetchedKey, setFetchedKey] = useState<string | null | undefined>(
+    undefined,
+  );
+  if (key !== fetchedKey) {
+    setFetchedKey(key);
+    setTracks([]);
+    setLoading(!!urns && urns.length > 0);
+    setError(null);
+  }
+
   useEffect(() => {
-    if (!urns || urns.length === 0) {
-      setTracks([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
+    if (!urns || urns.length === 0) return;
 
     const list = [...urns];
     let cancelled = false;
-    setTracks([]);
-    setLoading(true);
-    setError(null);
 
     const merged: SCTrack[] = [];
     const seen = new Set<string>();

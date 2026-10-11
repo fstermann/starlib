@@ -64,16 +64,27 @@ export function useSoundCloudSearch(
     setSelectedScTrack(track);
   }, []);
 
-  // Auto-search when query changes (debounced)
-  useEffect(() => {
+  // Clear results for an empty/closed search, or flag the debounced search
+  // as pending, as soon as the query or panel changes.
+  const [prevSearch, setPrevSearch] = useState<{
+    query: string;
+    open: boolean;
+  } | null>(null);
+  if (prevSearch?.query !== scQuery || prevSearch.open !== scPanelOpen) {
+    setPrevSearch({ query: scQuery, open: scPanelOpen });
     if (!scQuery.trim() || !scPanelOpen) {
       setScResults([]);
       setSelectedScTrack(null);
       setScQueryPending(false);
-      return;
+    } else {
+      setScQueryPending(true);
     }
+  }
 
-    setScQueryPending(true);
+  // Auto-search when query changes (debounced)
+  useEffect(() => {
+    if (!scQuery.trim() || !scPanelOpen) return;
+
     const timeoutId = setTimeout(() => {
       handleScSearch();
     }, 500);

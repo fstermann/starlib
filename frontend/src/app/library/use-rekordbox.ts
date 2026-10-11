@@ -106,16 +106,18 @@ function useRekordboxFetch<T>(
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
-  useEffect(() => {
-    if (path === null) {
-      setData(initial);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
+  const fetchKey = `${path}|${tick}`;
+  const [startedKey, setStartedKey] = useState<string | null>(null);
+  if (fetchKey !== startedKey) {
+    setStartedKey(fetchKey);
+    if (path === null) setData(initial);
+    setLoading(path !== null);
     setError(null);
+  }
+
+  useEffect(() => {
+    if (path === null) return;
+    let cancelled = false;
     fetchApi<T>(path)
       .then((d) => {
         if (!cancelled) setData(d);
@@ -132,8 +134,6 @@ function useRekordboxFetch<T>(
     return () => {
       cancelled = true;
     };
-    // initial is intentionally stable per call site.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, tick]);
 
   // Optional background polling — used to keep the USB device list live so a

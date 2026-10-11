@@ -67,16 +67,32 @@ export function useSourceSearch(
     setSelectedTrack(track);
   }, []);
 
-  // Auto-search when query changes (debounced 500 ms)
-  useEffect(() => {
+  // Clear results for an empty/closed search, or flag the debounced search
+  // as pending, as soon as the query, panel or source changes.
+  const [prevSearch, setPrevSearch] = useState<{
+    query: string;
+    open: boolean;
+    source: MusicSource;
+  } | null>(null);
+  if (
+    prevSearch?.query !== query ||
+    prevSearch.open !== panelOpen ||
+    prevSearch.source !== source
+  ) {
+    setPrevSearch({ query, open: panelOpen, source });
     if (!query.trim() || !panelOpen) {
       setResults([]);
       setSelectedTrack(null);
       setQueryPending(false);
-      return;
+    } else {
+      setQueryPending(true);
     }
+  }
 
-    setQueryPending(true);
+  // Auto-search when query changes (debounced 500 ms)
+  useEffect(() => {
+    if (!query.trim() || !panelOpen) return;
+
     const id = setTimeout(() => {
       handleSearch();
     }, 500);
