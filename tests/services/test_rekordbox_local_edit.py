@@ -17,6 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.schema import CreateTable
 
 from backend.services.rekordbox import (
+    BackupFailed,
     LocalMasterDbSource,
     PlaylistEditError,
     RekordboxBusy,
@@ -219,3 +220,35 @@ def test_rename_is_refused_while_rekordbox_runs(source: LocalMasterDbSource, mon
     with pytest.raises(RekordboxBusy):
         source.rename_playlist("30", "New")
     assert _playlists(source)["30"][0] == "Folder"
+
+
+@pytest.fixture
+def backed_up_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> LocalMasterDbSource:
+    set_rekordbox_running(monkeypatch, False)
+    src = LocalMasterDbSource(backup_dir=tmp_path / "backups")
+    src._db = build_master_db(tmp_path / "master.db")
+    return src
+
+
+def test_first_edit_backs_up_the_library_before_writing(backed_up_source: LocalMasterDbSource, tmp_path: Path) -> None:
+    backed_up_source.remove_playlist_entries("10", ["e1"])
+    backed_up_source.remove_playlist_entries("10", ["e2"])
+
+    backups = list((tmp_path / "backups").iterdir())
+    assert len(backups) == 1
+    restored = LocalMasterDbSource()
+    restored._db = Rekordbox6Database(backups[0] / "master.db", unlock=False)
+    assert _titles(restored) == ["Track 1", "Track 2", "Track 3"]
+
+
+def test_edit_is_refused_when_the_backup_fails(
+    backed_up_source: LocalMasterDbSource, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(*_: object) -> Path:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("backend.services.rekordbox.local.backup_master_db", fail)
+
+    with pytest.raises(BackupFailed):
+        backed_up_source.remove_playlist_entries("10", ["e1"])
+    assert _titles(backed_up_source) == ["Track 1", "Track 2", "Track 3"]

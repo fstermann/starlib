@@ -8,7 +8,8 @@ return a clean 503.
 
 Playlists can also be created, renamed, and deleted, and regular playlists
 edited (add, remove, reorder). Writes only happen while Rekordbox is closed; otherwise
-:class:`RekordboxBusy` is raised.
+:class:`RekordboxBusy` is raised. The first write of a session backs up
+``master.db``; if that fails, :class:`BackupFailed` is raised and nothing changes.
 """
 
 from __future__ import annotations
@@ -20,8 +21,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from backend.infra.rekordbox_backup import backup_master_db
+
 from .analysis import Cue, TrackAnalysis, cues_from_db_rows
 from .base import (
+    BackupFailed,
     PlaylistEditError,
     RekordboxBusy,
     RekordboxPlaylist,
@@ -47,13 +51,20 @@ def rekordbox_running() -> bool:
 
 
 class LocalMasterDbSource(RekordboxSource):
-    """Read the Rekordbox library from the local ``master.db`` install."""
+    """Read the Rekordbox library from the local ``master.db`` install.
 
-    def __init__(self) -> None:
+    Args:
+        backup_dir: Where to back up ``master.db`` before the first write;
+            ``None`` skips the backup.
+    """
+
+    def __init__(self, backup_dir: Path | None = None) -> None:
         self._db_lock = threading.Lock()
         self._write_lock = threading.Lock()
         self._db: Any | None = None
         self._failed_reason: str | None = None
+        self._backup_dir = backup_dir
+        self._backed_up = False
 
     def _open_db(self) -> Any:
         """Return a cached :class:`pyrekordbox.Rekordbox6Database` instance."""
@@ -191,12 +202,34 @@ class LocalMasterDbSource(RekordboxSource):
                 raise RekordboxBusy("Close Rekordbox to save playlist changes.")
             # Expire cached rows so the write builds on what Rekordbox last saved.
             db.rollback()
+            if not self._backed_up and self._backup_dir is not None:
+                self._backup(db, self._backup_dir)
             try:
                 yield db
                 db.commit()
             except Exception:
                 db.rollback()
                 raise
+
+    def _backup(self, db: Any, backup_dir: Path) -> None:
+        """Back up ``master.db`` once per session, before its first write.
+
+        Args:
+            db: The open database.
+            backup_dir: Folder for the backups.
+
+        Raises:
+            BackupFailed: If the copy fails; the write is then refused.
+        """
+        try:
+            # Merge the write-ahead log into master.db so the copy is complete.
+            with db.engine.connect() as conn:
+                conn.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+            backup_master_db(Path(db.engine.url.database), backup_dir)
+        except Exception as exc:
+            logger.exception("Rekordbox backup failed")
+            raise BackupFailed(f"Couldn't back up the Rekordbox library, so nothing was changed: {exc}") from exc
+        self._backed_up = True
 
     @contextmanager
     def _editing_playlist(self, playlist_id: str) -> Iterator[tuple[Any, Any]]:

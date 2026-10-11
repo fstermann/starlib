@@ -1,11 +1,7 @@
 "use client";
 
 import {
-  arrayMove,
-  SortableContext,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import {
+  Blend,
   Folder,
   HardDrive,
   Library,
@@ -18,7 +14,7 @@ import {
   Usb,
 } from "lucide-react";
 import { useQueryState } from "nuqs";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { computePlaybackRate } from "@/components/bpm-pitcher";
@@ -33,6 +29,11 @@ import {
   useTopBar,
 } from "@/components/layout/top-bar-context";
 import { LogoSpinner } from "@/components/logo-spinner";
+import {
+  MatchingTracksSheetOutlet,
+  useMatchingTracks,
+  useMatchingTracksPlaylist,
+} from "@/components/matching-tracks/matching-tracks-provider";
 import { RekordboxWaveform } from "@/components/rekordbox-waveform";
 import { TrackQueueMenu } from "@/components/track-queue-menu";
 import {
@@ -86,12 +87,14 @@ import {
   DraggableRekordboxRow,
   RekordboxPlaylistDndProvider,
   RekordboxPlaylistDropTarget,
-  SortableRekordboxRow,
+  RekordboxTableDropTarget,
+  type InsertTarget,
 } from "./rekordbox-playlist-dnd";
 import { RekordboxPlaylistMenu } from "./rekordbox-playlist-menu";
 import {
   addRekordboxPlaylistTracks,
   COLLECTION_ID,
+  rekordboxPlayerTrack,
   removeRekordboxPlaylistEntries,
   reorderRekordboxPlaylist,
   useRekordboxCollection,
@@ -228,30 +231,6 @@ function KeyCell({
   );
 }
 
-function toPlayerTrack(t: RekordboxTrack, device: string): PlayerTrack | null {
-  if (!t.file_path) return null;
-  const usb = !!device;
-  return {
-    filePath: t.file_path,
-    fileName: t.file_path.split("/").pop() ?? t.title,
-    title: t.title,
-    artist: t.artist ?? undefined,
-    bpm: t.bpm ?? null,
-    // Use the Rekordbox artwork endpoint (same source as the table row), not the
-    // metadata file endpoint — the USB path is off-root there, and this keeps the
-    // player cover consistent with the row. Full variant for the expanded view.
-    artworkUrl: t.has_artwork
-      ? api.getRekordboxArtworkUrl(t.id, false, device || undefined)
-      : undefined,
-    rekordboxId: t.has_waveform ? t.id : undefined,
-    rekordboxDevice: usb ? device : undefined,
-    musicalKey: t.key ?? undefined,
-    // USB tracks live on the device, not under the local root — stream them
-    // through the device-scoped audio endpoint instead of the local file path.
-    streamUrl: usb ? api.getRekordboxUsbAudioUrl(t.id, device) : undefined,
-  };
-}
-
 // Columns shared by the TrackTable header + body. Every column sorts by its
 // own id. Sorting only reorders the display; the playlist order is untouched.
 const REKORDBOX_COLUMNS: TrackTableColumn[] = [
@@ -300,6 +279,24 @@ const REKORDBOX_COLUMNS: TrackTableColumn[] = [
     defaultWidth: 96,
   },
 ];
+
+/** `order` with the `moving` entries taken out and put back at `target`,
+ *  keeping their order. Null when `target` is itself being moved. */
+function placeEntries(
+  order: string[],
+  moving: string[],
+  target: InsertTarget,
+): string[] | null {
+  const rest = order.filter((id) => !moving.includes(id));
+  if (target.entryId === null) return [...rest, ...moving];
+  const anchor = rest.indexOf(target.entryId);
+  if (anchor < 0) return null;
+  const at = anchor + (target.after ? 1 : 0);
+  return [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+}
+
+/** Selection key: the playlist entry when there is one, else the track. */
+const rowKey = (t: RekordboxTrack) => t.entry_id ?? t.id;
 
 type SortValue = string | number | null;
 
@@ -539,8 +536,8 @@ export function RekordboxView() {
   );
   const compact = useCompactRows();
 
-  // Row selection, scoping the SoundCloud playlist export. Keyed by track id;
-  // duplicate playlist entries of the same track select together.
+  // Row selection, scoping the SoundCloud playlist export. Keyed by playlist
+  // entry, so each copy of a track repeated in a playlist selects on its own.
   const [selection, setSelection] = useState<{
     ids: Set<string>;
     /** Last-clicked row index — the shift-select range anchor. */
@@ -560,7 +557,7 @@ export function RekordboxView() {
   const soundcloudTracks = useMemo(() => {
     const source =
       selectedIds.size > 0
-        ? filteredTracks.filter((t) => selectedIds.has(t.id))
+        ? filteredTracks.filter((t) => selectedIds.has(rowKey(t)))
         : filteredTracks;
     const seen = new Set<number>();
     const out: SCTrack[] = [];
@@ -583,11 +580,12 @@ export function RekordboxView() {
           const [a, b] =
             prev.anchor < index ? [prev.anchor, index] : [index, prev.anchor];
           for (let i = a; i <= b; i++) {
-            const id = displayTracks[i]?.id;
-            if (id) ids.add(id);
+            const t = displayTracks[i];
+            if (t) ids.add(rowKey(t));
           }
         } else {
-          const id = displayTracks[index]?.id;
+          const t = displayTracks[index];
+          const id = t && rowKey(t);
           if (id) {
             if (ids.has(id)) ids.delete(id);
             else ids.add(id);
@@ -602,7 +600,7 @@ export function RekordboxView() {
   const handleStartPlay = useCallback(
     (index: number, startRatio?: number) => {
       const queue = displayTracks
-        .map((t) => toPlayerTrack(t, device))
+        .map((t) => rekordboxPlayerTrack(t, device))
         .filter((t): t is PlayerTrack => t !== null);
       if (queue.length === 0) return;
       // Map the table index back to the queue (skips entries without a file).
@@ -626,6 +624,31 @@ export function RekordboxView() {
     !sortBy &&
     filteredTracks.length === allTracks.length &&
     allTracks.every((t) => t.entry_id);
+  const matchingTracks = useMatchingTracks();
+  // Latest adder, so the registered playlist only changes with its tracks.
+  const addToCurrentRef = useRef<(tracks: RekordboxTrack[]) => void>(() => {});
+  useEffect(() => {
+    addToCurrentRef.current = (tracks) => {
+      if (selectedPl) void handleAddToPlaylist(selectedPl, tracks, true);
+    };
+  });
+  const matchingPlaylist = useMemo(
+    () =>
+      selectedPl
+        ? {
+            id: selectedPl.id,
+            name: selectedPl.name,
+            device: deviceId,
+            tracks: allTracks,
+            onAdd: editable
+              ? (tracks: RekordboxTrack[]) => addToCurrentRef.current(tracks)
+              : undefined,
+          }
+        : null,
+    [selectedPl, deviceId, allTracks, editable],
+  );
+  useMatchingTracksPlaylist(matchingPlaylist);
+
   const addTargets = data.playlists
     .filter((pl) => isEditable(pl) && pl.id !== selectedId)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -633,8 +656,8 @@ export function RekordboxView() {
   /** The tracks a row action applies to: the selection when the row is part
    *  of it, otherwise just the row. */
   const rowTargets = (t: RekordboxTrack) =>
-    selectedIds.has(t.id)
-      ? filteredTracks.filter((x) => selectedIds.has(x.id))
+    selectedIds.has(rowKey(t))
+      ? filteredTracks.filter((x) => selectedIds.has(rowKey(x)))
       : [t];
 
   const editFailed = (e: unknown) =>
@@ -645,10 +668,12 @@ export function RekordboxView() {
   async function handleAddToPlaylist(
     playlist: RekordboxPlaylist,
     tracks: RekordboxTrack[],
+    isOpenPlaylist = false,
   ) {
     const trackIds = [...new Set(tracks.map((t) => t.id))];
     try {
-      await addRekordboxPlaylistTracks(playlist.id, trackIds);
+      const result = await addRekordboxPlaylistTracks(playlist.id, trackIds);
+      if (isOpenPlaylist) tracksResp.setData(result);
     } catch (e) {
       editFailed(e);
       return;
@@ -746,21 +771,61 @@ export function RekordboxView() {
     refetchPlaylists();
   }
 
-  async function handleReorder(activeId: string, overId: string) {
-    const previous = tracksResp.data;
-    const ids = previous.tracks.map((t) => t.entry_id);
-    const from = ids.indexOf(activeId);
-    const to = ids.indexOf(overId);
-    if (from < 0 || to < 0) return;
-    const next = arrayMove(previous.tracks, from, to);
-    tracksResp.setData({ tracks: next });
+  /** Puts `tracks` at `target` in the open playlist. A track already in it is
+   *  moved (its first entry), anything else is added. */
+  async function handleInsert(tracks: RekordboxTrack[], target: InsertTarget) {
+    const playlistId = selectedId;
+    const before = tracksResp.data.tracks;
+    const toAdd = tracks.filter((t) => !before.some((b) => b.id === t.id));
     try {
+      const list = toAdd.length
+        ? (
+            await addRekordboxPlaylistTracks(
+              playlistId,
+              toAdd.map((t) => t.id),
+            )
+          ).tracks
+        : before;
+      const added = list.slice(list.length - toAdd.length);
+      const moving = tracks
+        .map(
+          (t) =>
+            (toAdd.includes(t)
+              ? added.find((a) => a.id === t.id)
+              : list.find((l) => l.id === t.id)
+            )?.entry_id,
+        )
+        .filter((id): id is string => !!id);
+      const ids = list.map((t) => t.entry_id as string);
+      const order = placeEntries(ids, moving, target);
       tracksResp.setData(
-        await reorderRekordboxPlaylist(
-          selectedId,
-          next.map((t) => t.entry_id as string),
-        ),
+        order && order.some((id, i) => id !== ids[i])
+          ? await reorderRekordboxPlaylist(playlistId, order)
+          : { tracks: list },
       );
+    } catch (e) {
+      editFailed(e);
+      tracksResp.refetch();
+      return;
+    }
+    refetchPlaylists();
+    if (toAdd.length > 0)
+      toast.success(
+        `Added ${toAdd.length === 1 ? "1 track" : `${toAdd.length} tracks`} to ${selectedPl?.name ?? "playlist"}`,
+      );
+  }
+
+  /** Moves dragged rows (the selection when the dragged row is part of it)
+   *  to `target`, keeping their order. */
+  async function handleMove(entryIds: string[], target: InsertTarget) {
+    const previous = tracksResp.data;
+    const ids = previous.tracks.map((t) => t.entry_id as string);
+    const order = placeEntries(ids, entryIds, target);
+    if (!order || order.every((id, i) => id === ids[i])) return;
+    const byId = new Map(previous.tracks.map((t) => [t.entry_id, t]));
+    tracksResp.setData({ tracks: order.map((id) => byId.get(id)!) });
+    try {
+      tracksResp.setData(await reorderRekordboxPlaylist(selectedId, order));
     } catch (e) {
       tracksResp.setData(previous);
       editFailed(e);
@@ -875,8 +940,10 @@ export function RekordboxView() {
   return (
     <RekordboxPlaylistDndProvider
       onAdd={handleAddToPlaylist}
-      onReorder={handleReorder}
+      onMove={handleMove}
+      onInsert={handleInsert}
     >
+      <MatchingTracksSheetOutlet />
       <div className="flex min-h-0 flex-1">
         <TreeView<RbTreeNode>
           tree={tree}
@@ -1014,21 +1081,16 @@ export function RekordboxView() {
                 }
               />
 
-              <SortableContext
-                items={
-                  reorderable ? allTracks.map((t) => t.entry_id as string) : []
-                }
-                strategy={verticalListSortingStrategy}
-              >
+              <RekordboxTableDropTarget disabled={!editable}>
                 <TrackTable<RekordboxTrack>
                   items={displayTracks}
                   columns={REKORDBOX_COLUMNS}
                   estimateRowSize={compact ? 32 : 40}
-                  // Rekordbox playlists can intentionally contain the same track
-                  // at multiple positions, so include the index in the key to keep
-                  // it unique. Index alone is stable here because filters preserve
-                  // order and switching playlists remounts the table.
-                  getItemKey={(index, item) => `${index}-${item?.id ?? ""}`}
+                  // A playlist can hold the same track more than once, so rows key
+                  // by entry; elsewhere the index keeps repeated tracks unique.
+                  getItemKey={(index, item) =>
+                    item?.entry_id ?? `${index}-${item?.id ?? ""}`
+                  }
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={handleSort}
@@ -1044,10 +1106,12 @@ export function RekordboxView() {
                         <Checkbox
                           checked={
                             filteredTracks.length > 0 &&
-                            filteredTracks.every((t) => selectedIds.has(t.id))
+                            filteredTracks.every((t) =>
+                              selectedIds.has(rowKey(t)),
+                            )
                               ? true
                               : filteredTracks.some((t) =>
-                                    selectedIds.has(t.id),
+                                    selectedIds.has(rowKey(t)),
                                   )
                                 ? "indeterminate"
                                 : false
@@ -1055,7 +1119,7 @@ export function RekordboxView() {
                           onCheckedChange={(checked) =>
                             setSelection({
                               ids: checked
-                                ? new Set(filteredTracks.map((t) => t.id))
+                                ? new Set(filteredTracks.map(rowKey))
                                 : new Set(),
                               anchor: null,
                             })
@@ -1077,7 +1141,7 @@ export function RekordboxView() {
                     const playable = !!t.file_path;
                     const isCurrent =
                       player.activeTrack?.filePath === t.file_path && playable;
-                    const isSelected = selectedIds.has(t.id);
+                    const isSelected = selectedIds.has(rowKey(t));
                     const targets = rowTargets(t);
                     const count = targets.length;
                     const renderRowBody = (
@@ -1090,63 +1154,78 @@ export function RekordboxView() {
                       <TrackQueueMenu
                         disabled={!playable}
                         onPlayNext={() => {
-                          const pt = toPlayerTrack(t, device);
+                          const pt = rekordboxPlayerTrack(t, device);
                           if (pt) player.playNext(pt);
                         }}
                         onAddToQueue={() => {
-                          const pt = toPlayerTrack(t, device);
+                          const pt = rekordboxPlayerTrack(t, device);
                           if (pt) player.enqueue(pt);
                         }}
                         extraItems={
-                          isLocal ? (
-                            <>
-                              <ContextMenuSub>
-                                <ContextMenuSubTrigger
-                                  data-testid="rekordbox-add-to-playlist"
-                                  className="gap-2 text-xs"
-                                >
-                                  <ListMusic className="size-3.5" />
-                                  {count > 1
-                                    ? `Add to playlist (${count})`
-                                    : "Add to playlist"}
-                                </ContextMenuSubTrigger>
-                                <ContextMenuSubContent className="max-h-72 w-56 overflow-y-auto">
-                                  {addTargets.length === 0 ? (
-                                    <ContextMenuItem
-                                      disabled
-                                      className="text-xs"
-                                    >
-                                      No other playlists
-                                    </ContextMenuItem>
-                                  ) : (
-                                    addTargets.map((pl) => (
+                          <>
+                            <ContextMenuItem
+                              data-testid="rekordbox-matching-tracks"
+                              className="text-xs"
+                              onSelect={() =>
+                                matchingTracks.openFor({
+                                  track: t,
+                                  device: deviceId,
+                                })
+                              }
+                            >
+                              <Blend className="size-3.5" />
+                              Show matching tracks
+                            </ContextMenuItem>
+                            {isLocal && (
+                              <>
+                                <ContextMenuSub>
+                                  <ContextMenuSubTrigger
+                                    data-testid="rekordbox-add-to-playlist"
+                                    className="gap-2 text-xs"
+                                  >
+                                    <ListMusic className="size-3.5" />
+                                    {count > 1
+                                      ? `Add to playlist (${count})`
+                                      : "Add to playlist"}
+                                  </ContextMenuSubTrigger>
+                                  <ContextMenuSubContent className="max-h-72 w-56 overflow-y-auto">
+                                    {addTargets.length === 0 ? (
                                       <ContextMenuItem
-                                        key={pl.id}
+                                        disabled
                                         className="text-xs"
-                                        onSelect={() =>
-                                          handleAddToPlaylist(pl, targets)
-                                        }
                                       >
-                                        {pl.name}
+                                        No other playlists
                                       </ContextMenuItem>
-                                    ))
-                                  )}
-                                </ContextMenuSubContent>
-                              </ContextMenuSub>
-                              {editable && (
-                                <ContextMenuItem
-                                  data-testid="rekordbox-remove-from-playlist"
-                                  className="text-xs"
-                                  onSelect={() => handleRemove(targets)}
-                                >
-                                  <Trash2 className="size-3.5" />
-                                  {count > 1
-                                    ? `Remove from playlist (${count})`
-                                    : "Remove from playlist"}
-                                </ContextMenuItem>
-                              )}
-                            </>
-                          ) : undefined
+                                    ) : (
+                                      addTargets.map((pl) => (
+                                        <ContextMenuItem
+                                          key={pl.id}
+                                          className="text-xs"
+                                          onSelect={() =>
+                                            handleAddToPlaylist(pl, targets)
+                                          }
+                                        >
+                                          {pl.name}
+                                        </ContextMenuItem>
+                                      ))
+                                    )}
+                                  </ContextMenuSubContent>
+                                </ContextMenuSub>
+                                {editable && (
+                                  <ContextMenuItem
+                                    data-testid="rekordbox-remove-from-playlist"
+                                    className="text-xs"
+                                    onSelect={() => handleRemove(targets)}
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                    {count > 1
+                                      ? `Remove from playlist (${count})`
+                                      : "Remove from playlist"}
+                                  </ContextMenuItem>
+                                )}
+                              </>
+                            )}
+                          </>
                         }
                       >
                         <div
@@ -1209,7 +1288,9 @@ export function RekordboxView() {
                                 trackId={t.id}
                                 device={deviceId ?? undefined}
                                 track={
-                                  playable ? toPlayerTrack(t, device) : null
+                                  playable
+                                    ? rekordboxPlayerTrack(t, device)
+                                    : null
                                 }
                                 onStartPlay={
                                   playable
@@ -1243,17 +1324,11 @@ export function RekordboxView() {
                       </TrackQueueMenu>
                     );
                     if (!isLocal) return renderRowBody();
-                    const dragData = { tracks: targets };
-                    return reorderable && t.entry_id ? (
-                      <SortableRekordboxRow id={t.entry_id} data={dragData}>
-                        {({ listeners, isDragging }) =>
-                          renderRowBody(listeners, isDragging)
-                        }
-                      </SortableRekordboxRow>
-                    ) : (
+                    return (
                       <DraggableRekordboxRow
-                        id={`rekordbox-row:${index}`}
-                        data={dragData}
+                        id={`rekordbox-row:${t.entry_id ?? index}`}
+                        entryId={reorderable ? t.entry_id : null}
+                        data={{ tracks: targets }}
                       >
                         {({ listeners, isDragging }) =>
                           renderRowBody(listeners, isDragging)
@@ -1262,7 +1337,7 @@ export function RekordboxView() {
                     );
                   }}
                 />
-              </SortableContext>
+              </RekordboxTableDropTarget>
             </div>
           )}
         </div>

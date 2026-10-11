@@ -320,6 +320,8 @@ def _write_local[T](write: Callable[[rb_service.LocalMasterDbSource], T]) -> T:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except rb_service.PlaylistEditError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except rb_service.BackupFailed as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 def _edit_local_playlist(

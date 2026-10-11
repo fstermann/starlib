@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
-import { fetchApi } from "@/lib/api";
+import { api, fetchApi } from "@/lib/api";
+import type { PlayerTrack } from "@/lib/player-context";
 
 export interface RekordboxPlaylist {
   id: string;
@@ -32,6 +33,34 @@ export interface RekordboxTrack {
 }
 
 type TracksResult = { tracks: RekordboxTrack[] };
+
+/** Player entry for a Rekordbox track; null when it has no local file. */
+export function rekordboxPlayerTrack(
+  t: RekordboxTrack,
+  device: string,
+): PlayerTrack | null {
+  if (!t.file_path) return null;
+  const usb = !!device;
+  return {
+    filePath: t.file_path,
+    fileName: t.file_path.split("/").pop() ?? t.title,
+    title: t.title,
+    artist: t.artist ?? undefined,
+    bpm: t.bpm ?? null,
+    // Use the Rekordbox artwork endpoint (same source as the table row), not the
+    // metadata file endpoint — the USB path is off-root there, and this keeps the
+    // player cover consistent with the row. Full variant for the expanded view.
+    artworkUrl: t.has_artwork
+      ? api.getRekordboxArtworkUrl(t.id, false, device || undefined)
+      : undefined,
+    rekordboxId: t.has_waveform ? t.id : undefined,
+    rekordboxDevice: usb ? device : undefined,
+    musicalKey: t.key ?? undefined,
+    // USB tracks live on the device, not under the local root — stream them
+    // through the device-scoped audio endpoint instead of the local file path.
+    streamUrl: usb ? api.getRekordboxUsbAudioUrl(t.id, device) : undefined,
+  };
+}
 
 /** Sentinel `?playlist=` value for the whole collection. Rekordbox playlist
  *  ids are numeric, so it can't collide. */

@@ -30,6 +30,7 @@ import {
   resolveTrackBpm,
 } from "@/components/bpm-pitcher";
 import { MarqueeText } from "@/components/marquee-text";
+import { MatchingTracksButton } from "@/components/matching-tracks/matching-tracks-provider";
 import { MixControls } from "@/components/mix-controls";
 import { MixOverviewSwipe } from "@/components/mix-overview-swipe";
 import { PeaksWaveform } from "@/components/peaks-waveform";
@@ -2556,6 +2557,7 @@ export function WaveformPlayer() {
                 <SkipForward className="size-3" />
               </button>
               <QueuePanel />
+              <MatchingTracksButton />
 
               {/* BPM + KEY on the same level, right-aligned. Labels are never
                 tinted; the value carries the pitch colour. */}

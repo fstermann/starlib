@@ -8,7 +8,10 @@ matter of adding a source class and teaching :func:`get_source` to return it.
 
 from __future__ import annotations
 
+from backend.config import get_backend_settings
+
 from .base import (
+    BackupFailed,
     PlaylistEditError,
     RekordboxBusy,
     RekordboxPlaylist,
@@ -21,6 +24,7 @@ from .local import LocalMasterDbSource, rekordbox_running
 from .usb import UsbExportSource
 
 __all__ = [
+    "BackupFailed",
     "EjectError",
     "LocalMasterDbSource",
     "PlaylistEditError",
@@ -72,7 +76,7 @@ def get_local_source() -> LocalMasterDbSource:
     """Return the cached source for the local ``master.db`` install."""
     global _local_source
     if _local_source is None:
-        _local_source = LocalMasterDbSource()
+        _local_source = LocalMasterDbSource(get_backend_settings().rekordbox_backup_dir)
     return _local_source
 
 

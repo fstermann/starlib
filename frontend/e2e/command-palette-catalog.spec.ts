@@ -29,6 +29,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "pitcher.toggle",
   "mix.toggle",
   "library.fetch-from-downloads",
+  "rekordbox.matching-tracks",
   // Nav / Go to
   "nav:/library",
   "nav:/weekly",

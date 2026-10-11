@@ -70,7 +70,7 @@ function json(body: unknown, status = 200) {
     });
 }
 
-async function openSundayMix(page: Page) {
+async function openSundayMix(page: Page, tracks = [FOO, BAZ]) {
   await page.route(
     "**/api/rekordbox/status",
     json({ available: true, reason: null }),
@@ -79,16 +79,13 @@ async function openSundayMix(page: Page) {
     "**/api/rekordbox/playlists",
     json({ playlists: PLAYLISTS }),
   );
-  await page.route(
-    "**/api/rekordbox/playlists/pl-1/tracks",
-    json({ tracks: [FOO, BAZ] }),
-  );
+  await page.route("**/api/rekordbox/playlists/pl-1/tracks", json({ tracks }));
   await page.route(
     "**/api/rekordbox/playlists/smart-1/tracks",
     json({ tracks: [track("t-1", "Foo", null), track("t-2", "Baz", null)] }),
   );
   await page.goto("/library?source=rekordbox&playlist=pl-1");
-  await expect(rowTitle(page, "Baz")).toBeVisible();
+  await expect(rowTitle(page, tracks[0].title).first()).toBeVisible();
 }
 
 function rowTitle(page: Page, title: string) {
@@ -215,6 +212,109 @@ test.describe("Library: Rekordbox playlist editing", () => {
       entry_ids: ["e-2", "e-1"],
     });
     await expect.poll(() => titles(page)).toEqual(["Baz", "Foo"]);
+  });
+
+  test("dragging a selected row moves the whole selection", async ({
+    page,
+  }) => {
+    const BAR = track("t-3", "Bar", "e-3");
+    await openSundayMix(page, [FOO, BAR, BAZ]);
+    await page.route(
+      "**/api/rekordbox/playlists/pl-1/order",
+      json({ tracks: [BAZ, FOO, BAR] }),
+    );
+    const rows = page.getByTestId("rekordbox-tracks").locator("[data-index]");
+    await rows.nth(0).getByRole("checkbox").click({ force: true });
+    await rows.nth(1).getByRole("checkbox").click({ force: true });
+
+    const request = page.waitForRequest(isEdit("/playlists/pl-1/order", "PUT"));
+    const baz = await center(rowTitle(page, "Baz"));
+    await drag(page, await center(rowTitle(page, "Foo")), {
+      x: baz.x,
+      y: baz.y + 10,
+    });
+    await expect(page.getByTestId("playlist-insert-line")).toBeVisible();
+    await page.mouse.up();
+
+    // Both selected entries land after Baz, keeping their relative order.
+    expect((await request).postDataJSON()).toEqual({
+      entry_ids: ["e-2", "e-1", "e-3"],
+    });
+    await expect.poll(() => titles(page)).toEqual(["Baz", "Foo", "Bar"]);
+  });
+
+  test("shift-click selects only the rows in range, not repeats of a track", async ({
+    page,
+  }) => {
+    // The same filler track sits in the playlist three times.
+    const filler = (n: number) => track("t-f", "Filler", `e-f${n}`);
+    const A = track("t-a", "Alpha", "e-a");
+    const B = track("t-b", "Bravo", "e-b");
+    await openSundayMix(page, [filler(1), A, filler(2), B, filler(3)]);
+    const rows = page.getByTestId("rekordbox-tracks").locator("[data-index]");
+    const checked = rows.locator('[role="checkbox"][data-state="checked"]');
+
+    await rows.nth(1).getByRole("checkbox").click({ force: true });
+    await rows
+      .nth(3)
+      .getByRole("checkbox")
+      .click({ force: true, modifiers: ["Shift"] });
+
+    // Alpha, the filler between, and Bravo; not the fillers outside the range.
+    await expect(checked).toHaveCount(3);
+    await expect(rows.nth(0).getByRole("checkbox")).toHaveAttribute(
+      "data-state",
+      "unchecked",
+    );
+    await expect(rows.nth(4).getByRole("checkbox")).toHaveAttribute(
+      "data-state",
+      "unchecked",
+    );
+  });
+
+  test("drags a row far down a long playlist to where the line shows", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 600 });
+    const many = Array.from({ length: 60 }, (_, i) =>
+      track(`t-${i}`, `Track ${String(i).padStart(2, "0")}`, `e-${i}`),
+    );
+    await openSundayMix(page, many);
+    let order: string[] | null = null;
+    await page.route("**/api/rekordbox/playlists/pl-1/order", (route) => {
+      order = (route.request().postDataJSON() as { entry_ids: string[] })
+        .entry_ids;
+      return json({
+        tracks: order.map((id) => many.find((t) => t.entry_id === id)),
+      })(route);
+    });
+
+    const start = await center(rowTitle(page, "Track 01"));
+    const box = (await page.getByTestId("rekordbox-tracks").boundingBox())!;
+    await drag(page, start, { x: start.x, y: box.y + box.height - 5 });
+    // Hold at the bottom edge until the list has scrolled to the end, then
+    // point at the top half of a row away from the edge.
+    await expect
+      .poll(
+        async () => {
+          const last = await rowTitle(page, "Track 59").boundingBox();
+          return !!last && last.y + last.height <= box.y + box.height;
+        },
+        { timeout: 10000 },
+      )
+      .toBe(true);
+    const target = await center(rowTitle(page, "Track 50"));
+    await page.mouse.move(target.x, target.y - 8, { steps: 5 });
+    const line = page
+      .locator("[data-index]")
+      .filter({ hasText: "Track 50" })
+      .getByTestId("playlist-insert-line");
+    await expect(line).toBeVisible();
+    await page.mouse.up();
+
+    await expect.poll(() => order).not.toBeNull();
+    expect(order!.length).toBe(60);
+    expect(order!.indexOf("e-1")).toBe(order!.indexOf("e-50") - 1);
   });
 
   test("keeps the order and explains when Rekordbox is running", async ({
