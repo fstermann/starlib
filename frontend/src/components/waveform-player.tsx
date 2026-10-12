@@ -39,6 +39,7 @@ import { PlayerDetailWaveform } from "@/components/player-detail-waveform";
 import { PlayerRekordboxWaveform } from "@/components/player-rekordbox-waveform";
 import { QueuePanel } from "@/components/queue-panel";
 import { loadWaveform, pwv4ToPeaks } from "@/components/rekordbox-waveform";
+import { TransitionMixer } from "@/components/transition-mixer";
 import { api } from "@/lib/api";
 import { headphoneDelay, useHeadphoneSync } from "@/lib/headphone-sync";
 import { onHlsFatalExpiry } from "@/lib/hls-expiry";
@@ -100,6 +101,8 @@ const DETAIL_KEY = "player.detailOpen";
 
 /** Selectable loop lengths, in beats. */
 const LOOP_BEAT_STEPS = [1, 2, 4, 8, 16, 32] as const;
+/** Mix-out check interval while animation frames are paused (background window). */
+const MIX_OUT_POLL_MS = 250;
 
 /** Phrase-kind → chart token (defined in globals.css). Colours the phrase band
  * drawn over the whole-track overview. */
@@ -370,6 +373,18 @@ export function WaveformPlayer() {
   const transitionCompletedRef = useRef(false);
   const [transitionCompleted, setTransitionCompleted] = useState(false);
   const startTransitionRef = useRef<(() => void) | null>(null);
+  /** Auto-mix: fire the crossfade once deck A reaches the planned mix-out point. */
+  const maybeStartTransition = useCallback((deckATimeSec: number) => {
+    if (
+      mixConfigRef.current.enabled &&
+      !transitionStartedRef.current &&
+      mixPlanRef.current &&
+      mixDeckBRef.current &&
+      deckATimeSec >= mixPlanRef.current.deckAMixOutSec
+    ) {
+      startTransitionRef.current?.();
+    }
+  }, []);
   // Peaks for the crossfade overlay: the live deck A and the prepared deck B.
   const [currentPeaks, setCurrentPeaks] = useState<number[] | null>(null);
   const [nextPeaks, setNextPeaks] = useState<number[] | null>(null);
@@ -378,6 +393,7 @@ export function WaveformPlayer() {
   // Deck B kept readable during the fade (for the incoming playhead); ownership
   // still moves to the hand-off store.
   const transitionDeckBRef = useRef<Deck | null>(null);
+  const transitionDeckARef = useRef<Deck | null>(null);
   const [transitionDeckB, setTransitionDeckB] = useState<Deck | null>(null);
   const [transitionFade, setTransitionFade] = useState(1);
   // Re-time context for a running fade: post-swipe clicks reposition deck A and
@@ -1193,16 +1209,7 @@ export function WaveformPlayer() {
         setCurrentTime(t);
         reportProgress(Math.max(0, t - headphoneLag(media)) / knownDuration);
 
-        // Auto-mix: fire the crossfade once we reach the planned mix-out point.
-        if (
-          mixConfigRef.current.enabled &&
-          !transitionStartedRef.current &&
-          mixPlanRef.current &&
-          mixDeckBRef.current &&
-          t >= mixPlanRef.current.deckAMixOutSec
-        ) {
-          startTransitionRef.current?.();
-        }
+        maybeStartTransition(t);
       });
 
       ws.on("finish", () => {
@@ -1265,6 +1272,7 @@ export function WaveformPlayer() {
       transitionRetimeRef.current = null;
       const adoptedDeck = adopted ? transitionDeckBRef.current : null;
       transitionDeckBRef.current = null;
+      transitionDeckARef.current = null;
       setTransitionDeckB(null);
       mixPlanRef.current = null;
       setMixPlan(null);
@@ -1332,6 +1340,7 @@ export function WaveformPlayer() {
     // Keep deck B readable for the incoming playhead during the fade, and record
     // the fade length for the swipe's CSS transition.
     transitionDeckBRef.current = deckB;
+    transitionDeckARef.current = deckA;
     setTransitionDeckB(deckB);
     setTransitionFade(Math.max(0.05, plan.fadeSeconds));
     setMixState("transitioning");
@@ -1410,6 +1419,22 @@ export function WaveformPlayer() {
   useEffect(() => {
     startTransitionRef.current = startTransition;
   }, [startTransition]);
+
+  const getTransitionDecks = useCallback(
+    () => ({ a: transitionDeckARef.current, b: transitionDeckBRef.current }),
+    [],
+  );
+
+  // `audioprocess` ticks on animation frames, which stop while the window is in
+  // the background. This timer keeps the mix-out check running there.
+  useEffect(() => {
+    if (mixState !== "armed" || !isPlaying) return;
+    const id = setInterval(() => {
+      const ws = wsRef.current;
+      if (ws) maybeStartTransition(ws.getCurrentTime());
+    }, MIX_OUT_POLL_MS);
+    return () => clearInterval(id);
+  }, [mixState, isPlaying, maybeStartTransition]);
 
   // Reset the side-rail swap once the fade ends (the engine's midpoint
   // callback sets it).
@@ -1973,6 +1998,7 @@ export function WaveformPlayer() {
     transitionCompletedRef.current = false;
     setTransitionCompleted(false);
     transitionDeckBRef.current = null;
+    transitionDeckARef.current = null;
     setTransitionDeckB(null);
     // Deck B's ownership moved to the hand-off store at fade start.
     clearHandoff();
@@ -2358,6 +2384,12 @@ export function WaveformPlayer() {
                     </span>
                     <ChevronRight className="size-3" />
                   </div>
+                )}
+                {mixConfig.enabled && (hasNext || isTransitioning) && (
+                  <TransitionMixer
+                    getDecks={getTransitionDecks}
+                    transitioning={isTransitioning}
+                  />
                 )}
                 {/* Merged loop control: chevrons set the length, the icon+number
                 both shows it and toggles the loop. */}

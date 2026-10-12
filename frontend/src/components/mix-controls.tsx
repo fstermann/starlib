@@ -38,6 +38,20 @@ export function MixControls() {
   // Beatgrids come from Rekordbox analysis — SoundCloud streams never have
   // one, so a beatgrid mix would fall back to a plain crossfade.
   const hasBeatgrid = !!currentTrack?.rekordboxId;
+  const lastChorusSwitch = (
+    <SettingSwitch
+      label="Mix out at last chorus"
+      title="Start the mix at the last chorus instead of near the end"
+      testId="mix-last-chorus"
+      checked={mixConfig.mixOutAtLastChorus}
+      onToggle={() =>
+        setMixConfig({
+          ...mixConfig,
+          mixOutAtLastChorus: !mixConfig.mixOutAtLastChorus,
+        })
+      }
+    />
+  );
 
   // Command palette: toggle auto-mix.
   useCommand({
@@ -191,6 +205,7 @@ export function MixControls() {
                           }
                           className="accent-primary h-1 w-full cursor-pointer"
                         />
+                        {lastChorusSwitch}
                       </div>
                     )}
 
@@ -233,39 +248,19 @@ export function MixControls() {
                               </span>
                             </div>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground text-xs">
-                              Section-aware
-                            </span>
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={mixConfig.sectionAware}
-                              data-testid="mix-section-aware"
-                              onClick={() =>
-                                setMixConfig({
-                                  ...mixConfig,
-                                  sectionAware: !mixConfig.sectionAware,
-                                })
-                              }
-                              className={cn(
-                                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                                mixConfig.sectionAware
-                                  ? "bg-primary"
-                                  : "bg-surface-3",
-                              )}
-                              title="Snap mix to section boundaries"
-                            >
-                              <span
-                                className={cn(
-                                  "bg-background inline-block size-4 transform rounded-full shadow transition-transform",
-                                  mixConfig.sectionAware
-                                    ? "translate-x-4"
-                                    : "translate-x-0.5",
-                                )}
-                              />
-                            </button>
-                          </div>
+                          <SettingSwitch
+                            label="Section-aware"
+                            title="Snap mix to section boundaries"
+                            testId="mix-section-aware"
+                            checked={mixConfig.sectionAware}
+                            onToggle={() =>
+                              setMixConfig({
+                                ...mixConfig,
+                                sectionAware: !mixConfig.sectionAware,
+                              })
+                            }
+                          />
+                          {lastChorusSwitch}
                           {hasBeatgrid ? (
                             <p className="text-muted-foreground text-xs leading-snug">
                               Needs a beatgrid on both tracks; without one this
@@ -289,6 +284,45 @@ export function MixControls() {
           </div>
         </PopoverContent>
       </Popover>
+    </div>
+  );
+}
+
+function SettingSwitch({
+  label,
+  title,
+  testId,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  title: string;
+  testId: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        data-testid={testId}
+        onClick={onToggle}
+        className={cn(
+          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
+          checked ? "bg-primary" : "bg-surface-3",
+        )}
+        title={title}
+      >
+        <span
+          className={cn(
+            "bg-background inline-block size-4 transform rounded-full shadow transition-transform",
+            checked ? "translate-x-4" : "translate-x-0.5",
+          )}
+        />
+      </button>
     </div>
   );
 }

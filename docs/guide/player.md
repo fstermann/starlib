@@ -63,7 +63,11 @@ The :material-blender-outline: **mix control** blends the current track into the
 
 Tracks shorter than 5 seconds count as playlist separators and are left out of the queue, so auto-mix and Next go straight from one real track to the next. Playing a separator directly still works.
 
+**Mix out at last chorus** (off by default) starts the transition at the outgoing track's last chorus instead of near the end. Back-to-back chorus sections count as one chorus, so the mix starts where that run begins. Tracks without a chorus section keep the normal end-of-track timing. Chorus labels come from Rekordbox phrase analysis.
+
 To try a transition from a specific point, click a section in the phrase band under the waveform while auto-mix is armed. The mix then starts there instead of near the end (beat-aligned modes snap to the next downbeat). Click it again to clear. The pick is not saved and resets when the track changes.
+
+To watch a transition, open the :material-tune: **transition mixer** next to the loop control while auto-mix is on. During the fade it shows the volume and the high, mid and low EQ of the outgoing (A) and incoming (B) track, live.
 
 SoundCloud streams can't be EQ'd and never carry a beatgrid, so they fall back to a plain crossfade.
 

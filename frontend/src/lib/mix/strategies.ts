@@ -446,7 +446,23 @@ const STRATEGIES: Record<MixMode, (ctx: TransitionContext) => TransitionPlan> =
     "loop-eq": planLoopEq,
   };
 
+/** Start of the last run of back-to-back `chorus` sections, or null. */
+function lastChorusStartSec(sections: DeckSection[]): number | null {
+  let i = sections.findLastIndex((s) => s.kind === "chorus");
+  if (i < 0) return null;
+  while (i > 0 && sections[i - 1].kind === "chorus") i--;
+  return sections[i].startSec;
+}
+
 /** Build the transition plan for the configured mode (with no-grid fallback). */
 export function planTransition(ctx: TransitionContext): TransitionPlan {
+  if (
+    ctx.deckAMixOutOverrideSec == null &&
+    ctx.config.mixOutAtLastChorus &&
+    ctx.deckA.analysis
+  ) {
+    const chorusSec = lastChorusStartSec(ctx.deckA.analysis.sections);
+    if (chorusSec != null) ctx = { ...ctx, deckAMixOutOverrideSec: chorusSec };
+  }
   return STRATEGIES[ctx.config.mode](ctx);
 }
