@@ -22,11 +22,12 @@ import type { LucideIcon } from "lucide-react";
  * - `beatgrid-eq` — the beatgrid blend plus a DJ-style bass swap: the incoming
  *   deck's bass is killed for most of the fade, then in the last 2 bars the
  *   bass swaps (outgoing deck's bass kills, incoming deck's returns full) so the
- *   two basslines never clash. Local decks only (SoundCloud can't be EQ'd).
+ *   two basslines never clash. Web Audio decks only: a streamed SoundCloud
+ *   deck can't be EQ'd, one decoded from the downloaded file can.
  * - `loop-eq` — a full DJ-mixer transition: loop the outgoing deck's first 4
  *   bars, blend the incoming deck in band-by-band with a 3-band EQ (highs → mids
  *   → bass hard-swap) over `matchBars` bars, then fade the outgoing deck out
- *   underneath over another `matchBars` bars. Local decks only.
+ *   underneath over another `matchBars` bars. Web Audio decks only.
  */
 export type MixMode = "crossfade" | "beatgrid" | "beatgrid-eq" | "loop-eq";
 
@@ -44,6 +45,11 @@ export interface MixConfig {
    * so a few stray trailing bars don't smear the mix.
    */
   sectionAware: boolean;
+}
+
+/** Whether auto-mix is on in a mode that mixes on beatgrids. */
+export function mixesOnGrid(config: MixConfig): boolean {
+  return config.enabled && config.mode !== "crossfade";
 }
 
 export const CROSSFADE_SECONDS_MIN = 1;
@@ -80,9 +86,9 @@ export const MIX_MODE_DESCRIPTIONS: Record<MixMode, string> = {
   beatgrid:
     "Align beatgrids for a bar-exact blend. Syncs both tracks to the target BPM when pitching is on, otherwise ramps the tempo across the fade. Needs a beatgrid.",
   "beatgrid-eq":
-    "Beatgrid blend with a DJ bass swap: the incoming bass stays cut until the last 2 bars, then the bass kills on the outgoing track and swings in full on the incoming one. Local tracks only.",
+    "Beatgrid blend with a DJ bass swap: the incoming bass stays cut until the last 2 bars, then the bass kills on the outgoing track and swings in full on the incoming one. Needs Rekordbox or SoundCloud tracks.",
   "loop-eq":
-    "Full DJ-mixer blend: loop the outgoing track and mix the incoming one in band-by-band (highs, mids, then a bass drop), then fade the outgoing track out underneath. Local tracks only.",
+    "Full DJ-mixer blend: loop the outgoing track and mix the incoming one in band-by-band (highs, mids, then a bass drop), then fade the outgoing track out underneath. Needs Rekordbox or SoundCloud tracks.",
 };
 
 /** Clamp a raw config into valid ranges (defensive against stale persistence). */

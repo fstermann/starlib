@@ -28,16 +28,19 @@ import { cn } from "@/lib/utils";
 const MODES: MixMode[] = ["crossfade", "beatgrid", "beatgrid-eq", "loop-eq"];
 
 /**
+ * The current track's beatgrid: Rekordbox's, or for SoundCloud one detected
+ * from the full track, which only happens while a grid mix mode is on.
+ */
+export type BeatgridStatus = "ready" | "detecting" | "off" | "missing";
+
+/**
  * Player-rail control for auto-mix (crossfade). Mirrors the BpmPitcher popover:
  * a trigger showing the current state, opening a popover with the on/off
  * toggle, mode selector, and the mode's parameters.
  */
-export function MixControls() {
+export function MixControls({ beatgrid }: { beatgrid: BeatgridStatus }) {
   const { currentTrack, mixConfig, setMixConfig } = usePlayer();
   const { enabled, mode } = mixConfig;
-  // Beatgrids come from Rekordbox analysis — SoundCloud streams never have
-  // one, so a beatgrid mix would fall back to a plain crossfade.
-  const hasBeatgrid = !!currentTrack?.rekordboxId;
 
   // Command palette: toggle auto-mix.
   useCommand({
@@ -266,10 +269,25 @@ export function MixControls() {
                               />
                             </button>
                           </div>
-                          {hasBeatgrid ? (
+                          {beatgrid === "ready" ? (
                             <p className="text-muted-foreground text-xs leading-snug">
                               Needs a beatgrid on both tracks; without one this
                               transition falls back to a plain crossfade.
+                            </p>
+                          ) : beatgrid === "detecting" ? (
+                            <p
+                              className="text-muted-foreground text-xs leading-snug"
+                              data-testid="mix-beatgrid-detecting"
+                            >
+                              Detecting this track&apos;s beatgrid and phrases.
+                            </p>
+                          ) : beatgrid === "off" ? (
+                            <p
+                              className="text-muted-foreground text-xs leading-snug"
+                              data-testid="mix-beatgrid-off"
+                            >
+                              Turn auto-mix on to detect this track&apos;s
+                              beatgrid. It downloads the full track.
                             </p>
                           ) : (
                             <p

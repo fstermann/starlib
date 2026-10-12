@@ -10,6 +10,10 @@ import {
   type TrackAnalysis,
 } from "@/lib/rekordbox-analysis";
 import type { WaveformStyle } from "@/lib/settings";
+import {
+  peekSoundcloudAnalysis,
+  soundcloudTrackId,
+} from "@/lib/soundcloud-analysis";
 import { cn } from "@/lib/utils";
 import {
   barSpanSeconds,
@@ -65,8 +69,8 @@ interface PlayerDetailWaveformProps {
 /**
  * The zoomed, scrolling waveform strip. The playhead is fixed at the horizontal
  * centre and the waveform scrolls beneath it, rekordbox-style. Draws the
- * high-resolution detail waveform plus, for rekordbox tracks, the beatgrid and
- * cue markers. Phrase sections are shown on the full-track overview instead.
+ * high-resolution detail waveform plus the beatgrid (rekordbox's, or one
+ * detected for a SoundCloud track) and rekordbox cue markers. Phrase sections are shown on the full-track overview instead.
  * WaveSurfer (in the parent) stays the audio/progress driver; this component
  * only reads progress and paints.
  */
@@ -92,14 +96,27 @@ export function PlayerDetailWaveform({
   const draggingRef = useRef(false);
 
   const isRek = !!track.rekordboxId;
+  // Only a SoundCloud track whose grid the mix already detected: its audio is
+  // downloaded, so the backend's high-resolution peaks are cheap.
+  const scId = soundcloudTrackId(track);
+  const scAnalysis =
+    scId != null ? (peekSoundcloudAnalysis(scId) ?? null) : null;
+  const scGridId = scAnalysis?.beatgrid.length ? scId : null;
   const detailVariant =
     waveformStyle === "rekordbox_blue" ? "blue_detail" : "color_detail";
 
   // Load the detail waveform for this track (rekordbox PWV5/PWV3 bytes, or the
-  // backend's high-resolution ffmpeg peaks for a local file).
+  // backend's high-resolution ffmpeg peaks for a local file or SoundCloud track).
   useEffect(() => {
     let cancelled = false;
-    if (isRek && track.rekordboxId) {
+    if (scGridId != null) {
+      api
+        .getSoundcloudTrackPeaks(scGridId)
+        .then((r) => {
+          if (!cancelled) setWave(decodeFloatPeaks(r.peaks, r.duration_s));
+        })
+        .catch(() => {});
+    } else if (isRek && track.rekordboxId) {
       loadWaveform(
         track.rekordboxId,
         track.rekordboxDevice,
@@ -130,6 +147,7 @@ export function PlayerDetailWaveform({
       cancelled = true;
     };
   }, [
+    scGridId,
     isRek,
     track.rekordboxId,
     track.rekordboxDevice,
@@ -138,21 +156,21 @@ export function PlayerDetailWaveform({
     durationSec,
   ]);
 
-  // Load beatgrid / sections / cues (rekordbox only). Non-rekordbox tracks
-  // resolve to `null` so a previous track's grid never bleeds through.
+  // Load beatgrid / sections / cues. Tracks without one resolve to `null` so
+  // a previous track's grid never bleeds through.
   useEffect(() => {
     let cancelled = false;
     const p =
       isRek && track.rekordboxId
         ? getCachedRekordboxAnalysis(track.rekordboxId, track.rekordboxDevice)
-        : Promise.resolve(null);
+        : Promise.resolve(scGridId != null ? scAnalysis : null);
     p.then((a) => {
       if (!cancelled) setAnalysis(a);
     });
     return () => {
       cancelled = true;
     };
-  }, [isRek, track.rekordboxId, track.rekordboxDevice]);
+  }, [isRek, track.rekordboxId, track.rekordboxDevice, scGridId, scAnalysis]);
 
   const downbeatPrefix = useMemo(
     () => buildDownbeatPrefix(analysis?.beatgrid ?? []),
@@ -232,7 +250,7 @@ export function PlayerDetailWaveform({
         ctx.strokeRect(x0 + 0.5, waveTop + 0.5, x1 - x0 - 1, waveH - 1);
       }
 
-      // --- beat grid (rekordbox only) ---
+      // --- beat grid ---
       // Bars (downbeats, every 4 beats) get a rekordbox-style marker: a subtly
       // brighter line plus small red tips top & bottom. The three in-between
       // beats are faint and only drawn when zoomed in enough to space them out,
@@ -404,7 +422,12 @@ export function PlayerDetailWaveform({
   // Non-interactive when driven by an override (the incoming deck's preview).
   const readOnly = progressOverride != null;
   return (
-    <div ref={wrapRef} className={cn("size-full", className)}>
+    <div
+      ref={wrapRef}
+      className={cn("size-full", className)}
+      data-testid="player-detail-canvas"
+      data-beat-count={analysis?.beatgrid.length ?? 0}
+    >
       <canvas
         ref={canvasRef}
         className={cn(

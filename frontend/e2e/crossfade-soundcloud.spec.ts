@@ -233,36 +233,6 @@ test.describe("Auto-mix crossfade — SoundCloud chain", { tag: "@slow" }, () =>
     expect(sourceNodeErrors).toEqual([]);
   });
 
-  test("beatgrid mode warns that SoundCloud tracks fall back to crossfade", async ({
-    page,
-  }) => {
-    await setup(page);
-    await page.goto("/library?source=soundcloud");
-    await expect(page.locator("[data-index]")).toHaveCount(3, {
-      timeout: 5000,
-    });
-    await page
-      .locator('[data-index="0"]')
-      .getByRole("button", { name: /play/i })
-      .first()
-      .click()
-      .catch(async () => {
-        await page.locator('[data-index="0"]').click();
-      });
-    const player = page.getByTestId("waveform-player");
-    await expect(player).toBeVisible();
-
-    // SoundCloud streams have no Rekordbox beatgrid: selecting the beatgrid
-    // mode surfaces the crossfade-fallback warning inside its card.
-    await player.getByTestId("mix-controls-trigger").click();
-    await page.getByTestId("mix-mode-beatgrid").click();
-    await expect(
-      page
-        .getByTestId("mix-mode-beatgrid-card")
-        .getByTestId("mix-beatgrid-unavailable"),
-    ).toBeVisible();
-  });
-
   test("crossfade overlay renders bars like the resting overview (bucket-max, normalized)", async ({
     page,
   }) => {
@@ -560,5 +530,184 @@ test.describe("Auto-mix crossfade — SoundCloud chain", { tag: "@slow" }, () =>
     await expect(player.getByTitle("Beta", { exact: true })).toBeVisible({
       timeout: 20000,
     });
+  });
+});
+
+/** A 4/4 grid at 120 BPM over 20 s plus two phrases, in the Rekordbox shape. */
+const DETECTED = {
+  // Two minutes, so a 16-bar mix-out window fits well before the end.
+  beatgrid: Array.from({ length: 240 }, (_, i) => ({
+    beat: (i % 4) + 1,
+    bpm: 120,
+    timeMs: i * 500,
+  })),
+  sections: [
+    { kind: "intro", label: "Intro", startMs: 0, endMs: 8000 },
+    { kind: "chorus", label: "Chorus", startMs: 8000, endMs: 120000 },
+  ],
+  cues: [],
+};
+
+/** Serve `analysis` for every SoundCloud track and log the ids requested. */
+async function mockGrid(
+  page: import("@playwright/test").Page,
+  analysis: object,
+): Promise<{ analysed: string[]; fullAudio: string[] }> {
+  const log = { analysed: [] as string[], fullAudio: [] as string[] };
+  await page.route("**/api/soundcloud/tracks/*/analysis", (route) => {
+    log.analysed.push(
+      route
+        .request()
+        .url()
+        .match(/tracks\/(\d+)/)![1],
+    );
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(analysis),
+    });
+  });
+  await page.route("**/api/soundcloud/tracks/*/audio", (route) => {
+    log.fullAudio.push(
+      route
+        .request()
+        .url()
+        .match(/tracks\/(\d+)/)![1],
+    );
+    route.fulfill({
+      status: 200,
+      contentType: "audio/wav",
+      body: makeSilentWav(120),
+    });
+  });
+  // Deck A streams; it must outlast the grid too.
+  await page.route("https://cdn.example.com/sc-101.wav", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "audio/wav",
+      body: makeSilentWav(120),
+    }),
+  );
+  return log;
+}
+
+async function playAlpha(page: import("@playwright/test").Page) {
+  await page.goto("/library?source=soundcloud");
+  await expect(page.locator("[data-index]")).toHaveCount(3, { timeout: 5000 });
+  await page
+    .locator('[data-index="0"]')
+    .getByRole("button", { name: /play/i })
+    .first()
+    .click()
+    .catch(async () => {
+      await page.locator('[data-index="0"]').click();
+    });
+  const player = page.getByTestId("waveform-player");
+  await expect(player).toContainText("Alpha");
+  return player;
+}
+
+test.describe("Auto-mix — detected SoundCloud beatgrids", () => {
+  test("a grid mode detects beatgrids and loads the next track in full", async ({
+    page,
+  }) => {
+    await setup(page);
+    const log = await mockGrid(page, DETECTED);
+    const player = await playAlpha(page);
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-mode-beatgrid").click();
+    // Auto-mix still off: nothing is downloaded yet.
+    await expect(page.getByTestId("mix-beatgrid-off")).toBeVisible();
+    expect(log.analysed).toEqual([]);
+
+    await page.getByTestId("mix-enabled-toggle").click();
+    // The current track's phrases land in the band; the card drops its note.
+    await expect(player.getByTestId("player-section")).toHaveText([
+      "Intro",
+      "Chorus",
+    ]);
+    await expect(page.getByTestId("mix-beatgrid-off")).toBeHidden();
+    await expect(page.getByTestId("mix-beatgrid-unavailable")).toBeHidden();
+    // The incoming track is analysed and decoded whole, ahead of the mix.
+    await expect(player).toHaveAttribute("data-mix-state", "armed");
+    expect(log.analysed).toEqual(expect.arrayContaining(["101", "102"]));
+    expect(log.fullAudio).toEqual(["102"]);
+  });
+
+  test("the zoomed strip shows a detected SoundCloud beatgrid", async ({
+    page,
+  }) => {
+    await setup(page);
+    await mockGrid(page, DETECTED);
+    await page.route("**/api/soundcloud/tracks/*/peaks", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          peaks: Array.from({ length: 2400 }, (_, i) =>
+            i % 60 === 0 ? 1 : 0.2,
+          ),
+          duration_s: 20,
+          bpm: 120,
+          bpm_overridden: false,
+          bpm_source: "soundcloud",
+        }),
+      }),
+    );
+    const player = await playAlpha(page);
+    // Streams can't zoom until a grid mix has detected the grid.
+    await expect(player.getByTestId("player-detail-toggle")).toHaveCount(0);
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-mode-beatgrid").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    await player.getByTestId("player-detail-toggle").click();
+    await expect(page.getByTestId("player-detail-strip")).toBeVisible();
+    await expect(
+      page.getByTestId("player-detail-canvas").first(),
+    ).toHaveAttribute("data-beat-count", String(DETECTED.beatgrid.length));
+  });
+
+  test("crossfade mode never downloads SoundCloud tracks for analysis", async ({
+    page,
+  }) => {
+    await setup(page);
+    const log = await mockGrid(page, DETECTED);
+    const player = await playAlpha(page);
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+
+    await expect(player).toHaveAttribute("data-mix-state", "armed");
+    expect(log.analysed).toEqual([]);
+    expect(log.fullAudio).toEqual([]);
+    await expect(player.getByTestId("player-section")).toHaveCount(0);
+  });
+
+  test("a track without a steady grid warns and streams as before", async ({
+    page,
+  }) => {
+    await setup(page);
+    const log = await mockGrid(page, {
+      beatgrid: [],
+      sections: null,
+      cues: [],
+    });
+    const player = await playAlpha(page);
+
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-mode-beatgrid").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+
+    await expect(
+      page
+        .getByTestId("mix-mode-beatgrid-card")
+        .getByTestId("mix-beatgrid-unavailable"),
+    ).toBeVisible();
+    await expect(player).toHaveAttribute("data-mix-state", "armed");
+    expect(log.fullAudio).toEqual([]);
   });
 });

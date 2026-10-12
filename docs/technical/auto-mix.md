@@ -39,6 +39,20 @@ the player and resets on track change). `crossfade` starts the fade there
 If a track lacks a beatgrid, the `beatgrid` (and `beatgrid-eq`) mode falls back
 to `crossfade`.
 
+SoundCloud tracks get a detected grid while a grid mode is on
+(`GET /api/soundcloud/tracks/{id}/analysis`, same shape as the Rekordbox
+analysis). The backend downloads the track, seeds `analyser-stream grid` with
+the user's BPM correction or SoundCloud's listed BPM, and caches the result in
+`soundcloud_track_grid`. The detector refines the tempo within ±3% (listings
+were measured up to 2 BPM off), fits a constant grid to kick-weighted onsets,
+picks the downbeat from bar-level timbre changes, and segments phrases at bar
+resolution (see `starlib_audio/src/grid.rs` and `phrase.rs`). A grid whose
+onsets mostly miss (confidence below 0.5) is returned empty. The arm step then
+builds deck B from the full file (`GET /api/soundcloud/tracks/{id}/audio`) as a
+local Web Audio deck, so it beat-matches sample-accurately and supports the EQ
+and loop modes; adoption keeps it as a local deck. Score the detector against a
+Rekordbox USB export with `scripts/eval_beatgrid.py`.
+
 ### Bass EQ handover (`beatgrid-eq`)
 
 `beatgrid-eq` mirrors a mixer's EQ kill so the outgoing and incoming basslines
@@ -69,7 +83,7 @@ on its target time (not starts there, so the bass is full **on** the beat) and
 bookkeeps them like the fade clock — `pause()`/`resume()` freeze and re-schedule both,
 `finish()` (skip) lands on the end state (out-going killed, incoming full) so
 deck B is adopted with full bass, and a rescue `cancel()` restores deck A's bass.
-**Element (SoundCloud) decks bypass the Web Audio graph** (see `html-deck.ts`),
+**Element (streamed SoundCloud) decks bypass the Web Audio graph** (see `html-deck.ts`),
 so their `bassParam()` is null and the EQ is a no-op on that deck — the gain
 crossfade still runs.
 

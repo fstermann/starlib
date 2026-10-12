@@ -17,7 +17,9 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException, Response, status
+from fastapi.responses import FileResponse
 
+from backend.api.rekordbox import BeatModel, SectionModel, TrackAnalysisResponse
 from backend.api.soundcloud.public_api import public_api_token
 from backend.infra.soundcloud import client, token_cache
 from backend.infra.soundcloud.oauth import OAuthManager  # re-exported for tests
@@ -28,6 +30,7 @@ from backend.schemas.soundcloud import (
     TrackBpmResponse,
     TrackPeaksResponse,
 )
+from backend.services import soundcloud_grid
 from backend.services.breakdown.original_bpm import original_bpm
 
 __all__ = ["OAuthManager", "get_settings", "router"]
@@ -407,6 +410,64 @@ async def get_track_peaks(track_id: int) -> TrackPeaksResponse:
         bpm_overridden=source == "corrected",
         bpm_source=source,
     )
+
+
+@router.get("/tracks/{track_id}/analysis", response_model=TrackAnalysisResponse)
+async def get_track_analysis(track_id: int) -> TrackAnalysisResponse:
+    """Return a SoundCloud track's beatgrid and phrases, in the Rekordbox shape.
+
+    Downloads and analyses the track on first request (cached afterwards).
+    The tempo seed is the user's correction, then SoundCloud's listed BPM;
+    detection refines it, so ``beatgrid[].bpm`` can differ from the listing.
+    A track without a steady grid returns an empty ``beatgrid`` and null
+    ``sections``, like a Rekordbox track without analysis.
+
+    Parameters
+    ----------
+    track_id : int
+        SoundCloud track id.
+
+    Returns
+    -------
+    TrackAnalysisResponse
+        Beatgrid and phrase sections; ``cues`` is always empty.
+    """
+    try:
+        analysis = await soundcloud_grid.track_grid(track_id, lambda: _resolve_track_audio_path(track_id))
+    except RuntimeError as exc:
+        logger.exception("Failed to analyse beatgrid for track %s", track_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to analyse track audio",
+        ) from exc
+    if analysis is None or not soundcloud_grid.is_usable(analysis):
+        return TrackAnalysisResponse(beatgrid=[], sections=None, cues=[])
+    bpm = round(analysis["bpm"], 3)
+    return TrackAnalysisResponse(
+        beatgrid=[BeatModel(beat=b["beat"], bpm=bpm, timeMs=round(b["time_s"] * 1000)) for b in analysis["beats"]],
+        sections=[
+            SectionModel(
+                kind=p["kind"],
+                label=p["label"],
+                startMs=round(p["start_s"] * 1000),
+                endMs=round(p["end_s"] * 1000),
+            )
+            for p in analysis["phrases"]
+        ],
+        cues=[],
+    )
+
+
+@router.get("/tracks/{track_id}/audio")
+async def get_track_audio(track_id: int) -> FileResponse:
+    """Serve a SoundCloud track's full cached audio, downloading it if needed.
+
+    Lets the mixer decode the whole track into a Web Audio buffer, for
+    sample-accurate beat-matching, EQ and loops that the HLS element lacks.
+    """
+    path = await _resolve_track_audio_path(track_id)
+    media_type = "audio/mpeg" if path.suffix == ".mp3" else "audio/mp4"
+    return FileResponse(path, media_type=media_type)
 
 
 @router.put("/tracks/{track_id}/bpm", response_model=TrackBpmResponse)

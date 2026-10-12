@@ -943,6 +943,20 @@ export const api = {
     return fetchApi(`/api/soundcloud/tracks/${trackId}/peaks`);
   },
 
+  // Beatgrid + phrases for a SoundCloud track, in the Rekordbox shape. The
+  // first call downloads and analyses the track (seconds); later calls hit
+  // the backend cache.
+  async getSoundcloudAnalysis(
+    trackId: number,
+  ): Promise<components["schemas"]["TrackAnalysisResponse"]> {
+    return fetchApi(`/api/soundcloud/tracks/${trackId}/analysis`);
+  },
+
+  // The full cached audio of a SoundCloud track, for Web Audio decoding.
+  getSoundcloudAudioUrl(trackId: number): string {
+    return `${API_BASE_URL}/api/soundcloud/tracks/${trackId}/audio`;
+  },
+
   async setSoundcloudTrackBpm(
     trackId: number | string,
     bpm: number,
