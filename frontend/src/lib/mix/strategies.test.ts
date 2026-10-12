@@ -506,7 +506,7 @@ describe("planTransition — mix out at last chorus", () => {
     { startSec: 224, endSec: 300, kind: "outro" },
   ];
 
-  it("starts at the beginning of the last chorus run", () => {
+  it("beatgrid ends the fade at the last chorus's end", () => {
     const plan = planTransition(
       ctx(
         { mode: "beatgrid", matchBars: 8, mixOutAtLastChorus: true },
@@ -515,19 +515,20 @@ describe("planTransition — mix out at last chorus", () => {
         { targetBpm: 120 },
       ),
     );
-    expect(plan.deckAMixOutSec).toBeCloseTo(160);
+    // 8 bars at 120 BPM = 16 s, ending at the chorus end (224 s).
+    expect(plan.deckAMixOutSec).toBeCloseTo(208);
     expect(plan.fadeSeconds).toBeCloseTo(16);
   });
 
-  it("crossfade starts the fade at the last chorus", () => {
+  it("crossfade ends the fade at the last chorus's end", () => {
     const plan = planTransition(
       ctx(
-        { mode: "crossfade", mixOutAtLastChorus: true },
+        { mode: "crossfade", crossfadeSeconds: 8, mixOutAtLastChorus: true },
         deck(120, 300, { sections }),
         deck(120, 300),
       ),
     );
-    expect(plan.deckAMixOutSec).toBe(160);
+    expect(plan.deckAMixOutSec).toBe(216);
   });
 
   it("a picked mix-out point wins over the last chorus", () => {

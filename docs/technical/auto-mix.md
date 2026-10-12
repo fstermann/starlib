@@ -36,10 +36,10 @@ the player and resets on track change). `crossfade` starts the fade there
 (clamped so the fade fits); the beatgrid modes take the downbeat at or after it
 (50 ms snap tolerance) and walk `matchBars` downbeats **forward**.
 
-With `mixOutAtLastChorus` in the `MixConfig`, `planTransition` fills a missing
-override with the start of deck A's last run of back-to-back `chorus` sections,
-so it takes the same path as a picked point. An explicit pick wins; no chorus
-leaves the end anchor in place.
+With `mixOutAtLastChorus` in the `MixConfig`, the end anchor becomes the end of
+deck A's last `chorus` section: `crossfade` starts `crossfadeSeconds` before it,
+the beatgrid modes walk `matchBars` downbeats back from it. An explicit pick
+still wins; no chorus leaves the normal end anchor in place.
 
 If a track lacks a beatgrid, the `beatgrid` (and `beatgrid-eq`) mode falls back
 to `crossfade`.

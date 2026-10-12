@@ -45,9 +45,9 @@ export interface MixConfig {
    */
   sectionAware: boolean;
   /**
-   * Start the mix at deck A's last chorus (the start of its final run of
-   * back-to-back chorus sections) instead of near the end. A picked mix-out
-   * point still wins; tracks without a chorus keep the end anchor.
+   * End the mix where deck A's last chorus ends, so the incoming track replaces
+   * the outro. A picked mix-out point still wins; tracks without a chorus keep
+   * the end anchor.
    */
   mixOutAtLastChorus: boolean;
 }

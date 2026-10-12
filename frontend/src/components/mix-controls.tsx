@@ -41,7 +41,7 @@ export function MixControls() {
   const lastChorusSwitch = (
     <SettingSwitch
       label="Mix out at last chorus"
-      title="Start the mix at the last chorus instead of near the end"
+      title="End the mix where the last chorus ends, mixing over the outro"
       testId="mix-last-chorus"
       checked={mixConfig.mixOutAtLastChorus}
       onToggle={() =>

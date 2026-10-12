@@ -812,11 +812,11 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     await expect(player.getByTestId("player-next-chip")).toContainText("Baz");
   });
 
-  test("starts the transition at the last chorus when enabled", async ({
+  test("ends the transition at the last chorus when enabled", async ({
     page,
   }) => {
     // 40s track: the default 6s fade would mix out at 34s. The last chorus
-    // run starts at 8s, so the fade must start there instead.
+    // ends at 14s, so the fade must start at 8s instead.
     await page.route("**/api/rekordbox/tracks/*/analysis*", (route) =>
       route.fulfill({
         status: 200,
@@ -827,9 +827,9 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
             { kind: "intro", label: "Intro", startMs: 0, endMs: 4000 },
             { kind: "chorus", label: "Chorus", startMs: 4000, endMs: 6000 },
             { kind: "verse", label: "Verse", startMs: 6000, endMs: 8000 },
-            { kind: "chorus", label: "Chorus", startMs: 8000, endMs: 20000 },
-            { kind: "chorus", label: "Chorus", startMs: 20000, endMs: 34000 },
-            { kind: "outro", label: "Outro", startMs: 34000, endMs: 40000 },
+            { kind: "chorus", label: "Chorus", startMs: 8000, endMs: 11000 },
+            { kind: "chorus", label: "Chorus", startMs: 11000, endMs: 14000 },
+            { kind: "outro", label: "Outro", startMs: 14000, endMs: 40000 },
           ],
         }),
       }),
