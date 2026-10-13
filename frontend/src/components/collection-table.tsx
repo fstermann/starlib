@@ -71,16 +71,15 @@ import {
 } from "@/lib/api";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import { searchParams } from "@/lib/search-params";
+import type { RowDensity } from "@/lib/settings";
 import { soundCloudSource } from "@/lib/sources/soundcloud";
 import { parseRemix, removeMix } from "@/lib/string-utils";
 import { trackBreakdownHref } from "@/lib/track-breakdown";
 import { useChanged } from "@/lib/use-changed";
-import { useCompactRows } from "@/lib/use-compact-rows";
+import { ROW_DENSITY_STYLES, useRowDensity } from "@/lib/use-row-density";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
-const EDIT_ROW_HEIGHT = 40;
-const COMPACT_ROW_HEIGHT = 32;
 const WAVEFORM_COLUMN_ID = "waveform";
 const WAVEFORM_DEFAULT_WIDTH = 80;
 
@@ -403,7 +402,7 @@ interface EditRowProps {
   /** Column defs filtered to only visible ones, in render order, with resolved widths. */
   visibleFields: ResolvedField[];
   waveformWidth: number;
-  compact: boolean;
+  density: RowDensity;
 }
 
 function EditRow({
@@ -422,7 +421,7 @@ function EditRow({
   folderPath,
   visibleFields,
   waveformWidth,
-  compact,
+  density,
 }: EditRowProps) {
   const { enqueue, playNext } = usePlayer();
   const router = useRouter();
@@ -472,7 +471,7 @@ function EditRow({
         aria-current={isPlaying ? "true" : undefined}
         className={cn(
           "group/row border-border relative flex cursor-pointer items-center gap-1.5 border-b pr-0 pl-3 transition-colors",
-          compact ? "h-8" : "h-10",
+          ROW_DENSITY_STYLES[density].row,
           isPlaying && "bg-[var(--brand-soft)]",
           !isPlaying && (isCurrent || isSelected) && "bg-[var(--surface-3)]",
           !isPlaying &&
@@ -525,12 +524,15 @@ function EditRow({
           className={cn(
             "ring-1",
             pendingArtworkB64 ? "ring-primary/40" : "ring-transparent",
-            compact && "size-6",
+            ROW_DENSITY_STYLES[density].cover,
           )}
         />
 
         {/* Mini waveform (top-half) */}
-        <div className="h-6 shrink-0" style={{ width: waveformWidth }}>
+        <div
+          className={cn("shrink-0", density === "dense" ? "h-5" : "h-6")}
+          style={{ width: waveformWidth }}
+        >
           <MiniWaveform
             track={{
               filePath: item.file_path,
@@ -699,7 +701,7 @@ export function CollectionTable({
   onColumnWidthChange,
   onColumnWidthReset,
 }: CollectionTableProps) {
-  const compact = useCompactRows();
+  const density = useRowDensity();
   const waveformColumn = useLeadColumnWidth(
     WAVEFORM_COLUMN_ID,
     WAVEFORM_DEFAULT_WIDTH,
@@ -1654,7 +1656,7 @@ export function CollectionTable({
         items={items}
         columns={TRACK_TABLE_COLUMNS}
         totalCount={total > 0 ? total : items.length}
-        estimateRowSize={compact ? COMPACT_ROW_HEIGHT : EDIT_ROW_HEIGHT}
+        estimateRowSize={ROW_DENSITY_STYLES[density].height}
         getItemKey={(index, item) => item?.file_path ?? `__idx_${index}`}
         sortBy={sortBy}
         sortOrder={sortOrder}
@@ -1690,7 +1692,9 @@ export function CollectionTable({
                 className="cursor-pointer"
               />
             </div>
-            <div className={cn("shrink-0", compact ? "w-6" : "w-7")} />
+            <div
+              className={cn("shrink-0", ROW_DENSITY_STYLES[density].spacer)}
+            />
             <ResizableHeaderCell {...waveformColumn} />
           </>
         )}
@@ -1766,7 +1770,7 @@ export function CollectionTable({
               folderPath={folderPath}
               visibleFields={visibleFieldsForRow}
               waveformWidth={waveformColumn.width}
-              compact={compact}
+              density={density}
             />
           );
         }}

@@ -81,6 +81,25 @@ test.describe("Library rows: Rekordbox", () => {
       .poll(async () => (await row.boundingBox())?.height ?? 0)
       .toBe(32);
   });
+
+  test("dense rows shrink library rows to 24px", async ({ page }) => {
+    await page.goto("/library?source=rekordbox&playlist=pl-1");
+    const row = page
+      .getByTestId("rekordbox-tracks")
+      .locator('[data-index="0"]');
+    await expect(row).toBeVisible();
+
+    await page.getByRole("button", { name: "Settings" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Library" }).click();
+    await dialog
+      .getByTestId("settings-row-density")
+      .getByRole("radio", { name: "Dense" })
+      .click();
+    await page.keyboard.press("Escape");
+
+    await expect.poll(async () => (await row.boundingBox())!.height).toBe(24);
+  });
 });
 
 const FILE = {
@@ -115,13 +134,26 @@ test.describe("Library rows: Filesystem", () => {
     await page.addInitScript(() => {
       window.localStorage.setItem(
         "starlib_ui",
-        JSON.stringify({ compactRows: true }),
+        JSON.stringify({ rowDensity: "compact" }),
       );
     });
     await page.goto("/library");
     const row = page.locator('[data-index="0"] [role="row"]');
     await expect(row).toBeVisible();
     await expect.poll(async () => (await row.boundingBox())!.height).toBe(32);
+  });
+
+  test("dense rows apply to the filesystem table", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "starlib_ui",
+        JSON.stringify({ rowDensity: "dense" }),
+      );
+    });
+    await page.goto("/library");
+    const row = page.locator('[data-index="0"] [role="row"]');
+    await expect(row).toBeVisible();
+    await expect.poll(async () => (await row.boundingBox())!.height).toBe(24);
   });
 
   test("the row waveform resizes from its header", async ({ page }) => {
@@ -159,7 +191,7 @@ test.describe("Library rows: SoundCloud", () => {
       );
       window.localStorage.setItem(
         "starlib_ui",
-        JSON.stringify({ compactRows: true }),
+        JSON.stringify({ rowDensity: "compact" }),
       );
     });
     await page.route(

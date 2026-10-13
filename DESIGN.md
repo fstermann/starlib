@@ -244,6 +244,7 @@ Density rules:
 
 | Context                   | Row height   | Internal padding |
 | ------------------------- | ------------ | ---------------- |
+| Dense table row           | 24px         | `px-3`           |
 | Compact table / list row  | 32px         | `px-3 py-1.5`    |
 | Default table row         | 40px         | `px-3 py-2`      |
 | Form field (input, select) | 28px        | `px-2.5`         |
@@ -380,7 +381,7 @@ Rules:
 
 Starlib's heart. Rules are strict.
 
-- Row height 40px default (accommodates 28px cover artwork). Compact mode may drop to 32px for text-only rows.
+- Row height 40px default (accommodates 28px cover artwork). Compact mode drops to 32px (24px cover), dense mode to 24px (20px cover).
 - Column gap `px-3`. Vertical gridlines are forbidden; horizontal `--border` between rows only, and only every row — no zebra stripes.
 - Header row: `text-xs`, weight 500, `--text-muted`, sentence case (no uppercase), sticky.
 - Sort indicators are chevrons, not arrows; they appear only on the active column.

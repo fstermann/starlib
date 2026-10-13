@@ -57,12 +57,13 @@ import {
   getSetting,
   setSetting,
   type KeyNotation,
+  type RowDensity,
   type WaveformStyle,
 } from "@/lib/settings";
 import { isTauri } from "@/lib/tauri";
 import { checkForUpdate, type UpdateResult } from "@/lib/updater";
-import { saveCompactRows } from "@/lib/use-compact-rows";
 import { saveKeyNotation } from "@/lib/use-key-notation";
+import { saveRowDensity } from "@/lib/use-row-density";
 import { saveWaveformStyle } from "@/lib/use-waveform-style";
 import { cn } from "@/lib/utils";
 
@@ -131,7 +132,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [waveformStyle, setWaveformStyleState] =
     useState<WaveformStyle>("starlib");
   const [keyNotation, setKeyNotationState] = useState<KeyNotation>("camelot");
-  const [compactRows, setCompactRowsState] = useState(false);
+  const [rowDensity, setRowDensityState] = useState<RowDensity>("comfortable");
   const [loaded, setLoaded] = useState(false);
   const [checking, setChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<UpdateResult | null>(null);
@@ -186,7 +187,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       api.getAppSettings(),
       getSetting("waveformStyle"),
       getSetting("keyNotation"),
-      getSetting("compactRows"),
+      getSetting("rowDensity"),
       api.getRootMusicFolder(),
       api.getAiSettings(),
       api.getAiStatus(),
@@ -198,7 +199,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         appSettings,
         waveform,
         notation,
-        compact,
+        density,
         rootPath,
         settings,
         status,
@@ -211,7 +212,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         );
         setWaveformStyleState(waveform);
         setKeyNotationState(notation);
-        setCompactRowsState(compact);
+        setRowDensityState(density);
         setRootFolder(rootPath);
         setRootFolderDraft(rootPath);
         setAiSettings(settings);
@@ -262,9 +263,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     await saveKeyNotation(notation);
   }
 
-  async function handleCompactRowsChange(compact: boolean) {
-    setCompactRowsState(compact);
-    await saveCompactRows(compact);
+  async function handleRowDensityChange(density: RowDensity) {
+    setRowDensityState(density);
+    await saveRowDensity(density);
   }
 
   async function handleSaveRootFolder() {
@@ -567,9 +568,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <ToggleGroup
                     type="single"
                     variant="outline"
-                    value={compactRows ? "compact" : "comfortable"}
+                    value={rowDensity}
                     onValueChange={(val) => {
-                      if (val) handleCompactRowsChange(val === "compact");
+                      if (val) handleRowDensityChange(val as RowDensity);
                     }}
                     className="w-fit"
                     data-testid="settings-row-density"
@@ -578,6 +579,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       Comfortable
                     </ToggleGroupItem>
                     <ToggleGroupItem value="compact">Compact</ToggleGroupItem>
+                    <ToggleGroupItem value="dense">Dense</ToggleGroupItem>
                   </ToggleGroup>
                 </div>
               </div>
