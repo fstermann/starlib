@@ -93,7 +93,8 @@ ramp windows, and the bass swap times.
 
 - **Phase 1 — transition (`matchBars` bars):** deck A holds full volume and
   **loops its first 4 bars**; deck B fades in. The bands blend staggered
-  (12 o'clock = 0 dB, 10 o'clock ≈ −9 dB): highs then mids dip on A / open on B
+  (12 o'clock = 0 dB): highs (to −9 dB, ≈ 10 o'clock) then mids (to −4.5 dB,
+  ≈ 11 o'clock) dip on A / open on B
   over the first two thirds; the **bass hands over** near the end (A fades out from 2
   bars before the point, B rises over the last beat, both landing on it — the same ramps
   from `beatgrid-eq`). At the transition point deck B is full (12 o'clock,

@@ -711,7 +711,7 @@ export function runLoopEqTransition(opts: {
     rampSeg(
       aHigh,
       0,
-      le.cutDb,
+      le.highCutDb,
       le.highsRamp.startSec,
       le.highsRamp.endSec,
       elapsed,
@@ -719,7 +719,7 @@ export function runLoopEqTransition(opts: {
     rampSeg(
       aMid,
       0,
-      le.cutDb,
+      le.midCutDb,
       le.midsRamp.startSec,
       le.midsRamp.endSec,
       elapsed,
@@ -728,7 +728,7 @@ export function runLoopEqTransition(opts: {
     // B EQ: highs then mids open to neutral; bass rises over the last beat.
     rampSeg(
       bHigh,
-      le.cutDb,
+      le.highCutDb,
       0,
       le.highsRamp.startSec,
       le.highsRamp.endSec,
@@ -736,7 +736,7 @@ export function runLoopEqTransition(opts: {
     );
     rampSeg(
       bMid,
-      le.cutDb,
+      le.midCutDb,
       0,
       le.midsRamp.startSec,
       le.midsRamp.endSec,

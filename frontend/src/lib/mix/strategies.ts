@@ -104,15 +104,17 @@ export interface TransitionPlan {
     phase1Sec: number;
     phase2Sec: number;
     loopRegion: { start: number; end: number };
-    /** Highs/mids ramp A 0 dB→`cutDb` and B `cutDb`→0 dB over these windows. */
+    /** Highs/mids ramp A 0 dB→cut and B cut→0 dB over these windows. */
     highsRamp: { startSec: number; endSec: number };
     midsRamp: { startSec: number; endSec: number };
     /** Deck A bass fades out from `bassKillSec`, deck B bass rises from
      * `bassRiseSec`; both land at the transition point (`phase1Sec`). */
     bassKillSec: number;
     bassRiseSec: number;
-    /** dB targets: `cutDb` = 10 o'clock cut, `killDb` = bass kill. */
-    cutDb: number;
+    /** dB targets: `highCutDb` ≈ 10 o'clock, `midCutDb` ≈ 11 o'clock,
+     * `killDb` = bass kill. */
+    highCutDb: number;
+    midCutDb: number;
     killDb: number;
     /**
      * Rate deck B ramps to over Phase 2, or null to hold `deckBInitialRate`
@@ -128,8 +130,10 @@ export interface TransitionPlan {
 
 /** Loop length (bars) for deck A in `loop-eq`. */
 const LOOP_EQ_BARS = 4;
-/** Mid/high cut depth (dB) ≈ 10 o'clock on a mixer EQ. */
-const EQ_CUT_DB = -9;
+/** High cut depth (dB) ≈ 10 o'clock on a mixer EQ. */
+const EQ_HIGH_CUT_DB = -9;
+/** Mid cut depth (dB), half the high cut ≈ 11 o'clock. */
+const EQ_MID_CUT_DB = -4.5;
 /** Bass kill depth (dB) at the end of the bass handover. */
 const EQ_KILL_DB = -40;
 
@@ -447,7 +451,8 @@ function planLoopEq(ctx: TransitionContext): TransitionPlan {
       // deck B's bass rises over the last beat into it (see planBeatgridEq).
       bassKillSec: Math.max(0, phaseNSec - killBars * barSecWall),
       bassRiseSec: Math.max(0, phaseNSec - EQ_RISE_BEATS * beatSecWall),
-      cutDb: EQ_CUT_DB,
+      highCutDb: EQ_HIGH_CUT_DB,
+      midCutDb: EQ_MID_CUT_DB,
       killDb: EQ_KILL_DB,
       deckBEndRate: ctx.beatSync ? null : 1,
     },

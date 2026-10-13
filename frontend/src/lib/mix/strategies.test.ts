@@ -406,7 +406,9 @@ describe("planTransition — loop-eq (loop + 3-band EQ blend)", () => {
     // Deck A bass fades out from 2 bars before the point; deck B rises over the last beat.
     expect(le.bassKillSec).toBeCloseTo(30 - 2 * 1.875, 5);
     expect(le.bassRiseSec).toBeCloseTo(30 - 0.46875, 5);
-    expect(le.killDb).toBeLessThan(le.cutDb); // kill is a deeper cut
+    // Mids cut half as deep as highs; the bass kill is deeper than both.
+    expect(le.midCutDb).toBeCloseTo(le.highCutDb / 2, 5);
+    expect(le.killDb).toBeLessThan(le.highCutDb);
   });
 
   it("beat-sync on holds the pitcher's constant matched rate (no end ramp)", () => {
