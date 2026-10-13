@@ -7,7 +7,7 @@ import type { ComponentType, SVGProps } from "react";
 import { AutoHideTabLabel } from "@/components/auto-hide-tab-label";
 import { cn } from "@/lib/utils";
 
-export const BREAKDOWN_VIEWS = ["set", "track"] as const;
+export const BREAKDOWN_VIEWS = ["track", "set"] as const;
 export type BreakdownView = (typeof BREAKDOWN_VIEWS)[number];
 
 const VIEW_META: Record<
@@ -18,7 +18,7 @@ const VIEW_META: Record<
   track: { label: "Track", icon: AudioLines },
 };
 
-/** Top-bar title for /breakdown: "Breakdown" plus the Set / Track view switcher. */
+/** Top-bar title for /breakdown: "Breakdown" plus the Track / Set view switcher. */
 export function BreakdownTitle({
   view,
   children,

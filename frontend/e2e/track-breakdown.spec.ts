@@ -189,17 +189,20 @@ async function mockTrackApi(
 const trackUrl = `/breakdown?view=track&path=${encodeURIComponent(PATH)}`;
 
 test.describe("Track Breakdown", () => {
-  test("the view toggle switches between Set and Track", async ({ page }) => {
+  test("the view toggle defaults to Track and switches to Set", async ({
+    page,
+  }) => {
     await page.goto("/breakdown");
+    await expect(page.getByTestId("track-picker-input")).toBeVisible();
+    await expect(page.getByRole("tab")).toHaveText(["Track", "Set"]);
+
+    await page.getByRole("tab", { name: "Set" }).click();
+    await expect(page).toHaveURL(/\/breakdown\?view=set$/);
     await expect(page.getByTestId("breakdown-start-screen")).toBeVisible();
 
     await page.getByRole("tab", { name: "Track" }).click();
     await expect(page).toHaveURL(/\/breakdown\?view=track$/);
     await expect(page.getByTestId("track-picker-input")).toBeVisible();
-
-    await page.getByRole("tab", { name: "Set" }).click();
-    await expect(page).toHaveURL(/\/breakdown\?view=set$/);
-    await expect(page.getByTestId("breakdown-start-screen")).toBeVisible();
   });
 
   test("picking a track from the collection opens its breakdown", async ({

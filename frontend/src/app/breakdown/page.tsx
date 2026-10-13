@@ -152,7 +152,7 @@ function BreakdownPageInner() {
   const setJobId = useCallback(
     (id: string | null) => {
       router.replace(
-        id ? `/breakdown?job=${encodeURIComponent(id)}` : "/breakdown",
+        id ? `/breakdown?job=${encodeURIComponent(id)}` : "/breakdown?view=set",
       );
     },
     [router],
@@ -557,8 +557,9 @@ function BreakdownPageInner() {
 }
 
 function BreakdownViewSwitch() {
-  const view = useSearchParams().get("view");
-  return view === "track" ? <TrackBreakdownView /> : <BreakdownPageInner />;
+  const search = useSearchParams();
+  const isSetView = search.get("view") === "set" || search.has("job");
+  return isSetView ? <BreakdownPageInner /> : <TrackBreakdownView />;
 }
 
 export default function BreakdownPage() {
