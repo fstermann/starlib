@@ -65,7 +65,7 @@ Tracks shorter than 5 seconds count as playlist separators and are left out of t
 
 **Mix out at last chorus** (off by default) ends the transition where the outgoing track's last chorus ends, so the incoming track plays over the outro instead. The mix starts one overlap (or fade length) before that point. Tracks without a chorus section keep the normal end-of-track timing. Chorus labels come from Rekordbox phrase analysis.
 
-To try a transition from a specific point, click a section in the phrase band under the waveform while auto-mix is armed. The mix then starts there instead of near the end (beat-aligned modes snap to the next downbeat). Click it again to clear. The pick is not saved and resets when the track changes.
+To try a transition from a specific point, click a section in the phrase band under the waveform while auto-mix is armed. The mix then starts there instead of near the end (beat-aligned modes snap to the nearest downbeat). Click it again to clear. The pick is not saved and resets when the track changes.
 
 To watch a transition, open the :material-tune: **transition mixer** next to the loop control while auto-mix is on. During the fade it shows the volume and the high, mid and low EQ of the outgoing (A) and incoming (B) track, live.
 

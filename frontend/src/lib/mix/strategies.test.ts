@@ -220,6 +220,72 @@ describe("planTransition — beatgrid (beat-sync on)", () => {
     expect(plan.fadeSeconds).toBeCloseTo((16 * 4 * (60 / 90)) / 2, 3);
   });
 
+  it("section-aware snaps an intro end a beat off the grid to its bar line", () => {
+    // 120 BPM: bar lines every 2 s; the intro ends one beat after the 16 s bar.
+    const sections: DeckSection[] = [
+      { startSec: 0, endSec: 16.5, kind: "intro" },
+      { startSec: 16.5, endSec: 300, kind: "verse" },
+    ];
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid", sectionAware: true },
+        deck(120, 300),
+        deck(120, 300, { sections }),
+        { targetBpm: 120 },
+      ),
+    );
+    expect(plan.deckBStartOffsetSec).toBeCloseTo(16);
+  });
+
+  it("section-aware snaps an intro end 3 beats past its phrase line back to it", () => {
+    // "For The Music" (#677 shape): at 138 BPM Rekordbox ends the 8-bar intro
+    // on beat 4 of bar 9, one beat before bar 10 but a phrase past bar 9.
+    const beatSec = 60 / 138;
+    const introEnd = 35 * beatSec;
+    // Later phrases sit one beat before their bar lines (beats 63, 95, 127).
+    const sections: DeckSection[] = [
+      { startSec: 0, endSec: introEnd, kind: "intro" },
+      { startSec: introEnd, endSec: 63 * beatSec, kind: "chorus" },
+      { startSec: 63 * beatSec, endSec: 95 * beatSec, kind: "chorus" },
+      { startSec: 95 * beatSec, endSec: 127 * beatSec, kind: "chorus" },
+      { startSec: 127 * beatSec, endSec: 300, kind: "down" },
+    ];
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid", sectionAware: true },
+        deck(138, 300),
+        deck(138, 300, { sections }),
+        { targetBpm: 138 },
+      ),
+    );
+    expect(plan.deckBStartOffsetSec).toBeCloseTo(32 * beatSec);
+  });
+
+  it("section-aware keeps an on-grid intro end when the grid opens on a pickup", () => {
+    // "Give It To Me" shape: the grid opens on beat 2, so phrases sit one bar
+    // off a 4-bar count from the first downbeat. 120 BPM → 0.5 s per beat.
+    const beats: DeckBeat[] = [];
+    for (let i = 0; i < 600; i++) {
+      beats.push({ timeSec: i * 0.5, beat: ((i + 1) % 4) + 1 });
+    }
+    const at = (beatIdx: number) => beatIdx * 0.5;
+    const sections: DeckSection[] = [
+      { startSec: 0, endSec: at(63), kind: "intro" },
+      { startSec: at(63), endSec: at(95), kind: "up" },
+      { startSec: at(95), endSec: at(127), kind: "chorus" },
+      { startSec: at(127), endSec: 300, kind: "chorus" },
+    ];
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid", sectionAware: true },
+        deck(120, 300),
+        { bpm: 120, durationSec: 300, analysis: { beats, sections } },
+        { targetBpm: 120 },
+      ),
+    );
+    expect(plan.deckBStartOffsetSec).toBeCloseTo(at(63));
+  });
+
   it("section-aware skips deck B's intro", () => {
     const sections: DeckSection[] = [
       { startSec: 0, endSec: 15, kind: "intro" },
@@ -290,15 +356,14 @@ describe("planTransition — beatgrid-eq (bass swap)", () => {
     // 16 bars @128 = 30s fade.
     expect(plan.fadeSeconds).toBeCloseTo(30, 5);
     expect(plan.eqSwap).not.toBeNull();
-    // Deck A's bass kills 2 bars (3.75s) before the end.
+    // Deck A's bass starts fading out 2 bars (3.75s) before the end.
     expect(plan.eqSwap!.deckAKillSec).toBeCloseTo((30 * 14) / 16, 5);
     expect(plan.fadeSeconds - plan.eqSwap!.deckAKillSec).toBeCloseTo(3.75, 5);
-    // Deck B's bass lands 1 beat (30/64s) before the final downbeat — a small
-    // lead so the downbeat kick punches.
+    // Deck B's bass rises over the last beat (30/64s).
     const beatSec = 30 / (16 * 4);
-    expect(plan.eqSwap!.deckBRestoreSec).toBeCloseTo(30 - beatSec, 5);
-    // …still well after deck A's bass kills (last ~2 bars run bass-free).
-    expect(plan.eqSwap!.deckBRestoreSec).toBeGreaterThan(
+    expect(plan.eqSwap!.deckBRiseSec).toBeCloseTo(30 - beatSec, 5);
+    // …inside deck A's ~2-bar bass fade-out.
+    expect(plan.eqSwap!.deckBRiseSec).toBeGreaterThan(
       plan.eqSwap!.deckAKillSec,
     );
   });
@@ -330,11 +395,11 @@ describe("planTransition — beatgrid-eq (bass swap)", () => {
     expect(plan.eqSwap).not.toBeNull();
     expect(plan.eqSwap!.deckAKillSec).toBeGreaterThan(0);
     expect(plan.eqSwap!.deckAKillSec).toBeLessThan(plan.fadeSeconds);
-    // Restores just before the end (1-beat lead), after deck A's kill.
-    expect(plan.eqSwap!.deckBRestoreSec).toBeGreaterThan(
+    // Rises over the last beat, inside deck A's fade-out.
+    expect(plan.eqSwap!.deckBRiseSec).toBeGreaterThan(
       plan.eqSwap!.deckAKillSec,
     );
-    expect(plan.eqSwap!.deckBRestoreSec).toBeLessThan(plan.fadeSeconds);
+    expect(plan.eqSwap!.deckBRiseSec).toBeLessThan(plan.fadeSeconds);
   });
 });
 
@@ -367,10 +432,12 @@ describe("planTransition — loop-eq (loop + 3-band EQ blend)", () => {
     // Highs then mids ramp over the first two thirds of Phase 1.
     expect(le.highsRamp).toEqual({ startSec: 0, endSec: 10 });
     expect(le.midsRamp).toEqual({ startSec: 10, endSec: 20 });
-    // Deck A bass kills 2 bars before the point; deck B slams 1 beat before it.
+    // Deck A bass fades out from 2 bars before the point; deck B rises over the last beat.
     expect(le.bassKillSec).toBeCloseTo(30 - 2 * 1.875, 5);
-    expect(le.bassSlamSec).toBeCloseTo(30 - 0.46875, 5);
-    expect(le.killDb).toBeLessThan(le.cutDb); // kill is a deeper cut
+    expect(le.bassRiseSec).toBeCloseTo(30 - 0.46875, 5);
+    // Mids cut half as deep as highs; the bass kill is deeper than both.
+    expect(le.midCutDb).toBeCloseTo(le.highCutDb / 2, 5);
+    expect(le.killDb).toBeLessThan(le.highCutDb);
   });
 
   it("beat-sync on holds the pitcher's constant matched rate (no end ramp)", () => {
@@ -461,7 +528,7 @@ describe("planTransition — picked mix-out point", () => {
     expect(plan.fadeSeconds).toBe(8);
   });
 
-  it("beatgrid snaps to the next downbeat and runs matchBars forward", () => {
+  it("beatgrid snaps to the nearest downbeat and runs matchBars forward", () => {
     // 120 BPM → 2 s per bar; downbeats at 0, 2, 4, …
     const plan = planTransition(
       ctx({ mode: "beatgrid", matchBars: 8 }, deck(120, 300), deck(120, 300), {
@@ -478,6 +545,17 @@ describe("planTransition — picked mix-out point", () => {
     const plan = planTransition(
       ctx({ mode: "beatgrid", matchBars: 8 }, deck(120, 300), deck(120, 300), {
         deckAMixOutOverrideSec: 100.004,
+        targetBpm: 120,
+      }),
+    );
+    expect(plan.deckAMixOutSec).toBeCloseTo(100);
+  });
+
+  it("beatgrid snaps a section start a beat past its bar line back to it", () => {
+    // 120 BPM → 0.5 s per beat; a phrase start one beat after the 100 s bar.
+    const plan = planTransition(
+      ctx({ mode: "beatgrid", matchBars: 8 }, deck(120, 300), deck(120, 300), {
+        deckAMixOutOverrideSec: 100.5,
         targetBpm: 120,
       }),
     );
@@ -519,6 +597,33 @@ describe("planTransition — mix out at last chorus", () => {
     expect(plan.deckAMixOutSec).toBeCloseTo(208);
     expect(plan.fadeSeconds).toBeCloseTo(16);
   });
+
+  it.each([
+    ["one beat before", 223.5],
+    ["one beat after", 224.5],
+  ])(
+    "beatgrid ends the fade on the bar line when the chorus ends %s it",
+    (_, chorusEnd) => {
+      // Rekordbox phrases can sit a beat off the grid's bar lines (#677).
+      const offGrid = sections.map((s) =>
+        s.endSec === 224
+          ? { ...s, endSec: chorusEnd }
+          : s.startSec === 224
+            ? { ...s, startSec: chorusEnd }
+            : s,
+      );
+      const plan = planTransition(
+        ctx(
+          { mode: "beatgrid", matchBars: 8, mixOutAtLastChorus: true },
+          deck(120, 300, { sections: offGrid }),
+          deck(120, 300),
+          { targetBpm: 120 },
+        ),
+      );
+      expect(plan.deckAMixOutSec).toBeCloseTo(208);
+      expect(plan.fadeSeconds).toBeCloseTo(16);
+    },
+  );
 
   it("crossfade ends the fade at the last chorus's end", () => {
     const plan = planTransition(

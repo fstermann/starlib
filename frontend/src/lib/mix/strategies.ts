@@ -50,7 +50,7 @@ export interface TransitionContext {
   config: MixConfig;
   /**
    * User-picked mix-out point on deck A (seconds), replacing the end-of-track
-   * anchor. Beatgrid modes snap it to the next downbeat and run the window
+   * anchor. Beatgrid modes snap it to the nearest downbeat and run the window
    * forward from there.
    */
   deckAMixOutOverrideSec?: number | null;
@@ -84,14 +84,15 @@ export interface TransitionPlan {
    * Both times are fade-relative, in deck A real-time seconds. The incoming
    * deck's bass is killed from the start of the fade and the outgoing deck keeps
    * it; then:
-   * - at `deckAKillSec` (2 bars before the end) the outgoing deck's bass kills too;
-   * - at `deckBRestoreSec` (1 beat before the end) the incoming deck's bass
-   *   returns full — a small lead so the final downbeat's kick already punches.
+   * - from `deckAKillSec` (2 bars before the end) the outgoing deck's bass
+   *   fades out, reaching the kill at the fade end;
+   * - from `deckBRiseSec` (1 beat before the end) the incoming deck's bass
+   *   rises, reaching full on the final downbeat.
    *
-   * So the last ~2 bars run with no bass on either deck, then the incoming
-   * bassline lands just before the final downbeat.
+   * So the outgoing bassline thins out over the last ~2 bars and the incoming
+   * one swells in over the last beat into the drop.
    */
-  eqSwap: { deckAKillSec: number; deckBRestoreSec: number } | null;
+  eqSwap: { deckAKillSec: number; deckBRiseSec: number } | null;
   /**
    * DJ-mixer loop + 3-band EQ blend (the `loop-eq` mode only; null otherwise).
    * The transition runs in two phases of `phaseNSec` each (Phase 1 blends B in,
@@ -103,14 +104,17 @@ export interface TransitionPlan {
     phase1Sec: number;
     phase2Sec: number;
     loopRegion: { start: number; end: number };
-    /** Highs/mids ramp A 0 dB→`cutDb` and B `cutDb`→0 dB over these windows. */
+    /** Highs/mids ramp A 0 dB→cut and B cut→0 dB over these windows. */
     highsRamp: { startSec: number; endSec: number };
     midsRamp: { startSec: number; endSec: number };
-    /** Deck A bass hard-kills here; deck B bass hard-slams to full here. */
+    /** Deck A bass fades out from `bassKillSec`, deck B bass rises from
+     * `bassRiseSec`; both land at the transition point (`phase1Sec`). */
     bassKillSec: number;
-    bassSlamSec: number;
-    /** dB targets: `cutDb` = 10 o'clock cut, `killDb` = bass kill. */
-    cutDb: number;
+    bassRiseSec: number;
+    /** dB targets: `highCutDb` ≈ 10 o'clock, `midCutDb` ≈ 11 o'clock,
+     * `killDb` = bass kill. */
+    highCutDb: number;
+    midCutDb: number;
     killDb: number;
     /**
      * Rate deck B ramps to over Phase 2, or null to hold `deckBInitialRate`
@@ -126,30 +130,38 @@ export interface TransitionPlan {
 
 /** Loop length (bars) for deck A in `loop-eq`. */
 const LOOP_EQ_BARS = 4;
-/** Mid/high cut depth (dB) ≈ 10 o'clock on a mixer EQ. */
-const EQ_CUT_DB = -9;
-/** Bass kill depth (dB) for the hard swap. */
+/** High cut depth (dB) ≈ 10 o'clock on a mixer EQ. */
+const EQ_HIGH_CUT_DB = -9;
+/** Mid cut depth (dB), half the high cut ≈ 11 o'clock. */
+const EQ_MID_CUT_DB = -4.5;
+/** Bass kill depth (dB) at the end of the bass handover. */
 const EQ_KILL_DB = -40;
 
-/** Bars before the fade end at which the out-going deck's bass kills. */
+/** Bars before the fade end at which the out-going deck's bass starts fading out. */
 const EQ_KILL_BARS = 2;
-/**
- * Beats before the final downbeat at which the incoming deck's bass lands full.
- * A small lead so the downbeat kick already has full low end (landing exactly on
- * the downbeat reads as late) and the drop clears the adoption seam.
- */
-const EQ_RESTORE_LEAD_BEATS = 1;
+/** Beats over which the incoming deck's bass rises to full, ending on the
+ * final downbeat. */
+const EQ_RISE_BEATS = 1;
 const BEATS_PER_BAR = 4;
+/** Bars per phrase line that deck B's intro skip snaps to. */
+const PHRASE_BARS = 4;
 
-/** First downbeat at or after `timeSec`, else the last downbeat, else null. */
-function downbeatAtOrAfter(beats: DeckBeat[], timeSec: number): number | null {
-  for (const b of beats) {
-    if (b.beat === 1 && b.timeSec >= timeSec) return b.timeSec;
+/**
+ * Index of the downbeat nearest `timeSec`, or -1 when there are none. Section
+ * bounds snap here rather than rounding down or up: Rekordbox phrases can sit a
+ * beat or two off the grid's bar lines (#677), and rounding would lose a bar.
+ */
+function nearestDownbeatIdx(downbeats: DeckBeat[], timeSec: number): number {
+  let best = -1;
+  for (let i = 0; i < downbeats.length; i++) {
+    if (
+      best < 0 ||
+      Math.abs(downbeats[i].timeSec - timeSec) <
+        Math.abs(downbeats[best].timeSec - timeSec)
+    )
+      best = i;
   }
-  for (let i = beats.length - 1; i >= 0; i--) {
-    if (beats[i].beat === 1) return beats[i].timeSec;
-  }
-  return null;
+  return best;
 }
 
 function hasGrid(info: DeckInfo): boolean {
@@ -209,7 +221,7 @@ function lastChorusEndSec(ctx: TransitionContext): number | null {
  * `sectionAware`, the last section's end (trims stray trailing bars); otherwise
  * it's the file end.
  *
- * Anchored by walking deck A's own beatgrid: take the downbeat at or before
+ * Anchored by walking deck A's own beatgrid: take the downbeat nearest
  * the content end, then step `matchBars` downbeats back through the grid. Both
  * ends land exactly on grid ticks, so the fade finishes bar-perfect at the
  * content end even when tick times are ms-rounded or the grid drifts —
@@ -227,11 +239,7 @@ function deckAMixOutWindow(
   }
   endRef = lastChorusEndSec(ctx) ?? endRef;
   const downbeats = beats.filter((b) => b.beat === 1);
-  let endIdx = -1;
-  for (let i = 0; i < downbeats.length; i++) {
-    if (downbeats[i].timeSec <= endRef) endIdx = i;
-    else break;
-  }
+  const endIdx = nearestDownbeatIdx(downbeats, endRef);
   if (endIdx <= 0) return null;
   const startIdx = Math.max(0, endIdx - ctx.config.matchBars);
   const fadeOnASec = downbeats[endIdx].timeSec - downbeats[startIdx].timeSec;
@@ -243,19 +251,16 @@ function deckAMixOutWindow(
   };
 }
 
-/** Snap tolerance: section bounds and grid ticks are separately ms-rounded. */
-const OVERRIDE_SNAP_SEC = 0.05;
-
 /**
- * Deck A's window from a user-picked mix-out point: the downbeat at or after
- * it, then `matchBars` downbeats forward (fewer if the grid ends first).
+ * Deck A's window from a user-picked mix-out point (a section start): the
+ * nearest downbeat, then `matchBars` downbeats forward (fewer if the grid ends
+ * first).
  */
 function deckAOverrideWindow(
   ctx: TransitionContext,
 ): { mixOutSec: number; fadeOnASec: number; bars: number } | null {
-  const target = ctx.deckAMixOutOverrideSec! - OVERRIDE_SNAP_SEC;
   const downbeats = ctx.deckA.analysis!.beats.filter((b) => b.beat === 1);
-  const startIdx = downbeats.findIndex((b) => b.timeSec >= target);
+  const startIdx = nearestDownbeatIdx(downbeats, ctx.deckAMixOutOverrideSec!);
   if (startIdx < 0) return null;
   const endIdx = Math.min(
     downbeats.length - 1,
@@ -271,20 +276,38 @@ function deckAOverrideWindow(
 
 /**
  * Where deck B starts. With `sectionAware`, skip a leading `intro` section
- * (start at its end); otherwise start at the first downbeat.
+ * (start at the phrase line nearest its end); otherwise start at the first
+ * downbeat. An intro boundary can sit up to 3 beats off its bar line (#677),
+ * where the nearest downbeat would be a bar late.
  */
 function deckBMixInAnchor(ctx: TransitionContext): number {
-  const beats = ctx.deckB.analysis!.beats;
-  const sections = ctx.deckB.analysis!.sections;
-  if (ctx.config.sectionAware && sections.length > 0) {
-    const first = sections[0];
-    if (first.kind === "intro") {
-      const db = downbeatAtOrAfter(beats, first.endSec);
-      if (db != null) return db;
-    }
+  const { beats, sections } = ctx.deckB.analysis!;
+  const downbeats = beats.filter((b) => b.beat === 1);
+  const first = sections[0];
+  if (!ctx.config.sectionAware || first?.kind !== "intro") {
+    return downbeats[0]?.timeSec ?? 0;
   }
-  const first = downbeatAtOrAfter(beats, 0);
-  return first ?? 0;
+  const lines = phraseLines(downbeats, sections);
+  const idx = nearestDownbeatIdx(lines, first.endSec);
+  return idx < 0 ? 0 : lines[idx].timeSec;
+}
+
+/**
+ * Every {@link PHRASE_BARS}-th downbeat, in phase with most section starts.
+ * Phrases need not line up with the first downbeat (a grid can open on a
+ * pickup bar), so the track's own sections set the phase.
+ */
+function phraseLines(
+  downbeats: DeckBeat[],
+  sections: DeckSection[],
+): DeckBeat[] {
+  const votes = new Array<number>(PHRASE_BARS).fill(0);
+  for (const s of sections.slice(1)) {
+    const i = nearestDownbeatIdx(downbeats, s.startSec);
+    if (i >= 0) votes[i % PHRASE_BARS]++;
+  }
+  const phase = votes.indexOf(Math.max(...votes));
+  return downbeats.filter((_, i) => i % PHRASE_BARS === phase);
 }
 
 /**
@@ -358,8 +381,8 @@ function planBeatgrid(ctx: TransitionContext): TransitionPlan {
  * Beatgrid mix plus a DJ-style bass EQ handover. Identical planning to {@link
  * planBeatgrid} (and the same no-grid fallback — the EQ needs a grid). The
  * incoming deck's bass is held down for the whole fade; the out-going deck's
- * bass kills `EQ_KILL_BARS` bars before the end, then the incoming bass drops in
- * on the final downbeat, so the last 2 bars run bass-free.
+ * bass fades out over the last `EQ_KILL_BARS` bars while the incoming bass
+ * rises over the last beat, both landing on the final downbeat.
  */
 function planBeatgridEq(ctx: TransitionContext): TransitionPlan {
   const base = planBeatgrid(ctx);
@@ -372,17 +395,17 @@ function planBeatgridEq(ctx: TransitionContext): TransitionPlan {
   // constant tempo; a hair off during a rate ramp, like the rest of the ramp
   // variant's grid drift).
   const deckAKillSec = (base.fadeSeconds * (win.bars - killBars)) / win.bars;
-  // The incoming bass lands `EQ_RESTORE_LEAD_BEATS` beat(s) before the final
-  // downbeat. The fade spans `win.bars` bars, so a beat is that fraction of it.
+  // The incoming bass rises over the last `EQ_RISE_BEATS` beat(s). The fade
+  // spans `win.bars` bars, so a beat is that fraction of it.
   const beatSec = base.fadeSeconds / (win.bars * BEATS_PER_BAR);
-  const deckBRestoreSec = Math.max(
+  const deckBRiseSec = Math.max(
     deckAKillSec,
-    base.fadeSeconds - EQ_RESTORE_LEAD_BEATS * beatSec,
+    base.fadeSeconds - EQ_RISE_BEATS * beatSec,
   );
   return {
     ...base,
     mode: "beatgrid-eq",
-    eqSwap: { deckAKillSec, deckBRestoreSec },
+    eqSwap: { deckAKillSec, deckBRiseSec },
   };
 }
 
@@ -441,11 +464,12 @@ function planLoopEq(ctx: TransitionContext): TransitionPlan {
       },
       highsRamp: { startSec: 0, endSec: third },
       midsRamp: { startSec: third, endSec: 2 * third },
-      // Bass owns deck A until 2 bars before the transition point, then kills;
-      // deck B's bass slams in 1 beat before it (a small lead — see planBeatgridEq).
+      // Bass owns deck A until 2 bars before the transition point, then fades out;
+      // deck B's bass rises over the last beat into it (see planBeatgridEq).
       bassKillSec: Math.max(0, phaseNSec - killBars * barSecWall),
-      bassSlamSec: Math.max(0, phaseNSec - EQ_RESTORE_LEAD_BEATS * beatSecWall),
-      cutDb: EQ_CUT_DB,
+      bassRiseSec: Math.max(0, phaseNSec - EQ_RISE_BEATS * beatSecWall),
+      highCutDb: EQ_HIGH_CUT_DB,
+      midCutDb: EQ_MID_CUT_DB,
       killDb: EQ_KILL_DB,
       deckBEndRate: ctx.beatSync ? null : 1,
     },

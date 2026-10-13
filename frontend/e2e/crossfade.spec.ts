@@ -941,7 +941,7 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
       "data-volume",
       "1.00",
     );
-    // The bass hard-swap later kills deck A's bass and restores deck B's.
+    // Deck A's bass later fades to a kill and deck B's rises back to full.
     await expect(panel.getByTestId("mixer-a-low")).toHaveText(/kill/, {
       timeout: 15000,
     });
@@ -949,6 +949,31 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
       "data-db",
       "0.0",
     );
+  });
+
+  test("transition mixer opens upward, clear of the waveform", async ({
+    page,
+  }) => {
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+    // Paused, the transition never fires, so the panel keeps its small
+    // pre-transition size, which fits below the button.
+    await player.getByRole("button", { name: "Pause" }).click();
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    const button = player.getByTestId("player-mixer-btn");
+    await button.click();
+    const panel = page.getByTestId("player-mixer-panel");
+    await expect(panel).toContainText("Levels appear here");
+    const buttonTop = (await button.boundingBox())!.y;
+    await expect
+      .poll(async () => {
+        const box = (await panel.boundingBox())!;
+        return box.y + box.height;
+      })
+      .toBeLessThanOrEqual(buttonTop);
   });
 
   test("loop + EQ: post-swipe clicks skip into the incoming track", async ({

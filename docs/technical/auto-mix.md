@@ -33,8 +33,8 @@ A one-off **picked mix-out point** (`deckAMixOutOverrideSec` on the
 `TransitionContext`) replaces the end-of-track anchor. The player sets it when
 the user clicks a phrase-band section ahead of the playhead (state lives only in
 the player and resets on track change). `crossfade` starts the fade there
-(clamped so the fade fits); the beatgrid modes take the downbeat at or after it
-(50 ms snap tolerance) and walk `matchBars` downbeats **forward**.
+(clamped so the fade fits); the beatgrid modes take the downbeat nearest it
+and walk `matchBars` downbeats **forward**.
 
 With `mixOutAtLastChorus` in the `MixConfig`, the end anchor becomes the end of
 deck A's last `chorus` section: `crossfade` starts `crossfadeSeconds` before it,
@@ -53,21 +53,20 @@ never play over each other. Each local deck carries a neutral (0 dB) low-shelf
 `getBassParam()`. The plan adds `eqSwap` with two fade-relative times (deck A
 real-time seconds):
 
-- `deckAKillSec` — the out-going deck's bass kills `EQ_KILL_BARS` (2) bars
-  before the fade ends;
-- `deckBRestoreSec` — the incoming deck's bass returns `EQ_RESTORE_LEAD_BEATS`
+- `deckAKillSec` — the out-going deck's bass starts fading out `EQ_KILL_BARS`
+  (2) bars before the fade ends;
+- `deckBRiseSec` — the incoming deck's bass starts rising `EQ_RISE_BEATS`
   (1) beat before the fade ends.
 
 Both are computed from the actual bar count of the mix-out window (exact under
 beat-sync's constant tempo; approximate during a rate ramp, like the rest of the
 ramp variant's grid drift). So the sequence is: the incoming deck's bass is held
 down (−40 dB) for the **whole** fade while the out-going deck keeps its bass; 2
-bars before the end the out-going bass kills too (~2 bars run **bass-free**);
-then the incoming bassline slams in **1 beat before** the final downbeat. The
-lead matters: landing the bass exactly on the downbeat makes that kick land
-bass-light (reads as late) and puts the drop on the same instant as the adoption
-seam (the queue-advance + player rebuild) — a beat early makes the downbeat kick
-punch and clears the rebuild.
+bars before the end the out-going bass **fades out** (linear in dB, 0 to −40),
+and over the last beat the incoming bass **rises** (−40 to 0). Both ramps end on
+the final downbeat, so the drop's kick lands with full incoming bass and the low
+end never drops out. A bass move that is already due (finish, deep join) ramps
+over 30 ms to avoid a click.
 
 The engine (`runTransition`) slams each step over a ~30 ms ramp that *finishes*
 on its target time (not starts there, so the bass is full **on** the beat) and
@@ -94,9 +93,10 @@ ramp windows, and the bass swap times.
 
 - **Phase 1 — transition (`matchBars` bars):** deck A holds full volume and
   **loops its first 4 bars**; deck B fades in. The bands blend staggered
-  (12 o'clock = 0 dB, 10 o'clock ≈ −9 dB): highs then mids dip on A / open on B
-  over the first two thirds; the **bass hard-swaps** near the end (A kills 2 bars
-  before the point, B slams in 1 beat before it — the finish-on-the-beat ramp
+  (12 o'clock = 0 dB): highs (to −9 dB, ≈ 10 o'clock) then mids (to −4.5 dB,
+  ≈ 11 o'clock) dip on A / open on B
+  over the first two thirds; the **bass hands over** near the end (A fades out from 2
+  bars before the point, B rises over the last beat, both landing on it — the same ramps
   from `beatgrid-eq`). At the transition point deck B is full (12 o'clock,
   100%) across all bands — the drop.
 - **Phase 2 — outro (`matchBars` bars):** deck A **fades its volume out**
@@ -127,12 +127,19 @@ rest full height), and the looping deck draws the standard green **loop box**
   becomes master, deck A collapses to a dimmed looping tail).
 
 The beatgrid mix-out window is anchored by **walking the grid**, not by
-arithmetic: take the downbeat at or before the end of musical content (last
+arithmetic: take the downbeat nearest the end of musical content (last
 section end when section-aware, else the file end), then step `matchBars`
 downbeats back. Both ends are actual grid ticks, so the fade ends bar-perfect
 at the content end. The earlier subtract-fade-length-then-snap approach was
 reliably a bar early: real grids carry per-tick ms rounding, so the subtracted
 time landed a hair before the intended downbeat and snapped back a whole bar.
+Section bounds snap to the **nearest** downbeat (here and for a picked mix-out
+point) because Rekordbox phrases can sit a beat or two off the grid's bar lines
+(#677); rounding down or up would lose a bar. Deck B's intro skip snaps to the
+nearest **4-bar phrase line** instead: an intro end can sit 3 beats past its
+phrase line, where the nearest downbeat is a bar late. The phrase lines take
+their phase from the majority of the track's section starts, not from the first
+downbeat, because a grid can open on a pickup bar.
 The wall-clock `fadeSeconds` is that grid window divided by deck A's rate
 (sync), or by the average of the entry/target rates (ramp).
 

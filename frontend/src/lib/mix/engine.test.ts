@@ -37,6 +37,7 @@ function fakeParam(initial: number) {
 function fakeDeck() {
   const gain = fakeParam(1);
   const rate = fakeParam(1);
+  const bass = fakeParam(0);
   const state = { pos: 0, rate: 1 };
   const deck: Deck = {
     kind: "local",
@@ -56,13 +57,13 @@ function fakeDeck() {
     },
     gainParam: gain as GainParamLike,
     rateParam: () => rate as unknown as AudioParam,
-    bassParam: () => null,
+    bassParam: () => bass as unknown as AudioParam,
     midParam: () => null,
     highParam: () => null,
     setLoop: vi.fn(),
     destroy: vi.fn(),
   };
-  return { deck, gain, rate, state };
+  return { deck, gain, rate, bass, state };
 }
 
 function basePlan(overrides: Partial<TransitionPlan>): TransitionPlan {
@@ -137,6 +138,56 @@ describe("rampedElapsedAudioTime", () => {
         10,
       ),
     ).toBeCloseTo(12, 9);
+  });
+});
+
+describe("runTransition — beatgrid-eq bass handover", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    shared.ctx.currentTime = 0;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const eqPlan = () =>
+    basePlan({
+      mode: "beatgrid-eq",
+      eqSwap: { deckAKillSec: 26, deckBRiseSec: 29.5 },
+    });
+
+  it("fades deck A's bass out and deck B's in, both landing on the drop", () => {
+    const a = fakeDeck();
+    const b = fakeDeck();
+    runTransition({
+      deckA: a.deck,
+      deckB: b.deck,
+      plan: eqPlan(),
+      onComplete: () => {},
+    });
+    expect(a.bass.setValueAtTime).toHaveBeenCalledWith(0, 26);
+    expect(a.bass.linearRampToValueAtTime).toHaveBeenCalledWith(-40, 30);
+    expect(b.bass.setValueAtTime).toHaveBeenCalledWith(-40, 29.5);
+    expect(b.bass.linearRampToValueAtTime).toHaveBeenCalledWith(0, 30);
+  });
+
+  it("continues deck A's bass fade from where a pause held it", () => {
+    const a = fakeDeck();
+    const b = fakeDeck();
+    const handle = runTransition({
+      deckA: a.deck,
+      deckB: b.deck,
+      plan: eqPlan(),
+      onComplete: () => {},
+    });
+    shared.ctx.currentTime = 28;
+    a.bass.value = -20;
+    handle.pause();
+    shared.ctx.currentTime = 100;
+    a.bass.linearRampToValueAtTime.mockClear();
+    handle.resume();
+    expect(a.bass.setValueAtTime).toHaveBeenLastCalledWith(-20, 100);
+    expect(a.bass.linearRampToValueAtTime).toHaveBeenCalledWith(-40, 102);
   });
 });
 
@@ -265,8 +316,9 @@ describe("runLoopEqTransition", () => {
         highsRamp: { startSec: 0, endSec: 3 },
         midsRamp: { startSec: 3, endSec: 6 },
         bassKillSec: 6,
-        bassSlamSec: 9.5,
-        cutDb: -9,
+        bassRiseSec: 9.5,
+        highCutDb: -9,
+        midCutDb: -4.5,
         killDb: -40,
         deckBEndRate,
       },
@@ -318,5 +370,20 @@ describe("runLoopEqTransition", () => {
       6,
     );
     expect(b.state.rate).toBeCloseTo(1.055, 6);
+  });
+
+  it("fades deck A's bass out and deck B's in, both landing on the point", () => {
+    const a = fakeDeck();
+    const b = fakeDeck();
+    runLoopEqTransition({
+      deckA: a.deck,
+      deckB: b.deck,
+      plan: loopEqPlan(null),
+      onComplete: () => {},
+    });
+    expect(a.bass.setValueAtTime).toHaveBeenCalledWith(0, 6);
+    expect(a.bass.linearRampToValueAtTime).toHaveBeenCalledWith(-40, 10);
+    expect(b.bass.setValueAtTime).toHaveBeenCalledWith(-40, 9.5);
+    expect(b.bass.linearRampToValueAtTime).toHaveBeenCalledWith(0, 10);
   });
 });
