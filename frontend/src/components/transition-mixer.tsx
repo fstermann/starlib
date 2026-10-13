@@ -109,6 +109,7 @@ export function TransitionMixer({
         </button>
       </PopoverTrigger>
       <PopoverContent
+        side="top"
         align="end"
         className="w-56 p-3"
         data-testid="player-mixer-panel"

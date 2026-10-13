@@ -951,6 +951,31 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     );
   });
 
+  test("transition mixer opens upward, clear of the waveform", async ({
+    page,
+  }) => {
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+    // Paused, the transition never fires, so the panel keeps its small
+    // pre-transition size, which fits below the button.
+    await player.getByRole("button", { name: "Pause" }).click();
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+
+    const button = player.getByTestId("player-mixer-btn");
+    await button.click();
+    const panel = page.getByTestId("player-mixer-panel");
+    await expect(panel).toContainText("Levels appear here");
+    const buttonTop = (await button.boundingBox())!.y;
+    await expect
+      .poll(async () => {
+        const box = (await panel.boundingBox())!;
+        return box.y + box.height;
+      })
+      .toBeLessThanOrEqual(buttonTop);
+  });
+
   test("loop + EQ: post-swipe clicks skip into the incoming track", async ({
     page,
   }) => {
