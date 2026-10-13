@@ -171,11 +171,12 @@ function planCrossfade(
     Math.max(CROSSFADE_SECONDS_MIN, ctx.config.crossfadeSeconds),
   );
   const override = ctx.deckAMixOutOverrideSec;
+  const endSec = lastChorusEndSec(ctx) ?? ctx.deckA.durationSec;
   // Fade must fit inside deck A; never start before 0.
   const mixOutSec =
     override != null
       ? Math.max(0, Math.min(override, ctx.deckA.durationSec - fade))
-      : Math.max(0, ctx.deckA.durationSec - fade);
+      : Math.max(0, endSec - fade);
   const fadeSeconds = Math.min(fade, ctx.deckA.durationSec - mixOutSec);
   return {
     mode: "crossfade",
@@ -192,9 +193,21 @@ function planCrossfade(
 }
 
 /**
+ * With `mixOutAtLastChorus`, the end of deck A's last `chorus` section: the
+ * fade ends there so the incoming track replaces the outro. Null when off or
+ * the track has no chorus.
+ */
+function lastChorusEndSec(ctx: TransitionContext): number | null {
+  if (!ctx.config.mixOutAtLastChorus) return null;
+  const sections = ctx.deckA.analysis?.sections ?? [];
+  return sections.findLast((s) => s.kind === "chorus")?.endSec ?? null;
+}
+
+/**
  * Deck A's mix-out window: `matchBars` bars back from the end of musical
- * content. With `sectionAware`, "end of content" is the last section's end
- * (trims stray trailing bars); otherwise it's the file end.
+ * content. With `mixOutAtLastChorus`, that's the last chorus's end; else with
+ * `sectionAware`, the last section's end (trims stray trailing bars); otherwise
+ * it's the file end.
  *
  * Anchored by walking deck A's own beatgrid: take the downbeat at or before
  * the content end, then step `matchBars` downbeats back through the grid. Both
@@ -212,6 +225,7 @@ function deckAMixOutWindow(
   if (ctx.config.sectionAware && sections.length > 0) {
     endRef = sections[sections.length - 1].endSec;
   }
+  endRef = lastChorusEndSec(ctx) ?? endRef;
   const downbeats = beats.filter((b) => b.beat === 1);
   let endIdx = -1;
   for (let i = 0; i < downbeats.length; i++) {

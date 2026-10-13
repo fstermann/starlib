@@ -44,6 +44,12 @@ export interface MixConfig {
    * so a few stray trailing bars don't smear the mix.
    */
   sectionAware: boolean;
+  /**
+   * End the mix where deck A's last chorus ends, so the incoming track replaces
+   * the outro. A picked mix-out point still wins; tracks without a chorus keep
+   * the end anchor.
+   */
+  mixOutAtLastChorus: boolean;
 }
 
 export const CROSSFADE_SECONDS_MIN = 1;
@@ -56,6 +62,7 @@ export const DEFAULT_MIX_CONFIG: MixConfig = {
   crossfadeSeconds: 6,
   matchBars: 16,
   sectionAware: true,
+  mixOutAtLastChorus: false,
 };
 
 /** UI-store key (see `lib/settings.ts`). */
@@ -109,5 +116,7 @@ export function normalizeMixConfig(raw: Partial<MixConfig> | null): MixConfig {
       ? (bars as MixConfig["matchBars"])
       : DEFAULT_MIX_CONFIG.matchBars,
     sectionAware: raw.sectionAware ?? DEFAULT_MIX_CONFIG.sectionAware,
+    mixOutAtLastChorus:
+      raw.mixOutAtLastChorus ?? DEFAULT_MIX_CONFIG.mixOutAtLastChorus,
   };
 }

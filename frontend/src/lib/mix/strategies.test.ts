@@ -495,3 +495,75 @@ describe("planTransition — picked mix-out point", () => {
     expect(plan.loopEq!.loopRegion.start).toBeCloseTo(100);
   });
 });
+
+describe("planTransition — mix out at last chorus", () => {
+  const sections: DeckSection[] = [
+    { startSec: 0, endSec: 32, kind: "intro" },
+    { startSec: 32, endSec: 96, kind: "chorus" },
+    { startSec: 96, endSec: 160, kind: "verse" },
+    { startSec: 160, endSec: 192, kind: "chorus" },
+    { startSec: 192, endSec: 224, kind: "chorus" },
+    { startSec: 224, endSec: 300, kind: "outro" },
+  ];
+
+  it("beatgrid ends the fade at the last chorus's end", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid", matchBars: 8, mixOutAtLastChorus: true },
+        deck(120, 300, { sections }),
+        deck(120, 300),
+        { targetBpm: 120 },
+      ),
+    );
+    // 8 bars at 120 BPM = 16 s, ending at the chorus end (224 s).
+    expect(plan.deckAMixOutSec).toBeCloseTo(208);
+    expect(plan.fadeSeconds).toBeCloseTo(16);
+  });
+
+  it("crossfade ends the fade at the last chorus's end", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "crossfade", crossfadeSeconds: 8, mixOutAtLastChorus: true },
+        deck(120, 300, { sections }),
+        deck(120, 300),
+      ),
+    );
+    expect(plan.deckAMixOutSec).toBe(216);
+  });
+
+  it("a picked mix-out point wins over the last chorus", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "crossfade", mixOutAtLastChorus: true },
+        deck(120, 300, { sections }),
+        deck(120, 300),
+        { deckAMixOutOverrideSec: 100 },
+      ),
+    );
+    expect(plan.deckAMixOutSec).toBe(100);
+  });
+
+  it("keeps the end anchor when the track has no chorus", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "crossfade", crossfadeSeconds: 8, mixOutAtLastChorus: true },
+        deck(120, 300, {
+          sections: [{ startSec: 0, endSec: 300, kind: "verse" }],
+        }),
+        deck(120, 300),
+      ),
+    );
+    expect(plan.deckAMixOutSec).toBe(292);
+  });
+
+  it("ignores the chorus when the option is off", () => {
+    const plan = planTransition(
+      ctx(
+        { mode: "crossfade", crossfadeSeconds: 8 },
+        deck(120, 300, { sections }),
+        deck(120, 300),
+      ),
+    );
+    expect(plan.deckAMixOutSec).toBe(292);
+  });
+});

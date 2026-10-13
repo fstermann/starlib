@@ -36,6 +36,11 @@ the player and resets on track change). `crossfade` starts the fade there
 (clamped so the fade fits); the beatgrid modes take the downbeat at or after it
 (50 ms snap tolerance) and walk `matchBars` downbeats **forward**.
 
+With `mixOutAtLastChorus` in the `MixConfig`, the end anchor becomes the end of
+deck A's last `chorus` section: `crossfade` starts `crossfadeSeconds` before it,
+the beatgrid modes walk `matchBars` downbeats back from it. An explicit pick
+still wins; no chorus leaves the normal end anchor in place.
+
 If a track lacks a beatgrid, the `beatgrid` (and `beatgrid-eq`) mode falls back
 to `crossfade`.
 
@@ -160,6 +165,11 @@ mid-fade values, and the completion/midpoint clocks run only the remainder —
 transition is skippable: a pre-swipe overview click into the fade region
 rescues, seeks, re-arms, and the restarted fade rejoins exactly where the click
 landed instead of starting deck B back at its mix point.
+
+The trigger check runs on wavesurfer's `audioprocess` event, which ticks on
+animation frames and stops while the window is in the background. While armed
+and playing, a 250 ms interval runs the same check, so the mix still fires
+there (a late fire joins mid-flight as above).
 
 When the fade completes, deck B is stashed in a small hand-off store
 (`stashHandoff`/`takeHandoff`) and the queue advances. The rebuilt player

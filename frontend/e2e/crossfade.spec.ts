@@ -359,6 +359,7 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     await expect(
       crossfadeCard.getByTestId("mix-crossfade-seconds"),
     ).toBeVisible();
+    await expect(crossfadeCard.getByTestId("mix-last-chorus")).toBeVisible();
 
     // The mode description is not inline; it lives behind a hover info icon.
     await expect(page.getByText("Fade between tracks")).toHaveCount(0);
@@ -387,6 +388,7 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     const loopCard = page.getByTestId("mix-mode-loop-eq-card");
     await expect(loopCard.getByTestId("mix-bars-16")).toBeVisible();
     await expect(loopCard.getByTestId("mix-section-aware")).toBeVisible();
+    await expect(loopCard.getByTestId("mix-last-chorus")).toBeVisible();
   });
 
   test("crossfade overlay honors the selected Rekordbox waveform style", async ({
@@ -739,6 +741,26 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     await expect(player.getByTestId("player-next-chip")).toContainText("Baz");
   });
 
+  test("starts the transition while the window is in the background", async ({
+    page,
+  }) => {
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    await page.keyboard.press("Escape");
+    await expect(player).toHaveAttribute("data-mix-state", "armed");
+
+    // A background window gets no animation frames; freeze them.
+    await page.evaluate(() => {
+      window.requestAnimationFrame = () => 0;
+    });
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+  });
+
   test("starts the transition at a section picked in the phrase band", async ({
     page,
   }) => {
@@ -783,6 +805,52 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     await build.click();
     await expect(build).not.toHaveAttribute("data-mix-out-picked", "true");
     await build.click();
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 12000,
+    });
+    await expect(player.getByTestId("player-next-chip")).toContainText("Baz");
+  });
+
+  test("ends the transition at the last chorus when enabled", async ({
+    page,
+  }) => {
+    // 40s track: the default 6s fade would mix out at 34s. The last chorus
+    // ends at 14s, so the fade must start at 8s instead.
+    await page.route("**/api/rekordbox/tracks/*/analysis*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...ANALYSIS,
+          sections: [
+            { kind: "intro", label: "Intro", startMs: 0, endMs: 4000 },
+            { kind: "chorus", label: "Chorus", startMs: 4000, endMs: 6000 },
+            { kind: "verse", label: "Verse", startMs: 6000, endMs: 8000 },
+            { kind: "chorus", label: "Chorus", startMs: 8000, endMs: 11000 },
+            { kind: "chorus", label: "Chorus", startMs: 11000, endMs: 14000 },
+            { kind: "outro", label: "Outro", startMs: 14000, endMs: 40000 },
+          ],
+        }),
+      }),
+    );
+    await page.route("**/api/metadata/files/*/audio", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "audio/wav",
+        body: makeSilentWav(40),
+      }),
+    );
+
+    await playFirst(page);
+    const player = page.getByTestId("waveform-player");
+    await player.getByTestId("mix-controls-trigger").click();
+    await page.getByTestId("mix-enabled-toggle").click();
+    const toggle = page.getByTestId("mix-last-chorus");
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
 
     await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
       timeout: 12000,
@@ -854,6 +922,32 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
       "data-mix-state",
       "transitioning",
       { timeout: 15000 },
+    );
+  });
+
+  test("transition mixer shows live EQ and volume for both decks", async ({
+    page,
+  }) => {
+    const player = await startLoopEq(page);
+    await player.getByTestId("player-mixer-btn").click();
+    const panel = page.getByTestId("player-mixer-panel");
+
+    await expect(player).toHaveAttribute("data-mix-state", "transitioning", {
+      timeout: 15000,
+    });
+    // Phase 1 starts with deck B's bass killed and deck A at full volume.
+    await expect(panel.getByTestId("mixer-b-low")).toHaveText(/kill/);
+    await expect(panel.getByTestId("mixer-a-volume")).toHaveAttribute(
+      "data-volume",
+      "1.00",
+    );
+    // The bass hard-swap later kills deck A's bass and restores deck B's.
+    await expect(panel.getByTestId("mixer-a-low")).toHaveText(/kill/, {
+      timeout: 15000,
+    });
+    await expect(panel.getByTestId("mixer-b-low")).toHaveAttribute(
+      "data-db",
+      "0.0",
     );
   });
 
