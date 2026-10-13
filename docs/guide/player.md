@@ -55,9 +55,9 @@ The :material-blender-outline: **mix control** blends the current track into the
 | Mode | What it does | Works with |
 |------|--------------|------------|
 | **Crossfade** | Plain time crossfade over 1–12 seconds | Every source |
-| **Beatgrid** | Bar-aligned blend on the two beatgrids (8, 16, or 32 bars) | Tracks with a beatgrid (Rekordbox analysis) |
-| **Beatgrid + EQ** | Beatgrid blend plus a DJ-style bass swap, so the two basslines never clash | Local tracks only |
-| **Loop + EQ** | Full mixer transition: loop the outgoing track, blend the incoming one in band-by-band (highs → mids → bass), then fade out underneath | Local tracks only |
+| **Beatgrid** | Bar-aligned blend on the two beatgrids (8, 16, or 32 bars) | Rekordbox tracks and SoundCloud tracks |
+| **Beatgrid + EQ** | Beatgrid blend plus a DJ-style bass swap, so the two basslines never clash | Rekordbox tracks and SoundCloud tracks |
+| **Loop + EQ** | Full mixer transition: loop the outgoing track, blend the incoming one in band-by-band (highs → mids → bass), then fade out underneath | Rekordbox tracks and SoundCloud tracks |
 
 **Section-aware** anchoring (on by default) snaps the mix to musical section boundaries — the outgoing track's last section end and the incoming track's end-of-intro — instead of a fixed offset from the end of the file, so stray trailing bars don't smear the transition.
 
@@ -65,7 +65,7 @@ Tracks shorter than 5 seconds count as playlist separators and are left out of t
 
 To try a transition from a specific point, click a section in the phrase band under the waveform while auto-mix is armed. The mix then starts there instead of near the end (beat-aligned modes snap to the next downbeat). Click it again to clear. The pick is not saved and resets when the track changes.
 
-SoundCloud streams can't be EQ'd and never carry a beatgrid, so they fall back to a plain crossfade.
+In a beatgrid mode, Starlib downloads each SoundCloud track as it plays or is queued next, and detects its beatgrid and phrases (Intro, Up, Down, Chorus, Outro). SoundCloud's listed BPM seeds the detection, which corrects it when it is off. The phrases show in the player's phrase band, and the zoomed waveform becomes available with the detected beatgrid. The incoming track then plays from the downloaded file, so it can be beat-matched, EQ'd and looped. Analysis is cached, so each track is downloaded and analysed once. A track without a steady beat falls back to a plain crossfade, and the mix control says so. The first SoundCloud track of a session still streams, so its mix-out is less tight than later transitions.
 
 Toggle auto-mix from anywhere with the **Enable/Disable auto-mix** command in the [command palette](command-palette.md).
 

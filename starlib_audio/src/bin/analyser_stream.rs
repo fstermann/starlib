@@ -23,6 +23,9 @@
 //!     emits {"type":"breakdown.stage","source":...} per source measured,
 //!     writes the measured `starlib_audio::breakdown::Breakdown` to <json>
 //!     and emits {"type":"job.complete"}.
+//!   analyser-stream grid --input <path> --bpm <BPM>
+//!     emits {"type":"grid","bpm":...,"confidence":...,"beats":[{"time_s","beat"}],
+//!            "phrases":[{"kind","label","start_s","end_s"}]}
 //!   analyser-stream align --mix <path> --original <path> [--rate-hint R]...
 //!     emits {"type":"alignment",...} (see `starlib_audio::align::Alignment`)
 //!     or {"type":"alignment.none"} when the original isn't found.
@@ -37,6 +40,8 @@ use starlib_audio::align::{align, Alignment, ALIGN_SR};
 use starlib_audio::breakdown::{self, GridOverride};
 use starlib_audio::chunk::{analyze_chunks, ChunkOptions, ChunkResult};
 use starlib_audio::decode::decode_file;
+use starlib_audio::grid::{GridBeat, GRID_SR};
+use starlib_audio::phrase::{analyse_structure, Phrase};
 use starlib_audio::segment::{segment, Section, SegmentOptions};
 use starlib_audio::types::{BeatTracker, BpmOptions};
 
@@ -70,6 +75,12 @@ enum Event<'a> {
     Alignment(Alignment),
     #[serde(rename = "alignment.none")]
     AlignmentNone,
+    Grid {
+        bpm: f64,
+        confidence: f32,
+        beats: Vec<GridBeat>,
+        phrases: Vec<Phrase>,
+    },
     Error {
         message: String,
     },
@@ -86,6 +97,7 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("align") => run_align(args),
         Some("breakdown") => run_breakdown(args),
+        Some("grid") => run_grid(args),
         _ => run(args),
     };
     match result {
@@ -300,5 +312,38 @@ fn run_align(args: Vec<String>) -> Result<()> {
         Some(a) => emit(&Event::Alignment(a)),
         None => emit(&Event::AlignmentNone),
     }
+    Ok(())
+}
+
+fn run_grid(args: Vec<String>) -> Result<()> {
+    let mut iter = args.into_iter().skip(1);
+    let mut input: Option<PathBuf> = None;
+    let mut bpm: Option<f64> = None;
+    while let Some(flag) = iter.next() {
+        let value = iter
+            .next()
+            .ok_or_else(|| anyhow!("missing value for {flag}"))?;
+        match flag.as_str() {
+            "--input" => input = Some(PathBuf::from(value)),
+            "--bpm" => bpm = Some(value.parse()?),
+            other => return Err(anyhow!("unknown flag: {other}")),
+        }
+    }
+    let input = input.ok_or_else(|| anyhow!("--input is required"))?;
+    let bpm = bpm
+        .filter(|b| *b > 0.0)
+        .ok_or_else(|| anyhow!("--bpm must be positive"))?;
+    let opts = BpmOptions {
+        target_sr: GRID_SR,
+        ..BpmOptions::default()
+    };
+    let pcm = decode_file(&input, &opts).with_context(|| format!("decode {}", input.display()))?;
+    let (grid, phrases) = analyse_structure(&pcm, GRID_SR, bpm)?;
+    emit(&Event::Grid {
+        bpm: grid.bpm,
+        confidence: grid.confidence,
+        beats: grid.beats,
+        phrases,
+    });
     Ok(())
 }

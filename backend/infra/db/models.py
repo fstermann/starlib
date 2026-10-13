@@ -283,6 +283,20 @@ class BreakdownTrackHistory(SQLModel, table=True):
     artwork_url: str | None = None
 
 
+class SoundcloudTrackGrid(SQLModel, table=True):
+    """Cached beatgrid and phrase analysis for a SoundCloud track.
+
+    ``analysis`` is the ``analyser-stream grid`` result as JSON. Invalidated by
+    a migration that wipes the table when the detection changes.
+    """
+
+    __tablename__ = "soundcloud_track_grid"  # type: ignore[assignment]
+
+    track_id: int = Field(primary_key=True)
+    analysis: str
+    analyzed_at: float  # unix epoch seconds
+
+
 # ---------------------------------------------------------------------------
 # Registry parity — fail loudly at import time if a SIMPLE_TAG_FIELDS entry
 # doesn't have a matching Track column.

@@ -32,7 +32,7 @@ import {
 } from "@/components/bpm-pitcher";
 import { MarqueeText } from "@/components/marquee-text";
 import { MatchingTracksButton } from "@/components/matching-tracks/matching-tracks-provider";
-import { MixControls } from "@/components/mix-controls";
+import { MixControls, type BeatgridStatus } from "@/components/mix-controls";
 import { MixOverviewSwipe } from "@/components/mix-overview-swipe";
 import { PeaksWaveform } from "@/components/peaks-waveform";
 import { PlayerDetailWaveform } from "@/components/player-detail-waveform";
@@ -46,6 +46,7 @@ import {
   getSharedAudioContext,
   LoopingWebAudioPlayer,
 } from "@/lib/looping-web-audio-player";
+import { mixesOnGrid } from "@/lib/mix/config";
 import {
   clearHandoff,
   createIncomingHtmlDeck,
@@ -73,6 +74,10 @@ import {
 } from "@/lib/rekordbox-analysis";
 import { markScUnplayable } from "@/lib/sc-unplayable";
 import { getRaw, setRaw } from "@/lib/settings";
+import {
+  getCachedSoundcloudAnalysis,
+  soundcloudTrackId,
+} from "@/lib/soundcloud-analysis";
 import {
   getCachedSoundcloudPeaks,
   getCachedSoundcloudStreamUrl,
@@ -166,10 +171,23 @@ function handoffKey(track: PlayerTrack): string {
 
 /**
  * Create the incoming deck B for `track`: a silent, cued Web Audio player for
- * local tracks or a gain-routed HTML element for SoundCloud. Returns null when
+ * local tracks or a gain-routed HTML element for SoundCloud. With
+ * `fullScAudio`, a SoundCloud track is decoded whole into a Web Audio player
+ * instead, for sample-accurate beat-matching, EQ and loops. Returns null when
  * a SoundCloud stream URL can't be resolved.
  */
-async function prepareDeckB(track: PlayerTrack): Promise<Deck | null> {
+async function prepareDeckB(
+  track: PlayerTrack,
+  fullScAudio: boolean,
+): Promise<Deck | null> {
+  const scId = soundcloudTrackId(track);
+  if (fullScAudio && scId != null) {
+    try {
+      return await createIncomingLocalDeck(api.getSoundcloudAudioUrl(scId));
+    } catch (err) {
+      console.warn("[mix] full SoundCloud audio failed; streaming:", err);
+    }
+  }
   const isSc = selectPeaksSource(track).kind === "soundcloud";
   const resolvedStream =
     track.streamUrl ??
@@ -441,20 +459,28 @@ export function WaveformPlayer() {
   };
 
   // Fetch beatgrid/sections/cues for rekordbox tracks (cached; the detail strip
-  // shares this fetch). Drives the bar.beat readout.
+  // shares this fetch). Drives the bar.beat readout. SoundCloud tracks get a
+  // detected grid, but only in a grid mix mode: it downloads the whole track.
   const rekId = currentTrack?.rekordboxId;
   const rekDevice = currentTrack?.rekordboxDevice;
-  if (useChanged([rekId, rekDevice])) setAnalysis(null);
+  const scId = currentTrack ? soundcloudTrackId(currentTrack) : null;
+  const gridMix = mixesOnGrid(mixConfig);
+  if (useChanged([rekId, rekDevice, scId, gridMix])) setAnalysis(null);
   useEffect(() => {
-    if (!rekId) return;
+    const load = rekId
+      ? getCachedRekordboxAnalysis(rekId, rekDevice)
+      : gridMix && scId != null
+        ? getCachedSoundcloudAnalysis(scId)
+        : null;
+    if (!load) return;
     let cancelled = false;
-    getCachedRekordboxAnalysis(rekId, rekDevice).then((a) => {
+    load.then((a) => {
       if (!cancelled) setAnalysis(a);
     });
     return () => {
       cancelled = true;
     };
-  }, [rekId, rekDevice]);
+  }, [rekId, rekDevice, scId, gridMix]);
 
   // --- cue + loop ---
   const loopEndSec = useMemo(() => {
@@ -1485,16 +1511,19 @@ export function WaveformPlayer() {
 
     let cancelled = false;
     (async () => {
+      const nextScId = soundcloudTrackId(nextTrack);
       const nextAnalysis = nextTrack.rekordboxId
         ? await getCachedRekordboxAnalysis(
             nextTrack.rekordboxId,
             nextTrack.rekordboxDevice,
           )
-        : null;
+        : gridMix && nextScId != null
+          ? await getCachedSoundcloudAnalysis(nextScId)
+          : null;
       if (cancelled) return;
 
       const [deck, peaksB] = await Promise.all([
-        prepareDeckB(nextTrack),
+        prepareDeckB(nextTrack, !!nextAnalysis?.beatgrid.length),
         resolveTrackPeaks(nextTrack, 400),
       ]);
       if (cancelled) {
@@ -1531,7 +1560,15 @@ export function WaveformPlayer() {
     };
     // upcomingKey stands in for the next track's identity; the other plan
     // inputs are consumed by the plan effect below.
-  }, [mixConfig.enabled, ready, hasNext, peekNext, upcomingKey, rearmTick]);
+  }, [
+    mixConfig.enabled,
+    gridMix,
+    ready,
+    hasNext,
+    peekNext,
+    upcomingKey,
+    rearmTick,
+  ]);
 
   // Compute (and recompute) the transition plan against the prepared deck.
   // planTransition is pure and cheap, so it can re-run on every knob change
@@ -1723,6 +1760,18 @@ export function WaveformPlayer() {
   // meaningful for HLS decks — hide the whole utility bar in SC view.
   const isSoundCloud = selectPeaksSource(currentTrack).kind === "soundcloud";
 
+  const beatgridStatus: BeatgridStatus = currentTrack.rekordboxId
+    ? "ready"
+    : scId == null
+      ? "missing"
+      : analysis
+        ? analysis.beatgrid.length > 0
+          ? "ready"
+          : "missing"
+        : gridMix
+          ? "detecting"
+          : "off";
+
   // --- crossfade overlay state ---
   // Gate on the completion ref too: when the fade completes and the queue
   // advances, there is a seam render where `currentTrack` is already the
@@ -1862,8 +1911,9 @@ export function WaveformPlayer() {
   };
 
   // Zoom is available for everything except SoundCloud streams (whose ~1800
-  // pre-baked samples can't resolve a few bars).
-  const zoomable = selectPeaksSource(currentTrack).kind !== "soundcloud";
+  // pre-baked samples can't resolve a few bars) — unless a grid mix detected
+  // the track's beatgrid, which also downloaded it for high-resolution peaks.
+  const zoomable = !isSoundCloud || beatgridStatus === "ready";
   // The detail strip (and the rail's expanded BPM/KEY boxes) show only when the
   // user has toggled it on for a zoomable track.
   const detailShown = zoomable && detailOpen;
@@ -2324,8 +2374,9 @@ export function WaveformPlayer() {
       >
         {/* ===== Utility line — spans the whole player. Hot cues sit over the
           rail column; memory cues start at the waveform's left edge; the merged
-          loop control stays far right. Hidden in SoundCloud view. ===== */}
-        {!isSoundCloud && (
+          loop control stays far right. SoundCloud view shows only the zoom
+          controls, once a grid mix detected the beatgrid. ===== */}
+        {(!isSoundCloud || zoomable) && (
           <div
             data-testid="player-utility-bar"
             className="border-border flex h-8 shrink-0 items-center border-b"
@@ -2361,73 +2412,76 @@ export function WaveformPlayer() {
                 )}
                 {/* Merged loop control: chevrons set the length, the icon+number
                 both shows it and toggles the loop. */}
-                <div className="flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      changeLoopBeats(-1);
-                      e.currentTarget.blur();
-                    }}
-                    disabled={loopBeats === LOOP_BEAT_STEPS[0]}
-                    className={cn(
-                      "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
-                      loopBeats === LOOP_BEAT_STEPS[0] &&
-                        "cursor-not-allowed opacity-40 hover:bg-transparent",
-                    )}
-                    title="Halve loop length"
-                    aria-label="Halve loop length"
-                  >
-                    <ChevronLeft className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="player-loop-btn"
-                    data-active={loopActive || undefined}
-                    onClick={(e) => {
-                      toggleLoop();
-                      e.currentTarget.blur();
-                    }}
-                    disabled={!currentBpm}
-                    className={cn(
-                      "flex h-6 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs font-semibold tabular-nums transition-colors",
-                      loopActive
-                        ? "border-primary text-primary hover:bg-primary/10"
-                        : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
-                      !currentBpm &&
-                        "cursor-not-allowed opacity-40 hover:bg-transparent",
-                    )}
-                    title={
-                      currentBpm ? "Toggle loop" : "Loop needs a known BPM"
-                    }
-                    aria-label="Toggle loop"
-                  >
-                    <Repeat className="size-3.5" />
-                    {loopBeats}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      changeLoopBeats(1);
-                      e.currentTarget.blur();
-                    }}
-                    disabled={
-                      loopBeats === LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1]
-                    }
-                    className={cn(
-                      "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
-                      loopBeats ===
-                        LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1] &&
-                        "cursor-not-allowed opacity-40 hover:bg-transparent",
-                    )}
-                    title="Double loop length"
-                    aria-label="Double loop length"
-                  >
-                    <ChevronRight className="size-3.5" />
-                  </button>
-                </div>
+                {!isSoundCloud && (
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        changeLoopBeats(-1);
+                        e.currentTarget.blur();
+                      }}
+                      disabled={loopBeats === LOOP_BEAT_STEPS[0]}
+                      className={cn(
+                        "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
+                        loopBeats === LOOP_BEAT_STEPS[0] &&
+                          "cursor-not-allowed opacity-40 hover:bg-transparent",
+                      )}
+                      title="Halve loop length"
+                      aria-label="Halve loop length"
+                    >
+                      <ChevronLeft className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="player-loop-btn"
+                      data-active={loopActive || undefined}
+                      onClick={(e) => {
+                        toggleLoop();
+                        e.currentTarget.blur();
+                      }}
+                      disabled={!currentBpm}
+                      className={cn(
+                        "flex h-6 cursor-pointer items-center gap-1 rounded-md border px-2 text-xs font-semibold tabular-nums transition-colors",
+                        loopActive
+                          ? "border-primary text-primary hover:bg-primary/10"
+                          : "border-border text-muted-foreground hover:text-foreground hover:bg-surface-3",
+                        !currentBpm &&
+                          "cursor-not-allowed opacity-40 hover:bg-transparent",
+                      )}
+                      title={
+                        currentBpm ? "Toggle loop" : "Loop needs a known BPM"
+                      }
+                      aria-label="Toggle loop"
+                    >
+                      <Repeat className="size-3.5" />
+                      {loopBeats}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        changeLoopBeats(1);
+                        e.currentTarget.blur();
+                      }}
+                      disabled={
+                        loopBeats ===
+                        LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1]
+                      }
+                      className={cn(
+                        "text-muted-foreground hover:text-foreground hover:bg-surface-3 flex size-5 cursor-pointer items-center justify-center rounded transition-colors",
+                        loopBeats ===
+                          LOOP_BEAT_STEPS[LOOP_BEAT_STEPS.length - 1] &&
+                          "cursor-not-allowed opacity-40 hover:bg-transparent",
+                      )}
+                      title="Double loop length"
+                      aria-label="Double loop length"
+                    >
+                      <ChevronRight className="size-3.5" />
+                    </button>
+                  </div>
+                )}
                 {zoomControls && (
                   <>
-                    <div className="bg-border h-4 w-px" />
+                    {!isSoundCloud && <div className="bg-border h-4 w-px" />}
                     {zoomControls}
                   </>
                 )}
@@ -2602,7 +2656,7 @@ export function WaveformPlayer() {
               {/* BPM + KEY on the same level, right-aligned. Labels are never
                 tinted; the value carries the pitch colour. */}
               <div className="ml-auto flex items-center gap-1">
-                <MixControls />
+                <MixControls beatgrid={beatgridStatus} />
                 <BpmPitcher
                   currentBpmOverride={railSwapped ? railBpm : undefined}
                 />

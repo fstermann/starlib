@@ -28,6 +28,7 @@ from backend.infra.db.models import (
     Peaks,
     SoundcloudBpmOverride,
     SoundcloudTrackBpm,
+    SoundcloudTrackGrid,
     Track,
 )
 
@@ -252,6 +253,27 @@ def delete_sc_bpm_override(track_id: int) -> None:
     """Remove the user's BPM correction for a SoundCloud track, if any."""
     with get_engine().begin() as conn:
         conn.execute(delete(SoundcloudBpmOverride).where(SoundcloudBpmOverride.track_id == track_id))
+
+
+def get_sc_grid(track_id: int) -> dict | None:
+    """Return the cached beatgrid analysis for a SoundCloud track, or None."""
+    with get_engine().connect() as conn:
+        row = conn.execute(select(SoundcloudTrackGrid.analysis).where(SoundcloudTrackGrid.track_id == track_id)).first()
+    return json.loads(row[0]) if row else None
+
+
+def upsert_sc_grid(track_id: int, analysis: dict, analyzed_at: float) -> None:
+    """Insert or replace the beatgrid analysis for a SoundCloud track."""
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    row = {"track_id": track_id, "analysis": json.dumps(analysis), "analyzed_at": analyzed_at}
+    stmt = sqlite_insert(SoundcloudTrackGrid.__table__).values(row)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[SoundcloudTrackGrid.__table__.c.track_id],
+        set_={c: stmt.excluded[c] for c in row if c != "track_id"},
+    )
+    with get_engine().begin() as conn:
+        conn.execute(stmt)
 
 
 def get_track_mtime(file_path: Path) -> float | None:
