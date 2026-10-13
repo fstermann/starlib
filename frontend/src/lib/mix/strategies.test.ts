@@ -237,6 +237,26 @@ describe("planTransition — beatgrid (beat-sync on)", () => {
     expect(plan.deckBStartOffsetSec).toBeCloseTo(16);
   });
 
+  it("section-aware snaps an intro end 3 beats past its phrase line back to it", () => {
+    // "For The Music" (#677 shape): at 138 BPM Rekordbox ends the 8-bar intro
+    // on beat 4 of bar 9, one beat before bar 10 but a phrase past bar 9.
+    const beatSec = 60 / 138;
+    const introEnd = 35 * beatSec;
+    const sections: DeckSection[] = [
+      { startSec: 0, endSec: introEnd, kind: "intro" },
+      { startSec: introEnd, endSec: 300, kind: "chorus" },
+    ];
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid", sectionAware: true },
+        deck(138, 300),
+        deck(138, 300, { sections }),
+        { targetBpm: 138 },
+      ),
+    );
+    expect(plan.deckBStartOffsetSec).toBeCloseTo(32 * beatSec);
+  });
+
   it("section-aware skips deck B's intro", () => {
     const sections: DeckSection[] = [
       { startSec: 0, endSec: 15, kind: "intro" },

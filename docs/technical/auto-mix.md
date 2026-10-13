@@ -132,9 +132,12 @@ downbeats back. Both ends are actual grid ticks, so the fade ends bar-perfect
 at the content end. The earlier subtract-fade-length-then-snap approach was
 reliably a bar early: real grids carry per-tick ms rounding, so the subtracted
 time landed a hair before the intended downbeat and snapped back a whole bar.
-Section bounds snap to the **nearest** downbeat (here, for a picked mix-out
-point, and for deck B's intro skip) because Rekordbox phrases can sit a beat or
-two off the grid's bar lines (#677); rounding down or up would lose a bar.
+Section bounds snap to the **nearest** downbeat (here and for a picked mix-out
+point) because Rekordbox phrases can sit a beat or two off the grid's bar lines
+(#677); rounding down or up would lose a bar. Deck B's intro skip snaps to the
+nearest **4-bar phrase line** (counted from the first downbeat) instead: an
+intro end can sit 3 beats past its phrase line, where the nearest downbeat is a
+bar late.
 The wall-clock `fadeSeconds` is that grid window divided by deck A's rate
 (sync), or by the average of the entry/target rates (ramp).
 

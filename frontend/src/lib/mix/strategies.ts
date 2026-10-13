@@ -139,6 +139,8 @@ const EQ_KILL_BARS = 2;
  * final downbeat. */
 const EQ_RISE_BEATS = 1;
 const BEATS_PER_BAR = 4;
+/** Bars per phrase line that deck B's intro skip snaps to. */
+const PHRASE_BARS = 4;
 
 /**
  * Index of the downbeat nearest `timeSec`, or -1 when there are none. Section
@@ -270,16 +272,21 @@ function deckAOverrideWindow(
 
 /**
  * Where deck B starts. With `sectionAware`, skip a leading `intro` section
- * (start at the downbeat nearest its end); otherwise start at the first downbeat.
+ * (start at the phrase line nearest its end); otherwise start at the first
+ * downbeat. Phrase lines are every {@link PHRASE_BARS} bars from the first
+ * downbeat: an intro boundary can sit up to 3 beats off its bar line (#677),
+ * where the nearest downbeat would be a bar late.
  */
 function deckBMixInAnchor(ctx: TransitionContext): number {
   const { beats, sections } = ctx.deckB.analysis!;
-  const downbeats = beats.filter((b) => b.beat === 1);
+  const phraseLines = beats
+    .filter((b) => b.beat === 1)
+    .filter((_, i) => i % PHRASE_BARS === 0);
   const first = sections[0];
   const target =
     ctx.config.sectionAware && first?.kind === "intro" ? first.endSec : 0;
-  const idx = nearestDownbeatIdx(downbeats, target);
-  return idx < 0 ? 0 : downbeats[idx].timeSec;
+  const idx = nearestDownbeatIdx(phraseLines, target);
+  return idx < 0 ? 0 : phraseLines[idx].timeSec;
 }
 
 /**
