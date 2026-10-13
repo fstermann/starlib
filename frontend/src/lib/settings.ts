@@ -19,18 +19,21 @@ export type WaveformStyle = "starlib" | "rekordbox_rgb" | "rekordbox_blue";
 /** How SoundCloud keys are shown: Camelot code (``8A``) or name (``Am``). */
 export type KeyNotation = "camelot" | "standard";
 
+/** Row height of the library track tables. */
+export type RowDensity = "comfortable" | "compact" | "dense";
+
 export interface Settings {
   autoUpdate: boolean;
   waveformStyle: WaveformStyle;
   keyNotation: KeyNotation;
-  compactRows: boolean;
+  rowDensity: RowDensity;
 }
 
 const DEFAULTS: Settings = {
   autoUpdate: true,
   waveformStyle: "starlib",
   keyNotation: "camelot",
-  compactRows: false,
+  rowDensity: "comfortable",
 };
 
 const STORAGE_KEY = "starlib_ui";

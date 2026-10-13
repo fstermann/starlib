@@ -75,7 +75,7 @@ import {
 import { useFilterState } from "@/lib/filters/use-filter-state";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
 import type { SCTrack } from "@/lib/soundcloud";
-import { useCompactRows } from "@/lib/use-compact-rows";
+import { ROW_DENSITY_STYLES, useRowDensity } from "@/lib/use-row-density";
 import { cn } from "@/lib/utils";
 import {
   keySemitonesForRate,
@@ -534,7 +534,7 @@ export function RekordboxView() {
     columnPrefs.setWidth,
     columnPrefs.resetWidth,
   );
-  const compact = useCompactRows();
+  const rowDensity = ROW_DENSITY_STYLES[useRowDensity()];
 
   // Row selection, scoping the SoundCloud playlist export. Keyed by playlist
   // entry, so each copy of a track repeated in a playlist selects on its own.
@@ -1085,7 +1085,7 @@ export function RekordboxView() {
                 <TrackTable<RekordboxTrack>
                   items={displayTracks}
                   columns={REKORDBOX_COLUMNS}
-                  estimateRowSize={compact ? 32 : 40}
+                  estimateRowSize={rowDensity.height}
                   // A playlist can hold the same track more than once, so rows key
                   // by entry; elsewhere the index keeps repeated tracks unique.
                   getItemKey={(index, item) =>
@@ -1129,7 +1129,7 @@ export function RekordboxView() {
                         />
                       </div>
                       <div
-                        className={cn("shrink-0", compact ? "w-6" : "w-7")}
+                        className={cn("shrink-0", rowDensity.spacer)}
                         aria-hidden
                       />
                       <ResizableHeaderCell {...waveformColumn} />
@@ -1238,7 +1238,7 @@ export function RekordboxView() {
                           }
                           className={cn(
                             "group border-border flex items-center gap-1.5 border-b pr-0 pl-3 text-xs transition-colors select-none",
-                            compact ? "h-8" : "h-10",
+                            rowDensity.row,
                             playable
                               ? "cursor-pointer hover:bg-[var(--surface-3)]"
                               : "text-muted-foreground/60 cursor-default",
@@ -1277,7 +1277,7 @@ export function RekordboxView() {
                                 : undefined
                             }
                             label={t.title}
-                            className={compact ? "size-6" : undefined}
+                            className={rowDensity.cover}
                           />
                           <div
                             className="flex h-full shrink-0 items-center"

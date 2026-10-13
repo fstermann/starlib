@@ -84,6 +84,7 @@ import { usePlayer } from "@/lib/player-context";
 import type { SourceProfile } from "@/lib/profile-groups";
 import { scTrackToPlayerTrack } from "@/lib/sc-player-track";
 import { useIsScUnplayable } from "@/lib/sc-unplayable";
+import type { RowDensity } from "@/lib/settings";
 import {
   addTracksToPlaylist,
   parseSCTimestamp,
@@ -95,12 +96,11 @@ import {
   getCachedSoundcloudStreamUrl,
 } from "@/lib/soundcloud-cache";
 import { trackSourceHref } from "@/lib/track-breakdown";
-import { useCompactRows } from "@/lib/use-compact-rows";
 import { useKeyNotation } from "@/lib/use-key-notation";
+import { ROW_DENSITY_STYLES, useRowDensity } from "@/lib/use-row-density";
 import { cn } from "@/lib/utils";
 
 const ROW_HEIGHT = 48;
-const COMPACT_ROW_HEIGHT = 32;
 const DESCRIPTION_HEIGHT = 120;
 
 type SortKey =
@@ -866,7 +866,7 @@ interface TrackRowProps {
     count: number;
     onRemove: () => void;
   };
-  compact: boolean;
+  density: RowDensity;
   /** Columns filtered and ordered per user preferences, with resolved widths. */
   visibleColumns: ResolvedLikesCol[];
   /** When set, the row renders a drag handle and participates in SortableContext. */
@@ -897,7 +897,7 @@ function TrackRowInner({
   onOpenPlaylistPicks,
   addToPlaylist,
   removeFromPlaylist,
-  compact,
+  density,
   visibleColumns,
   dragHandle,
   rowDragListeners,
@@ -1026,7 +1026,7 @@ function TrackRowInner({
           role="row"
           tabIndex={0}
           aria-current={isCurrent ? "true" : undefined}
-          className={`group border-border flex ${compact ? "h-8" : "h-10"} cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isCurrent ? "bg-[var(--brand-soft)]" : isSelected || isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging || isRowDragging ? "opacity-40" : ""}`}
+          className={`group border-border flex ${ROW_DENSITY_STYLES[density].row} cursor-pointer items-center gap-2 border-b px-3 transition-colors select-none ${isCurrent ? "bg-[var(--brand-soft)]" : isSelected || isExpanded ? "bg-[var(--surface-3)]" : "hover:bg-[var(--surface-3)]"} ${dragHandle?.isDragging || isRowDragging ? "opacity-40" : ""}`}
           {...rowDragListeners}
           onClick={onExpand}
           onPointerEnter={onPointerEnter}
@@ -1076,7 +1076,7 @@ function TrackRowInner({
             onStartPlay={scTrackId ? onStartPlay : undefined}
             unplayable={unplayable}
             label={track.title ?? undefined}
-            className={compact ? "size-6" : undefined}
+            className={ROW_DENSITY_STYLES[density].cover}
           />
 
           {/* Reorderable column cells */}
@@ -1570,19 +1570,22 @@ export function LikesTable({
     onReorderTracks(nextIds);
   }
 
-  const compact = useCompactRows();
+  const density = useRowDensity();
   // Variable row height: expanded rows render an inline description, so the
   // estimator returns a taller value for the currently-expanded row.
   const estimateRowSize = useCallback(
     (index: number) => {
-      const rowHeight = compact ? COMPACT_ROW_HEIGHT : ROW_HEIGHT;
+      const rowHeight =
+        density === "comfortable"
+          ? ROW_HEIGHT
+          : ROW_DENSITY_STYLES[density].height;
       const track = sortedTracks[index];
       const id = track ? extractId(track) : 0;
       if (id !== expandedId) return rowHeight;
       if (!track?.description) return rowHeight;
       return rowHeight + 16 + DESCRIPTION_HEIGHT;
     },
-    [sortedTracks, expandedId, compact],
+    [sortedTracks, expandedId, density],
   );
 
   // TrackTable's onSort fires with a string (the column's sortKey). LikesCol's
@@ -1653,7 +1656,7 @@ export function LikesTable({
             />
           </div>
           <div
-            className={cn("shrink-0", compact ? "w-6" : "w-7")}
+            className={cn("shrink-0", ROW_DENSITY_STYLES[density].spacer)}
             aria-hidden
           />
         </>
@@ -1752,7 +1755,7 @@ export function LikesTable({
                   }
                 : undefined
             }
-            compact={compact}
+            density={density}
             visibleColumns={rowCols}
           />
         );
@@ -1791,7 +1794,7 @@ export function LikesTable({
                   onStartPlay={() => undefined}
                   onAddToQueue={() => undefined}
                   onPlayNext={() => undefined}
-                  compact={compact}
+                  density={density}
                   visibleColumns={visibleColumns}
                   dragHandle={{
                     attributes: {},

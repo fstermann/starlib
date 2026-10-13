@@ -297,7 +297,7 @@ Under **Settings > Library**, **SoundCloud key notation** picks how keys listed 
 
 #### Row density
 
-Under **Settings > Library**, **Row density** sets the row height of the Filesystem, SoundCloud, and Rekordbox tables: Comfortable (40px, the default) or Compact (32px).
+Under **Settings > Library**, **Row density** sets the row height of the Filesystem, SoundCloud, and Rekordbox tables: Comfortable (40px, the default), Compact (32px), or Dense (24px, close to Rekordbox's own list).
 
 #### AI
 
