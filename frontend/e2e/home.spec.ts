@@ -25,6 +25,14 @@ test.describe("Home page", () => {
     await expect(card).toHaveAttribute("href", "/weekly");
   });
 
+  test("displays Breakdown card as available", async ({ page }) => {
+    await page.goto("/");
+    const main = page.locator("main");
+    const card = main.getByRole("link", { name: /Breakdown/i });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute("href", "/breakdown");
+  });
+
   test("navigates to library when clicking the card", async ({ page }) => {
     await page.goto("/");
     const main = page.locator("main");

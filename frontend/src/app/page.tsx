@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CalendarDays } from "lucide-react";
+import { AudioWaveform, CalendarDays } from "lucide-react";
 
 import { ConstellationCard } from "@/components/home/constellation-card";
 import { GalaxyBackground } from "@/components/home/galaxy-background";
@@ -12,7 +12,7 @@ const tools = [
     href: "/library",
     title: "Library",
     description:
-      "Browse, edit, and organize your music across the filesystem and SoundCloud. Edit metadata, manage playlists, and explore likes.",
+      "Edit metadata and organize music across your files, SoundCloud, and Rekordbox.",
     icon: LibraryIcon,
     // Lyra-ish
     constellation: [
@@ -57,6 +57,27 @@ const tools = [
       [4, 5],
       [5, 0],
       [3, 6],
+    ] as [number, number][],
+  },
+  {
+    href: "/breakdown",
+    title: "Breakdown",
+    description:
+      "Break down DJ sets into tracklists and single tracks into sections and stems.",
+    icon: AudioWaveform,
+    // Cassiopeia-ish zigzag
+    constellation: [
+      { x: 12, y: 36 },
+      { x: 28, y: 58 },
+      { x: 46, y: 40 },
+      { x: 64, y: 62 },
+      { x: 84, y: 30 },
+    ],
+    edges: [
+      [0, 1],
+      [1, 2],
+      [2, 3],
+      [3, 4],
     ] as [number, number][],
   },
 ];
@@ -173,18 +194,19 @@ export default function Home() {
                 style={{
                   maskImage: "url(/starlib-logo.svg)",
                   WebkitMaskImage: "url(/starlib-logo.svg)",
-                  maskSize: "contain",
-                  WebkitMaskSize: "contain",
+                  // The star's ink spans 1em of its 1.5em artwork; crop the side padding so the title centers on what's visible.
+                  maskSize: "1.5em 1.5em",
+                  WebkitMaskSize: "1.5em 1.5em",
                   maskRepeat: "no-repeat",
                   WebkitMaskRepeat: "no-repeat",
                   maskPosition: "center",
                   WebkitMaskPosition: "center",
-                  width: "1.5em",
+                  width: "1em",
                   height: "1.5em",
                 }}
                 aria-hidden="true"
               />
-              <span className="text-primary -ml-3 [text-shadow:0_0_40px_var(--brand-soft)]">
+              <span className="text-primary ml-3 [text-shadow:0_0_40px_var(--brand-soft)]">
                 Starlib
               </span>
             </h1>
@@ -195,7 +217,7 @@ export default function Home() {
         </motion.div>
 
         <motion.div
-          className="grid grid-cols-1 gap-5 sm:grid-cols-2"
+          className="grid grid-cols-1 gap-5 md:grid-cols-3"
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: [0.2, 0, 0, 1], delay: 0.22 }}

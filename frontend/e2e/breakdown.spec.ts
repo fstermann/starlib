@@ -416,7 +416,7 @@ test.describe("Set Breakdown", () => {
 
   test("paste-url flow loads timeline + tracks from SSE", async ({ page }) => {
     await mockBreakdownApi(page);
-    await page.goto("/breakdown");
+    await page.goto("/breakdown?view=set");
 
     await expect(page.getByTestId("breakdown-start-screen")).toBeVisible();
     await page
@@ -1185,7 +1185,7 @@ test.describe("Set Breakdown", () => {
       });
     });
 
-    await page.goto("/breakdown");
+    await page.goto("/breakdown?view=set");
     await page.getByTestId("breakdown-url-input").fill("marathon techno");
     // A search query is not a URL — direct Analyse stays disabled.
     await expect(page.getByTestId("breakdown-start-button")).toBeDisabled();
@@ -2885,7 +2885,7 @@ test.describe("Set Breakdown", () => {
       route.fallback();
     });
 
-    await page.goto("/breakdown");
+    await page.goto("/breakdown?view=set");
     await expect(page.getByTestId("recent-jobs")).toBeVisible();
     await expect(page.getByTestId("recent-job")).toHaveCount(2);
     const keeperStats = page
