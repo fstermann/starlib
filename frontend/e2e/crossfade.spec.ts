@@ -941,7 +941,7 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
       "data-volume",
       "1.00",
     );
-    // The bass hard-swap later kills deck A's bass and restores deck B's.
+    // Deck A's bass later fades to a kill and deck B's slams back in.
     await expect(panel.getByTestId("mixer-a-low")).toHaveText(/kill/, {
       timeout: 15000,
     });

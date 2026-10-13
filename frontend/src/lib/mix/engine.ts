@@ -366,8 +366,8 @@ export function runTransition(opts: {
   }
 
   // Bass EQ handover (beatgrid-eq): the out-going deck owns the bass while the
-  // incoming deck's is killed; the out-going bass kills 2 bars before the end,
-  // then the incoming bass drops in at the fade end (last 2 bars run bass-free).
+  // incoming deck's is killed; the out-going bass fades out over the last 2
+  // bars, reaching the kill just as the incoming bass slams in.
   // Element decks return a null bassParam and simply keep full-range audio.
   const eq = plan.eqSwap;
   const aBass = deckA.bassParam();
@@ -399,8 +399,36 @@ export function runTransition(opts: {
     p.setValueAtTime(pre, rampStart);
     p.linearRampToValueAtTime(post, rampEnd);
   };
+  /** Hold `p` at `pre` for `startRemaining` s, then ramp (linear in dB) to
+   * `post`, landing `endRemaining` s from now. Mid-ramp (resume, deep join) it
+   * continues from the current value. */
+  const scheduleBassFade = (
+    p: AudioParam | null,
+    pre: number,
+    post: number,
+    startRemaining: number,
+    endRemaining: number,
+  ) => {
+    if (!p) return;
+    const now = ctx.currentTime;
+    p.cancelScheduledValues(now);
+    if (endRemaining <= 0) {
+      p.setValueAtTime(p.value, now);
+      p.linearRampToValueAtTime(post, now + BASS_SWAP_SEC);
+      return;
+    }
+    if (startRemaining <= 0) {
+      p.setValueAtTime(p.value, now);
+      p.linearRampToValueAtTime(post, now + endRemaining);
+      return;
+    }
+    p.setValueAtTime(pre, now);
+    p.setValueAtTime(pre, now + startRemaining);
+    p.linearRampToValueAtTime(post, now + endRemaining);
+  };
   const armBassSwap = () => {
-    scheduleBassStep(aBass, 0, BASS_KILL_DB, aKillRemaining); // A: full → killed
+    // A: full → killed, fading until B's bass lands.
+    scheduleBassFade(aBass, 0, BASS_KILL_DB, aKillRemaining, bRestoreRemaining);
     scheduleBassStep(bBass, BASS_KILL_DB, 0, bRestoreRemaining); // B: killed → full
   };
   if (eq) armBassSwap();
@@ -724,7 +752,7 @@ export function runLoopEqTransition(opts: {
     // Volumes: A full through Phase 1 then fades out over Phase 2; B fades in.
     rampSeg(aGain, 1, 0, phase1, total, elapsed);
     rampSeg(bGain, 0, 1, 0, phase1, elapsed);
-    // A EQ: highs then mids dip to the cut; bass hard-kills near the point.
+    // A EQ: highs then mids dip to the cut; bass fades out into the slam.
     rampSeg(
       aHigh,
       0,
@@ -741,7 +769,7 @@ export function runLoopEqTransition(opts: {
       le.midsRamp.endSec,
       elapsed,
     );
-    stepSeg(aBass, 0, le.killDb, le.bassKillSec, elapsed);
+    rampSeg(aBass, 0, le.killDb, le.bassKillSec, le.bassSlamSec, elapsed);
     // B EQ: highs then mids open to neutral; bass hard-slams in near the point.
     rampSeg(
       bHigh,

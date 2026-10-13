@@ -290,14 +290,14 @@ describe("planTransition — beatgrid-eq (bass swap)", () => {
     // 16 bars @128 = 30s fade.
     expect(plan.fadeSeconds).toBeCloseTo(30, 5);
     expect(plan.eqSwap).not.toBeNull();
-    // Deck A's bass kills 2 bars (3.75s) before the end.
+    // Deck A's bass starts fading out 2 bars (3.75s) before the end.
     expect(plan.eqSwap!.deckAKillSec).toBeCloseTo((30 * 14) / 16, 5);
     expect(plan.fadeSeconds - plan.eqSwap!.deckAKillSec).toBeCloseTo(3.75, 5);
     // Deck B's bass lands 1 beat (30/64s) before the final downbeat — a small
     // lead so the downbeat kick punches.
     const beatSec = 30 / (16 * 4);
     expect(plan.eqSwap!.deckBRestoreSec).toBeCloseTo(30 - beatSec, 5);
-    // …still well after deck A's bass kills (last ~2 bars run bass-free).
+    // …ending deck A's ~2-bar bass fade-out.
     expect(plan.eqSwap!.deckBRestoreSec).toBeGreaterThan(
       plan.eqSwap!.deckAKillSec,
     );
@@ -367,7 +367,7 @@ describe("planTransition — loop-eq (loop + 3-band EQ blend)", () => {
     // Highs then mids ramp over the first two thirds of Phase 1.
     expect(le.highsRamp).toEqual({ startSec: 0, endSec: 10 });
     expect(le.midsRamp).toEqual({ startSec: 10, endSec: 20 });
-    // Deck A bass kills 2 bars before the point; deck B slams 1 beat before it.
+    // Deck A bass fades out from 2 bars before the point; deck B slams 1 beat before it.
     expect(le.bassKillSec).toBeCloseTo(30 - 2 * 1.875, 5);
     expect(le.bassSlamSec).toBeCloseTo(30 - 0.46875, 5);
     expect(le.killDb).toBeLessThan(le.cutDb); // kill is a deeper cut
