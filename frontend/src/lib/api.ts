@@ -476,9 +476,11 @@ export const api = {
     );
   },
 
-  // Audio stream for a track on a mounted USB export.
-  getRekordboxUsbAudioUrl(trackId: string, device: string): string {
-    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/audio?device=${encodeURIComponent(device)}`;
+  // Audio stream for a Rekordbox track, resolved by id from the library. Local
+  // tracks may sit outside the music root, where the file-path endpoint refuses.
+  getRekordboxAudioUrl(trackId: string, device?: string): string {
+    const q = device ? `?device=${encodeURIComponent(device)}` : "";
+    return `${API_BASE_URL}/api/rekordbox/tracks/${encodeURIComponent(trackId)}/audio${q}`;
   },
 
   // Safely eject a mounted USB export. Rejects (409) if the volume is busy.

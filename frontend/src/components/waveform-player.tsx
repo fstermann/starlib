@@ -931,8 +931,8 @@ export function WaveformPlayer() {
           if (transitionStartedRef.current) return;
           if (isPlayingRef.current && player.paused) pause();
         });
-        // USB Rekordbox exports route audio through the device endpoint
-        // (`streamUrl`); plain local files fall back to the file-path endpoint.
+        // Rekordbox tracks stream by id (`streamUrl`); plain local files fall
+        // back to the file-path endpoint.
         const resolvedStreamUrl = await streamUrlPromise;
         if (cancelled) return;
         const sourceUrl =

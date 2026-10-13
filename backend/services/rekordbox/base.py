@@ -126,6 +126,10 @@ class RekordboxSource(ABC):
         """Return the raw PWAV monochrome-preview entry bytes, or ``None``."""
 
     @abstractmethod
+    def get_track_audio_path(self, track_id: str) -> Path | None:
+        """Return the track's audio file path, or ``None`` if unknown or missing on disk."""
+
+    @abstractmethod
     def get_analysis_paths(self, track_id: str) -> tuple[Path | None, Path | None]:
         """Return the ``(.DAT, .EXT)`` ANLZ sidecar paths for a track.
 

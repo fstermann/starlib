@@ -177,18 +177,20 @@ test.describe("Library: Rekordbox source", () => {
   test("cover play button starts playback and rows are selectable", async ({
     page,
   }) => {
-    // Local-file player mocks — rekordbox playback streams the local file.
     await page.route(
       "**/api/metadata/files/*/peaks*",
       jsonRoute({ peaks: Array(200).fill(0.3) }),
     );
-    await page.route("**/api/metadata/files/*/audio", (route) =>
-      route.fulfill({
+    // Rekordbox tracks stream by id: the file may sit outside the music root.
+    let audioHit: string | null = null;
+    await page.route(/\/api\/rekordbox\/tracks\/[^/]+\/audio/, (route) => {
+      audioHit = route.request().url();
+      return route.fulfill({
         status: 200,
         contentType: "audio/wav",
         body: makeSilentWav(),
-      }),
-    );
+      });
+    });
 
     await page.goto("/library?source=rekordbox");
     await page.getByText("Sunday Mix").click();
@@ -197,6 +199,9 @@ test.describe("Library: Rekordbox source", () => {
     // The cover's hover overlay is the accessible play control.
     await tracks.getByRole("button", { name: "Play Foo" }).click();
     await expect(page.getByTestId("waveform-player")).toBeVisible();
+    await expect
+      .poll(() => audioHit)
+      .toMatch(/\/api\/rekordbox\/tracks\/[^/?]+\/audio$/);
 
     // Select all via the header checkbox — header + both rows check.
     const checked = tracks.locator('[role="checkbox"][data-state="checked"]');

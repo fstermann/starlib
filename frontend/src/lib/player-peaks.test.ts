@@ -41,6 +41,13 @@ describe("selectPeaksSource", () => {
     });
   });
 
+  it("uses the file branch for a Rekordbox track without analysis", () => {
+    const src = selectPeaksSource(
+      track({ streamUrl: "/api/rekordbox/tracks/l-2/audio" }),
+    );
+    expect(src).toEqual({ kind: "file" });
+  });
+
   it("uses the file (ffmpeg) branch for a plain local file", () => {
     const src = selectPeaksSource(track({}));
     expect(src).toEqual({ kind: "file" });

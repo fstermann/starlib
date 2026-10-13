@@ -126,7 +126,7 @@ test.describe("Player zoom — Rekordbox track", () => {
       "**/api/metadata/files/*/peaks*",
       jsonRoute({ peaks: Array(200).fill(0.3) }),
     );
-    await page.route("**/api/metadata/files/*/audio", (route) =>
+    await page.route("**/api/rekordbox/tracks/*/audio", (route) =>
       route.fulfill({
         status: 200,
         contentType: "audio/wav",

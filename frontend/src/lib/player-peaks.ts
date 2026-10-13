@@ -9,13 +9,10 @@ export type PeaksSource =
 /**
  * Pick the peaks source for a track.
  *
- * Rekordbox analysis (PWV4) wins whenever a track carries a `rekordboxId`. USB
- * export tracks also set `streamUrl` to route *audio* through the device
- * endpoint, so keying the peaks decision off `streamUrl`/`isStream` first would
- * misroute them into the SoundCloud branch — which, lacking a `waveformUrl`,
- * falls back to a flat placeholder and renders a peakless waveform. Checking
- * `rekordboxId` before the stream heuristic keeps that from happening while
- * leaving audio routing (which still uses `streamUrl`) untouched.
+ * Rekordbox analysis (PWV4) wins whenever a track carries a `rekordboxId`.
+ * SoundCloud is keyed off `streamRefreshKey`, not `streamUrl`: Rekordbox tracks
+ * also set `streamUrl` to stream audio by id, and treating them as SoundCloud
+ * would render a flat placeholder waveform.
  */
 export function selectPeaksSource(track: PlayerTrack): PeaksSource {
   if (track.rekordboxId) {
@@ -25,7 +22,7 @@ export function selectPeaksSource(track: PlayerTrack): PeaksSource {
       device: track.rekordboxDevice,
     };
   }
-  const isStream = !!track.streamUrl || track.streamRefreshKey !== undefined;
-  if (isStream) return { kind: "soundcloud", waveformUrl: track.waveformUrl };
+  if (track.streamRefreshKey !== undefined)
+    return { kind: "soundcloud", waveformUrl: track.waveformUrl };
   return { kind: "file" };
 }
