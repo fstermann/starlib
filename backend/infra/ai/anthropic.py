@@ -7,14 +7,15 @@ majority of tokens are free on subsequent calls.
 """
 
 import logging
-from typing import Any
-
-from anthropic import AsyncAnthropic
-from anthropic import AuthenticationError as AnthropicAuthenticationError
+from typing import TYPE_CHECKING, Any
 
 from backend.infra import keychain
 from backend.infra import settings_store as settings_service
 from backend.schemas.ai import AiModel
+
+# The SDK takes seconds to import; load it on first use to keep startup fast.
+if TYPE_CHECKING:
+    from anthropic import AsyncAnthropic
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,9 @@ class MissingApiKeyError(RuntimeError):
     """Raised when the Anthropic API key is not configured."""
 
 
-def _client() -> AsyncAnthropic:
+def _client() -> "AsyncAnthropic":
+    from anthropic import AsyncAnthropic
+
     key = keychain.get_anthropic_api_key()
     if not key:
         raise MissingApiKeyError("Anthropic API key not configured.")
@@ -118,6 +121,8 @@ async def chat(
 
 async def list_models() -> list[AiModel]:
     """Return the Anthropic models available to this API key."""
+    from anthropic import AuthenticationError as AnthropicAuthenticationError
+
     try:
         async with _client() as client:
             page = await client.models.list(limit=50)
@@ -131,6 +136,8 @@ async def list_models() -> list[AiModel]:
 
 async def validate_api_key() -> bool:
     """Return True if the stored key can list models."""
+    from anthropic import AuthenticationError as AnthropicAuthenticationError
+
     try:
         async with _client() as client:
             await client.models.list(limit=1)

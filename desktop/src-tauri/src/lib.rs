@@ -21,7 +21,8 @@ use tauri_plugin_shell::ShellExt;
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
 const BACKEND_URL: &str = "http://127.0.0.1:8000";
-const HEALTH_MAX_RETRIES: u32 = 30;
+// ~60 s: a cold Python start (first run after reboot or `uv sync`) can exceed 15 s.
+const HEALTH_MAX_RETRIES: u32 = 120;
 const HEALTH_RETRY_INTERVAL_MS: u64 = 500;
 const MAX_RESTART_ATTEMPTS: u32 = 3;
 const RESTART_DELAY_MS: u64 = 2000;
