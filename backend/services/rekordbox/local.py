@@ -469,6 +469,19 @@ class LocalMasterDbSource(RekordboxSource):
             return None
         return read_pwav(str(dat), mtime_ns)
 
+    def get_track_audio_path(self, track_id: str) -> Path | None:
+        """Return the audio file path ``master.db`` stores for a track, or ``None``.
+
+        The path comes from the library, not the client, so it may sit anywhere
+        on disk, outside the configured music root.
+        """
+        row = self._open_db().get_content(ID=track_id)
+        folder_path = getattr(row, "FolderPath", None) if row is not None else None
+        if not folder_path:
+            return None
+        path = Path(folder_path)
+        return path if path.is_file() else None
+
     def get_analysis_paths(self, track_id: str) -> tuple[Path | None, Path | None]:
         """Return the ``(.DAT, .EXT)`` ANLZ sidecar paths for a track."""
         db = self._open_db()

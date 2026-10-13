@@ -279,20 +279,17 @@ def get_track_analysis(track_id: str, device: str | None = DeviceParam) -> Track
 
 
 @router.get("/tracks/{track_id}/audio", response_model=None)
-async def stream_track_audio(track_id: str, device: str = Query(..., description="USB device id")) -> FileResponse:
-    """Stream a track's audio file from a mounted USB export.
+async def stream_track_audio(track_id: str, device: str | None = DeviceParam) -> FileResponse:
+    """Stream a track's audio file, resolved by id from the Rekordbox library.
 
-    Local-install tracks play through the metadata audio endpoint by their
-    absolute path; USB tracks live on the device, so their device-relative path
-    is resolved here (within the mount) and streamed with the same
-    transcode/range handling.
+    The file path comes from the library (``master.db`` or the USB export), not
+    the client, so local tracks outside the configured music root play too.
+    USB paths are confined to the device mount.
     """
     try:
         source = rb_service.get_source(device)
     except rb_service.RekordboxUnavailable as exc:
         raise _unavailable(str(exc)) from exc
-    if not isinstance(source, rb_service.UsbExportSource):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio streaming requires a USB device")
     path = source.get_track_audio_path(track_id)
     if path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")

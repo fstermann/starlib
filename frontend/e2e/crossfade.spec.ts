@@ -150,7 +150,7 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
       jsonRoute({ peaks: Array(200).fill(0.3) }),
     );
     // ~10s of audio so the default 6s fade leaves a real mix-out point (~4s in).
-    await page.route("**/api/metadata/files/*/audio", (route) =>
+    await page.route("**/api/rekordbox/tracks/*/audio", (route) =>
       route.fulfill({
         status: 200,
         contentType: "audio/wav",
@@ -313,8 +313,8 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     let bazAudioFetches = 0;
     // Long track so the mix-out point stays comfortably ahead while the
     // slider is stepped.
-    await page.route("**/api/metadata/files/*/audio", (route) => {
-      if (route.request().url().includes("baz")) bazAudioFetches += 1;
+    await page.route("**/api/rekordbox/tracks/*/audio", (route) => {
+      if (route.request().url().includes("/t-2/")) bazAudioFetches += 1;
       return route.fulfill({
         status: 200,
         contentType: "audio/wav",
@@ -580,11 +580,11 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
       "**/api/rekordbox/playlists/pl-1/tracks",
       jsonRoute({ tracks: [TRACK_A, { ...TRACK_B, bpm: 128, key: "9A" }] }),
     );
-    await page.route("**/api/metadata/files/*/audio", (route) =>
+    await page.route("**/api/rekordbox/tracks/*/audio", (route) =>
       route.fulfill({
         status: 200,
         contentType: "audio/wav",
-        body: makeSilentWav(route.request().url().includes("baz") ? 20 : 10),
+        body: makeSilentWav(route.request().url().includes("/t-2/") ? 20 : 10),
       }),
     );
 
@@ -633,7 +633,7 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     // the pitcher.
     const grid = denseGrid(250, 12000, "verse"); // downbeat every 1s → 12 bars
     await page.route("**/api/rekordbox/tracks/*/analysis*", jsonRoute(grid));
-    await page.route("**/api/metadata/files/*/audio", (route) =>
+    await page.route("**/api/rekordbox/tracks/*/audio", (route) =>
       route.fulfill({
         status: 200,
         contentType: "audio/wav",
@@ -684,7 +684,7 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
     // engage instead of falling back to a plain crossfade.
     const grid = denseGrid(250, 12000, "verse"); // downbeat every 1s → 12 bars
     await page.route("**/api/rekordbox/tracks/*/analysis*", jsonRoute(grid));
-    await page.route("**/api/metadata/files/*/audio", (route) =>
+    await page.route("**/api/rekordbox/tracks/*/audio", (route) =>
       route.fulfill({
         status: 200,
         contentType: "audio/wav",
@@ -758,7 +758,7 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
         }),
       }),
     );
-    await page.route("**/api/metadata/files/*/audio", (route) =>
+    await page.route("**/api/rekordbox/tracks/*/audio", (route) =>
       route.fulfill({
         status: 200,
         contentType: "audio/wav",
@@ -808,7 +808,7 @@ test.describe("Auto-mix crossfade", { tag: "@slow" }, () => {
       cues: [],
     };
     await page.route("**/api/rekordbox/tracks/*/analysis*", jsonRoute(grid));
-    await page.route("**/api/metadata/files/*/audio", (route) =>
+    await page.route("**/api/rekordbox/tracks/*/audio", (route) =>
       route.fulfill({
         status: 200,
         contentType: "audio/wav",
