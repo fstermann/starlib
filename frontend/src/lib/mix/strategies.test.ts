@@ -242,9 +242,13 @@ describe("planTransition — beatgrid (beat-sync on)", () => {
     // on beat 4 of bar 9, one beat before bar 10 but a phrase past bar 9.
     const beatSec = 60 / 138;
     const introEnd = 35 * beatSec;
+    // Later phrases sit one beat before their bar lines (beats 63, 95, 127).
     const sections: DeckSection[] = [
       { startSec: 0, endSec: introEnd, kind: "intro" },
-      { startSec: introEnd, endSec: 300, kind: "chorus" },
+      { startSec: introEnd, endSec: 63 * beatSec, kind: "chorus" },
+      { startSec: 63 * beatSec, endSec: 95 * beatSec, kind: "chorus" },
+      { startSec: 95 * beatSec, endSec: 127 * beatSec, kind: "chorus" },
+      { startSec: 127 * beatSec, endSec: 300, kind: "down" },
     ];
     const plan = planTransition(
       ctx(
@@ -255,6 +259,31 @@ describe("planTransition — beatgrid (beat-sync on)", () => {
       ),
     );
     expect(plan.deckBStartOffsetSec).toBeCloseTo(32 * beatSec);
+  });
+
+  it("section-aware keeps an on-grid intro end when the grid opens on a pickup", () => {
+    // "Give It To Me" shape: the grid opens on beat 2, so phrases sit one bar
+    // off a 4-bar count from the first downbeat. 120 BPM → 0.5 s per beat.
+    const beats: DeckBeat[] = [];
+    for (let i = 0; i < 600; i++) {
+      beats.push({ timeSec: i * 0.5, beat: ((i + 1) % 4) + 1 });
+    }
+    const at = (beatIdx: number) => beatIdx * 0.5;
+    const sections: DeckSection[] = [
+      { startSec: 0, endSec: at(63), kind: "intro" },
+      { startSec: at(63), endSec: at(95), kind: "up" },
+      { startSec: at(95), endSec: at(127), kind: "chorus" },
+      { startSec: at(127), endSec: 300, kind: "chorus" },
+    ];
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid", sectionAware: true },
+        deck(120, 300),
+        { bpm: 120, durationSec: 300, analysis: { beats, sections } },
+        { targetBpm: 120 },
+      ),
+    );
+    expect(plan.deckBStartOffsetSec).toBeCloseTo(at(63));
   });
 
   it("section-aware skips deck B's intro", () => {

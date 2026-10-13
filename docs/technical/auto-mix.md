@@ -136,9 +136,10 @@ time landed a hair before the intended downbeat and snapped back a whole bar.
 Section bounds snap to the **nearest** downbeat (here and for a picked mix-out
 point) because Rekordbox phrases can sit a beat or two off the grid's bar lines
 (#677); rounding down or up would lose a bar. Deck B's intro skip snaps to the
-nearest **4-bar phrase line** (counted from the first downbeat) instead: an
-intro end can sit 3 beats past its phrase line, where the nearest downbeat is a
-bar late.
+nearest **4-bar phrase line** instead: an intro end can sit 3 beats past its
+phrase line, where the nearest downbeat is a bar late. The phrase lines take
+their phase from the majority of the track's section starts, not from the first
+downbeat, because a grid can open on a pickup bar.
 The wall-clock `fadeSeconds` is that grid window divided by deck A's rate
 (sync), or by the average of the entry/target rates (ramp).
 

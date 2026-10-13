@@ -277,20 +277,37 @@ function deckAOverrideWindow(
 /**
  * Where deck B starts. With `sectionAware`, skip a leading `intro` section
  * (start at the phrase line nearest its end); otherwise start at the first
- * downbeat. Phrase lines are every {@link PHRASE_BARS} bars from the first
- * downbeat: an intro boundary can sit up to 3 beats off its bar line (#677),
+ * downbeat. An intro boundary can sit up to 3 beats off its bar line (#677),
  * where the nearest downbeat would be a bar late.
  */
 function deckBMixInAnchor(ctx: TransitionContext): number {
   const { beats, sections } = ctx.deckB.analysis!;
-  const phraseLines = beats
-    .filter((b) => b.beat === 1)
-    .filter((_, i) => i % PHRASE_BARS === 0);
+  const downbeats = beats.filter((b) => b.beat === 1);
   const first = sections[0];
-  const target =
-    ctx.config.sectionAware && first?.kind === "intro" ? first.endSec : 0;
-  const idx = nearestDownbeatIdx(phraseLines, target);
-  return idx < 0 ? 0 : phraseLines[idx].timeSec;
+  if (!ctx.config.sectionAware || first?.kind !== "intro") {
+    return downbeats[0]?.timeSec ?? 0;
+  }
+  const lines = phraseLines(downbeats, sections);
+  const idx = nearestDownbeatIdx(lines, first.endSec);
+  return idx < 0 ? 0 : lines[idx].timeSec;
+}
+
+/**
+ * Every {@link PHRASE_BARS}-th downbeat, in phase with most section starts.
+ * Phrases need not line up with the first downbeat (a grid can open on a
+ * pickup bar), so the track's own sections set the phase.
+ */
+function phraseLines(
+  downbeats: DeckBeat[],
+  sections: DeckSection[],
+): DeckBeat[] {
+  const votes = new Array<number>(PHRASE_BARS).fill(0);
+  for (const s of sections.slice(1)) {
+    const i = nearestDownbeatIdx(downbeats, s.startSec);
+    if (i >= 0) votes[i % PHRASE_BARS]++;
+  }
+  const phase = votes.indexOf(Math.max(...votes));
+  return downbeats.filter((_, i) => i % PHRASE_BARS === phase);
 }
 
 /**
