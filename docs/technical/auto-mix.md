@@ -55,7 +55,7 @@ real-time seconds):
 
 - `deckAKillSec` — the out-going deck's bass starts fading out `EQ_KILL_BARS`
   (2) bars before the fade ends;
-- `deckBRestoreSec` — the incoming deck's bass returns `EQ_RESTORE_LEAD_BEATS`
+- `deckBRiseSec` — the incoming deck's bass starts rising `EQ_RISE_BEATS`
   (1) beat before the fade ends.
 
 Both are computed from the actual bar count of the mix-out window (exact under
@@ -63,12 +63,10 @@ beat-sync's constant tempo; approximate during a rate ramp, like the rest of the
 ramp variant's grid drift). So the sequence is: the incoming deck's bass is held
 down (−40 dB) for the **whole** fade while the out-going deck keeps its bass; 2
 bars before the end the out-going bass **fades out** (linear in dB, 0 to −40),
-reaching the kill just as the incoming bassline slams in **1 beat before** the
-final downbeat, so the low end never drops out. The
-lead matters: landing the bass exactly on the downbeat makes that kick land
-bass-light (reads as late) and puts the drop on the same instant as the adoption
-seam (the queue-advance + player rebuild) — a beat early makes the downbeat kick
-punch and clears the rebuild.
+and over the last beat the incoming bass **rises** (−40 to 0). Both ramps end on
+the final downbeat, so the drop's kick lands with full incoming bass and the low
+end never drops out. A bass move that is already due (finish, deep join) ramps
+over 30 ms to avoid a click.
 
 The engine (`runTransition`) slams each step over a ~30 ms ramp that *finishes*
 on its target time (not starts there, so the bass is full **on** the beat) and
@@ -97,7 +95,7 @@ ramp windows, and the bass swap times.
   **loops its first 4 bars**; deck B fades in. The bands blend staggered
   (12 o'clock = 0 dB, 10 o'clock ≈ −9 dB): highs then mids dip on A / open on B
   over the first two thirds; the **bass hands over** near the end (A fades out from 2
-  bars before the point, B slams in 1 beat before it — the finish-on-the-beat ramp
+  bars before the point, B rises over the last beat, both landing on it — the same ramps
   from `beatgrid-eq`). At the transition point deck B is full (12 o'clock,
   100%) across all bands — the drop.
 - **Phase 2 — outro (`matchBars` bars):** deck A **fades its volume out**

@@ -21,11 +21,11 @@ import type { LucideIcon } from "lucide-react";
  *   is ignored and the pitcher stays off).
  * - `beatgrid-eq` — the beatgrid blend plus a DJ-style bass swap: the incoming
  *   deck's bass is killed for most of the fade, then over the last 2 bars the
- *   outgoing deck's bass fades out and the incoming deck's slams back in full,
- *   so the two basslines never clash. Local decks only (SoundCloud can't be EQ'd).
+ *   outgoing deck's bass fades out and the incoming deck's rises back to full
+ *   over the last beat, so the two basslines never clash. Local decks only (SoundCloud can't be EQ'd).
  * - `loop-eq` — a full DJ-mixer transition: loop the outgoing deck's first 4
  *   bars, blend the incoming deck in band-by-band with a 3-band EQ (highs → mids
- *   → bass fade-out and slam) over `matchBars` bars, then fade the outgoing deck out
+ *   → bass handover) over `matchBars` bars, then fade the outgoing deck out
  *   underneath over another `matchBars` bars. Local decks only.
  */
 export type MixMode = "crossfade" | "beatgrid" | "beatgrid-eq" | "loop-eq";
@@ -87,7 +87,7 @@ export const MIX_MODE_DESCRIPTIONS: Record<MixMode, string> = {
   beatgrid:
     "Align beatgrids for a bar-exact blend. Syncs both tracks to the target BPM when pitching is on, otherwise ramps the tempo across the fade. Needs a beatgrid.",
   "beatgrid-eq":
-    "Beatgrid blend with a DJ bass swap: the incoming bass stays cut while the outgoing bass fades out over the last 2 bars, then swings in full on the incoming track. Local tracks only.",
+    "Beatgrid blend with a DJ bass swap: the incoming bass stays cut while the outgoing bass fades out over the last 2 bars, then rises to full over the last beat into the drop. Local tracks only.",
   "loop-eq":
     "Full DJ-mixer blend: loop the outgoing track and mix the incoming one in band-by-band (highs, mids, then a bass drop), then fade the outgoing track out underneath. Local tracks only.",
 };

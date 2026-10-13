@@ -159,8 +159,8 @@ export async function createIncomingLocalDeck(url: string): Promise<Deck> {
 
 /** Low-shelf gain (dB) that effectively mutes bass (−40 dB ≈ 1% amplitude). */
 const BASS_KILL_DB = -40;
-/** Ramp time (s) for the bass kill/restore — a hard slam (crisp EQ-kill-switch
- * flip), just long enough to avoid a click. */
+/** Ramp time (s) for a bass move that is already due (finish, deep join) —
+ * just long enough to avoid a click. */
 const BASS_SWAP_SEC = 0.03;
 
 // --- gain curves ---------------------------------------------------------
@@ -367,38 +367,16 @@ export function runTransition(opts: {
 
   // Bass EQ handover (beatgrid-eq): the out-going deck owns the bass while the
   // incoming deck's is killed; the out-going bass fades out over the last 2
-  // bars, reaching the kill just as the incoming bass slams in.
+  // bars while the incoming bass rises over the last beat, both landing on the
+  // final downbeat.
   // Element decks return a null bassParam and simply keep full-range audio.
   const eq = plan.eqSwap;
   const aBass = deckA.bassParam();
   const bBass = deckB.bassParam();
   // Time until each event, tracked explicitly so a paused fade re-schedules it.
   let aKillRemaining = eq ? Math.max(0, eq.deckAKillSec - elapsed) : 0;
-  let bRestoreRemaining = eq ? Math.max(0, eq.deckBRestoreSec - elapsed) : 0;
-  /** Schedule `p`'s step from `pre` to `post` so it *lands* `remaining` s from
-   * now (on the downbeat) — the ramp finishes on the target, it doesn't start
-   * there, so the incoming bass is full on the beat, not a ramp-width late.
-   * `<= 0` → already due (finish/deep join): ramp straight there. */
-  const scheduleBassStep = (
-    p: AudioParam | null,
-    pre: number,
-    post: number,
-    remaining: number,
-  ) => {
-    if (!p) return;
-    const now = ctx.currentTime;
-    p.cancelScheduledValues(now);
-    if (remaining <= 0) {
-      p.setValueAtTime(p.value, now);
-      p.linearRampToValueAtTime(post, now + BASS_SWAP_SEC);
-      return;
-    }
-    const rampEnd = now + remaining;
-    const rampStart = Math.max(now, rampEnd - BASS_SWAP_SEC);
-    p.setValueAtTime(pre, now);
-    p.setValueAtTime(pre, rampStart);
-    p.linearRampToValueAtTime(post, rampEnd);
-  };
+  let bRiseRemaining = eq ? Math.max(0, eq.deckBRiseSec - elapsed) : 0;
+  let bassEndRemaining = eq ? left : 0;
   /** Hold `p` at `pre` for `startRemaining` s, then ramp (linear in dB) to
    * `post`, landing `endRemaining` s from now. Mid-ramp (resume, deep join) it
    * continues from the current value. */
@@ -427,9 +405,8 @@ export function runTransition(opts: {
     p.linearRampToValueAtTime(post, now + endRemaining);
   };
   const armBassSwap = () => {
-    // A: full → killed, fading until B's bass lands.
-    scheduleBassFade(aBass, 0, BASS_KILL_DB, aKillRemaining, bRestoreRemaining);
-    scheduleBassStep(bBass, BASS_KILL_DB, 0, bRestoreRemaining); // B: killed → full
+    scheduleBassFade(aBass, 0, BASS_KILL_DB, aKillRemaining, bassEndRemaining);
+    scheduleBassFade(bBass, BASS_KILL_DB, 0, bRiseRemaining, bassEndRemaining);
   };
   if (eq) armBassSwap();
 
@@ -493,7 +470,8 @@ export function runTransition(opts: {
         // Hold the bass filters and freeze the EQ clocks (the scheduled steps
         // run on the audio thread, which keeps ticking while decks are paused).
         aKillRemaining = Math.max(0, aKillRemaining - elapsed);
-        bRestoreRemaining = Math.max(0, bRestoreRemaining - elapsed);
+        bRiseRemaining = Math.max(0, bRiseRemaining - elapsed);
+        bassEndRemaining = Math.max(0, bassEndRemaining - elapsed);
         if (aBass) holdParam(aBass);
         if (bBass) holdParam(bBass);
       }
@@ -591,7 +569,8 @@ export function runTransition(opts: {
       // the adopted deck B keeps full bass.
       if (eq) {
         aKillRemaining = 0;
-        bRestoreRemaining = 0;
+        bRiseRemaining = 0;
+        bassEndRemaining = 0;
         armBassSwap();
       }
       setTimeout(() => onComplete(), quick * 1000);
@@ -724,35 +703,11 @@ export function runLoopEqTransition(opts: {
     p.linearRampToValueAtTime(to, now + lEnd);
   };
 
-  /** Hard swap `p` from `pre` to `post`, the ramp *finishing* at `atSec`
-   * (transition-time), offset by `elapsed`. Mirrors the bass swap. */
-  const stepSeg = (
-    p: GainParamLike | null,
-    pre: number,
-    post: number,
-    atSec: number,
-    elapsed: number,
-  ) => {
-    if (!p) return;
-    const now = ctx.currentTime;
-    p.cancelScheduledValues(now);
-    const lAt = atSec - elapsed;
-    if (lAt <= 0) {
-      p.setValueAtTime(post, now);
-      return;
-    }
-    const rampEnd = now + lAt;
-    const rampStart = Math.max(now, rampEnd - BASS_SWAP_SEC);
-    p.setValueAtTime(pre, now);
-    p.setValueAtTime(pre, rampStart);
-    p.linearRampToValueAtTime(post, rampEnd);
-  };
-
   const armParams = (elapsed: number) => {
     // Volumes: A full through Phase 1 then fades out over Phase 2; B fades in.
     rampSeg(aGain, 1, 0, phase1, total, elapsed);
     rampSeg(bGain, 0, 1, 0, phase1, elapsed);
-    // A EQ: highs then mids dip to the cut; bass fades out into the slam.
+    // A EQ: highs then mids dip to the cut; bass fades out by the point.
     rampSeg(
       aHigh,
       0,
@@ -769,8 +724,8 @@ export function runLoopEqTransition(opts: {
       le.midsRamp.endSec,
       elapsed,
     );
-    rampSeg(aBass, 0, le.killDb, le.bassKillSec, le.bassSlamSec, elapsed);
-    // B EQ: highs then mids open to neutral; bass hard-slams in near the point.
+    rampSeg(aBass, 0, le.killDb, le.bassKillSec, phase1, elapsed);
+    // B EQ: highs then mids open to neutral; bass rises over the last beat.
     rampSeg(
       bHigh,
       le.cutDb,
@@ -787,7 +742,7 @@ export function runLoopEqTransition(opts: {
       le.midsRamp.endSec,
       elapsed,
     );
-    stepSeg(bBass, le.killDb, 0, le.bassSlamSec, elapsed);
+    rampSeg(bBass, le.killDb, 0, le.bassRiseSec, phase1, elapsed);
     // Deck B tempo: hold the entry rate through Phase 1, then ramp to the end
     // rate over Phase 2 (skipped for a constant-rate plan). Re-fetched every
     // arm — a local deck rebuilds its buffer node (and rate param) on resume.

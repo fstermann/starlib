@@ -293,12 +293,11 @@ describe("planTransition — beatgrid-eq (bass swap)", () => {
     // Deck A's bass starts fading out 2 bars (3.75s) before the end.
     expect(plan.eqSwap!.deckAKillSec).toBeCloseTo((30 * 14) / 16, 5);
     expect(plan.fadeSeconds - plan.eqSwap!.deckAKillSec).toBeCloseTo(3.75, 5);
-    // Deck B's bass lands 1 beat (30/64s) before the final downbeat — a small
-    // lead so the downbeat kick punches.
+    // Deck B's bass rises over the last beat (30/64s).
     const beatSec = 30 / (16 * 4);
-    expect(plan.eqSwap!.deckBRestoreSec).toBeCloseTo(30 - beatSec, 5);
-    // …ending deck A's ~2-bar bass fade-out.
-    expect(plan.eqSwap!.deckBRestoreSec).toBeGreaterThan(
+    expect(plan.eqSwap!.deckBRiseSec).toBeCloseTo(30 - beatSec, 5);
+    // …inside deck A's ~2-bar bass fade-out.
+    expect(plan.eqSwap!.deckBRiseSec).toBeGreaterThan(
       plan.eqSwap!.deckAKillSec,
     );
   });
@@ -330,11 +329,11 @@ describe("planTransition — beatgrid-eq (bass swap)", () => {
     expect(plan.eqSwap).not.toBeNull();
     expect(plan.eqSwap!.deckAKillSec).toBeGreaterThan(0);
     expect(plan.eqSwap!.deckAKillSec).toBeLessThan(plan.fadeSeconds);
-    // Restores just before the end (1-beat lead), after deck A's kill.
-    expect(plan.eqSwap!.deckBRestoreSec).toBeGreaterThan(
+    // Rises over the last beat, inside deck A's fade-out.
+    expect(plan.eqSwap!.deckBRiseSec).toBeGreaterThan(
       plan.eqSwap!.deckAKillSec,
     );
-    expect(plan.eqSwap!.deckBRestoreSec).toBeLessThan(plan.fadeSeconds);
+    expect(plan.eqSwap!.deckBRiseSec).toBeLessThan(plan.fadeSeconds);
   });
 });
 
@@ -367,9 +366,9 @@ describe("planTransition — loop-eq (loop + 3-band EQ blend)", () => {
     // Highs then mids ramp over the first two thirds of Phase 1.
     expect(le.highsRamp).toEqual({ startSec: 0, endSec: 10 });
     expect(le.midsRamp).toEqual({ startSec: 10, endSec: 20 });
-    // Deck A bass fades out from 2 bars before the point; deck B slams 1 beat before it.
+    // Deck A bass fades out from 2 bars before the point; deck B rises over the last beat.
     expect(le.bassKillSec).toBeCloseTo(30 - 2 * 1.875, 5);
-    expect(le.bassSlamSec).toBeCloseTo(30 - 0.46875, 5);
+    expect(le.bassRiseSec).toBeCloseTo(30 - 0.46875, 5);
     expect(le.killDb).toBeLessThan(le.cutDb); // kill is a deeper cut
   });
 
