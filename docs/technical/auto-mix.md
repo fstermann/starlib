@@ -33,8 +33,8 @@ A one-off **picked mix-out point** (`deckAMixOutOverrideSec` on the
 `TransitionContext`) replaces the end-of-track anchor. The player sets it when
 the user clicks a phrase-band section ahead of the playhead (state lives only in
 the player and resets on track change). `crossfade` starts the fade there
-(clamped so the fade fits); the beatgrid modes take the downbeat at or after it
-(50 ms snap tolerance) and walk `matchBars` downbeats **forward**.
+(clamped so the fade fits); the beatgrid modes take the downbeat nearest it
+and walk `matchBars` downbeats **forward**.
 
 With `mixOutAtLastChorus` in the `MixConfig`, the end anchor becomes the end of
 deck A's last `chorus` section: `crossfade` starts `crossfadeSeconds` before it,
@@ -126,12 +126,15 @@ rest full height), and the looping deck draws the standard green **loop box**
   becomes master, deck A collapses to a dimmed looping tail).
 
 The beatgrid mix-out window is anchored by **walking the grid**, not by
-arithmetic: take the downbeat at or before the end of musical content (last
+arithmetic: take the downbeat nearest the end of musical content (last
 section end when section-aware, else the file end), then step `matchBars`
 downbeats back. Both ends are actual grid ticks, so the fade ends bar-perfect
 at the content end. The earlier subtract-fade-length-then-snap approach was
 reliably a bar early: real grids carry per-tick ms rounding, so the subtracted
 time landed a hair before the intended downbeat and snapped back a whole bar.
+Section bounds snap to the **nearest** downbeat (here, for a picked mix-out
+point, and for deck B's intro skip) because Rekordbox phrases can sit a beat or
+two off the grid's bar lines (#677); rounding down or up would lose a bar.
 The wall-clock `fadeSeconds` is that grid window divided by deck A's rate
 (sync), or by the average of the entry/target rates (ramp).
 

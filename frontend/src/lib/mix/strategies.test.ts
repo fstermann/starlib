@@ -220,6 +220,23 @@ describe("planTransition — beatgrid (beat-sync on)", () => {
     expect(plan.fadeSeconds).toBeCloseTo((16 * 4 * (60 / 90)) / 2, 3);
   });
 
+  it("section-aware snaps an intro end a beat off the grid to its bar line", () => {
+    // 120 BPM: bar lines every 2 s; the intro ends one beat after the 16 s bar.
+    const sections: DeckSection[] = [
+      { startSec: 0, endSec: 16.5, kind: "intro" },
+      { startSec: 16.5, endSec: 300, kind: "verse" },
+    ];
+    const plan = planTransition(
+      ctx(
+        { mode: "beatgrid", sectionAware: true },
+        deck(120, 300),
+        deck(120, 300, { sections }),
+        { targetBpm: 120 },
+      ),
+    );
+    expect(plan.deckBStartOffsetSec).toBeCloseTo(16);
+  });
+
   it("section-aware skips deck B's intro", () => {
     const sections: DeckSection[] = [
       { startSec: 0, endSec: 15, kind: "intro" },
@@ -460,7 +477,7 @@ describe("planTransition — picked mix-out point", () => {
     expect(plan.fadeSeconds).toBe(8);
   });
 
-  it("beatgrid snaps to the next downbeat and runs matchBars forward", () => {
+  it("beatgrid snaps to the nearest downbeat and runs matchBars forward", () => {
     // 120 BPM → 2 s per bar; downbeats at 0, 2, 4, …
     const plan = planTransition(
       ctx({ mode: "beatgrid", matchBars: 8 }, deck(120, 300), deck(120, 300), {
@@ -477,6 +494,17 @@ describe("planTransition — picked mix-out point", () => {
     const plan = planTransition(
       ctx({ mode: "beatgrid", matchBars: 8 }, deck(120, 300), deck(120, 300), {
         deckAMixOutOverrideSec: 100.004,
+        targetBpm: 120,
+      }),
+    );
+    expect(plan.deckAMixOutSec).toBeCloseTo(100);
+  });
+
+  it("beatgrid snaps a section start a beat past its bar line back to it", () => {
+    // 120 BPM → 0.5 s per beat; a phrase start one beat after the 100 s bar.
+    const plan = planTransition(
+      ctx({ mode: "beatgrid", matchBars: 8 }, deck(120, 300), deck(120, 300), {
+        deckAMixOutOverrideSec: 100.5,
         targetBpm: 120,
       }),
     );
@@ -518,6 +546,33 @@ describe("planTransition — mix out at last chorus", () => {
     expect(plan.deckAMixOutSec).toBeCloseTo(208);
     expect(plan.fadeSeconds).toBeCloseTo(16);
   });
+
+  it.each([
+    ["one beat before", 223.5],
+    ["one beat after", 224.5],
+  ])(
+    "beatgrid ends the fade on the bar line when the chorus ends %s it",
+    (_, chorusEnd) => {
+      // Rekordbox phrases can sit a beat off the grid's bar lines (#677).
+      const offGrid = sections.map((s) =>
+        s.endSec === 224
+          ? { ...s, endSec: chorusEnd }
+          : s.startSec === 224
+            ? { ...s, startSec: chorusEnd }
+            : s,
+      );
+      const plan = planTransition(
+        ctx(
+          { mode: "beatgrid", matchBars: 8, mixOutAtLastChorus: true },
+          deck(120, 300, { sections: offGrid }),
+          deck(120, 300),
+          { targetBpm: 120 },
+        ),
+      );
+      expect(plan.deckAMixOutSec).toBeCloseTo(208);
+      expect(plan.fadeSeconds).toBeCloseTo(16);
+    },
+  );
 
   it("crossfade ends the fade at the last chorus's end", () => {
     const plan = planTransition(

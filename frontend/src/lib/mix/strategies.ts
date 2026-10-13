@@ -50,7 +50,7 @@ export interface TransitionContext {
   config: MixConfig;
   /**
    * User-picked mix-out point on deck A (seconds), replacing the end-of-track
-   * anchor. Beatgrid modes snap it to the next downbeat and run the window
+   * anchor. Beatgrid modes snap it to the nearest downbeat and run the window
    * forward from there.
    */
   deckAMixOutOverrideSec?: number | null;
@@ -140,15 +140,22 @@ const EQ_KILL_BARS = 2;
 const EQ_RISE_BEATS = 1;
 const BEATS_PER_BAR = 4;
 
-/** First downbeat at or after `timeSec`, else the last downbeat, else null. */
-function downbeatAtOrAfter(beats: DeckBeat[], timeSec: number): number | null {
-  for (const b of beats) {
-    if (b.beat === 1 && b.timeSec >= timeSec) return b.timeSec;
+/**
+ * Index of the downbeat nearest `timeSec`, or -1 when there are none. Section
+ * bounds snap here rather than rounding down or up: Rekordbox phrases can sit a
+ * beat or two off the grid's bar lines (#677), and rounding would lose a bar.
+ */
+function nearestDownbeatIdx(downbeats: DeckBeat[], timeSec: number): number {
+  let best = -1;
+  for (let i = 0; i < downbeats.length; i++) {
+    if (
+      best < 0 ||
+      Math.abs(downbeats[i].timeSec - timeSec) <
+        Math.abs(downbeats[best].timeSec - timeSec)
+    )
+      best = i;
   }
-  for (let i = beats.length - 1; i >= 0; i--) {
-    if (beats[i].beat === 1) return beats[i].timeSec;
-  }
-  return null;
+  return best;
 }
 
 function hasGrid(info: DeckInfo): boolean {
@@ -208,7 +215,7 @@ function lastChorusEndSec(ctx: TransitionContext): number | null {
  * `sectionAware`, the last section's end (trims stray trailing bars); otherwise
  * it's the file end.
  *
- * Anchored by walking deck A's own beatgrid: take the downbeat at or before
+ * Anchored by walking deck A's own beatgrid: take the downbeat nearest
  * the content end, then step `matchBars` downbeats back through the grid. Both
  * ends land exactly on grid ticks, so the fade finishes bar-perfect at the
  * content end even when tick times are ms-rounded or the grid drifts —
@@ -226,11 +233,7 @@ function deckAMixOutWindow(
   }
   endRef = lastChorusEndSec(ctx) ?? endRef;
   const downbeats = beats.filter((b) => b.beat === 1);
-  let endIdx = -1;
-  for (let i = 0; i < downbeats.length; i++) {
-    if (downbeats[i].timeSec <= endRef) endIdx = i;
-    else break;
-  }
+  const endIdx = nearestDownbeatIdx(downbeats, endRef);
   if (endIdx <= 0) return null;
   const startIdx = Math.max(0, endIdx - ctx.config.matchBars);
   const fadeOnASec = downbeats[endIdx].timeSec - downbeats[startIdx].timeSec;
@@ -242,19 +245,16 @@ function deckAMixOutWindow(
   };
 }
 
-/** Snap tolerance: section bounds and grid ticks are separately ms-rounded. */
-const OVERRIDE_SNAP_SEC = 0.05;
-
 /**
- * Deck A's window from a user-picked mix-out point: the downbeat at or after
- * it, then `matchBars` downbeats forward (fewer if the grid ends first).
+ * Deck A's window from a user-picked mix-out point (a section start): the
+ * nearest downbeat, then `matchBars` downbeats forward (fewer if the grid ends
+ * first).
  */
 function deckAOverrideWindow(
   ctx: TransitionContext,
 ): { mixOutSec: number; fadeOnASec: number; bars: number } | null {
-  const target = ctx.deckAMixOutOverrideSec! - OVERRIDE_SNAP_SEC;
   const downbeats = ctx.deckA.analysis!.beats.filter((b) => b.beat === 1);
-  const startIdx = downbeats.findIndex((b) => b.timeSec >= target);
+  const startIdx = nearestDownbeatIdx(downbeats, ctx.deckAMixOutOverrideSec!);
   if (startIdx < 0) return null;
   const endIdx = Math.min(
     downbeats.length - 1,
@@ -270,20 +270,16 @@ function deckAOverrideWindow(
 
 /**
  * Where deck B starts. With `sectionAware`, skip a leading `intro` section
- * (start at its end); otherwise start at the first downbeat.
+ * (start at the downbeat nearest its end); otherwise start at the first downbeat.
  */
 function deckBMixInAnchor(ctx: TransitionContext): number {
-  const beats = ctx.deckB.analysis!.beats;
-  const sections = ctx.deckB.analysis!.sections;
-  if (ctx.config.sectionAware && sections.length > 0) {
-    const first = sections[0];
-    if (first.kind === "intro") {
-      const db = downbeatAtOrAfter(beats, first.endSec);
-      if (db != null) return db;
-    }
-  }
-  const first = downbeatAtOrAfter(beats, 0);
-  return first ?? 0;
+  const { beats, sections } = ctx.deckB.analysis!;
+  const downbeats = beats.filter((b) => b.beat === 1);
+  const first = sections[0];
+  const target =
+    ctx.config.sectionAware && first?.kind === "intro" ? first.endSec : 0;
+  const idx = nearestDownbeatIdx(downbeats, target);
+  return idx < 0 ? 0 : downbeats[idx].timeSec;
 }
 
 /**
