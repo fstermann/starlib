@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { Page, Route } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
@@ -673,6 +674,66 @@ test.describe("Track Breakdown", () => {
     await expect(page.getByTestId("track-cue")).toHaveAttribute(
       "data-cue-bar",
       "13",
+    );
+  });
+
+  test("zoomed in to one bar, the loop snaps to 16ths", async ({ page }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+    await page.getByRole("radio", { name: "1 bar" }).click();
+
+    // One bar across the plot: drag from 1.1 to 1.2 snaps out to 1 1/16 to 1 4/16.
+    const plot = page.getByTestId("track-waveform-bass");
+    const box = (await plot.boundingBox())!;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width * 0.1, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.2, y, { steps: 4 });
+    await page.mouse.up();
+
+    const brace = page.getByTestId("track-loop-brace");
+    await expect(brace).toHaveAttribute("data-loop-start", "1.0625");
+    await expect(brace).toHaveAttribute("data-loop-end", "1.25");
+    await expect(page.getByTestId("track-loop-range")).toHaveText(
+      "0.1875 bars",
+    );
+  });
+
+  test("copy audio saves the loop mixed from the lanes you hear", async ({
+    page,
+  }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+    const copy = page.getByTestId("track-copy-audio");
+    await expect(copy).toBeDisabled();
+
+    await page.getByTestId("track-loop").click();
+    await page.getByTestId("track-solo-bass").click();
+    await page.getByTestId("track-solo-drums").click();
+    // Outside the desktop app the clip downloads instead of going on the clipboard.
+    let download = page.waitForEvent("download");
+    await copy.click();
+    const stems = await download;
+    expect(stems.suggestedFilename()).toBe(
+      "Artist - Tune - Drums + Bass - bar 1 (16 bars).wav",
+    );
+    const wav = await readFile((await stems.path())!);
+    expect(wav.toString("ascii", 0, 4)).toBe("RIFF");
+    expect(wav.readUInt16LE(20)).toBe(3);
+    expect(wav.readUInt16LE(22)).toBe(2);
+    const seconds = wav.readUInt32LE(40) / 8 / wav.readUInt32LE(24);
+    expect(seconds).toBeCloseTo((16 * 240) / BPM, 3);
+
+    await page.getByTestId("track-solo-bass").click();
+    await page.getByTestId("track-solo-drums").click();
+    await page.getByTestId("track-drum-parts-toggle").click();
+    await page.getByTestId("track-solo-kick").click();
+    download = page.waitForEvent("download");
+    await page.keyboard.press("ControlOrMeta+c");
+    expect((await download).suggestedFilename()).toBe(
+      "Artist - Tune - Kick - bar 1 (16 bars).wav",
     );
   });
 

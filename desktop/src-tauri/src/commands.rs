@@ -369,3 +369,32 @@ pub async fn open_soundcloud_login<R: Runtime>(
 pub fn output_latency() -> Option<f64> {
     crate::output_latency::default_output_latency()
 }
+
+/// Save a WAV clip and put it on the clipboard as a file, ready to paste into a DAW.
+///
+/// The WAV is the raw request body; the clip's name, percent-encoded, is the
+/// `x-clip-name` header. Returns the saved path.
+#[tauri::command]
+pub async fn copy_audio_to_clipboard(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(wav) = request.body() else {
+        return Err("expected the WAV as a raw body".into());
+    };
+    let name = request
+        .headers()
+        .get("x-clip-name")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| {
+            percent_encoding::percent_decode_str(v)
+                .decode_utf8_lossy()
+                .into_owned()
+        })
+        .unwrap_or_default();
+    let wav = wav.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = crate::audio_clipboard::save_clip(&name, &wav).map_err(|e| e.to_string())?;
+        crate::audio_clipboard::copy_file(&path)?;
+        Ok(path.display().to_string())
+    })
+    .await
+    .map_err(|e| format!("copy task failed: {e}"))?
+}

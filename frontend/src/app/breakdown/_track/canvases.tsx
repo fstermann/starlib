@@ -36,6 +36,16 @@ function fit(canvas: HTMLCanvasElement): { width: number; height: number } {
   return { width, height };
 }
 
+/** Grid lines per beat: 16ths once they are far enough apart to read, otherwise beats only. */
+export function gridPerBeat(
+  view: View,
+  beatsPerBar: number,
+  width: number,
+): number {
+  const beatPx = width / (view.span * beatsPerBar);
+  return beatPx / 4 >= MIN_GRID_PX ? 4 : 1;
+}
+
 function drawSixteenths(
   ctx: CanvasRenderingContext2D,
   view: View,
@@ -43,9 +53,7 @@ function drawSixteenths(
   width: number,
   height: number,
 ) {
-  const beatPx = width / (view.span * beatsPerBar);
-  // 16ths once they are far enough apart to read, otherwise beats only.
-  const perBeat = beatPx / 4 >= MIN_GRID_PX ? 4 : 1;
+  const perBeat = gridPerBeat(view, beatsPerBar, width);
   const perBar = beatsPerBar * perBeat;
   const first = Math.ceil((view.start - 1) * perBar);
   const last = Math.floor((view.start - 1 + view.span) * perBar);

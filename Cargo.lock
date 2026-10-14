@@ -3856,6 +3856,7 @@ dependencies = [
  "dirs",
  "libc",
  "log",
+ "percent-encoding",
  "reqwest",
  "serde",
  "serde_json",

@@ -197,6 +197,13 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     [loaded],
   );
 
+  /** The audible mix between two times, or `null` when nothing is audible. */
+  const renderMix = useCallback(
+    async (start: number, end: number) =>
+      (await playerRef.current?.renderMix(start, end)) ?? null,
+    [],
+  );
+
   const analyser = useCallback(() => playerRef.current?.analyser ?? null, []);
   const clock = useCallback(() => playerRef.current?.clock() ?? 0, []);
 
@@ -220,6 +227,7 @@ export function useStemPlayer(digest: string, originalUrl: string) {
     setLoop,
     updateLane,
     waveform,
+    renderMix,
     analyser,
     displayDelay,
     clock,

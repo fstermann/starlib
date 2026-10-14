@@ -76,6 +76,9 @@ export class StemPlayer {
   private readonly lanes = new Map<string, Lane>();
   /** Gains with no audio of their own that member lanes play through. */
   private readonly groupGains = new Map<string, GainNode>();
+  private readonly groupOf = new Map<string, string>();
+  /** Last value given to each lane and group gain by {@link setGains}. */
+  private readonly gainValues = new Map<string, number>();
   private startCtxTime = 0;
   private startOffset = 0;
   private pausedAt = 0;
@@ -103,7 +106,10 @@ export class StemPlayer {
       const gain = this.ctx.createGain();
       gain.connect(this.master);
       this.groupGains.set(group, gain);
-      for (const member of members) outputOf.set(member, gain);
+      for (const member of members) {
+        outputOf.set(member, gain);
+        this.groupOf.set(member, group);
+      }
     }
     for (const [name, url] of Object.entries(urls)) {
       const gain = this.ctx.createGain();
@@ -245,6 +251,7 @@ export class StemPlayer {
   setGains(gains: Record<string, number>): void {
     const now = this.ctx.currentTime;
     for (const [name, value] of Object.entries(gains)) {
+      this.gainValues.set(name, value);
       const groupGain = this.groupGains.get(name);
       if (groupGain) {
         groupGain.gain.setTargetAtTime(value, now, GAIN_SMOOTHING_S);
@@ -273,6 +280,41 @@ export class StemPlayer {
     const waveform = blocksOf(channels, (buffers[0] as AudioBuffer).sampleRate);
     this.waveforms.set(key, waveform);
     return waveform;
+  }
+
+  /**
+   * The stereo mix between two times as heard: every lane times its gain and
+   * its group's. `null` when nothing is audible.
+   */
+  async renderMix(
+    start: number,
+    end: number,
+  ): Promise<{ channels: Float32Array[]; sampleRate: number } | null> {
+    const gainOf = (name: string) => this.gainValues.get(name) ?? 1;
+    const audible = [...this.lanes.keys()]
+      .map((name) => {
+        const group = this.groupOf.get(name);
+        return { name, gain: gainOf(name) * (group ? gainOf(group) : 1) };
+      })
+      .filter(({ gain }) => gain > 0);
+    if (audible.length === 0) return null;
+    await this.load(audible.map(({ name }) => name));
+    const sampleRate = this.ctx.sampleRate;
+    const from = Math.round(start * sampleRate);
+    const length = Math.max(0, Math.round(end * sampleRate) - from);
+    const channels = [new Float32Array(length), new Float32Array(length)];
+    for (const { name, gain } of audible) {
+      const buffer = this.lanes.get(name)?.buffer;
+      if (!buffer) continue;
+      channels.forEach((out, c) => {
+        const data = buffer.getChannelData(
+          Math.min(c, buffer.numberOfChannels - 1),
+        );
+        const n = Math.min(length, data.length - from);
+        for (let i = 0; i < n; i++) out[i] += data[from + i] * gain;
+      });
+    }
+    return { channels, sampleRate };
   }
 
   isLoaded(name: string): boolean {

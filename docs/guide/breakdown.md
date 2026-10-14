@@ -37,8 +37,9 @@ All lanes play sample-locked to each other. Each lane has **M** (mute), **S** (s
 - Click a lane to set the cue (the marker in the bar ruler), as in Ableton. ++space++ plays from the cue and, pressed again, stops and returns to it. Clicking while playing jumps there.
 - ++shift+space++ pauses and resumes where playback is, without returning to the cue.
 - [Headphone sync](player.md#headphone-sync) in the top right also holds the playhead and spectrum back, so they match what you hear over Bluetooth.
-- Drag across a lane or the bar ruler to loop those bars, as in Ableton. The loop snaps to bars, or to beats when zoomed to 16 bars or fewer, and sets the cue at its start. The looped bars are tinted across all lanes, with the loop brace along the top of the ruler.
+- Drag across a lane or the bar ruler to loop those bars, as in Ableton. The loop snaps to bars, or to the grid lines shown when zoomed to 16 bars or fewer: beats, then 16ths once zoomed in far enough to draw them, and sets the cue at its start. The looped bars are tinted across all lanes, with the loop brace along the top of the ruler.
 - **Loop** turns looping on and off. Turned off, the brace stays in place, greyed out; click it to loop again. With no loop yet, **Loop** loops the section under the playhead.
+- **Copy audio** (++cmd+c++) copies the looped bars as a WAV, mixed from the lanes you hear: solo **Drums** to copy the drums, solo all four stems to copy them summed, unmute the original to copy it. Paste it into Ableton with ++cmd+v++. Clips are saved in `~/Music/Starlib/Clips`, so a set that uses them keeps finding them. In a browser the WAV downloads instead.
 - The zoom control at the right shows the whole track (**Fit**), 32, 8 or 1 bar; the magnifier buttons halve or double the visible bars. ++cmd++ + scroll zooms around the pointer; a horizontal scroll pans.
 - Click the strip above the lanes to move the visible window.
 

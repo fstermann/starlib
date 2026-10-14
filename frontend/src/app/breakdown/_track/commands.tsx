@@ -1,6 +1,6 @@
 "use client";
 
-import { Repeat, RotateCcw } from "lucide-react";
+import { Copy, Repeat, RotateCcw } from "lucide-react";
 
 import { useCommand } from "@/components/command-palette/use-command";
 
@@ -13,11 +13,15 @@ export function TrackCommands({
   sectionsEdited,
   looping,
   onLoop,
+  canCopyAudio,
+  onCopyAudio,
   onResetSections,
 }: {
   sectionsEdited: boolean;
   looping: boolean;
   onLoop: () => void;
+  canCopyAudio: boolean;
+  onCopyAudio: () => void;
   onResetSections: () => void;
 }) {
   useCommand({
@@ -30,6 +34,21 @@ export function TrackCommands({
     group: "Breakdown",
     run: ({ close }) => {
       onLoop();
+      close();
+    },
+  });
+
+  useCommand({
+    id: "breakdown.track.copy-audio",
+    label: "Copy loop audio",
+    description:
+      "Copy the looped bars with the lanes you hear, mixed, to paste into Ableton.",
+    icon: Copy,
+    keywords: ["copy", "audio", "clip", "sample", "stems", "ableton", "export"],
+    group: "Breakdown",
+    when: canCopyAudio,
+    run: ({ close }) => {
+      onCopyAudio();
       close();
     },
   });

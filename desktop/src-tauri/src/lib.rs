@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+pub mod audio_clipboard;
 pub mod bpm;
 pub mod commands;
 pub mod output_latency;
@@ -199,6 +200,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::analyze_local_bpm,
             commands::analyze_sc_bpm,
+            commands::copy_audio_to_clipboard,
             commands::open_soundcloud_login,
             commands::output_latency,
         ])

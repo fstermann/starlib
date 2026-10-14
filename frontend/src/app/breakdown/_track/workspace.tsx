@@ -3,6 +3,7 @@
 import {
   AudioWaveform,
   ChevronRight,
+  Copy,
   Drum,
   Guitar,
   MicVocal,
@@ -47,9 +48,11 @@ import {
 } from "@/lib/track-breakdown";
 import { sectionIndexAt } from "@/lib/track-breakdown-sections";
 import { cn } from "@/lib/utils";
+import { encodeWav } from "@/lib/wav";
 
-import { SpectrumPanel, WaveformLane } from "./canvases";
+import { gridPerBeat, SpectrumPanel, WaveformLane } from "./canvases";
 import { TrackCommands } from "./commands";
+import { audibleLanesLabel, deliverClip, trackName } from "./copy-audio";
 import { TrackHeader } from "./header";
 import {
   CurveLane,
@@ -103,7 +106,7 @@ function pageTo(view: View, bar: number, nBars: number): View {
 
 /** A loop length such as "16 bars" or "1.25 bars". */
 function formatBars(bars: number): string {
-  const n = Number(bars.toFixed(2));
+  const n = Number(bars.toFixed(4));
   return `${n} ${n === 1 ? "bar" : "bars"}`;
 }
 
@@ -173,9 +176,43 @@ export function TrackWorkspace({
     player.toggle();
   }, [player, view]);
 
-  const keyActions = useRef({ togglePlayback, continuePlayback });
+  const [copying, setCopying] = useState(false);
+  /** Copy the loop's audible lanes, mixed as heard, to paste into a DAW. */
+  const copyAudio = useCallback(async () => {
+    if (!loop || copying) return;
+    const lanes = audibleLanesLabel(gains, features);
+    if (!lanes) {
+      toast.error("Nothing to copy: every lane is muted");
+      return;
+    }
+    setCopying(true);
+    try {
+      const mix = await player.renderMix(
+        Math.max(0, barStartS(grid, loop.start)),
+        barStartS(grid, loop.end),
+      );
+      if (!mix) return;
+      const bars = formatBars(loop.end - loop.start);
+      const name = `${trackName(source, result)} - ${lanes} - bar ${Number(loop.start.toFixed(4))} (${bars})`;
+      const copied = await deliverClip(
+        encodeWav(mix.channels, mix.sampleRate),
+        name,
+      );
+      toast.success(
+        copied
+          ? `Copied ${lanes}, ${bars}. Paste it into Ableton.`
+          : `Saved ${name}.wav`,
+      );
+    } catch (err) {
+      toast.error(`Couldn't copy audio: ${String(err)}`);
+    } finally {
+      setCopying(false);
+    }
+  }, [copying, features, gains, grid, loop, player, result, source]);
+
+  const keyActions = useRef({ togglePlayback, continuePlayback, copyAudio });
   useEffect(() => {
-    keyActions.current = { togglePlayback, continuePlayback };
+    keyActions.current = { togglePlayback, continuePlayback, copyAudio };
   });
 
   const seekBar = useCallback(
@@ -252,10 +289,14 @@ export function TrackWorkspace({
     if (index >= 0) loopSection(index);
   }, [loop, loopSection, looping, playheadBar, sections]);
 
-  /** Drag across the lanes to loop those bars, snapped to beats when zoomed in. */
+  /** Drag across the lanes to loop those bars, snapped to the grid lines shown. */
   const selectLoop = useCallback(
-    (from: number, to: number, done: boolean) => {
-      const step = view.span <= GRID_MAX_SPAN ? 1 / grid.beats_per_bar : 1;
+    (from: number, to: number, done: boolean, width: number) => {
+      const bpb = grid.beats_per_bar;
+      const step =
+        view.span <= GRID_MAX_SPAN
+          ? 1 / (bpb * gridPerBeat(view, bpb, width))
+          : 1;
       const start = Math.max(1, snapBar(Math.min(from, to), step, Math.floor));
       const end = Math.min(
         nBars + 1,
@@ -270,7 +311,7 @@ export function TrackWorkspace({
       setLooping(true);
       setCue(Math.max(0, barStartS(grid, start)));
     },
-    [grid, nBars, view.span],
+    [grid, nBars, view],
   );
 
   // Ctrl/Cmd + wheel zooms around the pointer; horizontal wheel pans.
@@ -304,14 +345,21 @@ export function TrackWorkspace({
   }, [nBars]);
 
   // Space plays from the cue and stops back to it; Shift+Space continues in place.
+  // Cmd/Ctrl+C copies the loop's audio unless text is selected.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
+      if (target.closest("input, textarea, [contenteditable]")) return;
       if (
-        e.code !== "Space" ||
-        target.closest("input, textarea, [contenteditable]")
-      )
+        (e.metaKey || e.ctrlKey) &&
+        e.key === "c" &&
+        window.getSelection()?.isCollapsed !== false
+      ) {
+        e.preventDefault();
+        void keyActions.current.copyAudio();
         return;
+      }
+      if (e.code !== "Space") return;
       e.preventDefault();
       if (e.shiftKey) keyActions.current.continuePlayback();
       else keyActions.current.togglePlayback();
@@ -355,6 +403,8 @@ export function TrackWorkspace({
         sectionsEdited={result.sections_edited}
         looping={looping}
         onLoop={toggleLooping}
+        canCopyAudio={loop !== null && player.ready}
+        onCopyAudio={() => void copyAudio()}
         onResetSections={() => void reset()}
       />
       <TrackHeader source={source} result={result} onRemeasure={onRemeasure} />
@@ -405,6 +455,23 @@ export function TrackWorkspace({
             </span>
           )}
         </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void copyAudio()}
+              disabled={!loop || !player.ready || copying}
+              data-testid="track-copy-audio"
+            >
+              <Copy className="size-4" />
+              Copy audio
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Copy the loop with the lanes you hear, to paste into Ableton (⌘C)
+          </TooltipContent>
+        </Tooltip>
         {!player.ready && !player.error && (
           <span className="text-xs text-[var(--text-muted)]">
             Loading stems…

@@ -48,6 +48,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "breakdown.link-soundcloud",
   "breakdown.open-track",
   "breakdown.track.loop-section",
+  "breakdown.track.copy-audio",
   "breakdown.track.reset-sections",
 ]);
 

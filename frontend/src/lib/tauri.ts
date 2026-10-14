@@ -63,3 +63,16 @@ export async function analyzeScBpm(
 export async function outputLatency(): Promise<number | null> {
   return invoke<number | null>("output_latency");
 }
+
+/**
+ * Save a WAV clip and put it on the clipboard as a file, so it pastes into a
+ * DAW like a file copied in Finder. Returns the saved path.
+ */
+export async function copyAudioToClipboard(
+  wav: Uint8Array<ArrayBuffer>,
+  name: string,
+): Promise<string> {
+  return invoke<string>("copy_audio_to_clipboard", wav, {
+    headers: { "x-clip-name": encodeURIComponent(name) },
+  });
+}
