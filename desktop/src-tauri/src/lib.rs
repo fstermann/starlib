@@ -5,6 +5,7 @@ pub mod audio_clipboard;
 pub mod bpm;
 pub mod commands;
 pub mod output_latency;
+pub mod webkit_gpu;
 
 /// Returns the app config directory used by both the Rust and Python layers.
 /// Matches `platformdirs.user_config_path("com.starlib.Starlib")`.
@@ -203,6 +204,7 @@ pub fn run() {
             commands::copy_audio_to_clipboard,
             commands::open_soundcloud_login,
             commands::output_latency,
+            commands::restart_webkit_gpu_process,
         ])
         .plugin(
             tauri_plugin_log::Builder::new()

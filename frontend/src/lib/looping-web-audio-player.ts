@@ -33,11 +33,7 @@ export function getSharedAudioContext(): AudioContext {
   return sharedContext;
 }
 
-/**
- * Stop and restart the shared context's output. After the Mac sleeps, WebKit
- * can leave the context running with its output stopped: the clock advances
- * and nothing is heard until the output is started again.
- */
+/** Stop and restart the shared context's output. */
 export async function restartSharedAudioOutput(): Promise<boolean> {
   const ctx = sharedContext;
   if (!ctx || ctx.state === "closed") return false;

@@ -5,6 +5,10 @@ import { useCallback, useEffect, useRef } from "react";
 
 import { WAVEFORM_BLOCK, type Waveform } from "@/lib/stem-player";
 import { barStartS, noteAt, type Grid } from "@/lib/track-breakdown";
+import {
+  hasLostBackingStore,
+  useRedrawOnCanvasesLost,
+} from "@/lib/use-redraw-on-canvases-lost";
 
 import type { View } from "./lanes";
 
@@ -28,7 +32,7 @@ function token(name: string): string {
 function fit(canvas: HTMLCanvasElement): { width: number; height: number } {
   const { width, height } = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  if (canvas.width !== Math.round(width * dpr))
+  if (hasLostBackingStore(canvas) || canvas.width !== Math.round(width * dpr))
     canvas.width = Math.round(width * dpr);
   if (canvas.height !== Math.round(height * dpr))
     canvas.height = Math.round(height * dpr);
@@ -66,12 +70,13 @@ function drawSixteenths(
   }
 }
 
-/** Redraw on resize and theme change. */
+/** Redraw on resize, theme change and GPU process restart. */
 function useRedraw(
   canvas: React.RefObject<HTMLCanvasElement | null>,
   draw: () => void,
 ) {
   const { resolvedTheme } = useTheme();
+  useRedrawOnCanvasesLost(draw);
   useEffect(() => {
     draw();
     const el = canvas.current;

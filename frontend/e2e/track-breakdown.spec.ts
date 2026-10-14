@@ -771,6 +771,36 @@ test.describe("Track Breakdown", () => {
     await expect.poll(restarts).toBe(2);
   });
 
+  test("waveforms redraw after the GPU process restarts", async ({ page }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+    // Zoomed to one bar the lane draws grid lines even for silent stems.
+    await page.getByRole("radio", { name: "1 bar" }).click();
+    const paintedPixels = () =>
+      page.getByTestId("track-waveform-bass").evaluate((canvas) => {
+        const c = canvas as HTMLCanvasElement;
+        const data = c
+          .getContext("2d")!
+          .getImageData(0, 0, c.width, c.height).data;
+        let painted = 0;
+        for (let i = 3; i < data.length; i += 4) if (data[i] > 0) painted++;
+        return painted;
+      });
+    await expect.poll(paintedPixels).toBeGreaterThan(0);
+
+    // A GPU process restart blanks canvases, as clearing does here.
+    await page.getByTestId("track-waveform-bass").evaluate((canvas) => {
+      const c = canvas as HTMLCanvasElement;
+      c.getContext("2d")!.clearRect(0, 0, c.width, c.height);
+    });
+    expect(await paintedPixels()).toBe(0);
+    await page.evaluate(() =>
+      window.dispatchEvent(new Event("starlib:canvases-lost")),
+    );
+    await expect.poll(paintedPixels).toBeGreaterThan(0);
+  });
+
   test("shows stem separation progress and cancels the job", async ({
     page,
   }) => {

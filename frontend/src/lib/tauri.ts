@@ -76,3 +76,15 @@ export async function copyAudioToClipboard(
     headers: { "x-clip-name": encodeURIComponent(name) },
   });
 }
+
+/** Fired after the GPU process was replaced, which blanks every canvas. */
+export const CANVASES_LOST_EVENT = "starlib:canvases-lost";
+
+/**
+ * Restart the WebKit GPU process behind this window. Revives audio that WebKit
+ * silenced after sleep; canvases go blank and must redraw on
+ * {@link CANVASES_LOST_EVENT}. Returns whether a process was restarted.
+ */
+export async function restartWebkitGpuProcess(): Promise<boolean> {
+  return invoke<boolean>("restart_webkit_gpu_process");
+}

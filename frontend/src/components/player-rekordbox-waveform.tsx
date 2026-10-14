@@ -7,6 +7,7 @@ import {
   type WaveformVariant,
 } from "@/components/rekordbox-waveform";
 import { usePlayer } from "@/lib/player-context";
+import { useRedrawOnCanvasesLost } from "@/lib/use-redraw-on-canvases-lost";
 import { cn } from "@/lib/utils";
 
 interface PlayerRekordboxWaveformProps {
@@ -192,6 +193,8 @@ export function PlayerRekordboxWaveform({
       draw(p, hoverXRef.current);
     });
   }, [draw, subscribeProgress, progressOverride]);
+
+  useRedrawOnCanvasesLost(() => draw(progressRef.current, hoverXRef.current));
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {

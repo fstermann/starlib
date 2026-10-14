@@ -80,6 +80,7 @@ import {
   invalidateSoundcloudStreamUrl,
 } from "@/lib/soundcloud-cache";
 import { useChanged } from "@/lib/use-changed";
+import { useRedrawOnCanvasesLost } from "@/lib/use-redraw-on-canvases-lost";
 import { useResizableWidth } from "@/lib/use-resizable";
 import { useWaveformStyle } from "@/lib/use-waveform-style";
 import { cn } from "@/lib/utils";
@@ -419,6 +420,8 @@ export function WaveformPlayer() {
   // Bumped when the queued track's background BPM resolution lands, so the
   // plan folds the resolved rate in without re-preparing the deck.
   const [nextBpmTick, setNextBpmTick] = useState(0);
+
+  useRedrawOnCanvasesLost(() => wsRef.current?.getRenderer().reRender());
 
   useEffect(() => {
     mixConfigRef.current = mixConfig;

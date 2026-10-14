@@ -6,17 +6,33 @@ import { toast } from "sonner";
 
 import { useCommand } from "@/components/command-palette/use-command";
 import { restartSharedAudioOutput } from "@/lib/looping-web-audio-player";
-import { isTauri } from "@/lib/tauri";
+import {
+  CANVASES_LOST_EVENT,
+  isTauri,
+  restartWebkitGpuProcess,
+} from "@/lib/tauri";
 
 /** A gap this long between timer ticks means the Mac slept. */
 const WAKE_GAP_MS = 30_000;
 const TICK_MS = 5_000;
+const GPU_RECONNECT_MS = 500;
 
+/**
+ * In the desktop app, replace WebKit's GPU process: after sleep it can stop
+ * playing every audio context, and only a fresh process brings sound back.
+ * In a browser, restart the shared context's output.
+ */
 async function restartAudio(reason: string): Promise<void> {
-  const restarted = await restartSharedAudioOutput();
-  if (!restarted || !isTauri()) return;
+  if (!isTauri()) {
+    await restartSharedAudioOutput();
+    return;
+  }
+  if (!(await restartWebkitGpuProcess())) return;
+  // The page connects to the new GPU process shortly after it launches.
+  await new Promise((resolve) => setTimeout(resolve, GPU_RECONNECT_MS));
+  window.dispatchEvent(new Event(CANVASES_LOST_EVENT));
   const { info } = await import("@tauri-apps/plugin-log");
-  await info(`[audio] restarted output after ${reason}`);
+  await info(`[audio] restarted WebKit GPU process after ${reason}`);
 }
 
 /** Restarts audio output after sleep, and offers it in the palette. */

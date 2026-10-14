@@ -8,6 +8,11 @@ import {
   useRef,
 } from "react";
 
+import {
+  hasLostBackingStore,
+  useRedrawOnCanvasesLost,
+} from "@/lib/use-redraw-on-canvases-lost";
+
 /** A span of the strip's own time axis to tint, e.g. where the track plays. */
 export interface StripBand {
   startS: number;
@@ -89,7 +94,7 @@ export const PeakStrip = forwardRef<PeakStripHandle, PeakStripProps>(
       const dpr = window.devicePixelRatio || 1;
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      if (canvas.width !== Math.round(w * dpr))
+      if (hasLostBackingStore(canvas) || canvas.width !== Math.round(w * dpr))
         canvas.width = Math.round(w * dpr);
       if (canvas.height !== Math.round(h * dpr))
         canvas.height = Math.round(h * dpr);
@@ -159,6 +164,8 @@ export const PeakStrip = forwardRef<PeakStripHandle, PeakStripProps>(
     useEffect(() => {
       draw(centerS);
     });
+
+    useRedrawOnCanvasesLost(() => draw(centerRef.current));
 
     useEffect(() => {
       const canvas = canvasRef.current;
