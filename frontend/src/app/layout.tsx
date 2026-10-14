@@ -6,6 +6,7 @@ import "./globals.css";
 import { ThemeProvider } from "next-themes";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
+import { AudioRecovery } from "@/components/audio-recovery";
 import { BackendGate } from "@/components/backend-gate";
 import { BackendStatusListener } from "@/components/backend-status-listener";
 import {
@@ -75,6 +76,7 @@ export default function RootLayout({
                           <SetupGate>{children}</SetupGate>
                         </LayoutShell>
                         <WaveformPlayer />
+                        <AudioRecovery />
                         <CommandPalette />
                       </MatchingTracksProvider>
                     </CommandPaletteProvider>

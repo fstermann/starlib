@@ -21,6 +21,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   // Actions
   "settings:open",
   "theme:toggle",
+  "audio:restart",
   "headphone-sync:toggle",
   "auth:connect",
   "auth:disconnect",

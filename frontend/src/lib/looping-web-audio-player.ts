@@ -34,6 +34,19 @@ export function getSharedAudioContext(): AudioContext {
 }
 
 /**
+ * Stop and restart the shared context's output. After the Mac sleeps, WebKit
+ * can leave the context running with its output stopped: the clock advances
+ * and nothing is heard until the output is started again.
+ */
+export async function restartSharedAudioOutput(): Promise<boolean> {
+  const ctx = sharedContext;
+  if (!ctx || ctx.state === "closed") return false;
+  await ctx.suspend();
+  await ctx.resume();
+  return true;
+}
+
+/**
  * The private fields we reach into on the base {@link WebAudioPlayer}. They are
  * TypeScript-`private` (compile-time only), so we cast through this shape rather
  * than fork the vendored class. Pinned to `wavesurfer.js@^7.12` — revisit on a

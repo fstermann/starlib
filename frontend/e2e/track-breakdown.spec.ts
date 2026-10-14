@@ -737,6 +737,40 @@ test.describe("Track Breakdown", () => {
     );
   });
 
+  test("audio output restarts from the palette and after the Mac wakes", async ({
+    page,
+  }) => {
+    // Count suspend/resume pairs on the shared context: a restart is one of each.
+    await page.addInitScript(() => {
+      const w = window as unknown as { restarts: number };
+      w.restarts = 0;
+      const suspend = AudioContext.prototype.suspend;
+      AudioContext.prototype.suspend = function () {
+        w.restarts += 1;
+        return suspend.call(this);
+      };
+    });
+    await page.clock.install();
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+    const restarts = () =>
+      page.evaluate(() => (window as unknown as { restarts: number }).restarts);
+
+    await page.getByRole("button", { name: /open command palette/i }).click();
+    await page
+      .getByRole("dialog")
+      .locator('[data-command-id="audio:restart"]')
+      .click();
+    await expect(page.getByText("Audio restarted")).toBeVisible();
+    expect(await restarts()).toBe(1);
+
+    // Sleep stops timers while the wall clock moves on; the next tick sees the gap.
+    await page.clock.setSystemTime(Date.now() + 60_000);
+    await page.clock.runFor(5_000);
+    await expect.poll(restarts).toBe(2);
+  });
+
   test("shows stem separation progress and cancels the job", async ({
     page,
   }) => {

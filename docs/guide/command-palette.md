@@ -15,6 +15,7 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 |----|-------|------|--------|
 | `settings:open` | Open Settings | always | `components/sidebar.tsx` |
 | `theme:toggle` | Switch to Light/Dark Theme | always | `components/sidebar.tsx` |
+| `audio:restart` | Restart audio | always (also runs on its own after the Mac wakes from sleep) | `components/audio-recovery.tsx` |
 | `headphone-sync:toggle` | Turn on/off headphone sync | always | `components/layout/headphone-sync-toggle.tsx` |
 | `auth:connect` | Connect SoundCloud | no SoundCloud user connected | `components/sidebar.tsx` |
 | `auth:disconnect` | Disconnect SoundCloud (`<username>`) | SoundCloud user connected | `components/sidebar.tsx` |
