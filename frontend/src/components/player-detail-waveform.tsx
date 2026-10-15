@@ -10,6 +10,7 @@ import {
   type TrackAnalysis,
 } from "@/lib/rekordbox-analysis";
 import type { WaveformStyle } from "@/lib/settings";
+import { useRedrawOnCanvasesLost } from "@/lib/use-redraw-on-canvases-lost";
 import { cn } from "@/lib/utils";
 import {
   barSpanSeconds,
@@ -370,6 +371,8 @@ export function PlayerDetailWaveform({
       draw(p);
     });
   }, [draw, subscribeProgress, progressOverride]);
+
+  useRedrawOnCanvasesLost(() => draw(progressRef.current));
 
   // Grab-and-drag scrubbing: the press anchors the current position (no jump to
   // the cursor); dragging then scrubs relative to pointer movement.

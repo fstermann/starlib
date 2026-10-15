@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
+import { useRedrawOnCanvasesLost } from "@/lib/use-redraw-on-canvases-lost";
 
 interface MiniWaveformProps {
   track: PlayerTrack;
@@ -188,6 +189,10 @@ export function MiniWaveform({
       draw(p, hoverXRef.current);
     });
   }, [isActive, peaksLoaded, subscribeProgress, draw]);
+
+  useRedrawOnCanvasesLost(() =>
+    draw(currentProgressRef.current, hoverXRef.current),
+  );
 
   // The canvas backing store is sized at draw time, so redraw when the column
   // is resized.

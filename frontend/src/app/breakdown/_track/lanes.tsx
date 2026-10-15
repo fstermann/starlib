@@ -103,7 +103,13 @@ export function LaneRow({
   controls?: ReactNode;
   height: number;
   onSeekBar?: (bar: number) => void;
-  onSelectBars?: (from: number, to: number, done: boolean) => void;
+  /** Called with the dragged bars and the plot's width in pixels. */
+  onSelectBars?: (
+    from: number,
+    to: number,
+    done: boolean,
+    width: number,
+  ) => void;
   view: View;
   children: ReactNode;
   testId?: string;
@@ -121,12 +127,13 @@ export function LaneRow({
       if (!dragged.current && Math.abs(ev.clientX - x0) < SELECT_DRAG_PX)
         return;
       dragged.current = true;
-      onSelectBars(barAt(x0), barAt(ev.clientX), false);
+      onSelectBars(barAt(x0), barAt(ev.clientX), false, rect.width);
     };
     const onUp = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      if (dragged.current) onSelectBars(barAt(x0), barAt(ev.clientX), true);
+      if (dragged.current)
+        onSelectBars(barAt(x0), barAt(ev.clientX), true, rect.width);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);

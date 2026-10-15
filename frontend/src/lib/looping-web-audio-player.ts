@@ -33,6 +33,15 @@ export function getSharedAudioContext(): AudioContext {
   return sharedContext;
 }
 
+/** Stop and restart the shared context's output. */
+export async function restartSharedAudioOutput(): Promise<boolean> {
+  const ctx = sharedContext;
+  if (!ctx || ctx.state === "closed") return false;
+  await ctx.suspend();
+  await ctx.resume();
+  return true;
+}
+
 /**
  * The private fields we reach into on the base {@link WebAudioPlayer}. They are
  * TypeScript-`private` (compile-time only), so we cast through this shape rather

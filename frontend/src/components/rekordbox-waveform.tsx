@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
 import { usePlayer, type PlayerTrack } from "@/lib/player-context";
+import { useRedrawOnCanvasesLost } from "@/lib/use-redraw-on-canvases-lost";
 import { cn } from "@/lib/utils";
 
 interface RekordboxWaveformProps {
@@ -231,6 +232,10 @@ export function RekordboxWaveform({
       draw(p, hoverXRef.current);
     });
   }, [isActive, subscribeProgress, draw]);
+
+  useRedrawOnCanvasesLost(() =>
+    draw(currentProgressRef.current, hoverXRef.current),
+  );
 
   const playable = !!track;
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useRedrawOnCanvasesLost } from "@/lib/use-redraw-on-canvases-lost";
 import { cn } from "@/lib/utils";
 
 interface PeaksWaveformProps {
@@ -40,6 +41,8 @@ export function PeaksWaveform({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  useRedrawOnCanvasesLost(() => setSize((s) => ({ ...s })));
 
   useEffect(() => {
     const canvas = canvasRef.current;

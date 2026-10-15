@@ -369,3 +369,75 @@ pub async fn open_soundcloud_login<R: Runtime>(
 pub fn output_latency() -> Option<f64> {
     crate::output_latency::default_output_latency()
 }
+
+/// Save a WAV clip and put it on the clipboard as a file, ready to paste into a DAW.
+///
+/// The WAV is the raw request body; the clip's name, percent-encoded, is the
+/// `x-clip-name` header. Returns the saved path.
+#[tauri::command]
+pub async fn copy_audio_to_clipboard(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(wav) = request.body() else {
+        return Err("expected the WAV as a raw body".into());
+    };
+    let name = request
+        .headers()
+        .get("x-clip-name")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| {
+            percent_encoding::percent_decode_str(v)
+                .decode_utf8_lossy()
+                .into_owned()
+        })
+        .unwrap_or_default();
+    let wav = wav.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = crate::audio_clipboard::save_clip(&name, &wav).map_err(|e| e.to_string())?;
+        crate::audio_clipboard::copy_file(&path)?;
+        Ok(path.display().to_string())
+    })
+    .await
+    .map_err(|e| format!("copy task failed: {e}"))?
+}
+
+/// The pid of the WebKit GPU process behind `webview`, if it has one.
+#[cfg(target_os = "macos")]
+async fn webkit_gpu_pid<R: Runtime>(webview: &tauri::Webview<R>) -> Result<Option<i32>, String> {
+    let (tx, rx) = oneshot::channel();
+    webview
+        .with_webview(move |platform| {
+            // SAFETY: on macOS the platform webview is the live WKWebView.
+            let _ = tx.send(unsafe { crate::webkit_gpu::gpu_process_id(platform.inner()) });
+        })
+        .map_err(|e| e.to_string())?;
+    rx.await.map_err(|e| e.to_string())
+}
+
+/// Restart the WebKit GPU process behind the calling webview, which revives
+/// audio that WebKit silenced after sleep. Returns once the new process is
+/// up, so the page can redraw its canvases; returns whether one was restarted.
+#[tauri::command]
+pub async fn restart_webkit_gpu_process<R: Runtime>(
+    webview: tauri::Webview<R>,
+) -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let Some(old) = webkit_gpu_pid(&webview).await? else {
+            return Ok(false);
+        };
+        crate::webkit_gpu::stop(old).map_err(|e| e.to_string())?;
+        log::info!("[audio] stopped WebKit GPU process {old}");
+        for _ in 0..60 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            if let Some(new) = webkit_gpu_pid(&webview).await?.filter(|&p| p != old) {
+                log::info!("[audio] WebKit GPU process {new} is up");
+                break;
+            }
+        }
+        Ok(true)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = webview;
+        Ok(false)
+    }
+}

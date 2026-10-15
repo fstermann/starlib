@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { Page, Route } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
@@ -674,6 +675,130 @@ test.describe("Track Breakdown", () => {
       "data-cue-bar",
       "13",
     );
+  });
+
+  test("zoomed in to one bar, the loop snaps to 16ths", async ({ page }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+    await page.getByRole("radio", { name: "1 bar" }).click();
+
+    // One bar across the plot: drag from 1.1 to 1.2 snaps out to 1 1/16 to 1 4/16.
+    const plot = page.getByTestId("track-waveform-bass");
+    const box = (await plot.boundingBox())!;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width * 0.1, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.2, y, { steps: 4 });
+    await page.mouse.up();
+
+    const brace = page.getByTestId("track-loop-brace");
+    await expect(brace).toHaveAttribute("data-loop-start", "1.0625");
+    await expect(brace).toHaveAttribute("data-loop-end", "1.25");
+    await expect(page.getByTestId("track-loop-range")).toHaveText(
+      "0.1875 bars",
+    );
+  });
+
+  test("copy audio saves the loop mixed from the lanes you hear", async ({
+    page,
+  }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+    const copy = page.getByTestId("track-copy-audio");
+    await expect(copy).toBeDisabled();
+
+    await page.getByTestId("track-loop").click();
+    await page.getByTestId("track-solo-bass").click();
+    await page.getByTestId("track-solo-drums").click();
+    // Outside the desktop app the clip downloads instead of going on the clipboard.
+    let download = page.waitForEvent("download");
+    await copy.click();
+    const stems = await download;
+    expect(stems.suggestedFilename()).toBe(
+      "Artist - Tune - Drums + Bass - bar 1 (16 bars).wav",
+    );
+    const wav = await readFile((await stems.path())!);
+    expect(wav.toString("ascii", 0, 4)).toBe("RIFF");
+    expect(wav.readUInt16LE(20)).toBe(3);
+    expect(wav.readUInt16LE(22)).toBe(2);
+    const seconds = wav.readUInt32LE(40) / 8 / wav.readUInt32LE(24);
+    expect(seconds).toBeCloseTo((16 * 240) / BPM, 3);
+
+    await page.getByTestId("track-solo-bass").click();
+    await page.getByTestId("track-solo-drums").click();
+    await page.getByTestId("track-drum-parts-toggle").click();
+    await page.getByTestId("track-solo-kick").click();
+    download = page.waitForEvent("download");
+    await page.keyboard.press("ControlOrMeta+c");
+    expect((await download).suggestedFilename()).toBe(
+      "Artist - Tune - Kick - bar 1 (16 bars).wav",
+    );
+  });
+
+  test("audio output restarts from the palette and after the Mac wakes", async ({
+    page,
+  }) => {
+    // Count suspend/resume pairs on the shared context: a restart is one of each.
+    await page.addInitScript(() => {
+      const w = window as unknown as { restarts: number };
+      w.restarts = 0;
+      const suspend = AudioContext.prototype.suspend;
+      AudioContext.prototype.suspend = function () {
+        w.restarts += 1;
+        return suspend.call(this);
+      };
+    });
+    await page.clock.install();
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+    const restarts = () =>
+      page.evaluate(() => (window as unknown as { restarts: number }).restarts);
+
+    await page.getByRole("button", { name: /open command palette/i }).click();
+    await page
+      .getByRole("dialog")
+      .locator('[data-command-id="audio:restart"]')
+      .click();
+    await expect(page.getByText("Audio restarted")).toBeVisible();
+    expect(await restarts()).toBe(1);
+
+    // Sleep stops timers while the wall clock moves on; the next tick sees the gap.
+    await page.clock.setSystemTime(Date.now() + 60_000);
+    await page.clock.runFor(5_000);
+    await expect.poll(restarts).toBe(2);
+  });
+
+  test("waveforms redraw after the GPU process restarts", async ({ page }) => {
+    await mockTrackApi(page);
+    await page.goto(trackUrl);
+    await expect(page.getByTestId("track-play")).toBeEnabled();
+    // Zoomed to one bar the lane draws grid lines even for silent stems.
+    await page.getByRole("radio", { name: "1 bar" }).click();
+    const paintedPixels = () =>
+      page.getByTestId("track-waveform-bass").evaluate((canvas) => {
+        const c = canvas as HTMLCanvasElement;
+        const data = c
+          .getContext("2d")!
+          .getImageData(0, 0, c.width, c.height).data;
+        let painted = 0;
+        for (let i = 3; i < data.length; i += 4) if (data[i] > 0) painted++;
+        return painted;
+      });
+    await expect.poll(paintedPixels).toBeGreaterThan(0);
+
+    // A GPU process restart blanks canvases, as clearing does here.
+    await page.getByTestId("track-waveform-bass").evaluate((canvas) => {
+      const c = canvas as HTMLCanvasElement;
+      c.getContext("2d")!.clearRect(0, 0, c.width, c.height);
+    });
+    expect(await paintedPixels()).toBe(0);
+    await page.evaluate(() =>
+      window.dispatchEvent(new Event("starlib:canvases-lost")),
+    );
+    await expect.poll(paintedPixels).toBeGreaterThan(0);
   });
 
   test("shows stem separation progress and cancels the job", async ({

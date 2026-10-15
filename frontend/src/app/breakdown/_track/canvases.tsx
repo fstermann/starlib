@@ -5,6 +5,10 @@ import { useCallback, useEffect, useRef } from "react";
 
 import { WAVEFORM_BLOCK, type Waveform } from "@/lib/stem-player";
 import { barStartS, noteAt, type Grid } from "@/lib/track-breakdown";
+import {
+  hasLostBackingStore,
+  useRedrawOnCanvasesLost,
+} from "@/lib/use-redraw-on-canvases-lost";
 
 import type { View } from "./lanes";
 
@@ -28,12 +32,22 @@ function token(name: string): string {
 function fit(canvas: HTMLCanvasElement): { width: number; height: number } {
   const { width, height } = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  if (canvas.width !== Math.round(width * dpr))
+  if (hasLostBackingStore(canvas) || canvas.width !== Math.round(width * dpr))
     canvas.width = Math.round(width * dpr);
   if (canvas.height !== Math.round(height * dpr))
     canvas.height = Math.round(height * dpr);
   canvas.getContext("2d")!.setTransform(dpr, 0, 0, dpr, 0, 0);
   return { width, height };
+}
+
+/** Grid lines per beat: 16ths once they are far enough apart to read, otherwise beats only. */
+export function gridPerBeat(
+  view: View,
+  beatsPerBar: number,
+  width: number,
+): number {
+  const beatPx = width / (view.span * beatsPerBar);
+  return beatPx / 4 >= MIN_GRID_PX ? 4 : 1;
 }
 
 function drawSixteenths(
@@ -43,9 +57,7 @@ function drawSixteenths(
   width: number,
   height: number,
 ) {
-  const beatPx = width / (view.span * beatsPerBar);
-  // 16ths once they are far enough apart to read, otherwise beats only.
-  const perBeat = beatPx / 4 >= MIN_GRID_PX ? 4 : 1;
+  const perBeat = gridPerBeat(view, beatsPerBar, width);
   const perBar = beatsPerBar * perBeat;
   const first = Math.ceil((view.start - 1) * perBar);
   const last = Math.floor((view.start - 1 + view.span) * perBar);
@@ -58,12 +70,13 @@ function drawSixteenths(
   }
 }
 
-/** Redraw on resize and theme change. */
+/** Redraw on resize, theme change and GPU process restart. */
 function useRedraw(
   canvas: React.RefObject<HTMLCanvasElement | null>,
   draw: () => void,
 ) {
   const { resolvedTheme } = useTheme();
+  useRedrawOnCanvasesLost(draw);
   useEffect(() => {
     draw();
     const el = canvas.current;

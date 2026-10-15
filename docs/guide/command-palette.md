@@ -15,6 +15,7 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 |----|-------|------|--------|
 | `settings:open` | Open Settings | always | `components/sidebar.tsx` |
 | `theme:toggle` | Switch to Light/Dark Theme | always | `components/sidebar.tsx` |
+| `audio:restart` | Restart audio | always (also runs on its own after the Mac wakes from sleep) | `components/audio-recovery.tsx` |
 | `headphone-sync:toggle` | Turn on/off headphone sync | always | `components/layout/headphone-sync-toggle.tsx` |
 | `auth:connect` | Connect SoundCloud | no SoundCloud user connected | `components/sidebar.tsx` |
 | `auth:disconnect` | Disconnect SoundCloud (`<username>`) | SoundCloud user connected | `components/sidebar.tsx` |
@@ -35,6 +36,7 @@ Commands are grouped the same way they appear in the palette. The **When** colum
 | `breakdown.link-soundcloud` | Find SoundCloud links for tracks | on `/breakdown?view=set`, a job is loaded | `app/breakdown/_components/commands.tsx` |
 | `breakdown.open-track` | Open selected track in Breakdown | on `/library?source=filesystem`, a track is selected | `app/library/filesystem-view.tsx` |
 | `breakdown.track.loop-section` | Start looping / Stop looping (loops the section at the playhead when no bars are selected) | on `/breakdown?view=track`, a track is analysed | `app/breakdown/_track/commands.tsx` |
+| `breakdown.track.copy-audio` | Copy loop audio (the loop's audible lanes, mixed) | on `/breakdown?view=track`, a loop is set and the stems are loaded | `app/breakdown/_track/commands.tsx` |
 | `breakdown.track.reset-sections` | Reset sections to detected | on `/breakdown?view=track`, sections were edited | `app/breakdown/_track/commands.tsx` |
 
 ### Go to

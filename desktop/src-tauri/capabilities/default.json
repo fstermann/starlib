@@ -26,6 +26,7 @@
     "process:allow-restart",
     "process:allow-exit",
     "deep-link:default",
+    "log:default",
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [

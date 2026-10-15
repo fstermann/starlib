@@ -21,6 +21,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   // Actions
   "settings:open",
   "theme:toggle",
+  "audio:restart",
   "headphone-sync:toggle",
   "auth:connect",
   "auth:disconnect",
@@ -48,6 +49,7 @@ const KNOWN_COMMAND_IDS = new Set<string>([
   "breakdown.link-soundcloud",
   "breakdown.open-track",
   "breakdown.track.loop-section",
+  "breakdown.track.copy-audio",
   "breakdown.track.reset-sections",
 ]);
 
