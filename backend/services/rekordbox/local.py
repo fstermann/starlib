@@ -18,6 +18,7 @@ import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -251,6 +252,8 @@ class LocalMasterDbSource(RekordboxSource):
             if int(getattr(pl, "Attribute", 0) or 0) != 0:
                 raise PlaylistEditError("Only regular playlists can be edited.")
             yield db, pl
+            # USB sync skips playlists whose masterPlaylists6.xml Timestamp, synced from updated_at, didn't move.
+            pl.updated_at = datetime.now()
 
     def create_playlist(self, name: str, parent_id: str | None, *, folder: bool) -> RekordboxPlaylist:
         """Create an empty regular playlist or folder at the end of its parent.

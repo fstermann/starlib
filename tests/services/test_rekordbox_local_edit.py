@@ -8,7 +8,9 @@ path runs offline.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 from pyrekordbox import Rekordbox6Database
@@ -220,6 +222,52 @@ def test_rename_is_refused_while_rekordbox_runs(source: LocalMasterDbSource, mon
     with pytest.raises(RekordboxBusy):
         source.rename_playlist("30", "New")
     assert _playlists(source)["30"][0] == "Folder"
+
+
+_XML_TIMESTAMP = "1767225600000"
+
+
+def write_master_playlists_xml(db_dir: Path) -> None:
+    nodes = "".join(
+        f'<NODE Id="{int(pid):X}" ParentId="0" Attribute="{attribute}" Timestamp="{_XML_TIMESTAMP}" '
+        'Lib_Type="0" CheckType="0"/>'
+        for pid, attribute in (("10", 0), ("20", 4), ("30", 1))
+    )
+    (db_dir / "masterPlaylists6.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<MASTER_PLAYLIST Version="1.0.0" AutomaticSync="0">'
+        '<PRODUCT Name="rekordbox" Version="7.0.0" Company="AlphaTheta"/>'
+        f"<PLAYLISTS>{nodes}</PLAYLISTS></MASTER_PLAYLIST>"
+    )
+
+
+@pytest.fixture
+def xml_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> LocalMasterDbSource:
+    set_rekordbox_running(monkeypatch, False)
+    write_master_playlists_xml(tmp_path)
+    src = LocalMasterDbSource()
+    src._db = build_master_db(tmp_path / "master.db")
+    return src
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda s: s.add_tracks_to_playlist("10", ["1"]),
+        lambda s: s.remove_playlist_entries("10", ["e2"]),
+        lambda s: s.reorder_playlist("10", ["e3", "e1", "e2"]),
+    ],
+    ids=["add", "remove", "reorder"],
+)
+def test_edits_move_the_playlist_timestamp_rekordbox_syncs_by(
+    xml_source: LocalMasterDbSource, tmp_path: Path, edit: Callable[[LocalMasterDbSource], object]
+) -> None:
+    edit(xml_source)
+
+    nodes = ElementTree.parse(tmp_path / "masterPlaylists6.xml").iter("NODE")
+    timestamps = {node.get("Id"): node.get("Timestamp") for node in nodes}
+    assert timestamps["A"] != _XML_TIMESTAMP
+    assert timestamps["14"] == timestamps["1E"] == _XML_TIMESTAMP
 
 
 @pytest.fixture
