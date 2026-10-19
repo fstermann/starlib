@@ -32,14 +32,22 @@ import {
 
 import { BreakdownTitle } from "./_components/breakdown-title";
 import { BreakdownCommands } from "./_components/commands";
+import { ComparePanel } from "./_components/compare-panel";
 import { BreakdownControls } from "./_components/controls";
 import { BreakdownDetailPane } from "./_components/detail-pane";
+import { EqPanel } from "./_components/eq-panel";
 import { BreakdownHeader } from "./_components/header";
+import { LoudnessPanel } from "./_components/loudness-panel";
 import { useSetAudio } from "./_components/set-waveform";
-import { BreakdownStartScreen } from "./_components/start-screen";
+import {
+  BreakdownStartScreen,
+  type StartInput,
+} from "./_components/start-screen";
 import { BreakdownTimeline } from "./_components/timeline";
 import { TracklistPanel } from "./_components/tracklist-panel";
 import { useBreakdownJob } from "./_hooks/use-breakdown-job";
+import { useLoudness } from "./_hooks/use-loudness";
+import { usePreviewEq } from "./_hooks/use-preview-eq";
 import { TrackBreakdownView } from "./_track/track-view";
 
 function BreakdownPageInner() {
@@ -86,6 +94,7 @@ function BreakdownPageInner() {
   // early load races the cache and surfaces "audio not yet cached"
   // inside the waveform on the first run of a job.
   const audio = useSetAudio(jobId, state.meta.durationS > 0);
+  const previewEq = usePreviewEq(audio.media);
   // Cross-component focus signal — clicking a band on the timeline
   // bumps a counter so the tracklist scrolls + flashes the matching
   // row. A counter (rather than a single key) lets the same row be
@@ -101,6 +110,7 @@ function BreakdownPageInner() {
   // every match (single-window hits flagged tentative); higher values hide
   // weak/likely-generic matches from both the tracklist and the timeline.
   const [minMatches, setMinMatches] = useState(1);
+  const loudness = useLoudness(state, minMatches);
   // Remember which job the user asked to stop, so the Stop button can
   // show "Stopping…" until the run actually winds down.
   const [stopRequestedJob, setStopRequestedJob] = useState<string | null>(null);
@@ -159,10 +169,14 @@ function BreakdownPageInner() {
   );
 
   const handleStart = useCallback(
-    async ({ url }: { url: string }) => {
+    async (input: StartInput) => {
       setError(null);
       try {
-        const { job_id } = await startBreakdownJob({ url, options });
+        const { job_id } = await startBreakdownJob(
+          "localPath" in input
+            ? { local_path: input.localPath, options }
+            : { url: input.url, options },
+        );
         setJobId(job_id);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -365,6 +379,7 @@ function BreakdownPageInner() {
     return {
       id: state.jobId,
       soundcloud_id: null,
+      local_path: null,
       source_url: null,
       title: state.meta.title,
       artist: state.meta.artist,
@@ -479,10 +494,23 @@ function BreakdownPageInner() {
             void handleEditBounds(track as TrackTimelineEntry, bounds)
           }
           minMatches={minMatches}
+          loudness={loudness}
         />
         <div className="flex min-h-0 flex-1 gap-4">
           <div className="flex w-1/3 min-w-0 flex-col gap-4 overflow-y-auto pr-1">
             <BreakdownHeader state={state} cancelling={stopping} />
+            <LoudnessPanel
+              state={state}
+              loudness={loudness}
+              onSeek={audio.seek}
+            />
+            <ComparePanel
+              jobId={state.jobId}
+              report={loudness.report}
+              eq={previewEq.eq}
+              media={audio.media}
+            />
+            <EqPanel preview={previewEq} />
             <BreakdownControls
               options={options}
               onChange={setOptions}
@@ -549,6 +577,7 @@ function BreakdownPageInner() {
             onTracklistChanged={refresh}
             minMatches={minMatches}
             onMinMatchesChange={setMinMatches}
+            loudness={loudness.report}
           />
         </div>
       </div>

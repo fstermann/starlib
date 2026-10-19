@@ -58,6 +58,7 @@ class JobRow:
     error: str | None
     created_at: float
     updated_at: float
+    local_path: str | None = None
 
 
 @dataclass(slots=True)
@@ -104,11 +105,13 @@ def insert_job(
     artist: str | None,
     duration_s: float | None,
     options: dict,
+    local_path: str | None = None,
 ) -> JobRow:
     now = time.time()
     values = {
         "id": job_id,
         "soundcloud_id": soundcloud_id,
+        "local_path": local_path,
         "source_url": source_url,
         "title": title,
         "artist": artist,
@@ -133,6 +136,7 @@ def insert_job(
         error=None,
         created_at=now,
         updated_at=now,
+        local_path=local_path,
     )
 
 
@@ -184,6 +188,7 @@ def mark_running_jobs_as_error(message: str) -> int:
 _JOB_COLS = (
     BreakdownJob.__table__.c.id,
     BreakdownJob.__table__.c.soundcloud_id,
+    BreakdownJob.__table__.c.local_path,
     BreakdownJob.__table__.c.source_url,
     BreakdownJob.__table__.c.title,
     BreakdownJob.__table__.c.artist,
@@ -213,6 +218,7 @@ def _row_to_job(row) -> JobRow:
         error=row.error,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        local_path=row.local_path,
     )
 
 

@@ -3,6 +3,8 @@
 A Shazam match carries no track length, so the timeline can't size the band.
 Searching SoundCloud for title + artist and storing the matched upload's id,
 permalink and duration fixes that, and lets the align dialog stream it.
+Tracks that arrive already linked, such as from a CUE sheet whose files carry
+a SoundCloud id, only need their artwork and duration fetched.
 """
 
 from __future__ import annotations
@@ -34,6 +36,14 @@ def _token() -> str | None:
         return None
 
 
+def _full_length_s(upload: dict) -> float | None:
+    """The upload's length, unless SoundCloud only serves a preview, whose length is the snippet's."""
+    duration_ms = upload.get("duration")
+    if upload.get("access") == "preview" or not isinstance(duration_ms, int | float):
+        return None
+    return duration_ms / 1000
+
+
 async def _link(job_id: str, track: db.TrackRow, token: str, gate: asyncio.Semaphore) -> bool:
     if not track.title:
         return False
@@ -47,8 +57,29 @@ async def _link(job_id: str, track: db.TrackRow, token: str, gate: asyncio.Semap
         track.id,
         soundcloud_id=match["id"],
         soundcloud_permalink_url=match.get("permalink_url"),
-        duration_s=track.duration_s or match["duration"] / 1000,
+        duration_s=track.duration_s or _full_length_s(match),
         artwork_url=track.artwork_url or match.get("artwork_url"),
+    )
+
+
+async def _fill_details(job_id: str, track: db.TrackRow, token: str, gate: asyncio.Semaphore) -> bool:
+    assert track.soundcloud_id is not None
+    async with gate:
+        found = await client.get_track(track.soundcloud_id, token=token)
+    if found is None:
+        return False
+    # Only fields that were missing and the upload has; an upload without artwork or a full length adds nothing.
+    permalink = None if track.soundcloud_permalink_url else found.get("permalink_url")
+    duration_s = None if track.duration_s else _full_length_s(found)
+    artwork_url = None if track.artwork_url else found.get("artwork_url")
+    if permalink is None and duration_s is None and artwork_url is None:
+        return False
+    return db.update_track(
+        job_id,
+        track.id,
+        soundcloud_permalink_url=permalink,
+        duration_s=duration_s,
+        artwork_url=artwork_url if artwork_url is not None else db.UNSET,
     )
 
 
@@ -78,28 +109,35 @@ async def link_track(job_id: str, track_id: int) -> int | None:
 async def link_unlinked_tracks(job_id: str) -> int:
     """Search SoundCloud for every track without a link and store matches.
 
-    Rows the user already linked, that have a known duration, or that are
-    unreleased or have an unknown ("ID") title or artist are left alone. No-op without SoundCloud API credentials.
+    Rows that have a known duration, or that are unreleased or have an
+    unknown ("ID") title or artist are not searched. Rows already linked but
+    missing artwork or duration get those from their upload. No-op without
+    SoundCloud API credentials.
 
     Args:
         job_id: Breakdown job whose tracks to link.
 
     Returns:
-        Number of tracks that were linked.
+        Number of tracks that were linked or filled in.
     """
+    tracks = db.list_tracks(job_id)
     pending = [
         t
-        for t in db.list_tracks(job_id)
+        for t in tracks
         if t.soundcloud_id is None
         and t.duration_s is None
         and not t.unreleased
         and UNKNOWN_TITLE not in (t.title, t.artist)
     ]
-    if not pending:
+    incomplete = [t for t in tracks if t.soundcloud_id is not None and (t.artwork_url is None or t.duration_s is None)]
+    if not pending and not incomplete:
         return 0
     token = _token()
     if token is None:
         return 0
     gate = asyncio.Semaphore(_CONCURRENCY)
-    linked = await asyncio.gather(*(_link(job_id, t, token, gate) for t in pending))
-    return sum(linked)
+    done = await asyncio.gather(
+        *(_link(job_id, t, token, gate) for t in pending),
+        *(_fill_details(job_id, t, token, gate) for t in incomplete),
+    )
+    return sum(done)

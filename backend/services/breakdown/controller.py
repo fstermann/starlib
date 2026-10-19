@@ -255,6 +255,7 @@ async def start_job(
     *,
     options: BreakdownJobOptions,
     soundcloud_id: int | None = None,
+    local_path: str | None = None,
     source_url: str | None = None,
     title: str | None = None,
     artist: str | None = None,
@@ -271,6 +272,7 @@ async def start_job(
     db.insert_job(
         job_id=job_id,
         soundcloud_id=soundcloud_id,
+        local_path=local_path,
         source_url=source_url,
         title=title,
         artist=artist,
@@ -411,6 +413,7 @@ def get_job_snapshot(job_id: str) -> dict | None:
     return {
         "id": job.id,
         "soundcloud_id": job.soundcloud_id,
+        "local_path": job.local_path,
         "source_url": job.source_url,
         "title": job.title,
         "artist": job.artist,
@@ -506,6 +509,7 @@ def recent_jobs(limit: int = 25) -> list[dict]:
             {
                 "id": j.id,
                 "soundcloud_id": j.soundcloud_id,
+                "local_path": j.local_path,
                 "title": j.title,
                 "artist": j.artist,
                 "duration_s": j.duration_s,

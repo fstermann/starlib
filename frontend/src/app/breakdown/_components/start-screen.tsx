@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { FolderOpen, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
@@ -24,13 +24,19 @@ import {
   type JobSummary,
 } from "@/lib/breakdown";
 import { searchSets, type SCTrack } from "@/lib/soundcloud";
+import { isTauri } from "@/lib/tauri";
 
 /** Tracks shorter than this are filtered out of the set search — a DJ
  *  set is rarely under 20 minutes, single tracks rarely over. */
 const MIN_SET_DURATION_MS = 20 * 60 * 1000;
 
+/** Formats the backend accepts for a local set (mirrors ``AUDIO_EXTENSIONS``). */
+const SET_FILE_EXTENSIONS = ["wav", "aiff", "aif", "flac", "mp3", "m4a"];
+
+export type StartInput = { url: string } | { localPath: string };
+
 interface StartScreenProps {
-  onStart: (input: { url: string }) => Promise<void>;
+  onStart: (input: StartInput) => Promise<void>;
   onOpen: (jobId: string) => void;
   initialUrl?: string;
   errorMessage?: string | null;
@@ -48,6 +54,7 @@ export function BreakdownStartScreen({
   const [results, setResults] = useState<SCTrack[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [localPath, setLocalPath] = useState("");
 
   const isUrl = /^https?:\/\//i.test(url.trim());
 
@@ -119,6 +126,28 @@ export function BreakdownStartScreen({
     } finally {
       setBusy(false);
     }
+  };
+
+  const startLocal = async (path = localPath) => {
+    if (!path.trim() || busy) return;
+    setBusy(true);
+    try {
+      await onStart({ localPath: path.trim() });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const browseLocal = async () => {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Audio", extensions: SET_FILE_EXTENSIONS }],
+    });
+    if (typeof selected !== "string") return;
+    setLocalPath(selected);
+    await startLocal(selected);
   };
 
   const handleDelete = async (jobId: string) => {
@@ -223,6 +252,51 @@ export function BreakdownStartScreen({
           )}
         </div>
       </section>
+      <section className="border-border bg-surface-2 flex flex-col gap-3 rounded-lg border p-6">
+        <h2 className="text-text text-lg font-semibold">Local recording</h2>
+        <p className="text-text-muted text-sm">
+          Analyse a set you recorded: BPM, sections and loudness. Import its CUE
+          sheet for the tracklist, or let Shazam find the tracks.
+        </p>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="breakdown-local-path">Set file</Label>
+          <div className="flex gap-2">
+            <Input
+              id="breakdown-local-path"
+              data-testid="breakdown-local-path-input"
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono"
+              placeholder="/Users/you/Music/Recordings/set.wav"
+              value={localPath}
+              onChange={(e) => setLocalPath(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void startLocal();
+              }}
+            />
+            {isTauri() && (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Browse for a set file"
+                aria-label="Browse for a set file"
+                onClick={() => void browseLocal()}
+                disabled={busy}
+              >
+                <FolderOpen className="size-4" />
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              onClick={() => void startLocal()}
+              disabled={!localPath.trim() || busy}
+              data-testid="breakdown-local-start-button"
+            >
+              Analyse
+            </Button>
+          </div>
+        </div>
+      </section>
       {recent.length > 0 && (
         <section className="border-border bg-surface-2 rounded-lg border p-4">
           <h2 className="text-text mb-2 flex items-center justify-between text-sm font-semibold">
@@ -249,7 +323,7 @@ export function BreakdownStartScreen({
                       {j.title ?? "(untitled)"}
                     </div>
                     <div className="text-text-muted truncate text-xs">
-                      {j.artist ?? "—"} ·{" "}
+                      {j.local_path ? "Local file" : (j.artist ?? "—")} ·{" "}
                       {j.duration_s ? formatTimecode(j.duration_s) : "—"} ·{" "}
                       {j.status}
                     </div>

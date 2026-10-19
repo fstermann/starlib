@@ -6,7 +6,7 @@
  * `event.data` payload to the right discriminated-union variant.
  */
 
-import { fetchApi } from "./api";
+import { ApiError, fetchApi } from "./api";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -37,6 +37,8 @@ export const DEFAULT_JOB_OPTIONS: BreakdownJobOptions = {
 export interface StartJobRequest {
   url?: string;
   soundcloud_id?: number;
+  /** Absolute path of a set recording on disk, instead of a SoundCloud set. */
+  local_path?: string;
   options: BreakdownJobOptions;
   title?: string;
   artist?: string;
@@ -45,6 +47,7 @@ export interface StartJobRequest {
 export interface JobSummary {
   id: string;
   soundcloud_id: number | null;
+  local_path: string | null;
   title: string | null;
   artist: string | null;
   duration_s: number | null;
@@ -187,6 +190,7 @@ export interface UpdateTrackInput {
 export interface JobSnapshot {
   id: string;
   soundcloud_id: number | null;
+  local_path: string | null;
   source_url: string | null;
   title: string | null;
   artist: string | null;
@@ -428,6 +432,28 @@ export async function deleteTrack(
   );
 }
 
+/** Replace the tracklist with the tracks of a CUE sheet. */
+export async function importCue(
+  jobId: string,
+  file: File,
+  skipRepeats: boolean,
+): Promise<{ imported: number; skipped: number; linked: number }> {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("skip_repeats", String(skipRepeats));
+  const response = await fetch(
+    `${API_BASE_URL}/api/breakdown/sets/${encodeURIComponent(jobId)}/tracks/import-cue`,
+    { method: "POST", body },
+  );
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Import failed" }));
+    throw new ApiError(error.detail, response.status, error);
+  }
+  return response.json();
+}
+
 /** Search SoundCloud for tracks without a link and store id, permalink and
  *  duration on each match. Returns how many tracks were linked. */
 export async function linkSoundcloudTracks(
@@ -518,6 +544,99 @@ export async function resetJob(
   return fetchApi(`/api/breakdown/sets/${encodeURIComponent(jobId)}/reset`, {
     method: "POST",
   });
+}
+
+// ---------------------------------------------------------------------------
+// Loudness (EBU R128)
+// ---------------------------------------------------------------------------
+
+/** One track of the set, measured on its own. */
+export interface SegmentLoudness {
+  start_s: number;
+  end_s: number;
+  label: string;
+  integrated_lufs: number;
+  true_peak_dbtp: number | null;
+  /** Gain change that brings it to the set's median track level; null when within tolerance. */
+  suggested_gain_db: number | null;
+  /** Low band (below 150 Hz) relative to the whole track, in LU; higher is more bass. */
+  low_end_lu: number | null;
+}
+
+/** Loudness either side of a track change. */
+export interface TransitionLoudness {
+  at_s: number;
+  from_label: string;
+  to_label: string;
+  before_lufs: number;
+  after_lufs: number;
+  jump_lu: number;
+}
+
+export interface LoudnessReport {
+  integrated_lufs: number | null;
+  loudness_range_lu: number | null;
+  true_peak_dbtp: number | null;
+  short_term_max_lufs: number | null;
+  short_term_min_lufs: number | null;
+  momentary_max_lufs: number | null;
+  curve: {
+    step_s: number;
+    floor_lufs: number;
+    short_term_lufs: number[];
+    /** Highest true peak in each step. */
+    true_peak_dbtp: number[];
+  };
+  reference_lufs: number | null;
+  tolerance_lu: number;
+  segments: SegmentLoudness[];
+  low_end_reference_lu: number | null;
+  low_end_tolerance_lu: number;
+  transitions: TransitionLoudness[];
+  transition_window_s: number;
+  transition_jump_lu: number;
+  /** Average spectrum in 1/6 octaves, each point's power relative to 20 Hz to 20 kHz; null for a silent set. */
+  spectrum: { centres_hz: number[]; level_db: number[] } | null;
+  bands: BandLevel[];
+}
+
+/** A frequency band's share of the set's power, in dB; independent of how loud the set is. */
+export interface BandLevel {
+  name: string;
+  low_hz: number;
+  high_hz: number;
+  level_db: number;
+}
+
+/** Loudness endpoint; ``minMatches`` drops Shazam tracks the tracklist hides from the per-track levels. */
+function loudnessPath(jobId: string, minMatches: number): string {
+  const path = `/api/breakdown/sets/${encodeURIComponent(jobId)}/loudness`;
+  return minMatches > 1 ? `${path}?min_matches=${minMatches}` : path;
+}
+
+/** The set's loudness report if it was measured before, else null. */
+export async function getLoudness(
+  jobId: string,
+  minMatches = 1,
+): Promise<{ report: LoudnessReport | null }> {
+  return fetchApi(loudnessPath(jobId, minMatches));
+}
+
+/** How far a running loudness measurement is, 0 to 1; null when none is running. */
+export async function getLoudnessProgress(
+  jobId: string,
+): Promise<{ progress: number | null }> {
+  return fetchApi(
+    `/api/breakdown/sets/${encodeURIComponent(jobId)}/loudness/progress`,
+  );
+}
+
+/** Measure the set's loudness. Takes about 3 s per 10 minutes of audio the first time. */
+export async function measureLoudness(
+  jobId: string,
+  minMatches = 1,
+): Promise<{ report: LoudnessReport }> {
+  return fetchApi(loudnessPath(jobId, minMatches), { method: "POST" });
 }
 
 export function jobEventsUrl(jobId: string): string {

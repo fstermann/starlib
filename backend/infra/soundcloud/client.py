@@ -122,6 +122,18 @@ async def search_tracks(query: str, *, token: str, limit: int = 10) -> list[dict
     return [t for t in collection or [] if isinstance(t, dict)]
 
 
+async def get_track(track_id: int, *, token: str) -> dict[str, Any] | None:
+    """Return a public-API track by id, or ``None`` on any failure."""
+    try:
+        response = await get(f"{PUBLIC_API_BASE}/tracks/{track_id}", token=token, follow_redirects=True)
+    except httpx.HTTPError:
+        return None
+    if response.status_code != 200:
+        return None
+    data = response.json()
+    return data if isinstance(data, dict) else None
+
+
 async def get_track_bpm(track_id: int, *, token: str) -> float | None:
     """Return the tempo SoundCloud lists for a track, or ``None`` if unset; raises ``httpx.HTTPError`` on failure."""
     response = await get(f"{PUBLIC_API_BASE}/tracks/{track_id}", token=token, follow_redirects=True)

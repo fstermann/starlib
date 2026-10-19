@@ -222,6 +222,15 @@ async function mockBackendApi(page: Page) {
       body: JSON.stringify({ running: false }),
     }),
   );
+
+  // Set Breakdown loudness: not measured yet, unless a spec says otherwise.
+  await page.route(/\/api\/breakdown\/sets\/[^/]+\/loudness$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ report: null }),
+    }),
+  );
 }
 
 export const test = base.extend<{ mockApi: void }>({

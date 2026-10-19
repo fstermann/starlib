@@ -187,7 +187,10 @@ same-hue inset border.
 Track Breakdown reuses these tokens for its own labels rather than adding new
 ones: intro → `intro`, groove → `verse`, build → `up`, main → `chorus`,
 breakdown and break → `down`, filtered → `bridge`, outro → `outro`, and tail or
-any user-typed label → `other`. Stem lanes and their 16th-note lanes use `--chart-*`, one colour per stem; the loudness, width and brightness curves stay neutral (text tokens, told apart by dash) so they never read as a stem.
+any user-typed label → `other`. Stem lanes and their 16th-note lanes use `--chart-*`, one colour per stem; the loudness, width and brightness curves stay neutral (text tokens, told apart by dash) so they never read as a stem. The Set Breakdown timeline's top lane is the exception: it plots either BPM or short-term LUFS as its only series, so both use `--brand` with the same fading area, a `--text-subtle` dashed median line for LUFS, and `--danger` ticks where the true peak passes the ceiling. A BPM / LUFS segmented toggle in the lane's bottom-right corner switches between them.
+
+The Set Breakdown Compare panel overlays average spectra: this set in `--brand`, solid, and up to three references dashed in `--chart-1`, `--chart-3` and `--chart-4`, in pick order. `--chart-2` is skipped because it sits too close to the brand green. The same colours mark each reference in the panel's set list and table headers.
+While the EQ preview is on, the set's spectrum without the EQ stays drawn in `--brand` at 35 % opacity under the EQ'd line.
 
 ---
 

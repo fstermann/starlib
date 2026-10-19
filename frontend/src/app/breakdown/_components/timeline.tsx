@@ -6,11 +6,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   formatTimecode,
   windowSupport,
+  type LoudnessReport,
   type TrackTimelineEntry,
 } from "@/lib/breakdown";
 import { searchTracks } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
 
+import {
+  peakOvers,
+  TRUE_PEAK_CEILING_DBTP,
+  type Loudness,
+} from "../_hooks/use-loudness";
 import type { BreakdownUiState } from "../_state";
 import {
   SetAudioCurrentTime,
@@ -167,6 +173,8 @@ interface TimelineProps {
   /** Minimum agreeing scan windows for a Shazam track to render a band —
    *  kept in sync with the tracklist's filter so the two views agree. */
   minMatches?: number;
+  /** The set's loudness; the top lane plots it instead of BPM when chosen. */
+  loudness?: Loudness;
 }
 
 const ROW_HEIGHTS = {
@@ -215,6 +223,7 @@ export function BreakdownTimeline({
   aligned,
   onEditBounds,
   minMatches = 1,
+  loudness,
 }: TimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ x0: number; x1: number } | null>(null);
@@ -259,8 +268,21 @@ export function BreakdownTimeline({
     hoverX != null && hoverW != null
       ? (hoverX / Math.max(1, hoverW)) * duration
       : null;
+  const lufsReport = loudness?.chart === "lufs" ? loudness.report : null;
+  const lufsExtent = useMemo(
+    () => (lufsReport ? lufsExtentOf(lufsReport) : null),
+    [lufsReport],
+  );
   const hoverBpm =
-    hoverTime != null ? bpmAtTime(state.windows, hoverTime) : null;
+    hoverTime != null && !lufsReport
+      ? bpmAtTime(state.windows, hoverTime)
+      : null;
+  const hoverLufs =
+    hoverTime != null && lufsReport
+      ? lufsReport.curve.short_term_lufs[
+          Math.floor(hoverTime / lufsReport.curve.step_s)
+        ]
+      : null;
   const combinedHoverHeight = ROW_HEIGHTS.bpm + ROW_HEIGHTS.waveform;
 
   return (
@@ -286,7 +308,11 @@ export function BreakdownTimeline({
         className="absolute top-0 bottom-0 left-0 z-10"
         style={{ width: LEFT_RAIL }}
       >
-        <BpmAxisLabels bpmExtent={bpmExtent} />
+        {lufsExtent ? (
+          <AxisLabels extent={lufsExtent} />
+        ) : (
+          <AxisLabels extent={bpmExtent} />
+        )}
         <div
           className="absolute right-0 left-0"
           style={{
@@ -363,13 +389,25 @@ export function BreakdownTimeline({
           setDrag(null);
         }}
       >
-        <BpmLane
-          windows={state.windows}
-          duration={duration}
-          bpmExtent={bpmExtent}
-          onHover={(x, w) => setHover({ x, w })}
-          onLeave={() => setHover(null)}
-        />
+        {lufsReport && lufsExtent ? (
+          <LufsLane
+            report={lufsReport}
+            gainDb={loudness?.gainDb ?? 0}
+            duration={duration}
+            extent={lufsExtent}
+            onHover={(x, w) => setHover({ x, w })}
+            onLeave={() => setHover(null)}
+          />
+        ) : (
+          <BpmLane
+            windows={state.windows}
+            duration={duration}
+            bpmExtent={bpmExtent}
+            onHover={(x, w) => setHover({ x, w })}
+            onLeave={() => setHover(null)}
+          />
+        )}
+        {loudness && <ChartToggle loudness={loudness} />}
         <WaveformLane
           audio={audio}
           onHover={(x, w) => setHover({ x, w })}
@@ -439,6 +477,11 @@ export function BreakdownTimeline({
                   {hoverBpm.toFixed(1)} BPM
                 </span>
               )}
+              {hoverLufs != null && (
+                <span className="text-brand ml-2 font-semibold tabular-nums">
+                  {hoverLufs.toFixed(1)} LUFS
+                </span>
+              )}
             </div>
           </>
         )}
@@ -464,15 +507,11 @@ export function BreakdownTimeline({
   );
 }
 
-/** Y-axis BPM labels for the BPM lane, rendered in the left rail
- *  outside the chart area. Five evenly-spaced ticks (incl. min/max) so
- *  the user can read the absolute BPM at any height of the curve. */
-function BpmAxisLabels({
-  bpmExtent,
-}: {
-  bpmExtent: readonly [number, number];
-}) {
-  const [lo, hi] = bpmExtent;
+/** Y-axis labels for the top lane (BPM or LUFS), rendered in the left
+ *  rail outside the chart area. Five evenly-spaced ticks (incl. min/max)
+ *  so the user can read the absolute value at any height of the curve. */
+function AxisLabels({ extent }: { extent: readonly [number, number] }) {
+  const [lo, hi] = extent;
   const range = Math.max(1, hi - lo);
   const H = 100; // matches the BpmLane SVG viewBox height
   // viewBox-space padTop chosen so the top label sits BPM_PAD_TOP px
@@ -733,9 +772,6 @@ function BpmLane({
           );
         })}
       </div>
-      <div className="text-text-subtle absolute right-2 bottom-1 text-[9px] font-medium tracking-[0.12em] uppercase">
-        BPM
-      </div>
       {points.length === 0 && (
         <div
           className="text-text-subtle pointer-events-none absolute inset-0 flex items-center justify-center text-xs italic"
@@ -744,6 +780,214 @@ function BpmLane({
           waiting for BPM analysis…
         </div>
       )}
+    </div>
+  );
+}
+
+/** LUFS range for the top lane: the loud part of the set, ignoring fades
+ *  more than 20 LU under the integrated level so they don't flatten it. */
+function lufsExtentOf(report: LoudnessReport): readonly [number, number] {
+  const { short_term_lufs: values, floor_lufs: floor } = report.curve;
+  const gate = (report.integrated_lufs ?? floor) - 20;
+  const loud = values.filter((v) => v > Math.max(floor, gate));
+  if (loud.length === 0) return [floor, 0] as const;
+  const hi = Math.ceil(Math.max(...loud)) + 1;
+  const lo = Math.floor(Math.min(...loud, hi - 6)) - 1;
+  return [lo, hi] as const;
+}
+
+/** Group consecutive over-ceiling steps into ``[start, end)`` spans. */
+function overSpans(starts: number[], step: number): [number, number][] {
+  const spans: [number, number][] = [];
+  for (const t of starts) {
+    const last = spans[spans.length - 1];
+    if (last && t - last[1] < step / 2) last[1] = t + step;
+    else spans.push([t, t + step]);
+  }
+  return spans;
+}
+
+/** Short-term loudness over the set, the median track level dashed, and
+ *  red ticks where the true peak would pass the ceiling after the input gain. */
+function LufsLane({
+  report,
+  gainDb,
+  duration,
+  extent,
+  onHover,
+  onLeave,
+}: {
+  report: LoudnessReport;
+  gainDb: number;
+  duration: number;
+  extent: readonly [number, number];
+  onHover: (x: number, w: number) => void;
+  onLeave: () => void;
+}) {
+  const [lo, hi] = extent;
+  const range = Math.max(1, hi - lo);
+  const W = 1000;
+  const H = 100;
+  const padTop = (BPM_PAD_TOP / ROW_HEIGHTS.bpm) * H;
+  const padBottom = 6;
+  const plotH = H - padTop - padBottom;
+  const { step_s: step, short_term_lufs: values } = report.curve;
+  const x = (t: number) => (t / Math.max(1, duration)) * W;
+  const y = (lufs: number) =>
+    padTop + ((hi - Math.min(hi, Math.max(lo, lufs))) / range) * plotH;
+
+  // Hover re-renders this lane on every pointer move; the path only changes with the data.
+  const points = useMemo(() => {
+    const toX = (t: number) => (t / Math.max(1, duration)) * W;
+    const toY = (v: number) =>
+      padTop + ((hi - Math.min(hi, Math.max(lo, v))) / range) * plotH;
+    // Each short-term reading is stamped at the end of its step.
+    return values
+      .map((v, i) => `${toX((i + 1) * step).toFixed(2)} ${toY(v).toFixed(2)}`)
+      .join(" L ");
+  }, [values, step, duration, lo, hi, range, padTop, plotH]);
+  const linePath = points ? `M ${points}` : "";
+  const areaPath = points
+    ? `M ${x(step).toFixed(2)} ${H - padBottom} L ${points} L ${x(values.length * step).toFixed(2)} ${H - padBottom} Z`
+    : "";
+  const spans = useMemo(
+    () => overSpans(peakOvers(report, gainDb), step),
+    [report, gainDb, step],
+  );
+  const gridLines = Array.from(
+    { length: 5 },
+    (_, i) => padTop + (i / 4) * plotH,
+  );
+
+  return (
+    <div
+      className="relative overflow-hidden"
+      style={{ height: ROW_HEIGHTS.bpm }}
+      data-testid="lufs-lane"
+      onPointerMove={(e) => {
+        const rect = (
+          e.currentTarget as HTMLDivElement
+        ).getBoundingClientRect();
+        onHover(e.clientX - rect.left, rect.width);
+      }}
+      onPointerLeave={onLeave}
+    >
+      <svg
+        className="absolute inset-0"
+        width="100%"
+        height="100%"
+        preserveAspectRatio="none"
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label={`Short-term loudness from ${hi} to ${lo} LUFS over the set`}
+      >
+        <defs>
+          <linearGradient id="lufs-area-fade" x1="0" y1="0" x2="0" y2="1">
+            <stop
+              offset="0%"
+              stopColor="var(--color-brand)"
+              stopOpacity="0.18"
+            />
+            <stop
+              offset="100%"
+              stopColor="var(--color-brand)"
+              stopOpacity="0.02"
+            />
+          </linearGradient>
+        </defs>
+        {gridLines.map((gy) => (
+          <line
+            key={`grid-${gy}`}
+            x1={0}
+            x2={W}
+            y1={gy}
+            y2={gy}
+            stroke="var(--color-border)"
+            strokeWidth={1}
+            opacity={0.4}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        {areaPath && <path d={areaPath} fill="url(#lufs-area-fade)" />}
+        {report.reference_lufs != null && (
+          <line
+            x1={0}
+            x2={W}
+            y1={y(report.reference_lufs)}
+            y2={y(report.reference_lufs)}
+            stroke="var(--color-text-subtle)"
+            strokeDasharray="4 4"
+            vectorEffect="non-scaling-stroke"
+            data-testid="lufs-median-line"
+          />
+        )}
+        <path
+          d={linePath}
+          stroke="var(--color-brand)"
+          strokeWidth={1.6}
+          fill="none"
+          vectorEffect="non-scaling-stroke"
+        />
+        {spans.map(([a, b]) => (
+          <rect
+            key={a}
+            x={x(a)}
+            width={Math.max(x(b) - x(a), 1.5)}
+            y={padTop - 7}
+            height={3}
+            fill="var(--color-danger)"
+            opacity={0.7}
+            data-testid="lufs-peak-over"
+          >
+            <title>{`${formatTimecode(a)}–${formatTimecode(b)}: true peak above ${TRUE_PEAK_CEILING_DBTP} dBTP`}</title>
+          </rect>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+/** Switches the top lane between BPM and the set's short-term loudness. */
+function ChartToggle({ loudness }: { loudness: Loudness }) {
+  const options = [
+    { value: "bpm", label: "BPM" },
+    { value: "lufs", label: "LUFS" },
+  ] as const;
+  return (
+    <div
+      className="border-border bg-surface-2/80 absolute right-2 z-20 flex rounded-md border p-0.5 backdrop-blur-sm"
+      style={{ top: ROW_HEIGHTS.bpm - 26 }}
+      role="radiogroup"
+      aria-label="Top chart"
+      onPointerDown={(e) => e.stopPropagation()}
+      data-testid="timeline-chart-toggle"
+    >
+      {options.map((o) => {
+        const active = loudness.chart === o.value;
+        const disabled = o.value === "lufs" && !loudness.report;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={disabled}
+            title={disabled ? "Measure loudness first" : undefined}
+            className={cn(
+              "rounded px-1.5 py-0.5 text-[9px] font-medium tracking-[0.12em] uppercase transition-colors",
+              active
+                ? "bg-surface-3 text-text"
+                : "text-text-subtle hover:text-text",
+              disabled &&
+                "hover:text-text-subtle cursor-not-allowed opacity-50",
+            )}
+            onClick={() => loudness.setChart(o.value)}
+            data-testid={`timeline-chart-${o.value}`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
