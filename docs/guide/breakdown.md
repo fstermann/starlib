@@ -2,7 +2,7 @@
 
 Breakdown has two views, switched with the **Set / Track** toggle at the top left.
 
-- **Set** finds the tracks in a SoundCloud DJ set: BPM per window, sections, Shazam matches and a tracklist.
+- **Set** finds the tracks in a DJ set from SoundCloud or a local recording: BPM per window, sections, Shazam matches, a tracklist and loudness.
 - **Track** takes one track from your collection or SoundCloud apart so you can study its arrangement.
 
 ## Track view
@@ -55,6 +55,66 @@ Labels are a first guess. Edits are saved per track.
 ### Correcting the bar grid
 
 Bar 1 is assumed to start on the first kick, which holds for DJ-oriented tracks. If it doesn't, click **Bars** in the header, correct the tempo or nudge the downbeat, then **Re-measure**. Stems are reused, so this takes a few seconds.
+
+## Set view
+
+### Local recordings
+
+Under **Local recording** on the Set view's start screen, paste the path of a set you recorded, or click the folder button to browse in the desktop app. WAV, AIFF, FLAC, MP3 and M4A work. The file is analysed where it is; Starlib doesn't copy it, so moving it breaks playback and re-analysis until you start a new analysis from the new path.
+
+**Import CUE** in the tracklist header replaces the tracklist with the tracks of a CUE sheet, such as the one your DJ software writes next to a recording. Each track starts at its `INDEX 01` and runs until the next one starts. Imported tracks are marked confirmed, so a later Shazam scan skips them. When the tracklist already has tracks, the import dialog warns that they will be replaced.
+
+**Skip repeated entries**, on by default, drops an entry for a track that already appeared earlier in the sheet. rekordbox lists a track again when its deck is played or cued later, even with the channel fader down. The skipped entry's time goes to the track before it. Turn it off for a set where you really played a track twice.
+
+rekordbox writes a CUE sheet next to each recording, with its own `hh:mm:ss` timestamps and the library file of every track. Starlib reads both: a track whose file carries a SoundCloud id from Starlib is linked to that upload, so it plays and aligns without a search, and takes its artwork from it. The track's length comes from the library file, since SoundCloud reports only the 30-second snippet for preview-only uploads. Tracks without a SoundCloud id are searched on SoundCloud by title and artist, as **Link SoundCloud** does.
+
+### Loudness
+
+The **Loudness** panel measures the whole set to EBU R128. Click **Measure** once; a 1-hour set takes about 22 seconds, and the result is kept until the file changes.
+
+| Reading | Meaning |
+|---------|---------|
+| Integrated | Loudness of the whole set in LUFS, gated so silence and quiet fades don't pull it down. |
+| Range (LRA) | Loudness range in LU: how far the set's louder and quieter passages are apart. |
+| Short-term max / min | Loudest and quietest 3-second stretch. The minimum ignores anything more than 20 LU below the integrated level, so intros and fades don't count. |
+| Momentary max | Loudest 400 ms. |
+| True peak | Highest inter-sample peak in dBTP. |
+
+After measuring, the timeline's top chart switches from BPM to short-term loudness in LUFS, with the median track level dashed. Switch back with the **BPM / LUFS** toggle in its corner; the choice is remembered. Hover the chart for the loudness at that point.
+
+Type a **Target** in LUFS to get the **Input gain** that brings the integrated level there, and the true peak after that gain. A true peak above 0 dBTP, shown in red, means the gain alone will clip; use a limiter. Red ticks along the top of the LUFS chart mark every second whose true peak passes -1 dBTP after the gain, which is where a limiter would act, and the panel gives their total length.
+
+**Even out** compares each track's integrated loudness against the median track and lists those more than 1 LU off, with their time range and the gain change that levels them: negative for tracks to turn down, positive for tracks to bring up. Click a row to jump to it. It needs a tracklist, from a CUE sheet or a Shazam scan, and skips stretches under 30 seconds, such as the fade at the end of a mix.
+
+**Transitions** compares the 30 seconds before and after each track change and lists changes where the level jumps by 2 LU or more. A jump at a mix-in is often more audible than a difference between whole tracks. Each window stays inside its own track.
+
+**Low end** meters the set a second time below 150 Hz, where the kick and sub bass sit, and compares each track's bass against the median track. Tracks 2 LU or more off are listed as more or less bass. Bass balance is set with EQ, not input gain.
+
+With a tracklist, each row in the **Tracklist** shows that track's integrated loudness and true peak (**TP**). The peak turns red above -1 dBTP. Hover it for the track's bass against the median.
+
+Transitions, Low end and the per-track readings all need a tracklist.
+
+### Compare
+
+The **Compare** panel puts this set next to up to three other sets in Breakdown, such as an earlier master or mixes you want to match. Tick the sets in its menu. Each set gets a colour, shown in the panel's list, the table headers and the spectrum. A set that hasn't been measured shows **Measure** in the list. Each table lists this set (**This**), every measured reference, and **Diff**: this set minus the references' average, or minus the reference when there is one.
+
+| Section | What it compares |
+|---------|------------------|
+| Loudness | Integrated, range, true peak, short-term max, and peak to loudness: true peak minus integrated, in dB. A lower peak to loudness means a denser, more limited master. |
+| Tonal balance | Six bands: sub (20 to 60 Hz), bass (60 to 150 Hz), low mid (150 to 500 Hz), mid (500 Hz to 2 kHz), high mid (2 to 6 kHz) and air (6 to 20 kHz). Each is that band's share of the set's power, so a set mastered louder reads the same if its balance matches. |
+| Spectrum | The average spectrum of every set in 1/6-octave steps, on the same balance scale. Pink noise reads flat. |
+
+The spectrum averages the whole set and skips silence. To compare a mastered file with your recording, start a Breakdown for each file.
+
+To hear the difference, press **Listen** next to a set in the list. Each picked set plays silently in step with this set, so switching is instant and keeps the position; play, pause and seeking follow the timeline. **Level-match**, on by default, turns louder sets down to the quietest set's integrated loudness, so you compare sound rather than volume; the row shows how far each is turned down. A set that isn't measured can't be matched and says so. Nothing extra loads until you first press **Listen**.
+
+### EQ preview
+
+The **EQ preview** panel puts a bell EQ on the set while it plays, so you can try a master change before rendering it. Set **Frequency**, **Gain** (±6 dB) and **Q**, and switch it **On** and **Off** to compare. The settings are remembered.
+
+While it's on, **Compare** shows this set's tonal balance and spectrum as the EQ would leave them, with the spectrum without the EQ drawn faintly. The loudness rows still show the set without the EQ.
+
+The panel spells out the settings for Ableton's EQ Eight: a Bell band at the same frequency and gain. EQs define Q differently, so match the width by ear. After rendering the new master, measure it to confirm.
 
 ## Setup
 

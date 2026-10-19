@@ -30,6 +30,8 @@ export interface SetAudio {
   seek: (seconds: number) => void;
   /** Start playback. No-op when not ready or already playing. */
   play: () => void;
+  /** The element playing the set, for routing it through Web Audio; null before load. */
+  media: HTMLMediaElement | null;
 }
 
 /**
@@ -53,6 +55,7 @@ export function useSetAudio(
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [progressS, setProgressS] = useState(0);
+  const [media, setMedia] = useState<HTMLMediaElement | null>(null);
 
   useEffect(() => {
     if (!jobId || !enabled || !containerRef.current) return;
@@ -76,7 +79,11 @@ export function useSetAudio(
           const v = cs.getPropertyValue(token).trim();
           return v.length > 0 ? v : fallback;
         };
+        // Anonymous CORS lets Web Audio read the samples, for the EQ preview.
+        const element = new Audio();
+        element.crossOrigin = "anonymous";
         const ws = WaveSurfer.create({
+          media: element,
           container: containerRef.current,
           height: 56,
           waveColor: colour("--color-text-subtle", "#888"),
@@ -90,6 +97,7 @@ export function useSetAudio(
           url: jobAudioUrl(jobId),
         });
         wsRef.current = ws as unknown as WaveSurferLike;
+        setMedia(element);
 
         ws.on("ready", () => {
           if (cancelled) return;
@@ -133,6 +141,7 @@ export function useSetAudio(
       cancelled = true;
       teardown?.();
       wsRef.current = null;
+      setMedia(null);
     };
   }, [jobId, enabled]);
 
@@ -193,6 +202,7 @@ export function useSetAudio(
     restart,
     seek,
     play,
+    media,
   };
 }
 

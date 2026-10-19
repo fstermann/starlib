@@ -71,7 +71,7 @@ class Peaks(SQLModel, table=True):
 
 
 class BreakdownJob(SQLModel, table=True):
-    """One breakdown run over a SoundCloud set.
+    """One breakdown run over a SoundCloud set or a local audio file.
 
     Status transitions: ``pending`` → ``running`` → ``complete`` / ``error``.
     `options_json` is the JSON-serialized analysis configuration (BPM range,
@@ -83,6 +83,7 @@ class BreakdownJob(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     soundcloud_id: int | None = Field(default=None, index=True)
+    local_path: str | None = None
     source_url: str | None = None
     title: str | None = None
     artist: str | None = None

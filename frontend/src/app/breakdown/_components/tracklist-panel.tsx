@@ -25,6 +25,8 @@ import {
   originalBpmFromSet,
   updateTrack,
   windowSupport,
+  type LoudnessReport,
+  type SegmentLoudness,
   type TrackTimelineEntry,
 } from "@/lib/breakdown";
 import {
@@ -37,9 +39,11 @@ import { getTrack, searchTracks, type SCTrack } from "@/lib/soundcloud";
 import { useKeyNotation } from "@/lib/use-key-notation";
 import { cn } from "@/lib/utils";
 
+import { segmentKey, TRUE_PEAK_CEILING_DBTP } from "../_hooks/use-loudness";
 import type { BreakdownUiState } from "../_state";
 import { AddTrackDialog } from "./add-track-dialog";
 import { AlignmentDialog } from "./alignment-dialog";
+import { CueImportButton } from "./cue-import-button";
 import { PreviewPopover, type PreviewSource } from "./preview-popover";
 import { computeNextStarts, rowKeyOf } from "./row-keys";
 import type { SetAudio } from "./set-waveform";
@@ -67,6 +71,8 @@ interface TracklistPanelProps {
    *  and confirmed rows are always shown regardless. */
   minMatches?: number;
   onMinMatchesChange?: (n: number) => void;
+  /** The set's loudness report, for each track's level and true peak. */
+  loudness?: LoudnessReport | null;
 }
 
 /** Upper bound for the min-matches filter slider. */
@@ -200,7 +206,12 @@ export function TracklistPanel({
   onTracklistChanged,
   minMatches = 1,
   onMinMatchesChange,
+  loudness,
 }: TracklistPanelProps) {
+  const loudnessByStart = useMemo(
+    () => new Map(loudness?.segments.map((s) => [segmentKey(s.start_s), s])),
+    [loudness],
+  );
   // Live runs while a scan is in flight; the backend's terminal
   // `track.timeline` overrides once it lands (same shape).
   const derived = useMemo(() => aggregateScans(state.scans), [state.scans]);
@@ -502,6 +513,13 @@ export function TracklistPanel({
             </span>
           )}
           {state.jobId && onTracklistChanged && (
+            <CueImportButton
+              jobId={state.jobId}
+              trackCount={allTracks.length}
+              onImported={onTracklistChanged}
+            />
+          )}
+          {state.jobId && onTracklistChanged && (
             <AddTrackDialog
               jobId={state.jobId}
               defaultStartS={audio.progressS}
@@ -514,7 +532,7 @@ export function TracklistPanel({
         <p className="text-text-subtle py-6 text-center text-xs italic">
           {state.scans.length > 0
             ? `scanning… ${state.scans.length} probe${state.scans.length === 1 ? "" : "s"} so far, no matches yet`
-            : "Start a Shazam scan to identify tracks in this set."}
+            : "Start a Shazam scan to identify tracks in this set, or import its CUE sheet."}
         </p>
       ) : (
         <ol
@@ -683,6 +701,12 @@ export function TracklistPanel({
                 {/* Stats in fixed-width columns so they line up row to row. */}
                 <div className="text-text-subtle flex items-center gap-4 text-xs tabular-nums">
                   <TrackStats track={t} />
+                  {loudness && (
+                    <LoudnessChip
+                      segment={loudnessByStart.get(segmentKey(t.start_s))}
+                      lowEndReference={loudness.low_end_reference_lu}
+                    />
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   {/* Confidence + curate cluster.
@@ -1472,6 +1496,50 @@ function TrackStats({ track }: { track: TrackTimelineEntry | DerivedRun }) {
       <KeyChip track={track} listing={listing} />
       <DurationChip track={track} />
     </>
+  );
+}
+
+/** The track's integrated loudness and true peak in the set; the peak turns
+ *  red above the ceiling. Empty for tracks too short to measure. */
+function LoudnessChip({
+  segment,
+  lowEndReference,
+}: {
+  segment: SegmentLoudness | undefined;
+  lowEndReference: number | null;
+}) {
+  if (!segment) return <span className="w-32" />;
+  const peak = segment.true_peak_dbtp;
+  const lowEnd =
+    segment.low_end_lu != null && lowEndReference != null
+      ? segment.low_end_lu - lowEndReference
+      : null;
+  return (
+    <span
+      className="w-32 text-right"
+      data-testid="tracklist-loudness"
+      title={[
+        `Integrated ${segment.integrated_lufs.toFixed(1)} LUFS`,
+        peak != null && `true peak ${peak.toFixed(1)} dBTP`,
+        lowEnd != null &&
+          `bass ${lowEnd > 0 ? "+" : ""}${lowEnd.toFixed(1)} LU against the median track`,
+      ]
+        .filter(Boolean)
+        .join(", ")}
+    >
+      <span data-testid="tracklist-lufs">
+        {segment.integrated_lufs.toFixed(1)} LUFS
+      </span>
+      <span
+        className={cn(
+          "inline-block w-14 text-right",
+          peak != null && peak > TRUE_PEAK_CEILING_DBTP && "text-danger",
+        )}
+        data-testid="tracklist-true-peak"
+      >
+        {peak != null ? `TP ${peak.toFixed(1)}` : ""}
+      </span>
+    </span>
   );
 }
 

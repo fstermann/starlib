@@ -30,9 +30,9 @@ async def suggest_alignment(job_id: str, track_id: int, soundcloud_id: int, orig
     """
     job = db.get_job(job_id)
     track = next((t for t in db.list_tracks(job_id) if t.id == track_id), None)
-    if job is None or track is None or job.soundcloud_id is None:
+    if job is None or track is None:
         return None
-    mix = audio_cache.cached_set_path(job.soundcloud_id)
+    mix = audio_cache.set_audio_path(local_path=job.local_path, soundcloud_id=job.soundcloud_id)
     if mix is None:
         return None
 

@@ -18,9 +18,9 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -28,14 +28,17 @@ from backend.infra.breakdown import cache as audio_cache
 from backend.infra.soundcloud import token_cache
 from backend.infra.soundcloud.oauth import OAuthManager
 from backend.infra.soundcloud.settings import get_settings
+from backend.infra.watcher import AUDIO_EXTENSIONS
 from backend.schemas.breakdown import event_to_sse
 from backend.services.breakdown import (
     BreakdownJobOptions,
     JobNotFoundError,
     auto_align,
     cancel_shazam_scan,
+    cue_import,
     delete_job,
     get_job_snapshot,
+    loudness,
     reanalyse_job,
     recent_jobs,
     set_bpm_at,
@@ -63,18 +66,19 @@ _BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 
 class StartJobRequest(BaseModel):
-    """Body for ``POST /sets``: either a SoundCloud URL or a track id."""
+    """Body for ``POST /sets``: a SoundCloud URL, a track id, or a local file path."""
 
     url: str | None = None
     soundcloud_id: int | None = None
+    local_path: str | None = None
     options: BreakdownJobOptions = Field(default_factory=BreakdownJobOptions)
     title: str | None = None
     artist: str | None = None
 
     @model_validator(mode="after")
     def _has_target(self) -> StartJobRequest:
-        if self.url is None and self.soundcloud_id is None:
-            raise ValueError("either url or soundcloud_id is required")
+        if self.url is None and self.soundcloud_id is None and self.local_path is None:
+            raise ValueError("one of url, soundcloud_id or local_path is required")
         return self
 
 
@@ -153,7 +157,9 @@ class UpdateWindowsBpmRequest(BaseModel):
 
 @router.post("/sets", response_model=StartJobResponse)
 async def start_breakdown_job(payload: StartJobRequest) -> StartJobResponse:
-    """Start a new breakdown job for a SoundCloud set."""
+    """Start a new breakdown job for a SoundCloud set or a local audio file."""
+    if payload.local_path is not None:
+        return await _start_local_job(payload, payload.local_path)
     if not get_settings().has_oauth_credentials():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -173,6 +179,25 @@ async def start_breakdown_job(payload: StartJobRequest) -> StartJobResponse:
         title=title,
         artist=artist,
         fetch_audio=fetch_audio,
+    )
+    return StartJobResponse(job_id=job_id)
+
+
+async def _start_local_job(payload: StartJobRequest, local_path: str) -> StartJobResponse:
+    path = Path(local_path).expanduser()
+    if not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"no file at {path}")
+    if path.suffix.lower() not in AUDIO_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"unsupported audio format {path.suffix or '(none)'}",
+        )
+    job_id = await start_job(
+        options=payload.options,
+        local_path=str(path),
+        title=payload.title or path.stem,
+        artist=payload.artist,
+        fetch_audio=_make_local_fetcher(path),
     )
     return StartJobResponse(job_id=job_id)
 
@@ -257,14 +282,7 @@ async def reanalyse(job_id: str, payload: ReanalyseRequest) -> dict:
     snap = get_job_snapshot(job_id)
     if snap is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-    soundcloud_id = snap.get("soundcloud_id")
-    if soundcloud_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="re-analysis requires a SoundCloud-backed job",
-        )
-
-    fetch_audio = _make_soundcloud_fetcher(int(soundcloud_id))
+    fetch_audio = _make_job_fetcher(snap)
     ranges = [(float(r["start_s"]), float(r["end_s"])) for r in payload.ranges]
 
     # Flip the row to ``running`` before scheduling so a frontend that
@@ -312,12 +330,7 @@ async def shazam_scan(job_id: str, payload: ShazamScanRequest) -> dict:
     snap = get_job_snapshot(job_id)
     if snap is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-    soundcloud_id = snap.get("soundcloud_id")
-    if soundcloud_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="shazam scan requires a SoundCloud-backed job",
-        )
+    fetch_audio = _make_job_fetcher(snap)
 
     options_dict = dict(snap.get("options") or {})
     if payload.overrides:
@@ -339,8 +352,6 @@ async def shazam_scan(job_id: str, payload: ShazamScanRequest) -> dict:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="set bpm_range before running Shazam in 'range' mode",
         )
-
-    fetch_audio = _make_soundcloud_fetcher(int(soundcloud_id))
 
     # Flip the DB row to ``running`` synchronously so any frontend that
     # re-fetches the snapshot or re-opens the SSE stream right after this
@@ -512,6 +523,26 @@ def add_track(job_id: str, payload: AddTrackRequest) -> dict:
         set_bpm=set_bpm_at(job_id, payload.start_s, payload.end_s),
     )
     return _track_dict(row)
+
+
+# CUE sheets are a few KB; anything this big isn't one.
+_MAX_CUE_BYTES = 1024 * 1024
+
+
+@router.post("/sets/{job_id}/tracks/import-cue")
+async def import_cue(job_id: str, file: UploadFile, skip_repeats: Annotated[bool, Form()] = True) -> dict:
+    """Replace the tracklist with the tracks of an uploaded CUE sheet, by default without repeated entries."""
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    raw = await file.read(_MAX_CUE_BYTES + 1)
+    if len(raw) > _MAX_CUE_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="CUE file too large")
+    try:
+        result = cue_import.import_cue(job_id, raw, skip_repeats=skip_repeats)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    linked = await soundcloud_links.link_unlinked_tracks(job_id)
+    return {"job_id": job_id, "imported": result.imported, "skipped": result.skipped, "linked": linked}
 
 
 @router.post("/sets/{job_id}/tracks/link-soundcloud")
@@ -695,23 +726,17 @@ async def get_audio(job_id: str) -> FileResponse:
     snap = get_job_snapshot(job_id)
     if snap is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-    soundcloud_id = snap.get("soundcloud_id")
-    if soundcloud_id is None:
+    path = _job_audio_path(snap)
+    if path is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="job has no associated SoundCloud audio",
-        )
-    path = audio_cache.cached_set_path(int(soundcloud_id))
-    if path is None or not path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="audio not yet cached; run analysis first",
+            detail="audio not available; run analysis first",
         )
     # Browser audio seeking requires Range support, which FileResponse
     # has provided since Starlette 0.45 (already pinned in this project).
     return FileResponse(
         path,
-        media_type="audio/mp4",
+        media_type=None if snap.get("local_path") else "audio/mp4",
         headers={"Accept-Ranges": "bytes", "Cache-Control": "no-store"},
     )
 
@@ -727,11 +752,11 @@ async def get_set_peaks(job_id: str, start_s: float, end_s: float) -> dict:
     from backend.infra.breakdown import peaks as peaks_infra
 
     snap = get_job_snapshot(job_id)
-    if snap is None or snap.get("soundcloud_id") is None:
+    if snap is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-    path = audio_cache.cached_set_path(int(snap["soundcloud_id"]))
+    path = _job_audio_path(snap)
     if path is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="audio not yet cached")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="audio not available")
     start_s = max(0.0, start_s)
     if snap.get("duration_s"):
         end_s = min(end_s, float(snap["duration_s"]))
@@ -739,6 +764,37 @@ async def get_set_peaks(job_id: str, start_s: float, end_s: float) -> dict:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid peaks window")
     peaks = await peaks_infra.window_peaks(path, start_s, end_s)
     return {"start_s": start_s, "peaks_per_s": peaks_infra.PEAKS_PER_SECOND, "peaks": peaks}
+
+
+@router.get("/sets/{job_id}/loudness")
+def get_loudness(job_id: str) -> dict:
+    """The set's loudness report if it was measured before; ``report`` is ``null`` otherwise."""
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    return {"report": loudness.cached_report(job_id)}
+
+
+@router.get("/sets/{job_id}/loudness/progress")
+def get_loudness_progress(job_id: str) -> dict:
+    """How far a running loudness measurement is; ``progress`` is ``null`` when none is running."""
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    return {"progress": loudness.measuring_progress(job_id)}
+
+
+@router.post("/sets/{job_id}/loudness")
+async def measure_loudness(job_id: str) -> dict:
+    """Measure the set's loudness (EBU R128) and return the report; cached per audio file."""
+    if get_job_snapshot(job_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+    try:
+        report = await loudness.measure_job(job_id)
+    except loudness.AudioUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="audio not available") from exc
+    except RuntimeError as exc:
+        logger.exception("breakdown: loudness measurement failed for job %s", job_id)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return {"report": report}
 
 
 @router.get("/sets/{job_id}/events")
@@ -774,6 +830,30 @@ async def stream_events(job_id: str, request: Request) -> StreamingResponse:
 # ---------------------------------------------------------------------------
 # Audio fetcher factories
 # ---------------------------------------------------------------------------
+
+
+def _job_audio_path(snap: dict) -> Path | None:
+    return audio_cache.set_audio_path(local_path=snap.get("local_path"), soundcloud_id=snap.get("soundcloud_id"))
+
+
+def _make_job_fetcher(snap: dict):
+    """Audio fetcher for an existing job, whichever source it was started from."""
+    if snap.get("local_path"):
+        return _make_local_fetcher(Path(snap["local_path"]))
+    if snap.get("soundcloud_id") is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="job has no audio source")
+    return _make_soundcloud_fetcher(int(snap["soundcloud_id"]))
+
+
+def _make_local_fetcher(path: Path):
+    """Build an :class:`AudioFetcher` for a file on disk; a moved file fails the pass."""
+
+    async def fetch() -> Path:
+        if not path.is_file():
+            raise FileNotFoundError(f"set file missing: {path}")
+        return path
+
+    return fetch
 
 
 def _make_soundcloud_fetcher(soundcloud_id: int):

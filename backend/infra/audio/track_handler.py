@@ -501,6 +501,23 @@ class TrackHandler(BaseModel):
         return self.file.rename(Path(self.file.parent, safe_name + self.file.suffix))
 
 
+def read_audio_length(file: Path) -> float | None:
+    """Length of an audio file in seconds.
+
+    Args:
+        file: Path to the audio file.
+
+    Returns:
+        The length, or ``None`` if the file is missing or unreadable.
+    """
+    try:
+        audio = mutagen.File(str(file))
+    except (OSError, mutagen.MutagenError):
+        return None
+    length = getattr(getattr(audio, "info", None), "length", None)
+    return float(length) if length else None
+
+
 def read_starlib_meta(file: Path) -> StarlibMeta | None:
     """Read the app-managed ``TXXX:starlib`` metadata from an audio file.
 

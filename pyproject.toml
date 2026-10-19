@@ -25,6 +25,7 @@ dependencies = [
     "shazamio>=0.7.0",
     "audioop-lts>=0.2.2",
     "pyrekordbox>=0.4.0",
+    "numpy>=2.5.1",
 ]
 
 [dependency-groups]

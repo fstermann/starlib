@@ -160,6 +160,16 @@ def _config() -> BreakdownCacheConfig:
 # ---------------------------------------------------------------------------
 
 
+def set_audio_path(*, local_path: str | None, soundcloud_id: int | None) -> Path | None:
+    """A job's audio on disk: its local file, or the cached SoundCloud download."""
+    if local_path:
+        path = Path(local_path)
+        return path if path.is_file() else None
+    if soundcloud_id is not None:
+        return cached_set_path(soundcloud_id)
+    return None
+
+
 def cached_set_path(soundcloud_id: int) -> Path | None:
     """Return the on-disk path of a cached set, or ``None`` if not cached."""
     cfg = _config()
@@ -167,7 +177,8 @@ def cached_set_path(soundcloud_id: int) -> Path | None:
         cand = cfg.sets_dir / f"{soundcloud_id}.{ext}"
         if cand.exists():
             try:
-                os.utime(cand, None)  # touch for LRU.
+                # Mark it used for LRU through the access time: loudness and peaks caches key on the modified time.
+                os.utime(cand, (time.time(), cand.stat().st_mtime))
             except OSError:
                 pass
             return cand
@@ -260,7 +271,7 @@ async def fetch_set_audio(
 
 
 def enforce_size_cap() -> None:
-    """LRU eviction: drop oldest files (by mtime) until total size ≤ cap."""
+    """LRU eviction: drop the least recently used files (by access time) until total size ≤ cap."""
     cfg = _config()
     files: list[tuple[float, Path, int]] = []
     total = 0
@@ -268,13 +279,13 @@ def enforce_size_cap() -> None:
         if not p.is_file():
             continue
         st = p.stat()
-        files.append((st.st_mtime, p, st.st_size))
+        files.append((st.st_atime, p, st.st_size))
         total += st.st_size
 
     if total <= cfg.max_total_bytes:
         return
     files.sort()  # oldest first
-    for _mtime, p, size in files:
+    for _used_at, p, size in files:
         if total <= cfg.max_total_bytes:
             return
         try:
