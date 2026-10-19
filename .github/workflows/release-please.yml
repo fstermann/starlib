@@ -55,7 +55,7 @@ jobs:
 
             - name: Install Rust
               if: ${{ steps.release.outputs.pr }}
-              uses: dtolnay/rust-toolchain@1.99.0
+              uses: dtolnay/rust-toolchain@1.120.0
 
             - name: Sync lockfiles to bumped version
               if: ${{ steps.release.outputs.pr }}
