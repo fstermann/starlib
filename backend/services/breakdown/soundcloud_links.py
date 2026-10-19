@@ -68,12 +68,18 @@ async def _fill_details(job_id: str, track: db.TrackRow, token: str, gate: async
         found = await client.get_track(track.soundcloud_id, token=token)
     if found is None:
         return False
+    # Only fields that were missing and the upload has; an upload without artwork or a full length adds nothing.
+    permalink = None if track.soundcloud_permalink_url else found.get("permalink_url")
+    duration_s = None if track.duration_s else _full_length_s(found)
+    artwork_url = None if track.artwork_url else found.get("artwork_url")
+    if permalink is None and duration_s is None and artwork_url is None:
+        return False
     return db.update_track(
         job_id,
         track.id,
-        soundcloud_permalink_url=track.soundcloud_permalink_url or found.get("permalink_url"),
-        duration_s=track.duration_s or _full_length_s(found),
-        artwork_url=track.artwork_url or found.get("artwork_url"),
+        soundcloud_permalink_url=permalink,
+        duration_s=duration_s,
+        artwork_url=artwork_url if artwork_url is not None else db.UNSET,
     )
 
 

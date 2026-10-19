@@ -344,6 +344,30 @@ test("measures loudness, gives the gain to a target and which tracks to level", 
   await expect(page.getByTestId("loudness-target")).toHaveValue("-9");
 });
 
+test("per-track loudness follows the min-matches filter", async ({ page }) => {
+  await mockJob(page, { timeline: TRACKS, measured: true });
+  const filtered: string[] = [];
+  await page.route(
+    new RegExp(`/api/breakdown/sets/${JOB}/loudness\\?min_matches=\\d+$`),
+    (route) => {
+      filtered.push(new URL(route.request().url()).search);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ report: REPORT }),
+      });
+    },
+  );
+  await page.goto(`/breakdown?job=${JOB}`);
+  await expect(page.getByTestId("loudness-summary")).toBeVisible();
+
+  const thumb = page.getByTestId("min-matches-slider").getByRole("slider");
+  await thumb.focus();
+  await thumb.press("ArrowRight");
+
+  await expect.poll(() => filtered).toContain("?min_matches=2");
+});
+
 test("imports a CUE sheet as the tracklist", async ({ page }) => {
   const calls = await mockJob(page);
   await page.goto(`/breakdown?job=${JOB}`);

@@ -16,20 +16,19 @@ export interface BellEq {
 
 type Spectrum = NonNullable<LoudnessReport["spectrum"]>;
 
-const SAMPLE_RATE = 48000;
 // The spectrum's points are 1/6 octave wide: each spans 1/12 octave either side of its centre.
 const HALF_STEP = 2 ** (1 / 12);
 
-/** The band's gain at ``hz``, in dB. */
-export function bellGainDb(eq: BellEq, hz: number): number {
+/** The band's gain at ``hz``, in dB, for a filter running at ``sampleRate``. */
+export function bellGainDb(eq: BellEq, hz: number, sampleRate: number): number {
   if (!eq.on || eq.gainDb === 0) return 0;
   const a = 10 ** (eq.gainDb / 40);
-  const w0 = (2 * Math.PI * eq.freqHz) / SAMPLE_RATE;
+  const w0 = (2 * Math.PI * eq.freqHz) / sampleRate;
   const alpha = Math.sin(w0) / (2 * eq.q);
   const cos = Math.cos(w0);
   const b = [1 + alpha * a, -2 * cos, 1 - alpha * a];
   const d = [1 + alpha / a, -2 * cos, 1 - alpha / a];
-  const w = (2 * Math.PI * hz) / SAMPLE_RATE;
+  const w = (2 * Math.PI * hz) / sampleRate;
   const magnitude = (c: number[]) =>
     Math.hypot(
       c[0] + c[1] * Math.cos(w) + c[2] * Math.cos(2 * w),
@@ -42,16 +41,22 @@ export function bellGainDb(eq: BellEq, hz: number): number {
  * The spectrum after the EQ, still relative to the whole range: boosting one
  * region lowers every other region's share a little.
  */
-export function equalisedSpectrum(spectrum: Spectrum, eq: BellEq): Spectrum {
+export function equalisedSpectrum(
+  spectrum: Spectrum,
+  eq: BellEq,
+  sampleRate: number,
+): Spectrum {
   const before = spectrum.level_db.map((db) => 10 ** (db / 10));
   const after = before.map(
-    (p, i) => p * 10 ** (bellGainDb(eq, spectrum.centres_hz[i]) / 10),
+    (p, i) =>
+      p * 10 ** (bellGainDb(eq, spectrum.centres_hz[i], sampleRate) / 10),
   );
   const shift = 10 * Math.log10(sum(after) / sum(before));
   return {
     centres_hz: spectrum.centres_hz,
     level_db: spectrum.level_db.map(
-      (db, i) => db + bellGainDb(eq, spectrum.centres_hz[i]) - shift,
+      (db, i) =>
+        db + bellGainDb(eq, spectrum.centres_hz[i], sampleRate) - shift,
     ),
   };
 }
@@ -61,8 +66,9 @@ export function equalisedBands(
   bands: BandLevel[],
   spectrum: Spectrum,
   eq: BellEq,
+  sampleRate: number,
 ): BandLevel[] {
-  const after = equalisedSpectrum(spectrum, eq);
+  const after = equalisedSpectrum(spectrum, eq, sampleRate);
   return bands.map((band) => ({
     ...band,
     level_db:

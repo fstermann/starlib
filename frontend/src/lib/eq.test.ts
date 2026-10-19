@@ -9,6 +9,7 @@ import {
 } from "./eq";
 
 const BOOST: BellEq = { on: true, freqHz: 3000, gainDb: 1, q: 0.7 };
+const RATE = 48000;
 
 const CENTRES = Array.from({ length: 60 }, (_, i) => 20 * 2 ** ((i + 0.5) / 6));
 // Pink noise: every 1/6 octave carries the same share.
@@ -28,31 +29,31 @@ const BANDS: BandLevel[] = [
 
 describe("bellGainDb", () => {
   it("gives the full gain at the centre and none far away", () => {
-    expect(bellGainDb(BOOST, 3000)).toBeCloseTo(1, 3);
-    expect(bellGainDb(BOOST, 30)).toBeCloseTo(0, 2);
+    expect(bellGainDb(BOOST, 3000, RATE)).toBeCloseTo(1, 3);
+    expect(bellGainDb(BOOST, 30, RATE)).toBeCloseTo(0, 2);
   });
 
   it("is flat when off or at 0 dB", () => {
-    expect(bellGainDb({ ...BOOST, on: false }, 3000)).toBe(0);
-    expect(bellGainDb({ ...BOOST, gainDb: 0 }, 3000)).toBe(0);
+    expect(bellGainDb({ ...BOOST, on: false }, 3000, RATE)).toBe(0);
+    expect(bellGainDb({ ...BOOST, gainDb: 0 }, 3000, RATE)).toBe(0);
   });
 
   it("narrows as Q rises", () => {
-    expect(bellGainDb({ ...BOOST, q: 4 }, 1500)).toBeLessThan(
-      bellGainDb(BOOST, 1500),
+    expect(bellGainDb({ ...BOOST, q: 4 }, 1500, RATE)).toBeLessThan(
+      bellGainDb(BOOST, 1500, RATE),
     );
   });
 });
 
 describe("equalisedSpectrum", () => {
   it("keeps the levels relative to the whole range", () => {
-    const after = equalisedSpectrum(PINK, { ...BOOST, gainDb: 6 });
+    const after = equalisedSpectrum(PINK, { ...BOOST, gainDb: 6 }, RATE);
     const total = after.level_db.reduce((s, db) => s + 10 ** (db / 10), 0);
     expect(total).toBeCloseTo(1, 6);
   });
 
   it("raises the boosted region and lowers the rest", () => {
-    const after = equalisedSpectrum(PINK, BOOST);
+    const after = equalisedSpectrum(PINK, BOOST, RATE);
     const at = (hz: number) => CENTRES.findIndex((c) => c * 2 ** (1 / 12) > hz);
     expect(after.level_db[at(3000)]).toBeGreaterThan(PINK.level_db[at(3000)]);
     expect(after.level_db[at(50)]).toBeLessThan(PINK.level_db[at(50)]);
@@ -61,12 +62,12 @@ describe("equalisedSpectrum", () => {
 
 describe("equalisedBands", () => {
   it("leaves the bands alone when the EQ is off", () => {
-    const after = equalisedBands(BANDS, PINK, { ...BOOST, on: false });
+    const after = equalisedBands(BANDS, PINK, { ...BOOST, on: false }, RATE);
     expect(after.map((b) => b.level_db)).toEqual(BANDS.map((b) => b.level_db));
   });
 
   it("shifts power toward the boosted band", () => {
-    const [low, high] = equalisedBands(BANDS, PINK, BOOST);
+    const [low, high] = equalisedBands(BANDS, PINK, BOOST, RATE);
     const rise = high.level_db - BANDS[1].level_db;
     // A 1 dB bell lifts a 3.3-octave band by less than its peak.
     expect(rise).toBeGreaterThan(0.1);

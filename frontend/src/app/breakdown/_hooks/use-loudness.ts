@@ -59,10 +59,11 @@ export interface LoudnessReadings {
   measure: (jobId: string) => Promise<boolean>;
 }
 
-/** Loudness reports of several sets, re-read whenever ``refreshKey`` changes. */
+/** Loudness reports of several sets, re-read whenever ``refreshKey`` or ``minMatches`` changes. */
 export function useLoudnessReports(
   jobIds: string[],
   refreshKey = "",
+  minMatches = 1,
 ): LoudnessReadings {
   // Keyed by job, so switching jobs never shows another set's report.
   const [states, setStates] = useState<Record<string, ReadingState>>({});
@@ -79,7 +80,7 @@ export function useLoudnessReports(
   useEffect(() => {
     let cancelled = false;
     for (const jobId of idsKey ? idsKey.split(",") : []) {
-      getLoudness(jobId)
+      getLoudness(jobId, minMatches)
         .then((res) => {
           if (!cancelled) update(jobId, { report: res.report });
         })
@@ -88,7 +89,7 @@ export function useLoudnessReports(
     return () => {
       cancelled = true;
     };
-  }, [idsKey, refreshKey, update]);
+  }, [idsKey, refreshKey, minMatches, update]);
 
   const measure = useCallback(
     async (jobId: string) => {
@@ -103,7 +104,9 @@ export function useLoudnessReports(
           });
       }, PROGRESS_POLL_MS);
       try {
-        update(jobId, { report: (await measureLoudness(jobId)).report });
+        update(jobId, {
+          report: (await measureLoudness(jobId, minMatches)).report,
+        });
         return true;
       } catch (err) {
         update(jobId, {
@@ -115,7 +118,7 @@ export function useLoudnessReports(
         update(jobId, { measuring: false });
       }
     },
-    [update],
+    [minMatches, update],
   );
 
   const reading = useCallback(
@@ -125,12 +128,17 @@ export function useLoudnessReports(
   return { reading, measure };
 }
 
-/** The loudness report of ``jobId``, re-read whenever ``refreshKey`` changes. */
+/** The loudness report of ``jobId``, re-read whenever ``refreshKey`` or ``minMatches`` changes. */
 export function useLoudnessReport(
   jobId: string | null,
   refreshKey = "",
+  minMatches = 1,
 ): LoudnessReading {
-  const readings = useLoudnessReports(jobId ? [jobId] : [], refreshKey);
+  const readings = useLoudnessReports(
+    jobId ? [jobId] : [],
+    refreshKey,
+    minMatches,
+  );
   const measureJob = readings.measure;
   const measure = useCallback(
     async () => (jobId ? measureJob(jobId) : false),
@@ -149,11 +157,15 @@ export interface Loudness extends LoudnessReading {
   setChart: (chart: TimelineChart) => void;
 }
 
-/** The set's loudness report, the target the user levels it to, and the timeline chart choice. */
-export function useLoudness(state: BreakdownUiState): Loudness {
+/** The set's loudness report, the target the user levels it to, and the timeline chart choice.
+ *  Per-track levels cover the tracks the tracklist shows at ``minMatches``. */
+export function useLoudness(
+  state: BreakdownUiState,
+  minMatches: number,
+): Loudness {
   // Per-track levels follow the tracklist, so re-read the report when it changes.
   const segmentsKey = state.timeline.map((t) => t.start_s).join(",");
-  const reading = useLoudnessReport(state.jobId, segmentsKey);
+  const reading = useLoudnessReport(state.jobId, segmentsKey, minMatches);
   const { report } = reading;
   const [target, setTargetState] = useState(
     () => readStored(TARGET_STORAGE_KEY) ?? "",

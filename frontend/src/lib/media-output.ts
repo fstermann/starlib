@@ -15,7 +15,10 @@ export interface MediaOutput {
 const GLIDE_S = 0.01;
 
 // An element can feed only one source node, ever; keep its chain for later use.
-const outputs = new WeakMap<HTMLMediaElement, MediaOutput>();
+const outputs = new WeakMap<
+  HTMLMediaElement,
+  MediaOutput & { source: MediaElementAudioSourceNode }
+>();
 
 export function hasOutput(media: HTMLMediaElement): boolean {
   return outputs.has(media);
@@ -30,17 +33,23 @@ export function outputFor(media: HTMLMediaElement): MediaOutput {
   filter.type = "peaking";
   filter.gain.value = 0;
   const gain = ctx.createGain();
-  ctx
-    .createMediaElementSource(media)
-    .connect(filter)
-    .connect(gain)
-    .connect(ctx.destination);
+  const source = ctx.createMediaElementSource(media);
+  source.connect(filter).connect(gain).connect(ctx.destination);
   // Once routed, the element is heard only while the context runs.
   media.addEventListener("play", () => void ctx.resume().catch(() => {}));
   void ctx.resume().catch(() => {});
-  const output = { filter, gain };
-  outputs.set(media, output);
-  return output;
+  outputs.set(media, { filter, gain, source });
+  return { filter, gain };
+}
+
+/** Unplug an element routed by {@link outputFor} that won't play again, so its nodes can be freed. */
+export function releaseOutput(media: HTMLMediaElement): void {
+  const output = outputs.get(media);
+  if (!output) return;
+  output.source.disconnect();
+  output.filter.disconnect();
+  output.gain.disconnect();
+  outputs.delete(media);
 }
 
 /** Glide ``param`` to ``value`` with time constant ``seconds``. */

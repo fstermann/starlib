@@ -366,3 +366,44 @@ def test_loudness_without_tracklist_suggests_nothing(http_client: TestClient, tm
     assert report["segments"] == []
     assert report["reference_lufs"] is None
     assert report["transitions"] == []
+
+
+def test_linking_again_counts_only_tracks_that_gained_details(
+    http_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job_id = _seed_local_job(tmp_path / "set.wav")
+    tagged = {"/lib/a.aiff": StarlibMeta(soundcloud_id=111, soundcloud_permalink="https://soundcloud.com/a/first")}
+    monkeypatch.setattr(cue_import, "read_starlib_meta", lambda path: tagged.get(str(path)))
+    monkeypatch.setattr(soundcloud_links, "_token", lambda: "token")
+
+    async def get_track(track_id: int, *, token: str) -> dict:
+        # A preview-only upload without artwork: nothing to fill in.
+        return {"id": track_id, "duration": 30_000, "access": "preview", "artwork_url": None}
+
+    monkeypatch.setattr(soundcloud_links.client, "get_track", get_track)
+    sheet = b'TRACK 01 AUDIO\n TITLE "First"\n FILE "/lib/a.aiff" WAVE\n INDEX 01 00:00:00\n'
+
+    imported = http_client.post(
+        f"/api/breakdown/sets/{job_id}/tracks/import-cue",
+        files={"file": ("set.cue", sheet, "application/octet-stream")},
+    ).json()
+    relinked = http_client.post(f"/api/breakdown/sets/{job_id}/tracks/link-soundcloud").json()
+
+    assert imported["linked"] == 0
+    assert relinked["linked"] == 0
+
+
+def test_loudness_segments_skip_tracks_below_min_matches(http_client: TestClient, tmp_path: Path) -> None:
+    job_id = _seed_local_job(_tone(tmp_path / "set.wav"))
+    breakdown_db.insert_track(job_id=job_id, origin="manual", start_s=0.0, title="Mine")
+    breakdown_db.insert_track(job_id=job_id, origin="shazam", start_s=30.0, title="Guess", shazam_id="s1")
+    breakdown_db.upsert_shazam_scan(
+        job_id=job_id, scan_s=40.0, pitch_offset=0.0, title="Guess", artist=None, shazam_id="s1", confidence=1.0
+    )
+    url = f"/api/breakdown/sets/{job_id}/loudness"
+
+    all_tracks = http_client.post(url).json()["report"]
+    shown = http_client.get(url, params={"min_matches": 2}).json()["report"]
+
+    assert [s["start_s"] for s in all_tracks["segments"]] == [0.0, 30.0]
+    assert [(s["start_s"], s["end_s"]) for s in shown["segments"]] == [(0.0, 60.0)]

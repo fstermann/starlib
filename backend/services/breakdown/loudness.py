@@ -35,11 +35,12 @@ class AudioUnavailableError(LookupError):
     """The job's audio isn't on disk: a moved local file, or a set not downloaded yet."""
 
 
-async def measure_job(job_id: str) -> dict:
+async def measure_job(job_id: str, min_matches: int = 1) -> dict:
     """Meter the job's audio (cached per file) and build its report.
 
     Args:
         job_id: Breakdown job.
+        min_matches: Shazam tracks found in fewer scan windows don't split the set, as in the tracklist's filter.
 
     Returns:
         The report.
@@ -51,14 +52,15 @@ async def measure_job(job_id: str) -> dict:
     path = set_audio_path(local_path=job.local_path, soundcloud_id=job.soundcloud_id)
     if path is None:
         raise AudioUnavailableError(job_id)
-    return _report(job, await meter.get_or_measure(path))
+    return _report(job, await meter.get_or_measure(path), min_matches)
 
 
-def cached_report(job_id: str) -> dict | None:
+def cached_report(job_id: str, min_matches: int = 1) -> dict | None:
     """The job's report if its audio was metered before, else ``None``.
 
     Args:
         job_id: Breakdown job.
+        min_matches: As in :func:`measure_job`.
 
     Returns:
         The report, or ``None``.
@@ -68,7 +70,7 @@ def cached_report(job_id: str) -> dict | None:
     if path is None:
         return None
     measurement = meter.cached_measurement(path)
-    return None if measurement is None else _report(job, measurement)
+    return None if measurement is None else _report(job, measurement, min_matches)
 
 
 def measuring_progress(job_id: str) -> float | None:
@@ -85,6 +87,18 @@ def measuring_progress(job_id: str) -> float | None:
     return None if path is None else meter.measuring_progress(path)
 
 
+def _shown_tracks(job_id: str, min_matches: int) -> list[db.TrackRow]:
+    """The tracks the tracklist shows: hand-placed, confirmed, or found in at least ``min_matches`` scan windows."""
+    tracks = db.list_tracks(job_id)
+    if min_matches <= 1:
+        return tracks
+    windows: dict[str, set[float]] = {}
+    for scan in db.list_shazam_scans(job_id):
+        if scan.title is not None and scan.shazam_id is not None:
+            windows.setdefault(scan.shazam_id, set()).add(scan.scan_s)
+    return [t for t in tracks if t.shazam_id is None or t.confirmed or len(windows.get(t.shazam_id, ())) >= min_matches]
+
+
 def _job(job_id: str) -> db.JobRow:
     job = db.get_job(job_id)
     if job is None:
@@ -92,10 +106,10 @@ def _job(job_id: str) -> db.JobRow:
     return job
 
 
-def _report(job: db.JobRow, measurement: meter.Measurement) -> dict:
+def _report(job: db.JobRow, measurement: meter.Measurement, min_matches: int) -> dict:
     frames = measurement.frames
     duration_s = job.duration_s or len(frames.momentary) * FRAME_S
-    tracks = db.list_tracks(job.id)
+    tracks = _shown_tracks(job.id, min_matches)
     starts = [(t.start_s, " - ".join(p for p in (t.artist, t.title) if p)) for t in tracks]
     segments = partition(starts, duration_s)
     reference, levels = even_out(frames, segments)

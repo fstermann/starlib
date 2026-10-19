@@ -44,13 +44,18 @@ def import_cue(job_id: str, raw: bytes, *, skip_repeats: bool = True) -> CueImpo
     tracks = drop_repeats(sheet.tracks) if skip_repeats else sheet.tracks
     job = db.get_job(job_id)
     duration_s = job.duration_s if job is not None else None
-    db.delete_tracks_for_job(job_id)
     ends = [t.start_s for t in tracks[1:]] + [duration_s]
+    # Read every source file before touching the tracklist, so a slow or failing read leaves it intact.
+    rows = []
     for track, end_s in zip(tracks, ends, strict=True):
         if end_s is not None and end_s <= track.start_s:
             end_s = None
         source = Path(track.file) if track.file else None
         meta = read_starlib_meta(source) if source else None
+        length = read_audio_length(source) if source else None
+        rows.append((track, end_s, meta, length, set_bpm_at(job_id, track.start_s, end_s)))
+    db.delete_tracks_for_job(job_id)
+    for track, end_s, meta, length, set_bpm in rows:
         row = db.insert_track(
             job_id=job_id,
             origin="manual",
@@ -61,8 +66,8 @@ def import_cue(job_id: str, raw: bytes, *, skip_repeats: bool = True) -> CueImpo
             soundcloud_id=meta.soundcloud_id if meta else None,
             soundcloud_permalink_url=meta.soundcloud_permalink if meta else None,
             user_edited=True,
-            duration_s=read_audio_length(source) if source else None,
-            set_bpm=set_bpm_at(job_id, track.start_s, end_s),
+            duration_s=length,
+            set_bpm=set_bpm,
         )
         db.update_track(job_id, row.id, confirmed=True)
     return CueImport(imported=len(tracks), skipped=len(sheet.tracks) - len(tracks))

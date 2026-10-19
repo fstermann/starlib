@@ -18,6 +18,7 @@ import {
   type LoudnessReport,
 } from "@/lib/breakdown";
 import { equalisedBands, equalisedSpectrum, type BellEq } from "@/lib/eq";
+import { getSharedAudioContext } from "@/lib/looping-web-audio-player";
 
 import { useAbListen, type AbListen } from "../_hooks/use-ab-listen";
 import { useLoudnessReports } from "../_hooks/use-loudness";
@@ -82,10 +83,12 @@ interface ComparePanelProps {
 
 function withEq(report: LoudnessReport, eq: BellEq): LoudnessReport {
   if (!eq.on || !report.spectrum) return report;
+  // The preview filter runs in the shared context, at its rate.
+  const { sampleRate } = getSharedAudioContext();
   return {
     ...report,
-    spectrum: equalisedSpectrum(report.spectrum, eq),
-    bands: equalisedBands(report.bands, report.spectrum, eq),
+    spectrum: equalisedSpectrum(report.spectrum, eq, sampleRate),
+    bands: equalisedBands(report.bands, report.spectrum, eq, sampleRate),
   };
 }
 

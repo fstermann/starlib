@@ -608,11 +608,18 @@ export interface BandLevel {
   level_db: number;
 }
 
+/** Loudness endpoint; ``minMatches`` drops Shazam tracks the tracklist hides from the per-track levels. */
+function loudnessPath(jobId: string, minMatches: number): string {
+  const path = `/api/breakdown/sets/${encodeURIComponent(jobId)}/loudness`;
+  return minMatches > 1 ? `${path}?min_matches=${minMatches}` : path;
+}
+
 /** The set's loudness report if it was measured before, else null. */
 export async function getLoudness(
   jobId: string,
+  minMatches = 1,
 ): Promise<{ report: LoudnessReport | null }> {
-  return fetchApi(`/api/breakdown/sets/${encodeURIComponent(jobId)}/loudness`);
+  return fetchApi(loudnessPath(jobId, minMatches));
 }
 
 /** How far a running loudness measurement is, 0 to 1; null when none is running. */
@@ -627,10 +634,9 @@ export async function getLoudnessProgress(
 /** Measure the set's loudness. Takes about 3 s per 10 minutes of audio the first time. */
 export async function measureLoudness(
   jobId: string,
+  minMatches = 1,
 ): Promise<{ report: LoudnessReport }> {
-  return fetchApi(`/api/breakdown/sets/${encodeURIComponent(jobId)}/loudness`, {
-    method: "POST",
-  });
+  return fetchApi(loudnessPath(jobId, minMatches), { method: "POST" });
 }
 
 export function jobEventsUrl(jobId: string): string {

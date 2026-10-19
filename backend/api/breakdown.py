@@ -538,7 +538,7 @@ async def import_cue(job_id: str, file: UploadFile, skip_repeats: Annotated[bool
     if len(raw) > _MAX_CUE_BYTES:
         raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="CUE file too large")
     try:
-        result = cue_import.import_cue(job_id, raw, skip_repeats=skip_repeats)
+        result = await asyncio.to_thread(cue_import.import_cue, job_id, raw, skip_repeats=skip_repeats)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     linked = await soundcloud_links.link_unlinked_tracks(job_id)
@@ -767,11 +767,11 @@ async def get_set_peaks(job_id: str, start_s: float, end_s: float) -> dict:
 
 
 @router.get("/sets/{job_id}/loudness")
-def get_loudness(job_id: str) -> dict:
+def get_loudness(job_id: str, min_matches: int = 1) -> dict:
     """The set's loudness report if it was measured before; ``report`` is ``null`` otherwise."""
     if get_job_snapshot(job_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
-    return {"report": loudness.cached_report(job_id)}
+    return {"report": loudness.cached_report(job_id, min_matches)}
 
 
 @router.get("/sets/{job_id}/loudness/progress")
@@ -783,12 +783,12 @@ def get_loudness_progress(job_id: str) -> dict:
 
 
 @router.post("/sets/{job_id}/loudness")
-async def measure_loudness(job_id: str) -> dict:
+async def measure_loudness(job_id: str, min_matches: int = 1) -> dict:
     """Measure the set's loudness (EBU R128) and return the report; cached per audio file."""
     if get_job_snapshot(job_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     try:
-        report = await loudness.measure_job(job_id)
+        report = await loudness.measure_job(job_id, min_matches)
     except loudness.AudioUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="audio not available") from exc
     except RuntimeError as exc:

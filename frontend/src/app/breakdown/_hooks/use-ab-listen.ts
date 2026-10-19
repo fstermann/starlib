@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { jobAudioUrl } from "@/lib/breakdown";
 import { levelMatchGainsDb } from "@/lib/level-match";
 import { Follower } from "@/lib/media-follow";
-import { glide, hasOutput, outputFor } from "@/lib/media-output";
+import { glide, hasOutput, outputFor, releaseOutput } from "@/lib/media-output";
 
 export interface AbSource {
   jobId: string;
@@ -25,6 +25,14 @@ export interface AbListen {
 
 // Let a fade-out finish before pausing, so the switch doesn't click.
 const FADE_MS = 40;
+
+/** Stop a reference for good: drop its file (removing ``src`` alone keeps it loaded) and its audio nodes. */
+function discard(player: HTMLAudioElement) {
+  player.pause();
+  player.removeAttribute("src");
+  player.load();
+  releaseOutput(player);
+}
 
 /**
  * A/B between this set and its references. The set player always runs, since
@@ -67,8 +75,7 @@ export function useAbListen(
     const wanted = new Set(referenceKey ? referenceKey.split(",") : []);
     for (const [jobId, { player }] of players.current) {
       if (wanted.has(jobId)) continue;
-      player.pause();
-      player.removeAttribute("src");
+      discard(player);
       players.current.delete(jobId);
       if (running.current === jobId) running.current = null;
     }
@@ -105,10 +112,7 @@ export function useAbListen(
   useEffect(() => {
     const current = players.current;
     return () => {
-      current.forEach(({ player }) => {
-        player.pause();
-        player.removeAttribute("src");
-      });
+      current.forEach(({ player }) => discard(player));
       current.clear();
       running.current = null;
       if (media && hasOutput(media)) glide(outputFor(media).gain.gain, 1);

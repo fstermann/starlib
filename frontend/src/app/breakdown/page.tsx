@@ -66,7 +66,6 @@ function BreakdownPageInner() {
     useState<BreakdownJobOptions>(DEFAULT_JOB_OPTIONS);
 
   const { state, dispatch, refresh } = useBreakdownJob(jobId);
-  const loudness = useLoudness(state);
 
   // Hand-aligned tracks saved before in/out points existed get them from
   // auto-align, once per opened set, so their bands show how long they play.
@@ -111,6 +110,7 @@ function BreakdownPageInner() {
   // every match (single-window hits flagged tentative); higher values hide
   // weak/likely-generic matches from both the tracklist and the timeline.
   const [minMatches, setMinMatches] = useState(1);
+  const loudness = useLoudness(state, minMatches);
   // Remember which job the user asked to stop, so the Stop button can
   // show "Stopping…" until the run actually winds down.
   const [stopRequestedJob, setStopRequestedJob] = useState<string | null>(null);
