@@ -1,7 +1,7 @@
 import { expect, test } from "./fixtures";
 
 /**
- * SoundCloud "New Today" / "New This Week" smart lists — flat nodes at the top
+ * SoundCloud "New Today" / "New This Week" / "New in Last X Days" smart lists — flat nodes at the top
  * of the library tree on the "me" tab. Both are fed by the personal followings
  * feed (`/me/feed/tracks`, posts + reposts by people you follow) and narrowed
  * to tracks whose own *release date* falls inside today / the current week.
@@ -150,6 +150,37 @@ test.describe("SoundCloud New Today / New This Week", () => {
     await expect(page.getByText("Released Today Track")).toBeVisible();
     await expect(page.getByText("Released Monday Track")).toBeVisible();
     await expect(page.getByText("Old Reposted Track")).toHaveCount(0);
+  });
+
+  test("New in Last X Days defaults to 7 and is configurable from its context menu", async ({
+    page,
+  }) => {
+    await setup(page);
+    await page.goto("/library?source=soundcloud");
+
+    // Default 7-day rolling window: today's + Monday's release, not the
+    // 13-day-old repost.
+    const recentRow = page.getByRole("button", { name: /^New in Last 7 Days/ });
+    await expect(recentRow).toBeVisible();
+    await recentRow.click();
+    await expect(page.getByText("Released Today Track")).toBeVisible();
+    await expect(page.getByText("Released Monday Track")).toBeVisible();
+    await expect(page.getByText("Old Reposted Track")).toHaveCount(0);
+
+    // Narrow to 1 day: Monday's release (2+ days old) drops out.
+    await recentRow.click({ button: "right" });
+    await page.getByRole("menuitemradio", { name: "1 day" }).click();
+    await expect(
+      page.getByRole("button", { name: /^New in Last Day/ }),
+    ).toBeVisible();
+    await expect(page.getByText("Released Today Track")).toBeVisible();
+    await expect(page.getByText("Released Monday Track")).toHaveCount(0);
+
+    // The choice persists across reloads.
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: /^New in Last Day/ }),
+    ).toBeVisible();
   });
 
   test("smart nodes are absent on the Discover tab", async ({ page }) => {

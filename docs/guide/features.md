@@ -112,12 +112,13 @@ All three sub-tabs share the same filter/table UX: filter by genre, duration, BP
 
 #### Smart lists
 
-On **My Library**, two auto-filled nodes sit at the top of the tree, sourced from your followings feed:
+On **My Library**, three auto-filled nodes sit at the top of the tree, sourced from your followings feed:
 
 - **New Today** — releases from artists you follow that landed today
 - **New This Week** — the same for the current week
+- **New in Last X Days** — the same for a rolling window of the last X days (default 7). Right-click the node to pick 1 to 7 days
 
-Both show a live count that respects your active filters, so you can narrow to a genre or BPM range and see how much is actually new.
+All three show a live count that respects your active filters, so you can narrow to a genre or BPM range and see how much is actually new.
 
 #### Playlist management
 
