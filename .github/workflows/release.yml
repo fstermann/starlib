@@ -149,7 +149,7 @@ jobs:
 
             # ── Rust toolchain ──────────────────────────────────────────────────
             - name: Install Rust
-              uses: dtolnay/rust-toolchain@1.99.0
+              uses: dtolnay/rust-toolchain@1.120.0
               with:
                   targets: ${{ matrix.tauri-target }}
 
