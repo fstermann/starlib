@@ -1,0 +1,48 @@
+name: Dependabot auto-merge
+
+# Auto-merge waits for the main ruleset's required checks.
+on: pull_request
+
+permissions:
+    contents: write
+    pull-requests: write
+
+jobs:
+    automerge:
+        if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
+        runs-on: ubuntu-latest
+        steps:
+            - uses: dependabot/fetch-metadata@v3
+              id: metadata
+
+            - name: Check that Dependabot wrote every commit
+              id: authors
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  REPO: ${{ github.repository }}
+                  PR_NUMBER: ${{ github.event.pull_request.number }}
+              run: |
+                  others=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits" \
+                    --jq '.[] | select(.author.login != "dependabot[bot]" or .commit.verification.verified != true) | .sha')
+                  if [ -n "$others" ]; then
+                    echo "::warning::Commits not signed by Dependabot: $others"
+                    echo "only_dependabot=false" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "only_dependabot=true" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Enable auto-merge for minor and patch updates
+              if: ${{ steps.authors.outputs.only_dependabot == 'true' && contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.metadata.outputs.update-type) }}
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  PR_URL: ${{ github.event.pull_request.html_url }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+              run: gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
+
+            # GitHub keeps auto-merge on after a push by someone with write access.
+            - name: Disable auto-merge after someone else pushed
+              if: ${{ steps.authors.outputs.only_dependabot == 'false' }}
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  PR_URL: ${{ github.event.pull_request.html_url }}
+              run: gh pr merge --disable-auto "$PR_URL" || true
