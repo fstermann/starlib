@@ -53,6 +53,7 @@ import {
   type ProfileGroup,
   type ProfileGroupMember,
 } from "@/lib/profile-groups";
+import { getRaw, setRaw } from "@/lib/settings";
 import { parseSCTimestamp, type SCTrack } from "@/lib/soundcloud";
 import { useScBpmMap } from "@/lib/sources/use-sc-bpm-map";
 import { cn } from "@/lib/utils";
@@ -62,8 +63,10 @@ import { LibraryTitle } from "./library-title";
 import {
   LIKES_NODE_ID,
   LikesTreePanel,
+  MAX_NEW_RECENT_DAYS,
   MIXES_GROUP_ID,
   mixNodeId,
+  NEW_RECENT_NODE_ID,
   NEW_TODAY_NODE_ID,
   NEW_WEEK_NODE_ID,
   picksNodeId,
@@ -122,6 +125,7 @@ function filterSchemaForTab(
 }
 
 const EMPTY_TRACKS: SCTrack[] = [];
+const NEW_RECENT_DAYS_KEY = "soundcloud.newRecentDays";
 
 function extractId(track: SCTrack): number | undefined {
   if (!track.urn) return undefined;
@@ -210,7 +214,17 @@ export function SoundcloudView() {
   // track's release, so the feed hook's ~2-week activity window fully contains
   // anything released this week — we just filter that set by release date.
   const feed = useFollowingsTracks(tab === "me");
-  const { newTodayTracks, newWeekTracks } = useMemo(() => {
+  const [newRecentDays, setNewRecentDays] = useState(MAX_NEW_RECENT_DAYS);
+  useEffect(() => {
+    void getRaw(NEW_RECENT_DAYS_KEY, MAX_NEW_RECENT_DAYS).then(
+      setNewRecentDays,
+    );
+  }, []);
+  const changeNewRecentDays = useCallback((days: number) => {
+    setNewRecentDays(days);
+    void setRaw(NEW_RECENT_DAYS_KEY, days);
+  }, []);
+  const { newTodayTracks, newWeekTracks, newRecentTracks } = useMemo(() => {
     // Window anchored to "now" (UTC), matching the /weekly view's day math.
     const now = new Date();
     const startToday = Date.UTC(
@@ -219,16 +233,23 @@ export function SoundcloudView() {
       now.getUTCDate(),
     );
     const startWeek = startToday - now.getUTCDay() * 86_400_000; // prev Sunday
+    const startRecent = now.getTime() - newRecentDays * 86_400_000;
     const today: SCTrack[] = [];
     const week: SCTrack[] = [];
+    const recent: SCTrack[] = [];
     for (const track of feed.tracks) {
       const released = parseSCTimestamp(track.created_at);
       if (released == null) continue;
+      if (released >= startRecent) recent.push(track);
       if (released >= startWeek) week.push(track);
       if (released >= startToday) today.push(track);
     }
-    return { newTodayTracks: today, newWeekTracks: week };
-  }, [feed.tracks]);
+    return {
+      newTodayTracks: today,
+      newWeekTracks: week,
+      newRecentTracks: recent,
+    };
+  }, [feed.tracks, newRecentDays]);
   const newToday = useMemo(
     () => ({
       tracks: newTodayTracks,
@@ -250,6 +271,17 @@ export function SoundcloudView() {
       reload: feed.reload,
     }),
     [newWeekTracks, feed.loading, feed.error, feed.reload],
+  );
+  const newRecent = useMemo(
+    () => ({
+      tracks: newRecentTracks,
+      loading: feed.loading,
+      hasMore: false,
+      loaded: newRecentTracks.length,
+      error: feed.error,
+      reload: feed.reload,
+    }),
+    [newRecentTracks, feed.loading, feed.error, feed.reload],
   );
   const groupLikes = useGroupLikes(tab === "discover" ? activeGroup : null);
   const groupReposts = useGroupReposts(tab === "discover" ? activeGroup : null);
@@ -381,6 +413,7 @@ export function SoundcloudView() {
   const isTracksView = nodeId === TRACKS_NODE_ID;
   const isNewTodayView = nodeId === NEW_TODAY_NODE_ID;
   const isNewWeekView = nodeId === NEW_WEEK_NODE_ID;
+  const isNewRecentView = nodeId === NEW_RECENT_NODE_ID;
   const isStationView = nodeId?.startsWith("station:") ?? false;
   const stationSeedId = isStationView
     ? (nodeId as string).slice("station:".length)
@@ -487,6 +520,7 @@ export function SoundcloudView() {
     push(activeTracks?.tracks);
     push(newTodayTracks);
     push(newWeekTracks);
+    push(newRecentTracks);
     push(combinedPlaylistTracks.tracks);
     push(playlistTracks.tracks);
     push(mixTracks.tracks);
@@ -497,6 +531,7 @@ export function SoundcloudView() {
     activeTracks?.tracks,
     newTodayTracks,
     newWeekTracks,
+    newRecentTracks,
     combinedPlaylistTracks.tracks,
     playlistTracks.tracks,
     mixTracks.tracks,
@@ -608,6 +643,10 @@ export function SoundcloudView() {
   const newWeekCount = useMemo(
     () => newWeekTracks.filter(filterPredicate).length,
     [newWeekTracks, filterPredicate],
+  );
+  const newRecentCount = useMemo(
+    () => newRecentTracks.filter(filterPredicate).length,
+    [newRecentTracks, filterPredicate],
   );
   const tracksCount = useMemo(
     () => (activeTracks?.tracks ?? []).filter(filterPredicate).length,
@@ -847,6 +886,9 @@ export function SoundcloudView() {
               storageKey={storageKey}
               newTodayCount={newTodayCount}
               newWeekCount={newWeekCount}
+              newRecentCount={newRecentCount}
+              newRecentDays={newRecentDays}
+              onNewRecentDaysChange={changeNewRecentDays}
               showNew={tab === "me"}
               likesCount={likesCount}
               repostsCount={repostsCount}
@@ -873,8 +915,10 @@ export function SoundcloudView() {
               activeTracks={activeTracks}
               newToday={newToday}
               newWeek={newWeek}
+              newRecent={newRecent}
               isNewTodayView={isNewTodayView}
               isNewWeekView={isNewWeekView}
+              isNewRecentView={isNewRecentView}
               playlistTracks={playlistTracks}
               combinedPlaylistTracks={combinedPlaylistTracks}
               mixTracks={mixTracks}
@@ -926,8 +970,10 @@ interface LikesViewProps {
   activeTracks: ReturnType<typeof useLikes> | null;
   newToday: ReturnType<typeof useLikes>;
   newWeek: ReturnType<typeof useLikes>;
+  newRecent: ReturnType<typeof useLikes>;
   isNewTodayView: boolean;
   isNewWeekView: boolean;
+  isNewRecentView: boolean;
   playlistTracks: ReturnType<typeof usePlaylistTracks>;
   combinedPlaylistTracks: ReturnType<typeof useCombinedPlaylistsTracks>;
   mixTracks: ReturnType<typeof useSystemPlaylistTracks>;
@@ -981,8 +1027,10 @@ function LikesView({
   activeTracks,
   newToday,
   newWeek,
+  newRecent,
   isNewTodayView,
   isNewWeekView,
+  isNewRecentView,
   playlistTracks,
   combinedPlaylistTracks,
   mixTracks,
@@ -1038,17 +1086,19 @@ function LikesView({
         ? newToday.tracks
         : isNewWeekView
           ? newWeek.tracks
-          : isMixView
-            ? mixTracks.tracks
-            : isPlaylistView
-              ? playlistTracks.tracks
-              : isAllPlaylistsView
-                ? combinedPlaylistTracks.tracks
-                : isRepostsView
-                  ? (activeReposts?.tracks ?? EMPTY_TRACKS)
-                  : isTracksView
-                    ? (activeTracks?.tracks ?? EMPTY_TRACKS)
-                    : activeLikes.tracks;
+          : isNewRecentView
+            ? newRecent.tracks
+            : isMixView
+              ? mixTracks.tracks
+              : isPlaylistView
+                ? playlistTracks.tracks
+                : isAllPlaylistsView
+                  ? combinedPlaylistTracks.tracks
+                  : isRepostsView
+                    ? (activeReposts?.tracks ?? EMPTY_TRACKS)
+                    : isTracksView
+                      ? (activeTracks?.tracks ?? EMPTY_TRACKS)
+                      : activeLikes.tracks;
   const sourceTracks = useMemo(
     () =>
       removedUrns.size === 0
@@ -1138,17 +1188,19 @@ function LikesView({
         ? newToday.loading
         : isNewWeekView
           ? newWeek.loading
-          : isMixView
-            ? mixTracks.loading
-            : isPlaylistView
-              ? playlistTracks.loading
-              : isAllPlaylistsView
-                ? combinedPlaylistTracks.loading
-                : isRepostsView
-                  ? (activeReposts?.loading ?? false)
-                  : isTracksView
-                    ? (activeTracks?.loading ?? false)
-                    : activeLikes.loading;
+          : isNewRecentView
+            ? newRecent.loading
+            : isMixView
+              ? mixTracks.loading
+              : isPlaylistView
+                ? playlistTracks.loading
+                : isAllPlaylistsView
+                  ? combinedPlaylistTracks.loading
+                  : isRepostsView
+                    ? (activeReposts?.loading ?? false)
+                    : isTracksView
+                      ? (activeTracks?.loading ?? false)
+                      : activeLikes.loading;
   const error = isStationView
     ? stationTracks.error
     : isPicksView
@@ -1157,17 +1209,19 @@ function LikesView({
         ? newToday.error
         : isNewWeekView
           ? newWeek.error
-          : isMixView
-            ? mixTracks.error
-            : isPlaylistView
-              ? playlistTracks.error
-              : isAllPlaylistsView
-                ? combinedPlaylistTracks.error
-                : isRepostsView
-                  ? (activeReposts?.error ?? null)
-                  : isTracksView
-                    ? (activeTracks?.error ?? null)
-                    : activeLikes.error;
+          : isNewRecentView
+            ? newRecent.error
+            : isMixView
+              ? mixTracks.error
+              : isPlaylistView
+                ? playlistTracks.error
+                : isAllPlaylistsView
+                  ? combinedPlaylistTracks.error
+                  : isRepostsView
+                    ? (activeReposts?.error ?? null)
+                    : isTracksView
+                      ? (activeTracks?.error ?? null)
+                      : activeLikes.error;
   const loadedCount = isStationView
     ? stationTracks.tracks.length
     : isPicksView
@@ -1176,17 +1230,19 @@ function LikesView({
         ? newToday.loaded
         : isNewWeekView
           ? newWeek.loaded
-          : isMixView
-            ? mixTracks.tracks.length
-            : isPlaylistView
-              ? playlistTracks.tracks.length
-              : isAllPlaylistsView
-                ? combinedPlaylistTracks.tracks.length
-                : isRepostsView
-                  ? (activeReposts?.loaded ?? 0)
-                  : isTracksView
-                    ? (activeTracks?.loaded ?? 0)
-                    : activeLikes.loaded;
+          : isNewRecentView
+            ? newRecent.loaded
+            : isMixView
+              ? mixTracks.tracks.length
+              : isPlaylistView
+                ? playlistTracks.tracks.length
+                : isAllPlaylistsView
+                  ? combinedPlaylistTracks.tracks.length
+                  : isRepostsView
+                    ? (activeReposts?.loaded ?? 0)
+                    : isTracksView
+                      ? (activeTracks?.loaded ?? 0)
+                      : activeLikes.loaded;
 
   // Contextual palette commands — registered only while this view is mounted
   // and a selection/filter context applies.
@@ -1210,11 +1266,13 @@ function LikesView({
     ? newToday.reload
     : isNewWeekView
       ? newWeek.reload
-      : isRepostsView && activeReposts
-        ? activeReposts.reload
-        : isTracksView && activeTracks
-          ? activeTracks.reload
-          : activeLikes.reload;
+      : isNewRecentView
+        ? newRecent.reload
+        : isRepostsView && activeReposts
+          ? activeReposts.reload
+          : isTracksView && activeTracks
+            ? activeTracks.reload
+            : activeLikes.reload;
   useReloadHandler(reloadActiveLikes);
   useCommand({
     id: "sc:reload",

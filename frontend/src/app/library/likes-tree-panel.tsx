@@ -2,6 +2,7 @@
 
 import {
   AudioLines,
+  CalendarClock,
   CalendarDays,
   CalendarRange,
   Heart,
@@ -17,6 +18,14 @@ import { PlaylistNodeMenu } from "@/components/playlist-node-menu";
 import { PlaylistDropTarget } from "@/components/track-playlist-dnd";
 import { TreeView } from "@/components/tree/tree-view";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuLabel,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import type { SourceProfile } from "@/lib/profile-groups";
 import type { SCPlaylist } from "@/lib/soundcloud";
 import { cn } from "@/lib/utils";
@@ -25,6 +34,8 @@ import type { SystemPlaylistSummary } from "./use-system-playlists";
 
 export const NEW_TODAY_NODE_ID = "new-today";
 export const NEW_WEEK_NODE_ID = "new-week";
+export const NEW_RECENT_NODE_ID = "new-recent";
+export const MAX_NEW_RECENT_DAYS = 7;
 export const LIKES_NODE_ID = "likes";
 export const REPOSTS_NODE_ID = "reposts";
 export const TRACKS_NODE_ID = "tracks";
@@ -44,6 +55,7 @@ export type LikesTreeNodeKind =
   | "root"
   | "new-today"
   | "new-week"
+  | "new-recent"
   | "likes"
   | "reposts"
   | "tracks"
@@ -71,8 +83,14 @@ interface LikesTreePanelProps {
   newTodayCount: number;
   /** Filtered count for the "New This Week" smart node. */
   newWeekCount: number;
+  /** Filtered count for the "New in Last X Days" smart node. */
+  newRecentCount: number;
+  /** Window of the "New in Last X Days" node, 1 to MAX_NEW_RECENT_DAYS. */
+  newRecentDays: number;
+  /** Called when the user picks a new window from the node's context menu. */
+  onNewRecentDaysChange: (days: number) => void;
   /**
-   * Whether the "New Today"/"New This Week" smart nodes should render. They
+   * Whether the "New …" smart nodes should render. They
    * are fed by the personal followings feed, so pass `true` on the "me" tab
    * only.
    */
@@ -128,6 +146,9 @@ export function LikesTreePanel({
   storageKey,
   newTodayCount,
   newWeekCount,
+  newRecentCount,
+  newRecentDays,
+  onNewRecentDaysChange,
   showNew,
   likesCount,
   repostsCount,
@@ -197,6 +218,13 @@ export function LikesTreePanel({
           kind: "new-week",
           trackCount: newWeekCount,
         },
+        {
+          id: NEW_RECENT_NODE_ID,
+          name: `New in Last ${newRecentDays === 1 ? "Day" : `${newRecentDays} Days`}`,
+          children: [],
+          kind: "new-recent",
+          trackCount: newRecentCount,
+        },
       );
     }
     children.push(
@@ -252,6 +280,8 @@ export function LikesTreePanel({
     playlists,
     newTodayCount,
     newWeekCount,
+    newRecentCount,
+    newRecentDays,
     showNew,
     likesCount,
     repostsCount,
@@ -272,6 +302,29 @@ export function LikesTreePanel({
       storageKey={storageKey}
       hideRoot
       wrapNode={(node, row) => {
+        if (node.kind === "new-recent") {
+          return (
+            <ContextMenu>
+              <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuLabel>Show releases from the last</ContextMenuLabel>
+                <ContextMenuRadioGroup
+                  value={String(newRecentDays)}
+                  onValueChange={(v) => onNewRecentDaysChange(Number(v))}
+                >
+                  {Array.from(
+                    { length: MAX_NEW_RECENT_DAYS },
+                    (_, i) => i + 1,
+                  ).map((d) => (
+                    <ContextMenuRadioItem key={d} value={String(d)}>
+                      {d === 1 ? "1 day" : `${d} days`}
+                    </ContextMenuRadioItem>
+                  ))}
+                </ContextMenuRadioGroup>
+              </ContextMenuContent>
+            </ContextMenu>
+          );
+        }
         if (node.id === PLAYLISTS_GROUP_ID && onRefreshPlaylists) {
           return (
             <div className="group/playlists relative">
@@ -315,6 +368,11 @@ export function LikesTreePanel({
         if (node.kind === "new-week") {
           return (
             <CalendarRange className="text-muted-foreground size-3.5 shrink-0" />
+          );
+        }
+        if (node.kind === "new-recent") {
+          return (
+            <CalendarClock className="text-muted-foreground size-3.5 shrink-0" />
           );
         }
         if (node.kind === "likes") {
